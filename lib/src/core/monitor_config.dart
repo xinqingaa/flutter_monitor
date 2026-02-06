@@ -3,6 +3,19 @@ import '../modules/jank_monitor.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+/// 监控队列配置
+class MonitorQueueConfig {
+  /// 最大队列大小（默认 50）
+  final int maxQueueSize;
+
+  const MonitorQueueConfig({
+    this.maxQueueSize = 50,
+  });
+
+  /// 默认配置
+  static const MonitorQueueConfig defaultConfig = MonitorQueueConfig();
+}
+
 /// 应用信息配置
 class AppInfo {
   /// 应用标识（必填）
@@ -80,19 +93,22 @@ class MonitorConfig {
   final AppInfo appInfo;
   /// 用户信息（可选）
   final UserInfo? userInfo;
-  
+
   /// 监控开关配置
   final bool enableErrorMonitor;
   final bool enablePerformanceMonitor;
   final bool enableBehaviorMonitor;
   final bool enableJankMonitor;
-  
+
   /// 输出配置（可选，默认使用 LogMonitorOutput）
   final List<MonitorOutput>? outputs;
-  
+
   /// 卡顿监控配置（仅在 enableJankMonitor 为 true 时生效）
   final JankConfig? jankConfig;
-  
+
+  /// 队列配置（可选）
+  final MonitorQueueConfig? queueConfig;
+
   /// 自定义全局附加数据
   final Map<String, dynamic>? customData;
 
@@ -105,6 +121,7 @@ class MonitorConfig {
     this.enableJankMonitor = true,
     this.outputs,
     this.jankConfig,
+    this.queueConfig,
     this.customData,
   });
 
@@ -133,6 +150,11 @@ class MonitorConfig {
       return JankConfig.defaultConfig();
     }
     return jankConfig ?? JankConfig.defaultConfig();
+  }
+
+  /// 获取实际使用的队列配置
+  MonitorQueueConfig get effectiveQueueConfig {
+    return queueConfig ?? MonitorQueueConfig.defaultConfig;
   }
 
 }

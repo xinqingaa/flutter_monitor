@@ -14,6 +14,11 @@ It helps developers effortlessly collect and report **errors**, **performance me
 | ✅ **Consecutive Frame Detection**: Only reports true, consecutive jank sequences. | ✅ **Flexible Reporting Strategy**: Supports batch, periodic, and on-exit reporting. | ✅ **Type-Safe Configuration**: Enjoy compile-time checks with strongly-typed configs. |
 | ✅ **Intelligent Sampling**: Minimizes the monitoring's impact on app performance. | ✅ **Multi-Output Support**: Combine Log, HTTP, and Custom outputs as needed. | ✅ **Smart Initialization**: Asynchronously fetches device info to ensure data integrity. |
 
+## 📚 Documentation
+
+- [API Protocol](API_PROTOCOL.md) - Detailed API documentation and data structure specifications
+- [Roadmap](ROADMAP.md) - Development roadmap and future enhancements
+
 ## 🚀 Quick Start
 
 Get your app's "sky eye" up and running in just 5 simple steps!
@@ -385,6 +390,10 @@ class MyApp extends StatelessWidget {
 ```
 
 ## 🗺️ Roadmap
+
+📄 **Check out the detailed [Roadmap](ROADMAP.md) for planned features and improvements.**
+
+Key upcoming features:
 
 - **Memory Leak Monitoring**: Help developers find potential memory leaks.
 - **Offline Caching**: Cache data to local storage when offline and re-upload when the network is restored.

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../modules/jank_monitor.dart';
 import 'monitor_config.dart';
 import 'reporter.dart';
@@ -20,40 +21,67 @@ class MonitorBinding {
   /// [appStartTime] 是应用启动的精确时间，用于计算启动性能。
   MonitorBinding._(this.config, {required DateTime appStartTime}) {
     // 1. 首先初始化上报器（Reporter），因为其他模块都依赖它。
-    reporter = Reporter(config);
-
-
+    try {
+      reporter = Reporter(config);
+    } catch (e) {
+      debugPrint("错误: Reporter 初始化失败: $e");
+      rethrow;
+    }
 
     // 2. 根据配置，决定是否初始化各个监控模块。
     if (config.enableErrorMonitor) {
-      errorMonitor = ErrorMonitor(reporter);
-      errorMonitor.init();
+      try {
+        errorMonitor = ErrorMonitor(reporter);
+        errorMonitor.init();
+        debugPrint("✅ ErrorMonitor 初始化成功");
+      } catch (e) {
+        debugPrint("错误: ErrorMonitor 初始化失败: $e");
+      }
     }
 
     //  3. Performance Monitor 先于 JankMonitor 初始化
     if (config.enablePerformanceMonitor) {
-      performanceMonitor = PerformanceMonitor(reporter);
-      // 将 App 启动时间传递给性能监控器，用于计算启动耗时。
-      performanceMonitor.init(appStartTime);
-      // 监听路由变化，更新当前页面
-      performanceMonitor.routeObserver.onPageRoutePushed = (name) => _currentPage = name;
+      try {
+        performanceMonitor = PerformanceMonitor(reporter);
+        // 将 App 启动时间传递给性能监控器，用于计算启动耗时。
+        performanceMonitor.init(appStartTime);
+        // 监听路由变化，更新当前页面
+        performanceMonitor.routeObserver.onPageRoutePushed = (name) {
+          if (name != null) {
+            _currentPage = name;
+          }
+        };
+        debugPrint("✅ PerformanceMonitor 初始化成功");
+      } catch (e) {
+        debugPrint("错误: PerformanceMonitor 初始化失败: $e");
+      }
     }
 
     // 4. enableBehaviorMonitor 初始化
     if (config.enableBehaviorMonitor) {
-      behaviorMonitor = BehaviorMonitor(reporter);
-      // 行为监控器也可能有自己的初始化逻辑，例如监听App生命周期。
-      behaviorMonitor.init();
+      try {
+        behaviorMonitor = BehaviorMonitor(reporter);
+        // 行为监控器也可能有自己的初始化逻辑，例如监听App生命周期。
+        behaviorMonitor.init();
+        debugPrint("✅ BehaviorMonitor 初始化成功");
+      } catch (e) {
+        debugPrint("错误: BehaviorMonitor 初始化失败: $e");
+      }
     }
 
     // 5. enableJankMonitor 初始化UI卡顿
     if (config.enableJankMonitor) {
-      jankMonitor = JankMonitor(
-        reporter, 
-        getCurrentPage: () => _currentPage as String,
-        config: config.effectiveJankConfig,
-      );
-      jankMonitor.init();
+      try {
+        jankMonitor = JankMonitor(
+          reporter,
+          getCurrentPage: () => _currentPage ?? 'unknown',
+          config: config.effectiveJankConfig,
+        );
+        jankMonitor.init();
+        debugPrint("✅ JankMonitor 初始化成功");
+      } catch (e) {
+        debugPrint("错误: JankMonitor 初始化失败: $e");
+      }
     }
 
   }
@@ -74,15 +102,21 @@ class MonitorBinding {
   /// 这是创建和设置 MonitorBinding 的主要入口点。
   /// 它由公开的 FlutterMonitorSDK.init() 方法调用。
   static Future<void> init({required MonitorConfig config, required DateTime appStartTime}) async {
+    // 错误恢复：如果已经初始化，直接返回现有实例
     if (_instance != null) {
-      print("警告: MonitorBinding 已经被初始化过了。");
+      debugPrint("注意: MonitorBinding 已经被初始化过了。返回现有实例。");
       return;
     }
     // 正确调用私有构造函数并赋值给私有实例
     _instance = MonitorBinding._(config, appStartTime: appStartTime);
-    
+
     // 异步初始化Reporter，确保设备信息获取完成
-    await _instance!.reporter.initAsync();
+    try {
+      await _instance!.reporter.initAsync();
+    } catch (e) {
+      debugPrint("警告: Reporter 异步初始化失败: $e");
+      // 即使初始化失败，也不影响其他功能，继续运行
+    }
   }
 
   // --- 可供内部访问的服务 ---
@@ -105,9 +139,17 @@ class MonitorBinding {
 
   /// 在 App 关闭时，用于释放资源的方法。
   void dispose() {
-    reporter.dispose();
+    try {
+      reporter.dispose();
+    } catch (e) {
+      debugPrint("错误: Reporter dispose 失败: $e");
+    }
     if (config.enableJankMonitor) {
-      jankMonitor.dispose();
+      try {
+        jankMonitor.dispose();
+      } catch (e) {
+        debugPrint("错误: JankMonitor dispose 失败: $e");
+      }
     }
   }
 }

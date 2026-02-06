@@ -65,7 +65,7 @@ class HttpOutput extends MonitorOutput {
         onDetach: () => flush(isAppExiting: true),
       );
     }
-    print("HttpOutput initialized. Reporting to: $serverUrl");
+    debugPrint("HttpOutput initialized. Reporting to: $serverUrl");
   }
 
   @override
@@ -96,16 +96,16 @@ class HttpOutput extends MonitorOutput {
       ).timeout(const Duration(seconds: 10)); // 增加超时时间以应对弱网
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        print("Reported ${eventsToSend.length} events successfully via HTTP.");
+        debugPrint("Reported ${eventsToSend.length} events successfully via HTTP.");
       } else {
-        print('Failed to report events: ${response.statusCode} ${response.body}');
+        debugPrint('Failed to report events: ${response.statusCode} ${response.body}');
         // MODIFIED: 只有在非 App 退出时，上报失败才将事件重新加回队列等待下次机会。
         if (!isAppExiting) {
           _eventQueue.addAll(eventsToSend);
         }
       }
     } catch (e) {
-      print('Error reporting events: $e');
+      debugPrint('Error reporting events: $e');
       // MODIFIED: 同样，只有在非 App 退出时，发生异常才重试。
       if (!isAppExiting) {
         _eventQueue.addAll(eventsToSend);

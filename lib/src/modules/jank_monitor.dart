@@ -1,7 +1,8 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
-import '../utIls/performance_utils.dart';
+import '../utils/performance_utils.dart';
 
 // CPU 密集型卡顿 (覆盖得很好 ✅)
 // 这是指 UI 线程被大量的计算任务占满，导致 build, layout, paint 的时间过长。
@@ -32,6 +33,9 @@ class JankMonitor {
   final String Function()? _getCurrentPage;
   final JankConfig _config;
 
+  // 添加回调标记，防止重复移除
+  bool _isCallbackAdded = false;
+
   JankMonitor(this._reporter, {String Function()? getCurrentPage, JankConfig? config})
       : _getCurrentPage = getCurrentPage,
         _config = config ?? JankConfig.defaultConfig();
@@ -40,43 +44,54 @@ class JankMonitor {
   double _frameBudgetMs = 16.67; // 默认60fps
   double _jankThresholdMs = 33.34; // 默认2倍帧预算
   int _consecutiveJankThreshold = 3; // 默认连续3帧
-  
+
   // --- 性能统计 ---
   final List<double> _recentFrameTimes = []; // 最近帧时间记录
   static const int _frameHistorySize = 30; // 保留最近30帧的数据
   double _averageFrameTime = 16.67; // 平均帧时间
   double _frameTimeVariance = 0.0; // 帧时间方差
-  
+
   // --- 卡顿检测状态 ---
   int _consecutiveJankFrames = 0;
   double _maxJankDurationInSequence = 0;
   double _totalJankDurationInSequence = 0;
   DateTime? _lastJankTime; // 上次卡顿时间，用于防抖
-  
+
   // --- 采样控制 ---
   int _frameCounter = 0;
   static const int _samplingRate = 3; // 每3帧采样一次
 
   void init() {
+    if (_isCallbackAdded) {
+      debugPrint("警告: JankMonitor 回调已添加，跳过重复添加");
+      return;
+    }
     _initializeAdaptiveThresholds();
-    SchedulerBinding.instance.addTimingsCallback(_onTimings);
+    try {
+      SchedulerBinding.instance.addTimingsCallback(_onTimings);
+      _isCallbackAdded = true;
+      debugPrint("✅ JankMonitor 回调已注册");
+    } catch (e) {
+      debugPrint("错误: JankMonitor 回调注册失败: $e");
+    }
   }
 
   /// 初始化自适应阈值
   void _initializeAdaptiveThresholds() {
     const double defaultRefreshRate = 60.0;
-    final double refreshRate = SchedulerBinding.instance.window.display.refreshRate;
+    // 使用 PlatformDispatcher 替代已弃用的 window
+    final double refreshRate = SchedulerBinding.instance.platformDispatcher.views.first.display.refreshRate;
     _frameBudgetMs = 1000 / (refreshRate > 0 ? refreshRate : defaultRefreshRate);
     
     // 根据配置和帧预算计算阈值
     _jankThresholdMs = _frameBudgetMs * _config.jankFrameTimeMultiplier;
     _consecutiveJankThreshold = _config.consecutiveJankThreshold;
-    
-    print("JankMonitor initialized with adaptive thresholds:");
-    print("- Frame budget: ${_frameBudgetMs.toStringAsFixed(2)}ms");
-    print("- Jank threshold: ${_jankThresholdMs.toStringAsFixed(2)}ms");
-    print("- Consecutive threshold: $_consecutiveJankThreshold frames");
-    print("- Jitter tolerance: ${_config.jitterToleranceMs}ms");
+
+    debugPrint("JankMonitor initialized with adaptive thresholds:");
+    debugPrint("- Frame budget: ${_frameBudgetMs.toStringAsFixed(2)}ms");
+    debugPrint("- Jank threshold: ${_jankThresholdMs.toStringAsFixed(2)}ms");
+    debugPrint("- Consecutive threshold: $_consecutiveJankThreshold frames");
+    debugPrint("- Jitter tolerance: ${_config.jitterToleranceMs}ms");
   }
 
   void _onTimings(List<FrameTiming> timings) {
@@ -231,7 +246,20 @@ class JankMonitor {
   }
 
   void dispose() {
-    SchedulerBinding.instance.removeTimingsCallback(_onTimings);
+    if (!_isCallbackAdded) {
+      debugPrint("注意: JankMonitor 回调未添加，无需移除");
+      return;
+    }
+    try {
+      SchedulerBinding.instance.removeTimingsCallback(_onTimings);
+      _isCallbackAdded = false;
+      debugPrint("✅ JankMonitor 回调已移除");
+    } catch (e) {
+      debugPrint("错误: JankMonitor dispose 失败: $e");
+    }
+    // 清理数据，防止内存泄漏
+    _recentFrameTimes.clear();
+    _resetJankState();
   }
 }
 

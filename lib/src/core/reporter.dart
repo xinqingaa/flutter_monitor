@@ -17,12 +17,12 @@ class Reporter {
   /// 运行时自定义数据（可动态更新）
   Map<String, dynamic>? _runtimeCustomData;
 
-  // 优化：减少缓存大小，避免内存占用过多
-  static const int maxQueueSize = 50;
-
   Reporter(this._config) {
     _init();
   }
+
+  /// 获取最大队列大小
+  int get maxQueueSize => _config.effectiveQueueConfig.maxQueueSize;
 
   void _init() {
     // 初始化所有在配置中提供的输出器
@@ -40,7 +40,7 @@ class Reporter {
   /// 使用 'device_info_plus' 插件异步获取设备信息。
   /// 可以在这里自定义需要收集的设备字段。
   Future<void> _fetchDeviceInfo() async {
-    print("🔍 开始获取设备信息");
+    debugPrint("🔍 开始获取设备信息");
     final deviceInfoPlugin = DeviceInfoPlugin();
     try {
       if (kIsWeb) {
@@ -71,7 +71,7 @@ class Reporter {
         };
       }
     } catch (e) {
-      print("Failed to get device info: $e");
+      debugPrint("Failed to get device info: $e");
     }
   }
 
@@ -125,7 +125,7 @@ class Reporter {
       try {
         output.add(event);
       } catch (e) {
-        print("Error while dispatching event to ${output.runtimeType}: $e");
+        debugPrint("Error while dispatching event to ${output.runtimeType}: $e");
       }
     }
   }
@@ -167,31 +167,31 @@ class Reporter {
   /// 动态设置用户信息（运行时更新）
   void setUserInfo(UserInfo userInfo) {
     _runtimeUserInfo = userInfo;
-    print("✅ 用户信息已更新: ${userInfo.userId}");
+    debugPrint("✅ 用户信息已更新: ${userInfo.userId}");
   }
 
   /// 动态设置用户ID（简化方法）
   void setUserId(String userId) {
     _runtimeUserInfo = UserInfo(userId: userId);
-    print("✅ 用户ID已更新: $userId");
+    debugPrint("✅ 用户ID已更新: $userId");
   }
 
   /// 动态设置自定义数据（运行时更新）
   void setCustomData(Map<String, dynamic> data) {
     _runtimeCustomData = data;
-    print("✅ 自定义数据已更新: $data");
+    debugPrint("✅ 自定义数据已更新: $data");
   }
 
   /// 清除用户信息（用户登出时调用）
   void clearUserInfo() {
     _runtimeUserInfo = null;
-    print("✅ 用户信息已清除");
+    debugPrint("✅ 用户信息已清除");
   }
 
   /// 清除自定义数据
   void clearCustomData() {
     _runtimeCustomData = null;
-    print("✅ 自定义数据已清除");
+    debugPrint("✅ 自定义数据已清除");
   }
 
   /// 清理资源，在应用关闭时调用。

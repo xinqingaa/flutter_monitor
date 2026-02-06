@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'monitor_output.dart';
 
 /// 定义一个函数类型，用于处理从 SDK 传出的监控事件。
@@ -25,7 +26,7 @@ class CustomLogOutput extends MonitorOutput {
     try {
       onLog(event);
     } catch (e) {
-      print("Error executing custom log handler: $e");
+      debugPrint("Error executing custom log handler: $e");
     }
   }
 

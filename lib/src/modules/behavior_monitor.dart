@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 
 class BehaviorMonitor {
@@ -7,7 +8,7 @@ class BehaviorMonitor {
 
   void init() {
     // 可以在这里添加全局行为监听，例如监听App前后台切换
-    print("BehaviorMonitor initialized.");
+    debugPrint("BehaviorMonitor initialized.");
   }
 
   // 提供给 MonitoredGestureDetector 使用

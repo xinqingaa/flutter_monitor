@@ -1,4 +1,4 @@
-import 'package:flutter_monitor_sdk/src/utIls/monitored_http_client.dart';
+import 'package:flutter_monitor_sdk/src/utils/monitored_http_client.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +10,7 @@ export 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart';
 export 'package:flutter_monitor_sdk/src/utils/monitored_gesture_detector.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
+export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
 export 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/log_monitor_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/http_output.dart';
@@ -54,13 +55,13 @@ class FlutterMonitorSDK {
     required DateTime appStartTime,
   }) async {
     if (_isInitialized) {
-      print("FlutterMonitorSDK has already been initialized.");
+      debugPrint("FlutterMonitorSDK has already been initialized.");
       return;
     }
 
     await MonitorBinding.init(config: config, appStartTime: appStartTime);
     _isInitialized = true;
-    print("FlutterMonitorSDK initialized successfully.");
+    debugPrint("FlutterMonitorSDK initialized successfully.");
   }
 
 
