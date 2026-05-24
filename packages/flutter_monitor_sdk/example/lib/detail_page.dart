@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
+import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class DetailPage extends StatefulWidget {
   const DetailPage({super.key});
@@ -15,7 +15,7 @@ class _DetailPageState extends State<DetailPage> {
     // 在页面第一帧渲染后，上报页面加载完成事件
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pageName = ModalRoute.of(context)?.settings.name;
-      MonitorBinding.instance.performanceMonitor.routeObserver.onPageRendered(pageName);
+      FlutterMonitorSDK.onPageRendered(pageName);
     });
   }
 

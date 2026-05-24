@@ -3,7 +3,8 @@ description: Demonstrates how to use the Flutter Monitor runtime SDK package.
 publish_to: 'none'
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.10.0 <4.0.0'
+resolution: workspace
 
 dependencies:
   flutter:
@@ -16,14 +17,14 @@ dependencies:
   package_info_plus: ^8.2.0
   # 使用 path 依赖本地的 SDK
   flutter_monitor_sdk:
-    path: ../
+    path: ..
 
   cupertino_icons: ^1.0.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true

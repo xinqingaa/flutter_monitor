@@ -43,8 +43,10 @@ class HomePage extends StatelessWidget {
                 onPressed: () async {
                   try {
                     await dio.get('https://api.github.com/users/flutter');
+                    if (!context.mounted) return;
                     _showSnackBar(context, 'API 调用成功! 请查看后端日志。');
                   } catch (e) {
+                    if (!context.mounted) return;
                     _showSnackBar(context, 'API 调用失败: $e');
                   }
                 },
@@ -58,6 +60,7 @@ class HomePage extends StatelessWidget {
                   try {
                     await dio.get('https://api.github.com/non-existent-path');
                   } catch (e) {
+                    if (!context.mounted) return;
                     _showSnackBar(context, 'API 调用失败 (预期)! 请查看后端日志。');
                   }
                 },
@@ -75,8 +78,10 @@ class HomePage extends StatelessWidget {
                   try {
                     await monitoredHttpClient.get(Uri.parse(
                         'https://jsonplaceholder.typicode.com/posts/1'));
+                    if (!context.mounted) return;
                     _showSnackBar(context, 'http API 调用成功! 请查看后端日志。');
                   } catch (e) {
+                    if (!context.mounted) return;
                     _showSnackBar(context, 'http API 调用失败: $e');
                   }
                 },
@@ -91,6 +96,7 @@ class HomePage extends StatelessWidget {
                     await monitoredHttpClient.get(Uri.parse(
                         'https://jsonplaceholder.typicode.com/non-existent'));
                   } catch (e) {
+                    if (!context.mounted) return;
                     _showSnackBar(context, 'http API 调用失败 (预期)! 请查看后端日志。');
                   }
                 },

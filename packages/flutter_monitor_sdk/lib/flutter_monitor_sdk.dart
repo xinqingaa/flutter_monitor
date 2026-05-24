@@ -49,6 +49,11 @@ class FlutterMonitorSDK {
     return MonitoredHttpClient(MonitorBinding.instance.reporter, http.Client());
   }
 
+  static void onPageRendered(String? pageName) {
+    if (!_isInitialized) return;
+    MonitorBinding.instance.performanceMonitor.routeObserver.onPageRendered(pageName);
+  }
+
 
   static Future<void> init({
     required MonitorConfig config,

@@ -247,7 +247,7 @@ class _PerformanceTestPageState extends State<PerformanceTestPage>
       // 空循环，消耗CPU时间
     }
     
-    print("✅ 简单卡顿测试完成");
+    debugPrint("✅ 简单卡顿测试完成");
   }
 
   /// 使用 AnimationController 触发真正的帧渲染卡顿
@@ -292,7 +292,7 @@ class _PerformanceTestPageState extends State<PerformanceTestPage>
 
   /// 触发连续卡顿
   void _triggerConsecutiveJank(int durationMs, int frameCount, String testName) {
-    print("🚀 开始连续测试: $testName (${durationMs}ms x $frameCount 帧)");
+    debugPrint("🚀 开始连续测试: $testName (${durationMs}ms x $frameCount 帧)");
     
     final controller = AnimationController(
       duration: Duration(milliseconds: 3000), // 固定3秒动画
@@ -303,7 +303,7 @@ class _PerformanceTestPageState extends State<PerformanceTestPage>
     controller.addListener(() {
       if (controller.isAnimating && frameCounter < frameCount) {
         frameCounter++;
-        print("📊 连续第 $frameCounter 帧开始，执行 ${durationMs}ms 耗时操作");
+        debugPrint("📊 连续第 $frameCounter 帧开始，执行 ${durationMs}ms 耗时操作");
         
         final startTime = DateTime.now();
         while (DateTime.now().difference(startTime).inMilliseconds < durationMs) {
@@ -311,7 +311,7 @@ class _PerformanceTestPageState extends State<PerformanceTestPage>
         }
         
         final actualDuration = DateTime.now().difference(startTime).inMilliseconds;
-        print("⏱️ 实际耗时: ${actualDuration}ms");
+        debugPrint("⏱️ 实际耗时: ${actualDuration}ms");
         
         // 强制重建UI，确保触发帧渲染
         setState(() {});
@@ -319,7 +319,7 @@ class _PerformanceTestPageState extends State<PerformanceTestPage>
     });
     
     controller.forward().then((_) {
-      print("✅ 连续测试完成: $testName，共执行 $frameCounter 帧");
+      debugPrint("✅ 连续测试完成: $testName，共执行 $frameCounter 帧");
       controller.dispose();
     });
   }

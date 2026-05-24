@@ -133,7 +133,7 @@ class ComplexListItem extends StatelessWidget {
             child: Container(
               color: Colors.black,
               alignment: Alignment.center,
-              child: Icon(Icons.play_circle_fill, size: 60, color: Colors.white.withOpacity(0.7)),
+              child: Icon(Icons.play_circle_fill, size: 60, color: Colors.white.withValues(alpha: 0.7)),
             ),
           ),
           Padding(

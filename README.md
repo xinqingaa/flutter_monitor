@@ -11,6 +11,25 @@ Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路观测 wor
 - `flutter_monitor_sdk`：Flutter runtime 主 SDK 和业务接入包。
 - `flutter_monitor_native`：可选 native plugin，提供 native memory、OOM、ANR、crash 等增强信号。
 
+当前 workspace 目录：
+
+```text
+packages/
+  flutter_monitor_core/
+  flutter_monitor_sdk/
+    example/
+  flutter_monitor_native/
+```
+
+常用验证命令：
+
+```sh
+flutter pub get
+cd packages/flutter_monitor_sdk
+flutter analyze
+flutter test
+```
+
 ## 文档
 
 - [背景与方向](docs/background.md)

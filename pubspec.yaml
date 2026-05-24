@@ -1,23 +1,11 @@
-name: flutter_monitor_sdk
-description: "A Flutter runtime monitoring SDK for errors, performance, behavior, jank, memory, and trace observability."
-version: 1.0.0
-homepage: https://github.com/xinqingaa/flutter_monitor
-repository: https://github.com/xinqingaa/flutter_monitor
+name: flutter_monitor_workspace
+publish_to: none
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
-  flutter: ">=1.17.0"
+  sdk: ">=3.10.0 <4.0.0"
 
-dependencies:
-  flutter:
-    sdk: flutter
-  http: ^1.2.1
-  dio: ^5.4.3+1
-  device_info_plus: ^11.2.0
-  package_info_plus: ^8.2.0
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^5.0.0
- 
+workspace:
+  - packages/flutter_monitor_core
+  - packages/flutter_monitor_sdk
+  - packages/flutter_monitor_sdk/example
+  - packages/flutter_monitor_native
