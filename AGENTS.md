@@ -1,75 +1,130 @@
 # AGENTS.md
 
-这是本仓库面向 agent 的唯一工作规范。
-旧的 `CLAUDE.md` 和 `CLAUDE_CN.md` 已删除，避免多份规范长期分叉。
+这是本仓库面向 agent 的唯一工作规范。后续 agent 应以本文档作为项目方向、文档建设和代码演进的约束来源。
 
-## 项目方向
+## 项目目标
 
-Flutter Monitor SDK 正在从一个轻量级指标采集 SDK，演进为面向 Flutter
-应用的端侧监控与链路化观测 SDK。
+Flutter Monitor SDK 的目标是成为一个 **以链路为组织方式的 Flutter 端侧监控 SDK**。
 
-本项目不应继续以“不断堆叠孤立指标”为目标。指标采集是基础能力，但真正的产品价值来自于把错误、性能、网络请求、页面状态、卡顿、内存信号和用户行为连接到统一的 session/trace/context 模型中，帮助团队还原真实用户或 QA 会话中发生了什么。
+SDK 应采集错误、性能、网络、页面、行为、卡顿、内存、生命周期和自定义业务信号，并通过统一上下文将这些信号组织成可回放、可聚合、可定位的用户会话链路。
 
-目标方向是：
+目标效果是：
 
-> 采集监控信号，将它们组织成可关联的 session 与 trace 数据，并服务于问题复现、前端诊断、DevTools 检查、服务端聚合、告警和企业质量治理。
+- 开发者能还原一次真实用户或 QA 会话中发生了什么。
+- 页面或模块出现性能问题时，能定位相关操作、请求、卡顿、错误、设备、网络、版本和业务上下文。
+- 用户无法准确描述页面或操作路径时，仍能通过 session timeline 和 breadcrumbs 辅助排查。
+- DevTools 能支持本地复现、性能优化和 QA 交接。
+- 服务端能支持长期聚合、趋势分析、告警、版本对比和影响面分析。
 
-## 当前现状
+## 核心模型
 
-当前代码库已经具备有价值的信号源：
+所有监控能力都应围绕链路模型设计。核心概念包括：
 
-- `ErrorMonitor` 捕获 Flutter framework 错误和顶层 Dart 错误。
-- `PerformanceMonitor` 捕获应用启动、路由/页面加载和 Dio 请求。
-- `MonitoredHttpClient` 捕获通过 `http` 包发起的请求。
-- `JankMonitor` 捕获 Flutter 帧时序和连续卡顿序列。
-- `BehaviorMonitor` 与 `MonitoredGestureDetector` 捕获点击等简单行为事件。
-- `Reporter` 为事件补充 app、user、device、platform、timestamp 和 custom data。
-- `MonitorOutput` 支持日志、HTTP 和自定义输出。
+- `session`：一次用户使用过程或一段可分析的 App 活动窗口。
+- `trace`：一次可追踪的流程，例如冷启动、页面打开、用户操作、接口调用链或业务流程。
+- `span`：trace 中的一个阶段，例如路由切换、首帧、接口请求、图片解码、列表构建或自定义业务步骤。
+- `breadcrumb`：问题发生前后的关键上下文足迹，例如页面进入、点击、请求、弹窗、生命周期变化、卡顿和错误。
+- `context`：与事件相关的 route、module、scene、user、device、network、release、channel、feature flag 等上下文。
+- `resource`：SDK、App、设备、系统和运行环境等稳定资源信息。
+- `attributes`：用于检索、聚合和分析的结构化字段。
+- `payload`：事件特有的详细数据。
 
-这些能力原则上应该被保留。后续工作不是因为它们最初是孤立指标就移除它们，而是把它们重新组织到统一上下文中。
+事件应尽量能回答：
 
-## 核心产品原则
+- 谁受影响？
+- 在哪个页面、模块、场景或 route stack？
+- 发生在哪个 session、trace 或 span 中？
+- 前后有哪些 breadcrumbs？
+- 当时设备、网络、版本、渠道和 feature flag 是什么？
+- 这个事件如何服务于问题定位、复现、聚合或告警？
 
-1. **监控信号是输入，关联诊断是输出。**  
-   错误、API 耗时、页面加载、卡顿、内存和行为事件，只有在能回答“谁受影响、在哪个页面/模块、哪个动作之后、什么设备/网络/版本上下文下、周围还发生了什么”时，才真正服务于排查。
+## 信号范围
 
-2. **Session 与 trace 上下文是一等能力。**  
-   事件后续应携带稳定标识，例如 `sessionId`、`traceId`、`spanId`、`parentSpanId`、route/module/scene 上下文和最近 breadcrumbs。不要新增无法关联回用户会话或页面/模块 trace 的事件类型。
+SDK 应覆盖但不限于以下信号：
 
-3. **DevTools 与服务端分析职责不同。**  
-   DevTools 集成应帮助开发者和 QA 在本地检查当前会话或复现会话。服务端接入应支持历史数据、聚合、趋势分析、告警、版本对比和影响用户分析。两者应共享同一套事件模型，而不是形成两套不兼容的数据结构。
+- 错误：Flutter framework error、Dart error、业务主动上报错误。
+- 启动：冷启动、热启动、首帧、可交互时间。
+- 页面：路由进入/离开、页面加载、页面停留、页面可交互、页面来源。
+- 网络：Dio、`http`、请求/响应耗时、状态码、错误类型、请求/响应大小、重试、缓存。
+- 行为：点击、关键操作、页面访问、业务动作、用户路径。
+- 卡顿：连续慢帧、帧耗时分布、FPS、稳定性、设备等级、页面上下文。
+- 内存：内存水位、增长趋势、页面退出后的异常存活线索。
+- 生命周期：前后台切换、启动恢复、退出前 flush。
+- 自定义 trace：业务方主动标记的流程、阶段和指标。
 
-4. **协议稳定先于功能扩张。**  
-   上报协议应先定义 schema version、event envelope、事件身份、session/trace 身份、resource metadata、context、attributes、payload、隐私行为和兼容策略，再继续大量新增指标。
+新增信号时，应优先设计它如何进入 session/trace/span/breadcrumb/context，避免只停留在单条事件字段设计。
 
-5. **面向企业真实场景。**  
-   设计时要考虑 QA 复现、用户反馈说不清页面、release/channel/flavor 分析、feature flag、设备等级、弱网、隐私约束、采样、限流、离线缓存、重试和 SDK 自监控。
+## DevTools 与服务端分工
 
-## 目标架构方向
+DevTools 与服务端应共享同一套事件模型，但承担不同职责。
 
-按四层思考：
+DevTools 侧目标：
 
-- **信号采集层**：error、launch、page、route、API、jank、memory、lifecycle、behavior 和 custom trace 信号。
-- **上下文层**：session、route stack、module、scene、user、device、OS、network、release、build、channel、feature flags 和 breadcrumbs。
-- **Pipeline 层**：event envelope 构建、schema 校验、采样、隐私过滤、批量、优先级、重试、离线缓存和 output 分发。
-- **消费层**：console log、HTTP/backend ingestion、DevTools timeline、DevTools extension panel、本地导出/导入，以及未来可能的 OpenTelemetry-compatible output。
+- 在 Flutter Timeline/Performance 中呈现 SDK 标记。
+- 展示当前 session timeline。
+- 展示 page/API/action/jank/error 的上下文和详情。
+- 支持 QA 复现后导出 session，开发侧导入排查。
+- 服务于本地调试、性能优化和问题复现。
 
-## 文档方向
+服务端侧目标：
 
-当前根目录文档和旧 docs 可能描述的是项目早期阶段。除非已经在新方向下重写，否则应将它们视为历史参考。
+- 接收稳定协议上报的数据。
+- 支持按版本、页面、模块、设备、网络、渠道、feature flag 和用户分群聚合。
+- 支持 P50/P90/P95/P99、错误率、卡顿率、影响用户数、趋势和告警。
+- 支持优化前后对比和企业质量治理。
 
-重要文档应统一收敛到 `docs/`。
+不要让 DevTools 和服务端形成两套互不兼容的数据结构。
 
-计划中的文档结构：
+## 协议与数据模型优先级
 
-- `docs/background.md`：产品背景、当前现状和迁移方向。
-- `docs/event_model.md`：session、trace、span、breadcrumb、metric、error、log、context 和 event envelope 模型。
-- `docs/server_protocol.md`：上报 API、schema version、鉴权、错误响应、兼容策略和服务端预期。
-- `docs/devtools_integration.md`：Flutter Timeline 集成、DevTools extension 目标、本地 session 导出/导入、本地与服务端边界。
-- `docs/architecture.md`：链路化迁移后的 SDK 架构。
-- `docs/roadmap.md`：分阶段实施计划。
+在继续扩展大量功能前，应优先稳定：
 
-更新 README 时，应把 README 作为入口文档。详细设计放在 `docs/`，避免 README 变成架构唯一事实源。
+- event envelope；
+- schema version；
+- event id；
+- session/trace/span 关系；
+- resource/context/attributes/payload 分层；
+- 时间戳、duration、level、signal type、name 等公共字段；
+- 隐私过滤和敏感字段策略；
+- 采样、限流、重试、离线缓存和事件优先级；
+- 服务端鉴权、错误码和兼容策略。
+
+字段设计应服务于检索、聚合、排查和长期兼容。不要让各模块随意发散字段名。
+
+## 企业化要求
+
+设计和实现时应持续考虑企业使用场景：
+
+- 多环境：dev、test、staging、production。
+- 多版本：appVersion、buildNumber、release、flavor、channel。
+- 灰度与实验：feature flag、experiment、cohort。
+- 用户与隐私：userId、userType、userTags、脱敏、匿名化、授权开关。
+- 设备与网络：device tier、OS、refresh rate、memory、network type、weak network。
+- 稳定性：采样、限流、离线缓存、重试、队列上限、事件优先级、失败统计。
+- 协作：QA 复现、session 导出/导入、问题交接、用户反馈定位。
+
+## 文档分工
+
+- `AGENTS.md`：项目目标、工作约束和方向边界。
+- `docs/background.md`：项目背景、迁移原因和方向解释。
+- `docs/event_model.md`：session、trace、span、breadcrumb、metric、error、log、resource、context、attributes、payload 定义。
+- `docs/server_protocol.md`：服务端上报协议、schema version、鉴权、错误处理、重试和兼容策略。
+- `docs/devtools_integration.md`：Flutter Timeline、DevTools extension、本地 session 导出/导入和本地/服务端边界。
+- `docs/architecture.md`：目标 SDK 架构和模块职责。
+- `docs/implementation_plan.md`：分阶段实施计划和验收标准。
+
+README 只作为项目入口，不作为架构或协议的唯一事实源。
+
+## 实现约束
+
+- 新增能力必须说明它如何进入链路模型。
+- 新增事件必须优先考虑 session、trace、span、breadcrumb 和 context 关联。
+- 新增字段必须考虑隐私、采样、兼容、聚合和服务端查询。
+- 新增 DevTools 能力必须服务于本地复现、调试或性能优化。
+- 新增服务端能力必须服务于长期分析、聚合、告警或影响面判断。
+- 不要新增无法关联上下文的孤立指标。
+- 不要让各模块各自定义不兼容的数据结构。
+- 不要在文档和代码之间制造两套不同的事件模型。
 
 ## 开发命令
 
@@ -78,27 +133,5 @@ Flutter Monitor SDK 正在从一个轻量级指标采集 SDK，演进为面向 F
 - `flutter analyze` - 运行静态分析。
 - `cd example && flutter pub get && flutter run` - 运行示例应用。
 - `cd example && flutter test` - 运行 example 测试。
-
-当前 package 测试覆盖非常少。测试通过不代表 SDK 已经达到生产可用状态。
-
-## 现有代码说明
-
-- `lib/flutter_monitor_sdk.dart` 中的 `FlutterMonitorSDK` 是公开门面。
-- `MonitorBinding` 协调模块生命周期。
-- `Reporter` 当前负责补充上下文并分发松散的 `category + data` map。后续应演进为 event envelope builder 和 pipeline coordinator。
-- `HttpOutput` 当前上报 `{"events": [...]}`，但尚未实现目标协议所需的稳定 headers、鉴权、隐私过滤、离线缓存或健壮重试语义。
-- `node_server/` 是 mock receiver，不是目标服务端架构。
-- 当前源码树仍存在历史遗留的 `lib/src/utIls/` 目录，而代码和文档中使用的是 `lib/src/utils/`。这应在代码清理阶段修复，但不要混入纯文档变更中。
-
-## 实现指导
-
-- 优先渐进迁移。在改进结构的同时保留已有公开价值。
-- 不要因为某个信号当前事件结构松散就直接移除它。应先定义它如何映射到未来的 session/trace 模型。
-- 事件命名应稳定、明确。能归入 event envelope 或 attributes 的共享语义，不要让各模块随意定义临时字段名。
-- 任何新增监控信号，都应说明它如何帮助诊断真实用户、QA、页面/模块、版本或设备/网络问题。
-- 任何新增服务端字段，都应考虑隐私、采样、兼容和聚合。
-- 任何新增 DevTools 能力，都应服务于本地复现或主动性能优化，而不是简单复制服务端 dashboard。
-
-## 校验预期
 
 纯文档变更应检查引用和结构。代码变更应运行 `flutter analyze` 和相关测试。如果某项测试无法运行或已经失败，应明确说明原因。

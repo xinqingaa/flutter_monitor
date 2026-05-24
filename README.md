@@ -16,10 +16,12 @@ It helps developers effortlessly collect and report **errors**, **performance me
 
 ## 📚 Documentation
 
-- [Documentation Center](docs/README.md) - Current documentation entry point.
-- [背景与方向](docs/background.md) - The SDK is migrating from isolated metrics collection toward trace-oriented client-side monitoring.
-- [API Protocol](API_PROTOCOL.md) - Historical API protocol draft; this will be replaced by a stable server protocol under `docs/`.
-- [Roadmap](ROADMAP.md) - Historical roadmap; this will be rewritten after the event model and protocol are defined.
+- [背景与方向](docs/background.md)
+- [事件模型](docs/event_model.md)
+- [目标架构](docs/architecture.md)
+- [DevTools 集成](docs/devtools_integration.md)
+- [服务端协议](docs/server_protocol.md)
+- [实施计划](docs/implementation_plan.md)
 
 ## 🚀 Quick Start
 
@@ -393,15 +395,7 @@ class MyApp extends StatelessWidget {
 
 ## 🗺️ Roadmap
 
-The historical [Roadmap](ROADMAP.md) still records useful earlier ideas, but the
-current planning baseline starts from [背景与方向](docs/background.md).
-
-Current planning focus:
-
-- **Event Model**: Define session, trace, span, breadcrumb, metric, error, and context envelopes.
-- **Server Protocol**: Stabilize backend ingestion, schema versioning, authentication, compatibility, and retry semantics.
-- **DevTools Integration**: Support local timeline inspection, SDK event panels, and session export/import for QA handoff.
-- **Enterprise Readiness**: Plan privacy filtering, sampling, throttling, offline caching, release/channel dimensions, and SDK self-monitoring.
+See [实施计划](docs/implementation_plan.md).
 
 ## 🤝 Contributing
 

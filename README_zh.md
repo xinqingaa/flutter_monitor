@@ -16,10 +16,12 @@
 
 ## 📚 文档 (Documentation)
 
-- [文档中心](docs/README.md) - 当前文档入口。
-- [背景与方向](docs/background.md) - SDK 正在从孤立指标采集迁移到链路化端侧监控。
-- [API 协议文档](API_PROTOCOL.md) - 历史 API 协议草案，后续会被 `docs/` 下稳定的服务端协议替代。
-- [发展路线图](ROADMAP.md) - 历史路线图，事件模型和协议确定后会重写。
+- [背景与方向](docs/background.md)
+- [事件模型](docs/event_model.md)
+- [目标架构](docs/architecture.md)
+- [DevTools 集成](docs/devtools_integration.md)
+- [服务端协议](docs/server_protocol.md)
+- [实施计划](docs/implementation_plan.md)
 
 ## 🚀 快速上手 (Quick Start)
 
@@ -363,15 +365,7 @@ class MyApp extends StatelessWidget {
 
 ## 🗺️ 路线图 (Roadmap)
 
-[发展路线图](ROADMAP.md) 仍然保留早期阶段的一些有价值想法，但当前规划基线以
-[背景与方向](docs/background.md) 为准。
-
-当前规划重点：
-
-- **事件模型**：定义 session、trace、span、breadcrumb、metric、error 和上下文 envelope。
-- **服务端协议**：稳定上报协议、schema version、鉴权、兼容策略和重试语义。
-- **DevTools 集成**：支持本地 timeline 检查、SDK 事件面板、QA session 导出/导入。
-- **企业化能力**：规划脱敏、采样、限流、离线缓存、版本/渠道维度和 SDK 自监控。
+见 [实施计划](docs/implementation_plan.md)。
 
 ## 🤝 贡献 (Contributing)
 
