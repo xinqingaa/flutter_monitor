@@ -15,6 +15,8 @@
 - Output 消费统一事件模型，不反向影响采集逻辑。
 - DevTools 和 HTTP 上报共享同一套事件模型。
 - SDK 内部应能记录自身状态，例如事件丢弃、flush 失败、队列积压。
+- Trace 和 span 都是一等事件，采集器不得用私有结构表达链路阶段。
+- 同一语义字段只能有一个规范路径，新增字段前应先查 `docs/event_model.md` 的字段注册表。
 
 ## 分层架构
 
@@ -42,23 +44,6 @@ Signal Collectors 负责采集原始信号，不直接决定最终上报格式�
 - `MemoryCollector`
 - `LifecycleCollector`
 - `CustomTraceCollector`
-
-现有模块可渐进映射：
-
-| 现有能力 | 目标模块 |
-|---|---|
-| `ErrorMonitor` | `ErrorCollector` |
-| `PerformanceMonitor` 启动部分 | `LaunchCollector` |
-| `PerformanceMonitor` route observer | `RouteCollector`、`PagePerformanceCollector` |
-| `MonitorDioInterceptor` | `NetworkCollector` |
-| `MonitoredHttpClient` | `NetworkCollector` |
-| `BehaviorMonitor` | `BehaviorCollector` |
-| `MonitoredGestureDetector` | `BehaviorCollector` |
-| `JankMonitor` | `JankCollector` |
-| `Reporter` | `Event Pipeline` |
-| `MonitorOutput` | `Outputs` |
-
-映射关系用于指导重构，不要求一次性改完所有命名。
 
 采集器职责：
 
@@ -150,6 +135,7 @@ Pipeline 应保证：
 - 同一 signal 只生成一条主事件，避免重复上报；
 - 事件生成失败时记录 SDK self-monitoring；
 - 隐私过滤早于任何 output；
+- 字段归一化早于采样和批处理；
 - 采样策略可按 signal type、route、module、release、user cohort 配置；
 - 高优先级事件可绕过部分低优先级批处理延迟。
 
@@ -199,25 +185,7 @@ collector captures signal
 - Session/Trace Manager 不做隐私过滤。
 - Pipeline 不监听 Flutter 原始信号。
 - Output 不反向修改 session/trace 状态。
-
-## 渐进重构边界
-
-第一阶段重构应优先建立基础设施，而不是重写所有采集器。
-
-推荐顺序：
-
-1. 引入 event envelope 类型。
-2. 引入 session/context 基础设施。
-3. 让 Reporter 先能输出 envelope。
-4. 将 error、page、network、jank 逐步迁入 envelope。
-5. 再拆分 Collector 命名和目录结构。
-
-不建议：
-
-- 在没有 event model 的情况下重写所有模块；
-- 在没有 context manager 的情况下扩展更多指标；
-- 为 DevTools 单独设计一套事件结构；
-- 为服务端单独设计一套与本地不同的结构。
+- Output 不重新读取未脱敏原始数据。
 
 ## 公开 API 方向
 

@@ -65,7 +65,7 @@ timestamp
 - breadcrumbs
 - related trace/spans
 
-敏感字段应在展示前经过同一套 privacy filtering。
+敏感字段应在进入 DevTools output 前经过同一套 privacy filtering。DevTools 不应重新读取或展示未脱敏原始数据。
 
 ### QA 导出与开发导入
 
@@ -82,6 +82,8 @@ DevTools 应支持导出当前 session。
 导入后应能查看 session timeline 和事件详情。
 
 导出文件不应包含未经脱敏的敏感字段。
+
+导出格式应复用 `docs/event_model.md` 定义的 event envelope 和字段注册表。导出文件可以增加 session metadata，但不得为 DevTools 单独定义另一套事件字段。
 
 ## 本地诊断场景
 

@@ -39,9 +39,22 @@
 - `attributes` 放可检索、可聚合字段。
 - `payload` 放事件特有详情。
 
+同一个语义字段只能有一个规范路径。不要在 `resource`、`context`、`attributes` 和 `payload` 中重复表达同一含义。
+
+### Trace 与 Span 一等化
+
+Trace 和 span 都是一等事件：
+
+- `signalType = trace` 表示一次可排查流程的根事件或流程摘要。
+- `signalType = span` 表示 trace 内部的一个阶段。
+
+不要用 `signalType = trace` 同时表达根 trace 和内部 span。HTTP 请求、图片解码、列表构建、首帧、页面可交互等阶段应使用 `signalType = span`。
+
 ### 隐私默认安全
 
 URL query、request body、response body、token、手机号、身份证、地址等数据默认不进入事件。确需上报时必须经过显式配置和脱敏策略。
+
+隐私过滤必须早于任何 output，包括 log、HTTP、DevTools 和文件导出。
 
 ## 核心概念
 
@@ -88,6 +101,12 @@ Trace 应至少具备：
 
 Trace 应用于表达“一个可排查流程”。页面打开、用户点击后的业务流程、冷启动、自定义业务流程都应优先建模为 trace。
 
+Trace 事件通常只表示流程整体：
+
+- 开始事件可记录 `startTime` 和 root span。
+- 结束事件或摘要事件可记录 `durationMs`、`status` 和聚合结果。
+- Trace 内部阶段不得挤进 trace 事件本身，应使用 span 事件表达。
+
 ### Span
 
 `span` 表示 trace 中的一个阶段。
@@ -111,6 +130,8 @@ Span 应支持父子关系：
 
 Span 应用于表达 trace 内部阶段。一个页面 trace 可以包含 route、first frame、API、渲染、图片、业务计算等多个 span。
 
+Span 事件必须能通过 `traceId` 关联到所属 trace。除 root span 外，span 应尽量提供 `parentSpanId`。
+
 ### Breadcrumb
 
 `breadcrumb` 表示问题发生前后的关键足迹。
@@ -131,6 +152,8 @@ Span 应用于表达 trace 内部阶段。一个页面 trace 可以包含 route�
 
 Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。错误、卡顿和慢 trace 上报时可携带相关窗口内的 breadcrumbs。
 
+Breadcrumb 可以独立作为 `signalType = breadcrumb` 的事件进入 session timeline，也可以作为错误、卡顿或慢 trace 的相关上下文快照进入 `payload.breadcrumbs`。两种形态应使用同一字段结构，避免 DevTools 与服务端看到不同语义。
+
 ## Event Envelope
 
 所有事件都应使用统一 envelope。
@@ -140,9 +163,10 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。错�
   "schemaVersion": "1.0",
   "eventId": "evt_001",
   "timestamp": "2026-05-24T12:00:00.000+08:00",
-  "signalType": "trace",
+  "signalType": "span",
   "name": "http.client",
   "level": "info",
+  "status": "ok",
   "durationMs": 523,
   "sessionId": "ses_001",
   "traceId": "trace_001",
@@ -199,11 +223,12 @@ trace page.load /feed
 | `schemaVersion` | string | 是 | 事件 schema 版本 |
 | `eventId` | string | 是 | 事件唯一 ID |
 | `timestamp` | string | 是 | ISO-8601 时间 |
-| `signalType` | string | 是 | `trace`、`metric`、`error`、`breadcrumb`、`log` |
+| `signalType` | string | 是 | `trace`、`span`、`metric`、`error`、`breadcrumb`、`log`、`sdk` |
 | `name` | string | 是 | 稳定事件名 |
 | `level` | string | 否 | `debug`、`info`、`warning`、`error`、`fatal` |
+| `status` | string | 否 | `ok`、`error`、`cancelled`、`timeout`、`unknown` |
 | `durationMs` | number | 否 | 耗时类事件的持续时间 |
-| `sessionId` | string | 是 | 所属 session |
+| `sessionId` | string | 条件必填 | 所属 session；业务事件必填，SDK 自监控和初始化前事件可缺省 |
 | `traceId` | string | 否 | 所属 trace |
 | `spanId` | string | 否 | 当前 span |
 | `parentSpanId` | string | 否 | 父 span |
@@ -211,6 +236,21 @@ trace page.load /feed
 | `context` | object | 是 | 用户、页面、模块、网络、版本等上下文 |
 | `attributes` | object | 否 | 可检索、可聚合的结构化字段 |
 | `payload` | object | 否 | 事件特有详细数据 |
+
+### Session 例外
+
+普通业务事件必须携带 `sessionId`。以下事件可以没有 `sessionId`：
+
+- SDK 初始化前捕获到的错误；
+- SDK 自监控事件；
+- session 创建失败时用于诊断的内部事件。
+
+缺少 `sessionId` 时必须满足：
+
+- `signalType = sdk`，或 `attributes.event.scope` 为 `pre_session`、`sdk_internal`；
+- `context.missing = true`；
+- `context.missingReason` 说明缺失原因；
+- 不参与普通用户行为、页面性能和错误率聚合，除非服务端显式支持。
 
 ## Resource
 
@@ -269,12 +309,62 @@ trace page.load /feed
     "isWeakNetwork": false
   },
   "release": {
-    "version": "1.2.3",
-    "buildNumber": "100",
+    "releaseId": "com.example.demo@1.2.3+100",
     "featureFlags": ["new_product_detail"]
   }
 }
 ```
+
+`resource.app` 是 app 版本、构建、环境、渠道和 flavor 的规范来源。`context.release` 只描述事件发生时的发布态扩展信息，例如 release id、feature flag、experiment 和 cohort，不重复存放 app version 或 build number。
+
+## 字段注册表
+
+常用聚合字段必须使用以下规范路径：
+
+| 语义 | 规范路径 | 说明 |
+|---|---|---|
+| SDK 名称 | `resource.sdk.name` | 固定为 SDK 名称 |
+| SDK 版本 | `resource.sdk.version` | SDK package 版本 |
+| App Key | `resource.app.appKey` | 应用标识 |
+| App 版本 | `resource.app.appVersion` | App 语义版本 |
+| Build Number | `resource.app.buildNumber` | App 构建号 |
+| Environment | `resource.app.environment` | `dev`、`test`、`staging`、`production` |
+| Channel | `resource.app.channel` | 分发渠道 |
+| Flavor | `resource.app.flavor` | Flutter flavor 或企业自定义 flavor |
+| Release ID | `context.release.releaseId` | 可组合 app/package/version/build |
+| Feature Flags | `context.release.featureFlags` | 事件发生时命中的 feature flags |
+| User ID | `context.user.userId` | 必须支持匿名化或关闭 |
+| User Cohort | `context.user.cohort` | 用户分群 |
+| Route Name | `context.route.name` | 当前 route 标识 |
+| Route Stack | `context.route.stack` | 当前 route stack |
+| Route Source | `context.route.source` | 页面来源 |
+| Module | `context.module.name` | 业务模块 |
+| Scene | `context.module.scene` | 业务场景 |
+| Network Type | `context.network.type` | wifi/cellular/none/unknown |
+| Weak Network | `context.network.isWeakNetwork` | 弱网判断 |
+| Device Tier | `resource.device.deviceTier` | high/medium/low/unknown |
+| Refresh Rate | `resource.device.refreshRate` | 设备刷新率 |
+
+新增字段前必须先判断是否已有规范路径。确需新增时，应说明字段是否可聚合、是否敏感、是否影响采样和是否需要服务端索引。
+
+## 隐私分级
+
+字段按隐私风险分为四类：
+
+| 分级 | 说明 | 默认处理 |
+|---|---|---|
+| `safe` | SDK、版本、设备等级、稳定枚举等低风险字段 | 可进入事件和索引 |
+| `queryable` | route、module、normalized URL、状态码、耗时等排查字段 | 可进入事件和索引，但应保持稳定和有限基数 |
+| `sensitive` | userId、业务 ID、搜索词、地理位置、原始 URL 等可能识别用户或业务的数据 | 默认脱敏、哈希或截断，需显式配置 |
+| `forbidden` | token、cookie、密码、身份证、手机号、完整地址、request/response body 等高风险数据 | 默认禁止进入事件 |
+
+隐私策略要求：
+
+- `attributes` 应优先使用低基数、可聚合字段。
+- `payload` 可以保存排查详情，但仍必须经过脱敏。
+- URL 默认只上报 normalized path，不上报 query。
+- request body 和 response body 默认禁止上报。
+- DevTools 展示和 session 导出必须复用 pipeline 的 privacy filtering 结果。
 
 ## 命名规则
 
@@ -298,6 +388,40 @@ trace page.load /feed
 不要把用户 ID、订单 ID、商品 ID 等动态值放入 `name`。动态值应进入 `attributes` 或 `payload`。
 
 ## 信号映射
+
+### Trace
+
+Trace 事件使用 `signalType = trace`。
+
+必须包含：
+
+- trace id
+- trace name
+- start time
+- end time 或结束状态
+- duration
+- status
+- root span id
+- current route/module/context
+
+Trace 名称必须稳定，例如 `app.cold_start`、`page.load`、`action.submit_order`、`custom.trace`。动态页面 ID、订单 ID、商品 ID 等不得进入 trace name。
+
+### Span
+
+Span 事件使用 `signalType = span`。
+
+必须包含：
+
+- trace id
+- span id
+- parent span id，root span 可为空
+- span name
+- start time
+- end time 或 duration
+- status
+- current context snapshot
+
+HTTP 请求、route push、first frame、interactive、image decode、list build、custom step 都应优先建模为 span。
 
 ### 错误
 
@@ -342,7 +466,7 @@ trace page.load /feed
 
 ### 网络
 
-网络请求使用 `http.client` span。
+网络请求使用 `signalType = span`、`name = http.client`。
 
 必须包含：
 

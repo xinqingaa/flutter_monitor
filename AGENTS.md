@@ -83,8 +83,10 @@ DevTools 侧目标：
 - schema version；
 - event id；
 - session/trace/span 关系；
+- trace/span 作为一等事件的 signal type 语义；
 - resource/context/attributes/payload 分层；
 - 时间戳、duration、level、signal type、name 等公共字段；
+- 字段规范路径和命名注册，避免同一语义多处表达；
 - 隐私过滤和敏感字段策略；
 - 采样、限流、重试、离线缓存和事件优先级；
 - 服务端鉴权、错误码和兼容策略。

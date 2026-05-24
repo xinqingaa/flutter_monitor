@@ -35,6 +35,23 @@
 
 例如，一条卡顿事件可以说明发生了几帧慢帧，但还不能稳定回答：它属于哪个用户 session，当时在哪个页面或业务模块，卡顿前用户做了什么，哪些 API 请求与它重叠，当时的 release/channel/device/network 上下文是什么，后面是否跟着相关错误。
 
+当前能力的迁移归位可以按以下方向理解：
+
+| 现有能力 | 未来角色 |
+|---|---|
+| `ErrorMonitor` | 错误信号源，挂载当前 session、route/module、active trace/span 和 breadcrumbs |
+| `PerformanceMonitor` 启动部分 | 启动 trace/span 信号源 |
+| `PerformanceMonitor` route observer | route、page trace、PV 和页面停留信号源 |
+| `MonitorDioInterceptor` | `http.client` span 信号源 |
+| `MonitoredHttpClient` | `http.client` span 信号源 |
+| `BehaviorMonitor` | breadcrumb、action timeline 和关键业务动作信号源 |
+| `MonitoredGestureDetector` | ui tap breadcrumb 或业务 action trace 入口 |
+| `JankMonitor` | frame/jank 信号源，关联页面、操作、设备等级和 breadcrumbs |
+| `Reporter` | 从事件分发器升级为 envelope 构建和 pipeline 入口 |
+| `MonitorOutput` | 统一事件模型的输出插件体系 |
+
+这张表只说明迁移归位，不要求一次性重命名或重写所有模块。
+
 ## 为什么迁移
 
 真实企业排查很少从一个干净的指标名开始。它通常来自不完整的人类反馈：
@@ -114,9 +131,9 @@ SDK 的价值不只是上报某个指标变差。它的价值是帮助开发者�
 - 卡顿率、错误率、影响用户数是否同步上升；
 - 优化后 P95、卡顿率和错误率是否恢复。
 
-## 目标诊断模型
+## 目标诊断体验
 
-未来模型应让一次用户会话可以被查看为时间线：
+未来 SDK 应让一次用户会话可以被查看为时间线：
 
 ```text
 session_abc
@@ -132,7 +149,9 @@ session_abc
   route.leave /product/detail
 ```
 
-每个事件后续都应能挂载到共享上下文：
+这段示例只说明迁移后的诊断体验。规范字段、事件 envelope 和信号映射以 `docs/event_model.md` 为准。
+
+每个事件后续都应能关联到共享上下文：
 
 - `sessionId`
 - `traceId`
@@ -144,7 +163,7 @@ session_abc
 - device、OS、refresh rate、device tier、memory/network 属性
 - 最近 breadcrumbs
 
-这个模型可以把页面性能、API 耗时、用户行为、卡顿和错误作为一个故事来排查。
+这样才能把页面性能、API 耗时、用户行为、卡顿和错误作为一个故事来排查。
 
 ## DevTools 与服务端分工
 
@@ -169,36 +188,15 @@ DevTools 应聚焦开发和 QA 复现：
 
 DevTools 回答“这次复现发生了什么”。服务端回答“这件事发生了多少次、影响了谁、是否正在变差”。
 
-## 协议方向
+## 协议迁移方向
 
-当前松散事件结构适合早期开发，但未来面向服务端的事件应使用带 schema version 的稳定 envelope。
+当前松散事件结构适合早期开发，但不适合作为长期协议。后续面向服务端、DevTools 和本地导出的事件应统一进入带 schema version 的 event envelope。
 
-未来 event envelope 应包含类似概念：
+协议和字段定义不在本文档展开，以 `docs/event_model.md` 和 `docs/server_protocol.md` 为准。本文只记录迁移方向：先形成稳定 SDK 协议，再让它未来可以干净地映射到服务端存储、分析、DevTools 或 OpenTelemetry-compatible output。
 
-```json
-{
-  "schemaVersion": "1.0",
-  "eventId": "evt_001",
-  "timestamp": "2026-05-23T12:00:00.000Z",
-  "sessionId": "ses_abc",
-  "traceId": "trace_page_product_detail",
-  "spanId": "span_http_product",
-  "parentSpanId": "span_page_product_detail",
-  "signalType": "trace",
-  "name": "http.client",
-  "durationMs": 523,
-  "resource": {},
-  "context": {},
-  "attributes": {},
-  "payload": {}
-}
-```
+## 企业化迁移考虑
 
-项目可以借鉴 OpenTelemetry 对 traces、metrics、logs 的分层方式，但不需要一开始就完整实现 OTLP。近期目标是先形成稳定的 SDK 协议，让它未来可以干净地映射到服务端存储、分析、DevTools 或 OpenTelemetry-compatible output。
-
-## 企业化要求
-
-为了真正适用于企业 Flutter 应用，SDK 后续应考虑：
+为了真正适用于企业 Flutter 应用，迁移过程中不能只考虑采集能力，还应尽早考虑：
 
 - 隐私过滤和敏感字段脱敏；
 - 可配置采样和限流；
@@ -230,7 +228,7 @@ DevTools 回答“这次复现发生了什么”。服务端回答“这件事�
 2. `docs/event_model.md` - 定义 session、trace、span、breadcrumb、metric、log、error、resource、context、attributes 和 payload。
 3. `docs/server_protocol.md` - 定义服务端接入 API、headers、schema version、鉴权、错误、重试预期和兼容策略。
 4. `docs/devtools_integration.md` - 定义 Flutter Timeline 使用方式、DevTools extension 设计、本地 session 导出/导入、本地与服务端边界。
-5. `docs/architecture.md` - 定义未来 SDK 模块架构，以及从当前实现迁移过去的路径。
+5. `docs/architecture.md` - 定义未来 SDK 模块架构和模块职责。
 6. `docs/implementation_plan.md` - 定义分阶段实施计划。
 
 这些文档稳定后，再将 README 重写为清晰的产品入口。

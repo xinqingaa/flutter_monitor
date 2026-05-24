@@ -44,6 +44,21 @@
 - 引入 context manager。
 - 将 Reporter 改造成 event pipeline。
 
+推荐顺序：
+
+1. 引入 event envelope 类型。
+2. 引入 session/context 基础设施。
+3. 让 Reporter 先能输出 envelope。
+4. 将 error、page、network、jank 逐步迁入 envelope。
+5. 再拆分 Collector 命名和目录结构。
+
+不建议：
+
+- 在没有 event model 的情况下重写所有模块；
+- 在没有 context manager 的情况下扩展更多指标；
+- 为 DevTools 单独设计一套事件结构；
+- 为服务端单独设计一套与本地不同的结构。
+
 验收：
 
 - 任意事件都能带 `sessionId`。
