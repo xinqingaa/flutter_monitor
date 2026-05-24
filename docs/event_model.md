@@ -2,44 +2,27 @@
 
 ## 目标
 
-本文档定义 Flutter Monitor SDK 的统一事件模型。所有错误、性能、网络、页面、行为、卡顿、内存、生命周期和自定义业务信号，都应进入同一套 session/trace/span/breadcrumb/context 模型。
+本文档定义 Flutter Monitor workspace 内所有包共享的唯一事件模型。未来该模型由 `flutter_monitor_core` 承载，`flutter_monitor_sdk`、`flutter_monitor_native`、DevTools、CLI、MCP 和服务端协议都必须复用它。
 
-事件模型的目标是让数据具备三个能力：
+事件模型的目标是让所有信号具备三个能力：
 
 - 可回放：能还原一次用户或 QA 会话中发生的关键过程。
-- 可聚合：能按页面、模块、版本、设备、网络、用户分群等维度统计。
-- 可定位：能把错误、慢请求、页面慢、卡顿和用户操作关联到同一条链路。
+- 可聚合：能按页面、模块、版本、设备、网络、用户分群、feature flag 等维度统计。
+- 可定位：能把错误、慢请求、页面慢、卡顿、内存、native 信号和用户操作关联到同一条链路。
 
 ## 设计原则
 
-### 信号源保留
-
-错误、启动耗时、页面加载、API 耗时、卡顿、用户点击、PV、页面停留等信号都应被视为基础输入。事件模型的任务不是减少信号，而是把信号放入同一条可诊断链路。
-
 ### 关联优先
 
-每个事件都应尽量关联：
+业务事件应尽量关联：
 
 - 所属 session；
 - 当前 route/module/scene；
 - 当前 trace 或 active span；
 - 最近 breadcrumbs；
-- app/device/network/release/user 上下文。
+- app/device/network/release/user/native 上下文。
 
-无法关联上下文的事件仍可上报，但应被标记为 `context.missing = true` 或携带缺失原因，便于后续治理。
-
-### 稳定命名
-
-事件名用于聚合，必须稳定。动态业务值不得进入 `name`，应进入 `attributes` 或 `payload`。
-
-### 分层存储
-
-- `resource` 放稳定资源。
-- `context` 放事件发生时的上下文。
-- `attributes` 放可检索、可聚合字段。
-- `payload` 放事件特有详情。
-
-同一个语义字段只能有一个规范路径。不要在 `resource`、`context`、`attributes` 和 `payload` 中重复表达同一含义。
+无法关联上下文的事件仍可进入模型，但必须显式标记 `context.missing = true` 和 `context.missingReason`。普通业务事件不应长期以缺失上下文的方式上报。
 
 ### Trace 与 Span 一等化
 
@@ -48,21 +31,100 @@ Trace 和 span 都是一等事件：
 - `signalType = trace` 表示一次可排查流程的根事件或流程摘要。
 - `signalType = span` 表示 trace 内部的一个阶段。
 
-不要用 `signalType = trace` 同时表达根 trace 和内部 span。HTTP 请求、图片解码、列表构建、首帧、页面可交互等阶段应使用 `signalType = span`。
+不要用 `signalType = trace` 同时表达 root trace 和内部 span。HTTP 请求、route push、首帧、可交互、图片解码、列表构建、native step 等阶段应使用 `signalType = span`。
+
+### 字段分层
+
+- `resource` 放稳定资源，例如 SDK、App、设备、系统和运行环境。
+- `context` 放事件发生时的动态上下文，例如 user、route、module、network、release、native runtime。
+- `attributes` 放可检索、可聚合、低基数的结构化字段。
+- `payload` 放事件特有详情，可为空，可裁剪，不应作为主要索引来源。
+
+同一个语义字段只能有一个规范路径。不要在 `resource`、`context`、`attributes` 和 `payload` 中重复表达同一含义。
 
 ### 隐私默认安全
 
-URL query、request body、response body、token、手机号、身份证、地址等数据默认不进入事件。确需上报时必须经过显式配置和脱敏策略。
+URL query、request body、response body、token、cookie、手机号、身份证、地址、精确位置等数据默认不进入事件。确需上报时必须经过显式配置和脱敏策略。
 
 隐私过滤必须早于任何 output，包括 log、HTTP、DevTools 和文件导出。
 
-## 核心概念
+## 字段状态
+
+字段状态用于说明事件中字段是否必须存在：
+
+| 状态 | 含义 |
+|---|---|
+| required | 所有事件必须提供，且不可为空 |
+| conditional | 满足条件时必须提供 |
+| optional | 可省略 |
+| nullable | 字段可存在但值为 `null` |
+| default | SDK 可在缺失时使用默认值 |
+
+## Event Envelope
+
+所有事件都应使用统一 envelope：
+
+```json
+{
+  "schemaVersion": "1.0",
+  "eventId": "evt_001",
+  "timestamp": "2026-05-24T12:00:00.000+08:00",
+  "startTime": "2026-05-24T12:00:00.000+08:00",
+  "endTime": "2026-05-24T12:00:00.523+08:00",
+  "durationMs": 523,
+  "signalType": "span",
+  "name": "http.client",
+  "level": "info",
+  "status": "ok",
+  "sessionId": "ses_001",
+  "traceId": "trace_page_product_detail",
+  "spanId": "span_http_product",
+  "parentSpanId": "span_page_product_detail",
+  "resource": {},
+  "context": {},
+  "attributes": {},
+  "payload": {}
+}
+```
+
+### 公共字段
+
+| 字段 | 类型 | 状态 | 可空 | 隐私等级 | 建议索引 | 说明 |
+|---|---|---|---:|---|---:|---|
+| `schemaVersion` | string | required | 否 | safe | 是 | 事件 schema 版本 |
+| `eventId` | string | required | 否 | safe | 是 | 事件唯一 ID，也是幂等键 |
+| `timestamp` | string | required | 否 | safe | 是 | 事件捕获时间，ISO-8601 wall clock |
+| `startTime` | string | conditional | 是 | safe | 否 | trace/span/耗时类事件开始时间 |
+| `endTime` | string | conditional | 是 | safe | 否 | trace/span/耗时类事件结束时间 |
+| `durationMs` | number | conditional | 是 | safe | 是 | 耗时，优先来自 monotonic clock |
+| `signalType` | string | required | 否 | safe | 是 | `trace`、`span`、`metric`、`error`、`breadcrumb`、`log`、`sdk` |
+| `name` | string | required | 否 | queryable | 是 | 稳定事件名，不包含动态业务值 |
+| `level` | string | optional | 是 | safe | 是 | `debug`、`info`、`warning`、`error`、`fatal` |
+| `status` | string | optional | 是 | safe | 是 | `ok`、`error`、`cancelled`、`timeout`、`unknown` |
+| `sessionId` | string | conditional | 是 | queryable | 是 | 普通业务事件必填；pre-session/sdk 事件可缺省 |
+| `traceId` | string | conditional | 是 | queryable | 是 | trace/span/page/http/custom flow 必填 |
+| `spanId` | string | conditional | 是 | queryable | 是 | span 必填 |
+| `parentSpanId` | string | optional | 是 | queryable | 是 | root span 可为空 |
+| `resource` | object | required | 否 | mixed | 否 | SDK、App、设备和运行环境 |
+| `context` | object | required | 否 | mixed | 否 | 用户、页面、网络、release、native runtime 等上下文 |
+| `attributes` | object | optional | 否 | mixed | 是 | 可检索、可聚合字段，默认 `{}` |
+| `payload` | object | optional | 否 | mixed | 否 | 事件详情，默认 `{}`，可裁剪 |
+
+### 时间模型
+
+- `timestamp` 使用 wall clock，用于 session timeline 排序和用户可读展示。
+- `startTime` / `endTime` 也使用 wall clock，便于 DevTools 和导出文件显示。
+- `durationMs` 应优先来自 monotonic clock 或平台高精度计时，避免系统时间变化影响耗时。
+- 如果只能获得 duration 而不能获得准确 start/end，可只提供 `timestamp` 和 `durationMs`。
+- 如果事件是瞬时 breadcrumb，可不提供 `startTime`、`endTime` 和 `durationMs`。
+
+## Core Concepts
 
 ### Session
 
 `session` 表示一次用户使用过程或一段可分析的 App 活动窗口。
 
-Session 应至少具备：
+Session 至少应包含：
 
 - `sessionId`
 - `startedAt`
@@ -70,42 +132,24 @@ Session 应至少具备：
 - `durationMs`
 - `isForeground`
 - `appLifecycleState`
-- `user`
 - `resource`
+- `context.user`
 
-Session 负责承载用户路径、页面切换、关键操作、请求、卡顿和错误。
-
-Session 应作为绝大多数事件的最小关联单位。没有 `sessionId` 的事件只能作为 SDK 自监控或初始化前临时事件处理。
+Session 是绝大多数业务事件的最小归属单位。没有 `sessionId` 的事件只能作为 SDK 自监控、初始化前事件或异常生命周期 native 事件处理。
 
 ### Trace
 
 `trace` 表示一次可追踪流程，例如：
 
-- 冷启动
-- 热启动
-- 页面打开
-- 用户点击触发的业务流程
-- 一次接口调用链
-- 一段自定义业务流程
+- 冷启动；
+- 热启动；
+- 页面打开；
+- 用户点击触发的业务流程；
+- 一次接口调用链；
+- 一段自定义业务流程；
+- native crash / ANR / OOM 诊断流程。
 
-Trace 应至少具备：
-
-- `traceId`
-- `name`
-- `startTime`
-- `endTime`
-- `durationMs`
-- `rootSpanId`
-- `status`
-- `context`
-
-Trace 应用于表达“一个可排查流程”。页面打开、用户点击后的业务流程、冷启动、自定义业务流程都应优先建模为 trace。
-
-Trace 事件通常只表示流程整体：
-
-- 开始事件可记录 `startTime` 和 root span。
-- 结束事件或摘要事件可记录 `durationMs`、`status` 和聚合结果。
-- Trace 内部阶段不得挤进 trace 事件本身，应使用 span 事件表达。
+Trace 事件通常表示流程整体，内部阶段应使用 span 表达。
 
 ### Span
 
@@ -113,24 +157,17 @@ Trace 事件通常只表示流程整体：
 
 典型 span：
 
-- `app.cold_start`
+- `app.init`
+- `app.first_frame`
+- `app.interactive`
 - `route.push`
-- `page.first_frame`
-- `page.interactive`
 - `http.client`
 - `image.decode`
 - `list.build`
+- `native.memory.sample`
 - `custom.step`
 
-Span 应支持父子关系：
-
-- `spanId`
-- `parentSpanId`
-- `traceId`
-
-Span 应用于表达 trace 内部阶段。一个页面 trace 可以包含 route、first frame、API、渲染、图片、业务计算等多个 span。
-
-Span 事件必须能通过 `traceId` 关联到所属 trace。除 root span 外，span 应尽量提供 `parentSpanId`。
+Span 必须能通过 `traceId` 关联所属 trace。除 root span 外，span 应尽量提供 `parentSpanId`。
 
 ### Breadcrumb
 
@@ -145,112 +182,14 @@ Span 事件必须能通过 `traceId` 关联到所属 trace。除 root span 外�
 - http request start/end
 - lifecycle change
 - jank sequence
+- memory pressure
+- native warning
 - error captured
 - custom business action
 
-错误、卡顿、慢页面和关键性能事件应能关联最近 breadcrumbs。
+Breadcrumb 可以独立作为 `signalType = breadcrumb` 事件进入 session timeline，也可以作为错误、卡顿、慢 trace、native crash/OOM/ANR 的相关上下文快照进入 `payload.breadcrumbs`。
 
-Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。错误、卡顿和慢 trace 上报时可携带相关窗口内的 breadcrumbs。
-
-Breadcrumb 可以独立作为 `signalType = breadcrumb` 的事件进入 session timeline，也可以作为错误、卡顿或慢 trace 的相关上下文快照进入 `payload.breadcrumbs`。两种形态应使用同一字段结构，避免 DevTools 与服务端看到不同语义。
-
-## Event Envelope
-
-所有事件都应使用统一 envelope。
-
-```json
-{
-  "schemaVersion": "1.0",
-  "eventId": "evt_001",
-  "timestamp": "2026-05-24T12:00:00.000+08:00",
-  "signalType": "span",
-  "name": "http.client",
-  "level": "info",
-  "status": "ok",
-  "durationMs": 523,
-  "sessionId": "ses_001",
-  "traceId": "trace_001",
-  "spanId": "span_002",
-  "parentSpanId": "span_001",
-  "resource": {},
-  "context": {},
-  "attributes": {},
-  "payload": {}
-}
-```
-
-## 链路示例
-
-### 页面加载链路
-
-```text
-trace page.load /product/detail
-  span route.push
-  span page.first_frame
-  span http.client GET /product/{id}
-  span image.decode product_cover
-  span page.interactive
-  breadcrumb ui.tap home_product_card
-```
-
-### 用户操作链路
-
-```text
-trace action.submit_order
-  breadcrumb ui.tap submit_order_button
-  span validate.form
-  span http.client POST /orders
-  span page.update
-  error error.dart
-```
-
-### 卡顿链路
-
-```text
-trace page.load /feed
-  breadcrumb route.enter /feed
-  breadcrumb ui.scroll feed_list
-  span http.client GET /feed
-  metric ui.jank.sequence
-```
-
-这些链路示例表达的是事件之间的关系，不要求所有事件都必须同步上报为嵌套 JSON。服务端或 DevTools 可以通过 `sessionId`、`traceId`、`spanId`、`parentSpanId` 重建关系。
-
-## 公共字段
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `schemaVersion` | string | 是 | 事件 schema 版本 |
-| `eventId` | string | 是 | 事件唯一 ID |
-| `timestamp` | string | 是 | ISO-8601 时间 |
-| `signalType` | string | 是 | `trace`、`span`、`metric`、`error`、`breadcrumb`、`log`、`sdk` |
-| `name` | string | 是 | 稳定事件名 |
-| `level` | string | 否 | `debug`、`info`、`warning`、`error`、`fatal` |
-| `status` | string | 否 | `ok`、`error`、`cancelled`、`timeout`、`unknown` |
-| `durationMs` | number | 否 | 耗时类事件的持续时间 |
-| `sessionId` | string | 条件必填 | 所属 session；业务事件必填，SDK 自监控和初始化前事件可缺省 |
-| `traceId` | string | 否 | 所属 trace |
-| `spanId` | string | 否 | 当前 span |
-| `parentSpanId` | string | 否 | 父 span |
-| `resource` | object | 是 | SDK、App、设备和运行环境 |
-| `context` | object | 是 | 用户、页面、模块、网络、版本等上下文 |
-| `attributes` | object | 否 | 可检索、可聚合的结构化字段 |
-| `payload` | object | 否 | 事件特有详细数据 |
-
-### Session 例外
-
-普通业务事件必须携带 `sessionId`。以下事件可以没有 `sessionId`：
-
-- SDK 初始化前捕获到的错误；
-- SDK 自监控事件；
-- session 创建失败时用于诊断的内部事件。
-
-缺少 `sessionId` 时必须满足：
-
-- `signalType = sdk`，或 `attributes.event.scope` 为 `pre_session`、`sdk_internal`；
-- `context.missing = true`；
-- `context.missingReason` 说明缺失原因；
-- 不参与普通用户行为、页面性能和错误率聚合，除非服务端显式支持。
+Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 ## Resource
 
@@ -260,7 +199,9 @@ trace page.load /feed
 {
   "sdk": {
     "name": "flutter_monitor_sdk",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "coreVersion": "1.0.0",
+    "nativeVersion": "1.0.0"
   },
   "app": {
     "appKey": "app_xxx",
@@ -275,13 +216,21 @@ trace page.load /feed
   "device": {
     "platform": "android",
     "model": "Pixel 7",
+    "manufacturer": "Google",
     "osVersion": "14",
     "isPhysicalDevice": true,
     "refreshRate": 120,
     "deviceTier": "high"
+  },
+  "runtime": {
+    "flutterVersion": "3.24.0",
+    "dartVersion": "3.6.0",
+    "isDebug": false
   }
 }
 ```
+
+`resource.app` 是 app 版本、构建、环境、渠道和 flavor 的规范来源。不要在 `context.release` 中重复表达 app version 或 build number。
 
 ## Context
 
@@ -310,12 +259,23 @@ trace page.load /feed
   },
   "release": {
     "releaseId": "com.example.demo@1.2.3+100",
-    "featureFlags": ["new_product_detail"]
+    "featureFlags": ["new_product_detail"],
+    "experiments": {
+      "product_detail_v2": "variant_a"
+    }
+  },
+  "lifecycle": {
+    "state": "resumed",
+    "isForeground": true
+  },
+  "native": {
+    "available": true,
+    "platform": "android",
+    "processId": 12345,
+    "threadName": "main"
   }
 }
 ```
-
-`resource.app` 是 app 版本、构建、环境、渠道和 flavor 的规范来源。`context.release` 只描述事件发生时的发布态扩展信息，例如 release id、feature flag、experiment 和 cohort，不重复存放 app version 或 build number。
 
 ## 字段注册表
 
@@ -324,7 +284,9 @@ trace page.load /feed
 | 语义 | 规范路径 | 说明 |
 |---|---|---|
 | SDK 名称 | `resource.sdk.name` | 固定为 SDK 名称 |
-| SDK 版本 | `resource.sdk.version` | SDK package 版本 |
+| SDK 版本 | `resource.sdk.version` | Flutter SDK package 版本 |
+| Core 版本 | `resource.sdk.coreVersion` | `flutter_monitor_core` 版本 |
+| Native 版本 | `resource.sdk.nativeVersion` | native plugin 版本，可为空 |
 | App Key | `resource.app.appKey` | 应用标识 |
 | App 版本 | `resource.app.appVersion` | App 语义版本 |
 | Build Number | `resource.app.buildNumber` | App 构建号 |
@@ -344,6 +306,7 @@ trace page.load /feed
 | Weak Network | `context.network.isWeakNetwork` | 弱网判断 |
 | Device Tier | `resource.device.deviceTier` | high/medium/low/unknown |
 | Refresh Rate | `resource.device.refreshRate` | 设备刷新率 |
+| Native Platform | `context.native.platform` | android/ios 等 |
 
 新增字段前必须先判断是否已有规范路径。确需新增时，应说明字段是否可聚合、是否敏感、是否影响采样和是否需要服务端索引。
 
@@ -364,7 +327,8 @@ trace page.load /feed
 - `payload` 可以保存排查详情，但仍必须经过脱敏。
 - URL 默认只上报 normalized path，不上报 query。
 - request body 和 response body 默认禁止上报。
-- DevTools 展示和 session 导出必须复用 pipeline 的 privacy filtering 结果。
+- native crash payload 不应包含未经处理的寄存器、内存片段、用户输入或文件路径中的敏感信息。
+- DevTools 展示、session 导出和 HTTP 上报必须复用同一套 privacy filtering 结果。
 
 ## 命名规则
 
@@ -372,167 +336,453 @@ trace page.load /feed
 
 - `app.cold_start`
 - `app.hot_start`
+- `app.first_frame`
+- `app.interactive`
 - `page.load`
-- `page.first_frame`
-- `page.interactive`
+- `page.stay`
 - `route.enter`
 - `route.leave`
 - `http.client`
 - `ui.tap`
 - `ui.jank.sequence`
 - `memory.sample`
+- `memory.growth`
+- `memory.pressure`
+- `native.memory.sample`
+- `native.memory.pressure`
+- `native.oom`
+- `native.anr`
+- `native.crash`
 - `error.flutter`
 - `error.dart`
 - `custom.trace`
 
-不要把用户 ID、订单 ID、商品 ID 等动态值放入 `name`。动态值应进入 `attributes` 或 `payload`。
+不要把用户 ID、订单 ID、商品 ID、URL 原始 ID 等动态值放入 `name`。动态值应进入 `attributes` 或脱敏后的 `payload`。
 
-## 信号映射
+## 信号字段规范
 
-### Trace
+### 启动
 
-Trace 事件使用 `signalType = trace`。
+冷启动和热启动必须作为核心 trace，不属于未来增强。
 
-必须包含：
+推荐事件：
 
-- trace id
-- trace name
-- start time
-- end time 或结束状态
-- duration
-- status
-- root span id
-- current route/module/context
+- `signalType = trace`、`name = app.cold_start`
+- `signalType = trace`、`name = app.hot_start`
+- `signalType = span`、`name = app.init`
+- `signalType = span`、`name = app.first_frame`
+- `signalType = span`、`name = app.interactive`
 
-Trace 名称必须稳定，例如 `app.cold_start`、`page.load`、`action.submit_order`、`custom.trace`。动态页面 ID、订单 ID、商品 ID 等不得进入 trace name。
+推荐 attributes：
 
-### Span
-
-Span 事件使用 `signalType = span`。
-
-必须包含：
-
-- trace id
-- span id
-- parent span id，root span 可为空
-- span name
-- start time
-- end time 或 duration
-- status
-- current context snapshot
-
-HTTP 请求、route push、first frame、interactive、image decode、list build、custom step 都应优先建模为 span。
-
-### 错误
-
-错误事件使用 `signalType = error`。
-
-必须包含：
-
-- exception type
-- message
-- stack
-- error mechanism
-- fatal
-- current route/module
-- recent breadcrumbs
-
-建议包含：
-
-- isolate 信息；
-- thread/platform 信息；
-- handled/unhandled；
-- framework/library/context；
-- app lifecycle state；
-- active trace/span。
+| 字段 | 说明 |
+|---|---|
+| `app.start.type` | `cold`、`hot`、`warm` |
+| `app.start.duration_ms` | 启动总耗时 |
+| `app.first_frame_ms` | 首帧耗时 |
+| `app.interactive_ms` | 可交互耗时 |
+| `app.previous_lifecycle_state` | 热启动前状态 |
+| `sdk.init.duration_ms` | SDK 初始化耗时 |
 
 ### 页面
 
-页面相关信号应挂在页面 trace 下：
+页面相关信号应挂在页面 trace 下。
 
-- route enter 是 breadcrumb 或 span 起点
-- first frame 是 span
-- interactive 是 span 或 metric
-- page stay 是 metric
-- route leave 是 breadcrumb 或 span 终点
+推荐事件：
 
-页面 trace 应尽量区分：
+- `trace page.load`
+- `span route.push`
+- `span page.first_frame`
+- `span page.interactive`
+- `metric page.stay`
+- `breadcrumb route.enter`
+- `breadcrumb route.leave`
 
-- route push 到 first frame；
-- first frame 到 interactive；
-- 页面依赖 API；
-- 页面渲染/构建耗时；
-- 页面停留时间。
+推荐 attributes：
+
+| 字段 | 说明 |
+|---|---|
+| `page.route` | 当前 route |
+| `page.route.source` | 来源 route |
+| `page.module` | 业务模块 |
+| `page.scene` | 业务场景 |
+| `page.stay_ms` | 页面停留时长 |
+| `page.first_frame_ms` | 页面首帧 |
+| `page.interactive_ms` | 页面可交互 |
 
 ### 网络
 
 网络请求使用 `signalType = span`、`name = http.client`。
 
-必须包含：
+推荐 attributes：
 
-- method
-- normalized url
-- status code
-- duration
-- success
-- error type
-- request/response size
-- retry count
-- cache status
+| 字段 | 说明 |
+|---|---|
+| `http.method` | GET/POST 等 |
+| `http.url.normalized` | 归一化 URL，例如 `/api/product/{id}` |
+| `http.status_code` | HTTP 状态码 |
+| `http.success` | 是否成功 |
+| `http.error_type` | 错误类型 |
+| `http.retry_count` | 重试次数 |
+| `http.cache_status` | hit/miss/bypass/unknown |
+| `request.size_bytes` | 请求大小 |
+| `response.size_bytes` | 响应大小 |
 
-完整 URL、query、body 默认不应直接上报，必须经过脱敏策略。
-
-URL 应提供 normalized form，例如 `/api/product/{id}`，以便聚合。原始 URL 如需保留，应在脱敏后进入 payload，并受配置开关控制。
+完整 URL、query、body 默认不应直接上报。
 
 ### 行为
 
-行为信号默认作为 breadcrumb。
+行为信号默认作为 breadcrumb。关键业务操作可以创建 trace。
 
-关键业务操作可以创建 trace，例如：
+推荐事件：
 
-- 提交订单
-- 支付
-- 登录
-- 搜索
-- 切换核心 tab
+- `breadcrumb ui.tap`
+- `breadcrumb ui.scroll`
+- `breadcrumb business.action`
+- `trace action.submit_order`
+- `trace action.login`
+
+推荐 attributes：
+
+| 字段 | 说明 |
+|---|---|
+| `ui.target` | 控件标识 |
+| `ui.action` | tap/scroll/input 等 |
+| `business.action` | 业务动作 |
+| `business.result` | success/failure/cancelled |
 
 普通点击不应制造过多 trace。只有能代表业务流程起点的行为才应创建 trace。
 
 ### 卡顿
 
-卡顿事件使用 `ui.jank.sequence`。
+卡顿事件使用 `signalType = metric`、`name = ui.jank.sequence`。
 
-必须包含：
+推荐 attributes：
 
-- page/module
-- jank count
-- max frame duration
-- average frame duration
-- frame budget
-- fps
-- stability
-- device tier
-- recent frame percentiles
+| 字段 | 说明 |
+|---|---|
+| `jank.count` | 连续慢帧数量 |
+| `frame.max_ms` | 最大帧耗时 |
+| `frame.avg_ms` | 平均帧耗时 |
+| `frame.budget_ms` | 帧预算 |
+| `frame.fps` | 最近窗口 FPS |
+| `frame.stability` | 稳定性 |
+| `frame.p50_ms` | 帧耗时 P50 |
+| `frame.p90_ms` | 帧耗时 P90 |
+| `frame.p99_ms` | 帧耗时 P99 |
+| `device.tier` | 设备等级 |
 
 卡顿应关联当前 session、页面 trace 和最近 breadcrumbs。
 
-卡顿不应只作为孤立 metric。至少应能知道发生在哪个页面/模块，前后有哪些用户操作和网络请求。
-
 ### 内存
 
-内存信号使用 `memory.sample` 或 `memory.growth`。
+内存是核心信号，不是附属指标。
 
-必须包含：
+推荐事件：
 
-- used memory
-- growth duration
-- route/module
-- lifecycle state
-- sample source
+- `metric memory.sample`
+- `metric memory.growth`
+- `metric memory.pressure`
+- `metric memory.leak.suspect`
 
-内存泄漏判断应谨慎表达为线索，不应在没有证据时直接宣称确定泄漏。
+推荐 attributes：
 
-内存事件应优先服务于趋势和线索定位，例如页面退出后内存持续增长、连续 session 中内存水位升高等。
+| 字段 | 说明 |
+|---|---|
+| `memory.rss_mb` | 进程常驻内存 |
+| `memory.heap_used_mb` | Dart/Flutter heap 使用 |
+| `memory.heap_capacity_mb` | heap 容量 |
+| `memory.external_mb` | external memory |
+| `memory.native_used_mb` | native memory，可由 native plugin 提供 |
+| `memory.growth_mb` | 增长量 |
+| `memory.growth_duration_ms` | 观察窗口 |
+| `memory.pressure_level` | none/moderate/critical/unknown |
+| `memory.sample_source` | dart/native/system/unknown |
+
+内存泄漏判断应谨慎表达为线索。SDK 可以上报 `memory.leak.suspect`，但不应在缺少证据时宣称确定泄漏。
+
+### 生命周期
+
+推荐事件：
+
+- `breadcrumb app.lifecycle`
+- `metric app.foreground_duration`
+- `span app.resume`
+- `span app.exit_flush`
+
+推荐 attributes：
+
+| 字段 | 说明 |
+|---|---|
+| `app.lifecycle.state` | resumed/inactive/paused/detached/hidden |
+| `app.lifecycle.previous_state` | 上一个状态 |
+| `app.foreground_duration_ms` | 前台时长 |
+| `app.background_duration_ms` | 后台时长 |
+| `app.exit_flush.success` | 退出前 flush 是否成功 |
+
+### 原生信号
+
+Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一事件模型。
+
+推荐事件：
+
+- `metric native.memory.sample`
+- `metric native.memory.pressure`
+- `error native.oom`
+- `error native.anr`
+- `error native.crash`
+- `breadcrumb native.warning`
+
+推荐 attributes：
+
+| 字段 | 说明 |
+|---|---|
+| `native.platform` | android/ios |
+| `native.signal` | memory/crash/anr/oom/lifecycle |
+| `native.thread` | 线程名 |
+| `native.thread_id` | 线程 ID |
+| `native.crash.type` | crash 类型 |
+| `native.anr.duration_ms` | ANR 持续时间 |
+| `native.oom.reason` | OOM 线索 |
+| `native.memory.used_mb` | native 侧内存 |
+| `native.memory.pressure_level` | native 内存压力 |
+
+第一阶段可以先定义 schema 和 bridge，不要求完整实现 native crash、ANR、OOM。
+
+### 错误
+
+错误事件使用 `signalType = error`。
+
+推荐 attributes：
+
+| 字段 | 说明 |
+|---|---|
+| `error.type` | exception/error 类型 |
+| `error.mechanism` | flutter/dart/native/manual |
+| `error.handled` | 是否已处理 |
+| `error.fatal` | 是否致命 |
+| `error.thread` | 线程/isolate/native thread |
+
+推荐 payload：
+
+- exception message；
+- stack；
+- library/framework context；
+- recent breadcrumbs；
+- active trace/span；
+- native crash details，脱敏后可选。
+
+### 自定义 Trace/Span
+
+业务自定义 trace/span 必须使用稳定 name，并将动态业务值放入 `attributes` 或脱敏后的 `payload`。
+
+推荐事件：
+
+- `trace custom.trace`
+- `span custom.step`
+- `breadcrumb custom.event`
+- `metric custom.metric`
+
+## 完整 Session Batch 示例
+
+以下示例展示一段 session 内多个事件如何共享上下文和链路关系。实际上报可以批量发送，也可以分批发送，服务端和 DevTools 通过 ID 重建关系。
+
+```json
+{
+  "schemaVersion": "1.0",
+  "requestId": "req_001",
+  "sentAt": "2026-05-24T12:00:10.000+08:00",
+  "events": [
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_start_trace",
+      "timestamp": "2026-05-24T12:00:00.000+08:00",
+      "startTime": "2026-05-24T12:00:00.000+08:00",
+      "endTime": "2026-05-24T12:00:01.200+08:00",
+      "durationMs": 1200,
+      "signalType": "trace",
+      "name": "app.cold_start",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_start",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {
+        "sdk": {"name": "flutter_monitor_sdk", "version": "1.0.0", "coreVersion": "1.0.0"},
+        "app": {"appKey": "app_xxx", "appVersion": "1.2.3", "buildNumber": "100", "environment": "production", "channel": "official"},
+        "device": {"platform": "android", "model": "Pixel 7", "osVersion": "14", "refreshRate": 120, "deviceTier": "high"}
+      },
+      "context": {
+        "user": {"userId": "anon_hash_001"},
+        "route": {"name": "/", "stack": ["/"]},
+        "module": {"name": "app", "scene": "startup"},
+        "network": {"type": "wifi", "isWeakNetwork": false},
+        "release": {"releaseId": "com.example.demo@1.2.3+100", "featureFlags": ["new_home"]}
+      },
+      "attributes": {
+        "app.start.type": "cold",
+        "app.start.duration_ms": 1200,
+        "app.first_frame_ms": 640,
+        "app.interactive_ms": 1180
+      },
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_start_span_init",
+      "timestamp": "2026-05-24T12:00:00.050+08:00",
+      "durationMs": 220,
+      "signalType": "span",
+      "name": "app.init",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_start",
+      "spanId": "span_app_init",
+      "parentSpanId": null,
+      "resource": {},
+      "context": {},
+      "attributes": {
+        "sdk.init.duration_ms": 45
+      },
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_route_home",
+      "timestamp": "2026-05-24T12:00:01.250+08:00",
+      "signalType": "breadcrumb",
+      "name": "route.enter",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": null,
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/home", "stack": ["/home"]}, "module": {"name": "home", "scene": "home"}},
+      "attributes": {"page.route": "/home"},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_page_trace",
+      "timestamp": "2026-05-24T12:00:02.000+08:00",
+      "durationMs": 860,
+      "signalType": "trace",
+      "name": "page.load",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/product/detail", "stack": ["/home", "/product/detail"], "source": "/home"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"page.route": "/product/detail", "page.first_frame_ms": 260, "page.interactive_ms": 860},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_http_product",
+      "timestamp": "2026-05-24T12:00:02.120+08:00",
+      "durationMs": 520,
+      "signalType": "span",
+      "name": "http.client",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": "span_http_product",
+      "parentSpanId": "span_page_load",
+      "resource": {},
+      "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"http.method": "GET", "http.url.normalized": "/api/product/{id}", "http.status_code": 200, "http.success": true, "response.size_bytes": 23000},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_tap_buy",
+      "timestamp": "2026-05-24T12:00:04.000+08:00",
+      "signalType": "breadcrumb",
+      "name": "ui.tap",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"ui.target": "buy_now_button", "ui.action": "tap"},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_jank",
+      "timestamp": "2026-05-24T12:00:04.500+08:00",
+      "durationMs": 320,
+      "signalType": "metric",
+      "name": "ui.jank.sequence",
+      "level": "warning",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"jank.count": 5, "frame.max_ms": 74, "frame.avg_ms": 48, "frame.budget_ms": 16.67, "frame.fps": 42, "device.tier": "high"},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_memory",
+      "timestamp": "2026-05-24T12:00:05.000+08:00",
+      "signalType": "metric",
+      "name": "memory.sample",
+      "level": "info",
+      "status": "ok",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"memory.rss_mb": 248.5, "memory.heap_used_mb": 82.1, "memory.external_mb": 24.0, "memory.native_used_mb": 91.2, "memory.sample_source": "native"},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_error",
+      "timestamp": "2026-05-24T12:00:06.000+08:00",
+      "signalType": "error",
+      "name": "error.dart",
+      "level": "error",
+      "status": "error",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"error.type": "NoSuchMethodError", "error.mechanism": "dart", "error.handled": false, "error.fatal": false},
+      "payload": {
+        "message": "NoSuchMethodError: method was called on null",
+        "stack": "...",
+        "breadcrumbs": [
+          {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "attributes": {"http.url.normalized": "/api/product/{id}", "http.status_code": 200}},
+          {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "ui.tap", "attributes": {"ui.target": "buy_now_button"}},
+          {"timestamp": "2026-05-24T12:00:04.500+08:00", "name": "ui.jank.sequence", "attributes": {"jank.count": 5}}
+        ]
+      }
+    }
+  ]
+}
+```
+
+示例中部分事件的 `resource` 和 `context` 使用空对象表示可通过同 batch/session 上下文补全。实际 SDK 可以选择每条事件都完整携带，也可以在导出格式中提供 session-level defaults，但服务端上报时必须保证事件可被独立解析或由协议明确声明继承规则。
 
 ## 不推荐的事件形态
 
@@ -554,23 +804,24 @@ URL 应提供 normalized form，例如 `/api/product/{id}`，以便聚合。原�
 - 无 route/module；
 - 无 resource/context；
 - 难以聚合；
-- 难以与错误、卡顿、行为关联。
-
-推荐使用统一 envelope，并把耗时类信息放入稳定 name、duration、attributes 和 context。
+- 难以与错误、卡顿、行为、native 信号关联。
 
 ## 派生指标
 
-服务端可基于事件模型派生指标：
+服务端和 DevTools 可基于统一事件模型派生指标：
 
-- 页面 P50/P90/P95/P99
-- API P50/P90/P95/P99
-- 页面卡顿率
-- 页面错误率
-- session 错误率
-- 影响用户数
-- 低端设备卡顿率
-- 弱网请求失败率
-- 版本退化率
-- feature flag 影响差异
+- 启动 P50/P90/P95/P99；
+- 页面 P50/P90/P95/P99；
+- API P50/P90/P95/P99；
+- 页面卡顿率；
+- 页面错误率；
+- session 错误率；
+- native crash / ANR / OOM 影响面；
+- 内存增长趋势；
+- 影响用户数；
+- 低端设备卡顿率；
+- 弱网请求失败率；
+- 版本退化率；
+- feature flag 影响差异。
 
-派生指标应来自统一事件模型，不应要求 SDK 上报另一套独立统计结构。
+派生指标应来自统一事件模型，不应要求 SDK、native 包或工具入口上报另一套独立统计结构。

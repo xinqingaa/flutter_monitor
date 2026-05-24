@@ -81,6 +81,8 @@
 
 这个定位保留了监控职责。真正变化的是组织模型：采集到的信号应该进入可诊断的时间线，而不是停留为互相独立的事件。
 
+随着 native memory、OOM、ANR、native crash、DevTools、CLI 和 MCP 等入口进入规划，项目选择使用 Dart pub workspaces 组织代码。这样可以让 `flutter_monitor_core` 承载统一事件模型，让 Flutter runtime SDK、native plugin 和未来工具入口共享同一协议，避免主 SDK 过重或协议分裂。
+
 ## 核心价值
 
 SDK 应帮助前端团队回答实际排查问题：
