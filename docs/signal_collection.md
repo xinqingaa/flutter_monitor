@@ -25,6 +25,44 @@ Flutter / Native source
   -> Outputs
 ```
 
+```mermaid
+flowchart TD
+  Launch["启动信号<br/>冷启动 / 热启动 / 首帧"]
+  Page["页面信号<br/>路由 / 页面加载 / 停留"]
+  Network["网络信号<br/>Dio / http"]
+  Behavior["行为信号<br/>点击 / PV / 业务动作"]
+  Jank["卡顿信号<br/>FrameTiming / FPS"]
+  Memory["内存信号<br/>sample / growth / pressure"]
+  Error["错误信号<br/>Flutter / Dart / 手动上报"]
+  Lifecycle["生命周期信号<br/>前台 / 后台 / 恢复 / 退出"]
+  Native["原生信号<br/>native memory / OOM / ANR / crash"]
+  Custom["自定义信号<br/>业务 trace / span / metric"]
+
+  Raw["统一原始信号<br/>RawSignal"]
+  Snapshot["捕获时快照<br/>ContextSnapshot + TraceSnapshot"]
+  Pipeline["统一事件管线<br/>EventPipeline"]
+  Envelope["统一事件<br/>EventEnvelope"]
+  Outputs["输出消费<br/>Log / HTTP / DevTools / File"]
+
+  Launch -->|"采集事实"| Raw
+  Page -->|"采集事实"| Raw
+  Network -->|"采集事实"| Raw
+  Behavior -->|"采集事实"| Raw
+  Jank -->|"采集事实"| Raw
+  Memory -->|"采集事实"| Raw
+  Error -->|"采集事实"| Raw
+  Lifecycle -->|"采集事实"| Raw
+  Native -->|"经 bridge 转换"| Raw
+  Custom -->|"业务 API 标记"| Raw
+
+  Raw -->|"固定发生时上下文"| Snapshot
+  Snapshot -->|"统一构建、校验、脱敏、采样"| Pipeline
+  Pipeline -->|"生成"| Envelope
+  Envelope -->|"脱敏后分发"| Outputs
+```
+
+所有信号都先归一为 raw signal，再由 pipeline 统一补上下文、链路关系和协议字段。采集器不直接上报，也不自行生成最终 envelope。
+
 采集设计必须回答：
 
 - 信号从哪里来？

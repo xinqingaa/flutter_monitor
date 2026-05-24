@@ -64,6 +64,24 @@ URL query、request body、response body、token、cookie、手机号、身份�
 
 所有事件都应使用统一 envelope：
 
+```mermaid
+flowchart TB
+  Envelope["统一事件信封<br/>EventEnvelope"]
+  Public["公共字段<br/>时间 / 类型 / 名称 / 状态 / 优先级 / 链路 ID"]
+  Resource["稳定资源<br/>resource<br/>SDK / App / 设备 / 运行时"]
+  Context["动态上下文<br/>context<br/>用户 / 页面 / 模块 / 网络 / 生命周期 / Native"]
+  Attributes["可查询字段<br/>attributes<br/>低基数 / 可聚合 / 可索引"]
+  Payload["事件详情<br/>payload<br/>堆栈 / breadcrumbs / 诊断详情"]
+
+  Envelope --> Public
+  Envelope --> Resource
+  Envelope --> Context
+  Envelope --> Attributes
+  Envelope --> Payload
+```
+
+`resource` 描述相对稳定的信息，`context` 描述事件发生时的动态环境，`attributes` 服务查询和聚合，`payload` 保存可裁剪的事件详情。
+
 ```json
 {
   "schemaVersion": "1.0",
@@ -136,6 +154,41 @@ URL query、request body、response body、token、cookie、手机号、身份�
 采集器只能提供 priority suggestion，最终 `priority` 由 pipeline 在构建 event envelope 时确定。缺省值为 `normal`。
 
 ## Core Concepts
+
+```mermaid
+flowchart TD
+  Session["用户会话<br/>Session"]
+  StartTrace["启动链路<br/>Trace: app.cold_start"]
+  PageTrace["页面链路<br/>Trace: page.load"]
+  ActionTrace["业务操作链路<br/>Trace: action.* / custom.trace"]
+  InitSpan["启动阶段<br/>Span: app.init"]
+  FirstFrame["首帧阶段<br/>Span: app.first_frame"]
+  RouteSpan["路由阶段<br/>Span: route.push"]
+  HttpSpan["网络请求<br/>Span: http.client"]
+  CustomSpan["业务步骤<br/>Span: custom.step"]
+  Breadcrumbs["上下文足迹<br/>Breadcrumbs"]
+  RouteBc["页面进入<br/>route.enter"]
+  TapBc["用户点击<br/>ui.tap"]
+  JankBc["卡顿线索<br/>ui.jank.sequence"]
+  ErrorEvent["错误事件<br/>error.dart / error.flutter"]
+
+  Session --> StartTrace
+  Session --> PageTrace
+  Session --> ActionTrace
+  StartTrace --> InitSpan
+  StartTrace --> FirstFrame
+  PageTrace --> RouteSpan
+  PageTrace --> HttpSpan
+  ActionTrace --> CustomSpan
+  Session --> Breadcrumbs
+  Breadcrumbs --> RouteBc
+  Breadcrumbs --> TapBc
+  Breadcrumbs --> JankBc
+  Breadcrumbs --> ErrorEvent
+  ErrorEvent -.->|"携带最近 breadcrumbs"| Breadcrumbs
+```
+
+链路模型的核心是：事件先归入 session，再通过 trace/span 表达流程与阶段，breadcrumbs 记录问题前后的关键足迹。
 
 ### Session
 
@@ -294,7 +347,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 }
 ```
 
-## 字段注册表
+## 核心聚合字段索引建议
 
 常用聚合字段必须使用以下规范路径：
 
@@ -326,6 +379,8 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 | Native Platform | `context.native.platform` | android/ios 等 |
 
 新增字段前必须先判断是否已有规范路径。确需新增时，应说明字段是否可聚合、是否敏感、是否影响采样和是否需要服务端索引。
+
+完整字段注册以 `flutter_monitor_core` 的 `FieldRegistry` 为准。本文后续“推荐 attributes”中出现的字段，在进入代码实现前必须补充到 `FieldRegistry`，或明确降级为 payload/非索引字段，避免文档字段和代码字段分裂。
 
 ## 隐私分级
 
@@ -809,7 +864,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 }
 ```
 
-示例中部分事件的 `resource` 和 `context` 使用空对象表示可通过同 batch/session 上下文补全。实际 SDK 可以选择每条事件都完整携带，也可以在导出格式中提供 session-level defaults，但服务端上报时必须保证事件可被独立解析或由协议明确声明继承规则。
+示例中部分事件的 `resource` 和 `context` 使用空对象仅表示文档省略。服务端上报时，每个事件应能独立解析；如果未来支持 batch-level `resourceDefaults` / `contextDefaults` 或 session-level defaults，必须先在 `docs/server_protocol.md` 中明确字段、继承规则和校验规则。
 
 ## 不推荐的事件形态
 

@@ -31,6 +31,34 @@ EventPipeline
       -> DevTools Extension / local inspector
 ```
 
+```mermaid
+flowchart TD
+  Pipeline["统一事件管线<br/>EventPipeline"]
+  Output["DevTools 输出<br/>DevToolsOutput"]
+  Timeline["Timeline 写入<br/>TimelineWriter"]
+  FlutterPerf["官方性能视图<br/>Flutter DevTools Performance"]
+  Store["本地会话时间线<br/>SessionTimelineStore"]
+  Bridge["本地诊断桥<br/>DevToolsBridge"]
+  Panel["自定义面板或本地查看器<br/>DevTools Extension / local inspector"]
+  Exporter["会话导出<br/>SessionExporter"]
+  Importer["会话导入<br/>SessionImporter"]
+  QA["QA 复现交接<br/>导出 JSON"]
+  Dev["开发排查<br/>导入查看"]
+
+  Pipeline -->|"脱敏 envelope"| Output
+  Output -->|"关键 trace/span 标记"| Timeline
+  Timeline --> FlutterPerf
+  Output -->|"保存事件顺序"| Store
+  Store --> Bridge
+  Bridge --> Panel
+  Store --> Exporter
+  Exporter --> QA
+  QA --> Importer
+  Importer --> Dev
+```
+
+DevTools 只消费 pipeline 输出的脱敏 envelope。本地 Timeline 负责快速定位性能片段，session timeline 和导出文件负责还原一次复现过程。
+
 要求：
 
 - DevTools 只读取 pipeline 输出的脱敏 event envelope。

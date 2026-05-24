@@ -49,6 +49,31 @@ flutter_monitor_core
   <- future flutter_monitor_mcp
 ```
 
+```mermaid
+flowchart TD
+  Root["仓库根目录<br/>workspace root"]
+  Core["统一模型核心<br/>flutter_monitor_core"]
+  SDK["主 SDK 运行时<br/>flutter_monitor_sdk"]
+  Native["可选原生增强<br/>flutter_monitor_native"]
+  CLI["未来命令行工具<br/>flutter_monitor_cli"]
+  DevUI["未来自定义 DevTools UI<br/>flutter_monitor_devtools"]
+  MCP["未来 MCP 入口<br/>flutter_monitor_mcp"]
+
+  Root -->|"组织 packages / docs / tools"| Core
+  Root -->|"组织 packages / docs / tools"| SDK
+  Root -->|"组织 packages / docs / tools"| Native
+
+  SDK -->|"依赖统一模型"| Core
+  Native -->|"依赖统一模型"| Core
+  CLI -->|"读取导出与 schema"| Core
+  DevUI -->|"消费导出与 bridge 数据"| Core
+  MCP -->|"消费统一 envelope"| Core
+
+  Native -.->|"通过 bridge 提供 raw signal"| SDK
+```
+
+这张图表达依赖方向：`flutter_monitor_core` 是协议核心，其他包只能复用它，不能反向污染 core，也不能各自生成第二套模型。
+
 约束：
 
 - `flutter_monitor_core` 不依赖 Flutter，只依赖 Dart。
@@ -173,7 +198,7 @@ flutter_monitor/
 - native memory pressure / low memory warning；
 - native lifecycle 补充；
 - OOM、ANR、native crash 的事件模型和可实现 bridge；
-- 将 native signal 映射为 `flutter_monitor_core` 定义的 event envelope 或 raw signal；
+- 将 native signal 映射为 SDK 可消费的 native raw signal 或可持久化 raw payload；
 - 在异常生命周期下尽力持久化关键 native 信号。
 
 不得包含：
@@ -203,10 +228,39 @@ Collector / NativeBridge
   -> Outputs
 ```
 
+```mermaid
+flowchart TD
+  Source["信号来源<br/>页面 / 网络 / 错误 / 卡顿 / 内存 / Native / 自定义"]
+  Collector["采集器与原生桥<br/>Collector / NativeBridge"]
+  Raw["原始信号<br/>RawSignal"]
+  Context["上下文快照<br/>ContextSnapshot"]
+  Trace["链路快照<br/>TraceSnapshot"]
+  Builder["统一事件构建<br/>EnvelopeBuilder"]
+  Validator["协议校验<br/>SchemaValidator"]
+  Privacy["隐私过滤<br/>PrivacyFilter"]
+  Control["采样与限流<br/>Sampler / RateLimiter"]
+  Queue["队列与批处理<br/>PriorityQueue / Batcher / Retry / OfflineStore"]
+  Outputs["输出插件<br/>Log / HTTP / DevTools / File"]
+
+  Source -->|"捕获事实"| Collector
+  Collector -->|"生成"| Raw
+  Raw -->|"补充页面、用户、设备、网络"| Context
+  Context -->|"补充 session / trace / span / breadcrumbs"| Trace
+  Trace -->|"构建统一 envelope"| Builder
+  Builder -->|"校验 schema"| Validator
+  Validator -->|"过滤敏感数据"| Privacy
+  Privacy -->|"控制流量与优先级"| Control
+  Control -->|"排序、缓存、重试"| Queue
+  Queue -->|"脱敏后分发"| Outputs
+```
+
+采集器只捕获事实，最终协议由 pipeline 统一构建。任何 output 都只能消费脱敏后的统一 event envelope。
+
 说明：
 
 - Collector 只负责捕获事实，不构造最终协议。
 - NativeBridge 只负责把 native signal 转换为 SDK 可理解的 raw signal。
+- NativeBridge 不构建最终 event envelope；最终 envelope 由 SDK pipeline 或下次启动的补全流程统一构建。
 - ContextSnapshot 固化事件发生时的 route、module、user、device、network、release 和 feature flag。
 - TraceSnapshot 固化事件发生时的 session、trace、span 和 breadcrumbs。
 - EnvelopeBuilder 是唯一 event envelope 构建入口。
@@ -216,6 +270,32 @@ Collector / NativeBridge
 ## 核心模型层
 
 核心模型由 `flutter_monitor_core` 提供。
+
+```mermaid
+flowchart TB
+  API["公开接入层<br/>FlutterMonitorSDK API"]
+  Collectors["信号采集层<br/>错误 / 启动 / 页面 / 网络 / 行为 / 卡顿 / 内存"]
+  ContextLayer["上下文层<br/>用户 / 页面 / 模块 / 网络 / 发布信息"]
+  TraceLayer["链路层<br/>Session / Trace / Span / Breadcrumb"]
+  Pipeline["事件管线层<br/>构建 / 校验 / 脱敏 / 采样 / 队列"]
+  OutputsLayer["输出层<br/>日志 / HTTP / DevTools / 文件"]
+  CoreModel["核心模型层<br/>flutter_monitor_core"]
+  NativeBridge["可选原生桥<br/>flutter_monitor_native"]
+
+  API --> Collectors
+  API --> ContextLayer
+  API --> TraceLayer
+  NativeBridge -->|"native raw signal"| Collectors
+  Collectors --> Pipeline
+  ContextLayer --> Pipeline
+  TraceLayer --> Pipeline
+  Pipeline --> OutputsLayer
+  Pipeline --> CoreModel
+  OutputsLayer --> CoreModel
+  NativeBridge --> CoreModel
+```
+
+代码分层应围绕“采集事实、补充上下文、构建统一事件、脱敏后输出”展开。`flutter_monitor_core` 提供模型和规则，`flutter_monitor_sdk` 承担 runtime 编排。
 
 建议类型：
 
@@ -408,7 +488,7 @@ abstract interface class MonitorNativeBridge {
 - `flutter_monitor_sdk` 只依赖 bridge 抽象，不强依赖 native plugin。
 - `flutter_monitor_native` 提供 bridge 实现。
 - native signal 进入 SDK pipeline 后再构建 envelope。
-- native 异常生命周期下无法完整进入 pipeline 时，也必须尽量落到统一 session export / offline store 格式。
+- native 异常生命周期下无法完整进入 pipeline 时，应先持久化 native raw signal 或可补全 payload，并在下次启动后由 SDK pipeline 补全为统一 envelope。
 
 ## Public API
 

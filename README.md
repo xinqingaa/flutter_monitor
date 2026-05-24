@@ -21,6 +21,26 @@ packages/
   flutter_monitor_native/
 ```
 
+```mermaid
+flowchart LR
+  App["Flutter 应用<br/>业务接入方"]
+  SDK["主 SDK 运行时<br/>flutter_monitor_sdk"]
+  Core["统一模型核心<br/>flutter_monitor_core"]
+  Native["可选原生增强<br/>flutter_monitor_native"]
+  DevTools["本地诊断<br/>Flutter DevTools / Timeline"]
+  Server["服务端分析<br/>HTTP Protocol"]
+  Tools["未来工具入口<br/>CLI / MCP / 自定义 DevTools UI"]
+
+  App -->|"初始化与业务 API"| SDK
+  SDK -->|"复用 schema / privacy / export"| Core
+  Native -->|"提供 native raw signal"| SDK
+  SDK -->|"脱敏 envelope"| DevTools
+  SDK -->|"批量上报 envelope"| Server
+  Tools -->|"读取 export / envelope"| Core
+```
+
+上图展示当前项目的核心关系：应用主要接入 `flutter_monitor_sdk`，事件模型和导出格式统一来自 `flutter_monitor_core`。Native、DevTools、服务端和未来工具入口都不能创建第二套协议。
+
 常用验证命令：
 
 ```sh
@@ -134,6 +154,7 @@ MonitoredGestureDetector(
   "name": "http.client",
   "level": "info",
   "status": "ok",
+  "priority": "normal",
   "sessionId": "ses_001",
   "traceId": "trace_page_product_detail",
   "spanId": "span_http_product",

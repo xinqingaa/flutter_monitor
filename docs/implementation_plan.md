@@ -8,6 +8,29 @@
 
 重构过程中必须保留基础信号源的价值：错误、启动、页面加载、API 耗时、卡顿、用户点击、PV、页面停留都应在新模型中找到归属。任何删除都必须有替代方案和验收证明。
 
+```mermaid
+flowchart TD
+  P0["Phase 0<br/>Workspace 与包边界"]
+  P1["Phase 1<br/>Core schema 与事件模型"]
+  P2["Phase 2<br/>SDK runtime pipeline"]
+  P3["Phase 3<br/>现有 Flutter 信号接入"]
+  P4["Phase 4<br/>内存 / Native bridge / 增强 lifecycle"]
+  P5["Phase 5<br/>DevTools 本地诊断"]
+  P6["Phase 6<br/>服务端协议与稳定性"]
+  P7["Phase 7<br/>工具入口扩展"]
+
+  P0 -->|"先确定包边界"| P1
+  P1 -->|"模型稳定后铺管线"| P2
+  P2 -->|"管线可用后迁移信号"| P3
+  P3 -->|"基础信号稳定后增强"| P4
+  P4 -->|"统一 envelope 可被本地消费"| P5
+  P4 -->|"统一 envelope 可被服务端消费"| P6
+  P5 -->|"导出与诊断能力复用"| P7
+  P6 -->|"协议与导出能力复用"| P7
+```
+
+阶段依赖的核心是先稳定模型和 pipeline，再迁移现有信号，最后扩展 DevTools、服务端和工具入口。
+
 ## Phase 0：Workspace 与包边界
 
 目标：
@@ -129,7 +152,7 @@
 
 - memory.sample、memory.growth、memory.pressure 进入统一 envelope。
 - 内存泄漏只表达为 suspect，不做缺乏证据的确定性判断。
-- lifecycle 事件可参与 session 切分、hot start 和 exit flush。
+- 增强 lifecycle 可补充 foreground/background duration、exit flush 结果和异常生命周期线索。
 - native 包不绕过 pipeline 上报。
 - native 信号可关联 session/trace/context；无法关联时明确 missing reason。
 - 主 SDK 不因 native 能力增加强制平台配置。

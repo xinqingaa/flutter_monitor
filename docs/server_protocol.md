@@ -76,6 +76,35 @@ POST /api/monitor/v1/events
 
 `events` 中的每一项必须符合 `docs/event_model.md` 定义的 event envelope。
 
+```mermaid
+flowchart TD
+  Events["脱敏统一事件<br/>EventEnvelope"]
+  Batch["批量请求<br/>Batch / RequestBody"]
+  HTTP["HTTP 上报<br/>POST /api/monitor/v1/events"]
+  Validate["服务端校验<br/>鉴权 / schema / 大小限制"]
+  Accepted["接收成功<br/>accepted"]
+  Partial["部分失败<br/>partial accepted"]
+  Retryable["可重试失败<br/>429 / 5xx / retryable"]
+  NonRetry["不可重试失败<br/>schema / auth / event too large"]
+  Retry["重试与离线缓存<br/>RetryScheduler / OfflineStore"]
+  Drop["丢弃并记录<br/>SDK self-monitoring"]
+  Store["服务端存储与聚合<br/>session / trace / metrics"]
+
+  Events -->|"按数量和大小组包"| Batch
+  Batch -->|"带 headers 发送"| HTTP
+  HTTP --> Validate
+  Validate --> Accepted
+  Validate --> Partial
+  Accepted --> Store
+  Partial --> Retryable
+  Partial --> NonRetry
+  Retryable --> Retry
+  Retry --> Batch
+  NonRetry --> Drop
+```
+
+服务端协议只接收统一 event envelope。可重试失败回到重试/离线缓存，不可重试失败必须记录 SDK 自监控，避免静默丢失。
+
 ## 批量边界
 
 SDK 应支持按事件数量和请求体大小拆包。建议配置项：
