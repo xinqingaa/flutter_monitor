@@ -58,4 +58,38 @@ void main() {
       contains('session_id_missing'),
     );
   });
+
+  test('validates raw json required object fields', () {
+    final result = validator.validateJson({
+      'schemaVersion': '1.0',
+      'eventId': 'evt_001',
+      'timestamp': '2026-05-24T12:00:00.000+08:00',
+      'signalType': 'span',
+      'name': 'http.client',
+      'traceId': 'trace_001',
+      'spanId': 'span_001',
+    });
+
+    expect(result.isValid, isFalse);
+    expect(result.errors.map((issue) => issue.path), contains('resource'));
+    expect(result.errors.map((issue) => issue.path), contains('context'));
+  });
+
+  test('validates raw json schema version format', () {
+    final result = validator.validateJson({
+      'schemaVersion': '1',
+      'eventId': 'evt_001',
+      'timestamp': '2026-05-24T12:00:00.000+08:00',
+      'signalType': 'sdk',
+      'name': 'sdk.health',
+      'resource': <String, Object?>{},
+      'context': <String, Object?>{},
+    });
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      contains('invalid_schema_version'),
+    );
+  });
 }

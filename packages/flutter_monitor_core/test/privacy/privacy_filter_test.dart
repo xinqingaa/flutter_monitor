@@ -6,9 +6,9 @@ void main() {
     final filter = PrivacyFilter();
 
     final filtered = filter.filterAttributes({
-      'http.method': 'GET',
-      'auth.token': 'secret',
-      'http.request.body': {'password': '123456'},
+      FieldPaths.httpMethod: 'GET',
+      FieldPaths.authToken: 'secret',
+      FieldPaths.httpRequestBody: {'password': '123456'},
     });
 
     expect(filtered, {'http.method': 'GET'});

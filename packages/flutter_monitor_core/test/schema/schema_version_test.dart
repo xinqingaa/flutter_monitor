@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 
 void main() {
   test('parses schema versions', () {
+    expect(SchemaVersion.current.toString(), flutterMonitorSchemaVersion);
     expect(SchemaVersion.parse('1.0'), const SchemaVersion(1, 0));
     expect(SchemaVersion.parse('1.2.3'), const SchemaVersion(1, 2, 3));
     expect(SchemaVersion.parse('1.2.3').toString(), '1.2.3');

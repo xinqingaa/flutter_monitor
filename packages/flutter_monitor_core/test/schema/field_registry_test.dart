@@ -5,18 +5,47 @@ void main() {
   test('contains core signal fields', () {
     final registry = FieldRegistry.defaults();
 
-    expect(registry.lookup('http.method')?.privacyLevel, PrivacyLevel.safe);
-    expect(registry.lookup('page.route')?.privacyLevel, PrivacyLevel.queryable);
     expect(
-      registry.lookup('error.message')?.privacyLevel,
+      registry.lookup(FieldPaths.httpMethod)?.privacyLevel,
+      PrivacyLevel.safe,
+    );
+    expect(
+      registry.lookup(FieldPaths.pageRoute)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
+      registry.lookup(FieldPaths.pageRoute)?.valueType,
+      FieldValueType.string,
+    );
+    expect(
+      registry.lookup(FieldPaths.errorMessage)?.privacyLevel,
       PrivacyLevel.sensitive,
     );
-    expect(registry.lookup('auth.token')?.privacyLevel, PrivacyLevel.forbidden);
+    expect(
+      registry.lookup(FieldPaths.authToken)?.privacyLevel,
+      PrivacyLevel.forbidden,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryRssMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryPressureLevel)?.valueType,
+      FieldValueType.string,
+    );
+    expect(
+      registry.lookup(FieldPaths.nativeMemoryPressureLevel)?.privacyLevel,
+      PrivacyLevel.safe,
+    );
+    expect(
+      registry.lookup(FieldPaths.uiFrameMaxMs)?.valueType,
+      FieldValueType.durationMs,
+    );
   });
 
   test('field definitions serialize to json', () {
     const definition = FieldDefinition(
-      path: 'http.status_code',
+      path: FieldPaths.httpStatusCode,
       valueType: FieldValueType.number,
       privacyLevel: PrivacyLevel.safe,
       indexed: true,

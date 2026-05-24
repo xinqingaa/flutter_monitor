@@ -6,6 +6,37 @@ import 'schema_validation_result.dart';
 class SchemaValidator {
   const SchemaValidator();
 
+  SchemaValidationResult validateJson(Map<String, Object?> json) {
+    final errors = <SchemaValidationIssue>[];
+    final warnings = <SchemaValidationIssue>[];
+
+    _requireJsonNonEmpty(errors, json, 'schemaVersion');
+    _requireJsonNonEmpty(errors, json, 'eventId');
+    _requireJsonNonEmpty(errors, json, 'timestamp');
+    _requireJsonNonEmpty(errors, json, 'signalType');
+    _requireJsonNonEmpty(errors, json, 'name');
+    _requireJsonObject(errors, json, 'resource');
+    _requireJsonObject(errors, json, 'context');
+
+    if (errors.isNotEmpty) {
+      return SchemaValidationResult(errors: errors, warnings: warnings);
+    }
+
+    try {
+      return validate(EventEnvelope.fromJson(json));
+    } on FormatException catch (error) {
+      errors.add(
+        SchemaValidationIssue(
+          path: 'schemaVersion',
+          code: 'invalid_schema_version',
+          message: error.message,
+        ),
+      );
+    }
+
+    return SchemaValidationResult(errors: errors, warnings: warnings);
+  }
+
   SchemaValidationResult validate(EventEnvelope event) {
     final errors = <SchemaValidationIssue>[];
     final warnings = <SchemaValidationIssue>[];
@@ -94,6 +125,39 @@ class SchemaValidator {
           path: path,
           code: 'required',
           message: '$path is required',
+        ),
+      );
+    }
+  }
+
+  static void _requireJsonNonEmpty(
+    List<SchemaValidationIssue> errors,
+    Map<String, Object?> json,
+    String path,
+  ) {
+    final value = json[path];
+    if (value is! String || _isBlank(value)) {
+      errors.add(
+        SchemaValidationIssue(
+          path: path,
+          code: 'required',
+          message: '$path is required',
+        ),
+      );
+    }
+  }
+
+  static void _requireJsonObject(
+    List<SchemaValidationIssue> errors,
+    Map<String, Object?> json,
+    String path,
+  ) {
+    if (json[path] is! Map) {
+      errors.add(
+        SchemaValidationIssue(
+          path: path,
+          code: 'required_object',
+          message: '$path must be an object',
         ),
       );
     }
