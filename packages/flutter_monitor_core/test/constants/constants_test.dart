@@ -9,6 +9,8 @@ void main() {
   });
 
   test('exposes canonical field paths', () {
+    expect(FieldPaths.contextRouteName, 'context.route.name');
+    expect(FieldPaths.resourceDeviceDeviceTier, 'resource.device.deviceTier');
     expect(FieldPaths.memoryRssMb, 'memory.rss_mb');
     expect(FieldPaths.memoryPressureLevel, 'memory.pressure_level');
     expect(FieldPaths.nativeSignal, 'native.signal');

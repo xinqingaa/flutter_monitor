@@ -44,7 +44,7 @@ SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生�
 - `trace`：一次可追踪流程，例如冷启动、热启动、页面打开、用户操作、接口调用链、native 异常或业务流程。
 - `span`：trace 中的一个阶段，例如 SDK 初始化、路由切换、首帧、可交互、接口请求、图片解码、列表构建、native memory sample 或自定义业务步骤。
 - `breadcrumb`：问题发生前后的关键上下文足迹，例如页面进入、点击、请求、弹窗、生命周期变化、卡顿、内存压力、native warning 和错误。
-- `context`：与事件相关的 route、module、scene、user、device、network、release、channel、feature flag、native runtime 等上下文。
+- `context`：事件发生时的动态上下文，例如 `context.route.*`、`context.module.*`、`context.user.*`、`context.network.*`、`context.release.*`、`context.lifecycle.*` 和 `context.native.*`。
 - `resource`：SDK、App、设备、系统和运行环境等稳定资源信息。
 - `attributes`：用于检索、聚合和分析的结构化字段。
 - `payload`：事件特有的详细数据，可裁剪，不作为主要索引来源。
@@ -55,7 +55,7 @@ SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生�
 - 在哪个页面、模块、场景或 route stack？
 - 发生在哪个 session、trace 或 span 中？
 - 前后有哪些 breadcrumbs？
-- 当时设备、网络、版本、渠道、feature flag、内存和 native 状态是什么？
+- 当时 `resource.device.*`、`context.network.*`、`resource.app.*`、`context.release.featureFlags`、内存和 `context.native.*` 状态是什么？
 - 这个事件如何服务于问题定位、复现、聚合或告警？
 
 ## 核心信号
@@ -90,7 +90,7 @@ DevTools 侧目标：
 服务端侧目标：
 
 - 接收稳定协议上报的数据。
-- 支持按版本、页面、模块、设备、网络、渠道、feature flag、native platform 和用户分群聚合。
+- 支持按 `resource.app.*`、`context.route.*`、`context.module.*`、`resource.device.*`、`context.network.*`、`context.release.featureFlags`、`context.native.platform` 和 `context.user.cohort` 聚合。
 - 支持启动/页面/API 分位数、错误率、卡顿率、native crash/ANR/OOM rate、内存趋势、影响用户数、趋势和告警。
 - 支持优化前后对比和企业质量治理。
 
@@ -121,11 +121,11 @@ DevTools 侧目标：
 
 设计和实现时应持续考虑企业使用场景：
 
-- 多环境：dev、test、staging、production。
-- 多版本：appVersion、buildNumber、release、flavor、channel。
-- 灰度与实验：feature flag、experiment、cohort。
+- 多环境：`resource.app.environment`，取值包括 dev、test、staging、production。
+- 多版本：`resource.app.appVersion`、`resource.app.buildNumber`、`context.release.releaseId`、`resource.app.flavor`、`resource.app.channel`。
+- 灰度与实验：`context.release.featureFlags`、`context.release.experiments`、`context.user.cohort`。
 - 用户与隐私：userId、userType、userTags、脱敏、匿名化、授权开关。
-- 设备与网络：device tier、OS、refresh rate、memory、network type、weak network。
+- 设备与网络：`resource.device.deviceTier`、`resource.device.osVersion`、`resource.device.refreshRate`、memory、`context.network.type`、`context.network.isWeakNetwork`。
 - Native：native memory、OOM、ANR、native crash、platform lifecycle。
 - 稳定性：采样、限流、离线缓存、重试、队列上限、事件优先级、失败统计。
 - 协作：QA 复现、session 导出/导入、问题交接、用户反馈定位。

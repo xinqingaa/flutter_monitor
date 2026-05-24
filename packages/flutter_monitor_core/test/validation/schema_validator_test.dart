@@ -56,6 +56,39 @@ void main() {
     );
   });
 
+  test('rejects deprecated duplicate attribute fields', () {
+    final event = validSpan().copyWith(
+      attributes: const {'page.route': '/home', 'device.tier': 'high'},
+    );
+    final result = validator.validate(event);
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      everyElement('deprecated_field'),
+    );
+  });
+
+  test('rejects deprecated raw context fields', () {
+    final result = validator.validateJson({
+      'schemaVersion': '1.0',
+      'eventId': 'evt_001',
+      'timestamp': '2026-05-24T12:00:00.000+08:00',
+      'signalType': 'sdk',
+      'name': 'sdk.health',
+      'resource': <String, Object?>{},
+      'context': {
+        'lifecycle': {'appLifecycleState': 'resumed'},
+      },
+    });
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.path),
+      contains('context.lifecycle.appLifecycleState'),
+    );
+  });
+
   test('warns when business event has no sessionId', () {
     final event = validSpan().copyWith(sessionId: '');
     final result = validator.validate(event);

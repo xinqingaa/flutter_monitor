@@ -68,7 +68,7 @@ flowchart TD
 - 信号从哪里来？
 - 何时触发？
 - 生成 trace、span、metric、breadcrumb、error 还是 sdk event？
-- 如何关联 session、trace、span、route/module 和 breadcrumbs？
+- 如何关联 `sessionId`、`traceId`、`spanId`、`context.route.*`、`context.module.*` 和 `payload.breadcrumbs`？
 - 哪些字段进入 attributes，哪些进入 payload？
 - 采不到时如何降级？
 - 对性能、隐私和稳定性有什么影响？
@@ -153,14 +153,13 @@ Native 增强来源：
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
 - `app.start.type`
-- `app.start.duration_ms`
 - `app.first_frame_ms`
 - `app.interactive_ms`
 - `sdk.init.duration_ms`
-- `app.lifecycle.previous_state`
+- `context.lifecycle.previousState`
 - `native.start.elapsed_ms`
 
 ### 限制与降级
@@ -207,15 +206,16 @@ Native 增强来源：
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
-- `page.route`
-- `page.route.source`
-- `page.module`
-- `page.scene`
+- `context.route.name`
+- `context.route.source`
+- `context.module.name`
+- `context.module.scene`
 - `page.first_frame_ms`
 - `page.interactive_ms`
-- `page.stay_ms`
+
+页面停留时长使用 `metric page.stay` 的 `durationMs`，不再使用独立 attributes 字段。
 
 ### 限制与降级
 
@@ -253,7 +253,7 @@ Native 增强来源：
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
 - `http.method`
 - `http.url.normalized`
@@ -300,13 +300,13 @@ Native 增强来源：
 
 ### 链路关联
 
-- 错误必须尽量关联当前 session、route/module、active trace/span。
+- 错误必须尽量关联当前 `sessionId`、`context.route.*` / `context.module.*`、active `traceId` / `spanId`。
 - 错误 payload 应携带 recent breadcrumbs。
-- native 异常若无法获取完整上下文，应保留可用 session/context 并标记 missing reason。
+- native 异常若无法获取完整上下文，应保留可用 `sessionId` / `context.*` 并标记 missing reason。
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
 - `error.type`
 - `error.mechanism`
@@ -360,12 +360,12 @@ Native 增强来源：
 
 - 普通行为进入 breadcrumb store。
 - 关键行为可创建 action trace。
-- 行为应关联当前 route/module/scene。
+- 行为应关联当前 `context.route.*` / `context.module.*` / `context.module.scene`。
 - 后续 HTTP、jank、error 可关联 action trace 或使用 breadcrumb 还原上下文。
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
 - `ui.target`
 - `ui.action`
@@ -402,13 +402,13 @@ Native 增强来源：
 
 ### 链路关联
 
-- 卡顿应关联当前 session、route/module、active page trace 或 action trace。
+- 卡顿应关联当前 `sessionId`、`context.route.*` / `context.module.*`、active page trace 或 action trace。
 - 卡顿事件应携带最近 breadcrumbs。
 - 卡顿前后的 HTTP、memory、native signals 可用于定位原因。
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
 - `jank.count`
 - `frame.max_ms`
@@ -419,7 +419,7 @@ Native 增强来源：
 - `frame.p50_ms`
 - `frame.p90_ms`
 - `frame.p99_ms`
-- `device.tier`
+- `resource.device.deviceTier`
 
 ### 限制与降级
 
@@ -465,14 +465,14 @@ Native 层：
 
 ### 链路关联
 
-- memory sample 应关联当前 session 和 route/module。
+- memory sample 应关联当前 `sessionId` 和 `context.route.*` / `context.module.*`。
 - 页面退出后持续增长可关联上一页面 activity window。
-- memory pressure 应作为 breadcrumb，帮助解释后续卡顿、错误或 OOM。
+- memory pressure 应进入统一 metric 或 error 链路，并可被保存到 recent breadcrumbs 快照中帮助解释后续卡顿、错误或 OOM。
 - native memory 通过 bridge 进入同一 pipeline。
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
 - `memory.rss_mb`
 - `memory.heap_used_mb`
@@ -527,12 +527,11 @@ Native 层：
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
-- `app.lifecycle.state`
-- `app.lifecycle.previous_state`
-- `app.foreground_duration_ms`
-- `app.background_duration_ms`
+- `context.lifecycle.state`
+- `context.lifecycle.previousState`
+- `durationMs`
 - `app.exit_flush.success`
 
 ### 限制与降级
@@ -570,16 +569,16 @@ Native 层：
 
 ### 链路关联
 
-- native signal 应尽量使用 SDK 当前 session/context。
-- native bridge 应尽量获取或缓存最近 sessionId、traceId、route/module 和 breadcrumbs。
+- native signal 应尽量使用 SDK 当前 `sessionId` / `context.*`。
+- native bridge 应尽量获取或缓存最近 `sessionId`、`traceId`、`context.route.*` / `context.module.*` 和 `payload.breadcrumbs`。
 - 异常生命周期拿不到上下文时，必须标记 missing reason。
 - native signal 不得绕过 pipeline 直接 HTTP 上报。
 
 ### 字段映射
 
-推荐 attributes：
+推荐字段：
 
-- `native.platform`
+- `context.native.platform`
 - `native.signal`
 - `native.thread`
 - `native.thread_id`
@@ -646,7 +645,7 @@ Native 层：
 
 通用降级：
 
-- 缺少 route：保留 session 和 module/scene，标记 route missing。
+- 缺少 route：保留 `sessionId` 和 `context.module.*`，标记 route missing。
 - 缺少 session：仅允许 pre-session、sdk self-monitoring 或异常生命周期 native 事件。
 - 缺少 native：继续保留 Flutter 层信号。
 - 缺少 network size/cache/retry：字段省略，不用伪造。

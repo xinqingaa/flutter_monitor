@@ -1,4 +1,5 @@
 import '../model/event_envelope.dart';
+import '../model/json_utils.dart';
 import '../model/signal_type.dart';
 import 'schema_validation_issue.dart';
 import 'schema_validation_result.dart';
@@ -17,6 +18,12 @@ class SchemaValidator {
     _requireJsonNonEmpty(errors, json, 'name');
     _requireJsonObject(errors, json, 'resource');
     _requireJsonObject(errors, json, 'context');
+
+    if (json['context'] is Map) {
+      errors.addAll(
+        _collectDeprecatedContextIssues(objectMap(json['context']), 'context'),
+      );
+    }
 
     if (errors.isNotEmpty) {
       return SchemaValidationResult(errors: errors, warnings: warnings);
@@ -101,6 +108,19 @@ class SchemaValidator {
       );
     }
 
+    errors.addAll(
+      event.attributes.keys
+          .where(_deprecatedFieldPaths.contains)
+          .map(
+            (path) => SchemaValidationIssue(
+              path: 'attributes.$path',
+              code: 'deprecated_field',
+              message:
+                  '$path is no longer part of the canonical field contract',
+            ),
+          ),
+    );
+
     if (_isBlank(event.sessionId) && event.signalType != SignalType.sdk) {
       warnings.add(
         const SchemaValidationIssue(
@@ -164,4 +184,46 @@ class SchemaValidator {
   }
 
   static bool _isBlank(String? value) => value == null || value.trim().isEmpty;
+}
+
+const _deprecatedFieldPaths = <String>{
+  'page.route',
+  'page.route.source',
+  'page.module',
+  'page.scene',
+  'page.stay_ms',
+  'device.tier',
+  'app.lifecycle.state',
+  'app.lifecycle.previous_state',
+  'native.platform',
+  'error.message',
+  'error.stacktrace',
+};
+
+List<SchemaValidationIssue> _collectDeprecatedContextIssues(
+  Map<String, Object?> json,
+  String pathPrefix,
+) {
+  final issues = <SchemaValidationIssue>[];
+  for (final entry in json.entries) {
+    final path = '$pathPrefix.${entry.key}';
+    if (entry.key == 'appLifecycleState' ||
+        entry.key == 'appLifecyclePreviousState') {
+      issues.add(
+        SchemaValidationIssue(
+          path: path,
+          code: 'deprecated_field',
+          message:
+              '${entry.key} is no longer part of the canonical field contract',
+        ),
+      );
+      continue;
+    }
+    if (entry.value is Map) {
+      issues.addAll(
+        _collectDeprecatedContextIssues(objectMap(entry.value), path),
+      );
+    }
+  }
+  return issues;
 }

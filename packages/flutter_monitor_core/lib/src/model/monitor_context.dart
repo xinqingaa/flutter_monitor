@@ -78,83 +78,88 @@ class NetworkContext {
 }
 
 class ReleaseContext {
-  const ReleaseContext({
-    this.releaseId,
-    this.channel,
-    this.environment,
-    this.flavor,
-    this.featureFlags,
-  });
+  const ReleaseContext({this.releaseId, this.featureFlags, this.experiments});
 
   final String? releaseId;
-  final String? channel;
-  final String? environment;
-  final String? flavor;
-  final Map<String, Object?>? featureFlags;
+  final List<String>? featureFlags;
+  final Map<String, Object?>? experiments;
 
   factory ReleaseContext.fromJson(Map<String, Object?> json) {
     return ReleaseContext(
       releaseId: json['releaseId'] as String?,
-      channel: json['channel'] as String?,
-      environment: json['environment'] as String?,
-      flavor: json['flavor'] as String?,
-      featureFlags: json['featureFlags'] is Map
-          ? objectMap(json['featureFlags'])
+      featureFlags: json['featureFlags'] is Iterable
+          ? (json['featureFlags'] as Iterable).whereType<String>().toList(
+              growable: false,
+            )
+          : json['featureFlags'] is Map
+          ? objectMap(json['featureFlags']).keys.toList(growable: false)
+          : null,
+      experiments: json['experiments'] is Map
+          ? objectMap(json['experiments'])
           : null,
     );
   }
 
   Map<String, Object?> toJson() => jsonMap({
     'releaseId': releaseId,
-    'channel': channel,
-    'environment': environment,
-    'flavor': flavor,
     'featureFlags': featureFlags,
+    'experiments': experiments,
   });
 }
 
 class LifecycleContext {
-  const LifecycleContext({this.appLifecycleState, this.isForeground});
+  const LifecycleContext({this.state, this.previousState, this.isForeground});
 
-  final String? appLifecycleState;
+  final String? state;
+  final String? previousState;
   final bool? isForeground;
 
   factory LifecycleContext.fromJson(Map<String, Object?> json) {
     return LifecycleContext(
-      appLifecycleState: json['appLifecycleState'] as String?,
+      state: json['state'] as String?,
+      previousState: json['previousState'] as String?,
       isForeground: json['isForeground'] as bool?,
     );
   }
 
   Map<String, Object?> toJson() => jsonMap({
-    'appLifecycleState': appLifecycleState,
+    'state': state,
+    'previousState': previousState,
     'isForeground': isForeground,
   });
 }
 
 class NativeRuntimeContext {
   const NativeRuntimeContext({
+    this.available,
     this.platform,
     this.bridgeVersion,
     this.signalSource,
+    this.processId,
   });
 
+  final bool? available;
   final String? platform;
   final String? bridgeVersion;
   final String? signalSource;
+  final num? processId;
 
   factory NativeRuntimeContext.fromJson(Map<String, Object?> json) {
     return NativeRuntimeContext(
+      available: json['available'] as bool?,
       platform: json['platform'] as String?,
       bridgeVersion: json['bridgeVersion'] as String?,
       signalSource: json['signalSource'] as String?,
+      processId: json['processId'] as num?,
     );
   }
 
   Map<String, Object?> toJson() => jsonMap({
+    'available': available,
     'platform': platform,
     'bridgeVersion': bridgeVersion,
     'signalSource': signalSource,
+    'processId': processId,
   });
 }
 

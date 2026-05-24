@@ -12,6 +12,7 @@
 flowchart TD
   P0["Phase 0<br/>Workspace 与包边界"]
   P1["Phase 1<br/>Core schema 与事件模型"]
+  P15["Phase 1.5<br/>字段契约统一"]
   P2["Phase 2<br/>SDK runtime pipeline"]
   P3["Phase 3<br/>现有 Flutter 信号接入"]
   P4["Phase 4<br/>内存 / Native bridge / 增强 lifecycle"]
@@ -20,7 +21,8 @@ flowchart TD
   P7["Phase 7<br/>工具入口扩展"]
 
   P0 -->|"先确定包边界"| P1
-  P1 -->|"模型稳定后铺管线"| P2
+  P1 -->|"模型稳定后统一字段"| P15
+  P15 -->|"字段契约稳定后铺管线"| P2
   P2 -->|"管线可用后迁移信号"| P3
   P3 -->|"基础信号稳定后增强"| P4
   P4 -->|"统一 envelope 可被本地消费"| P5
@@ -69,6 +71,26 @@ flowchart TD
 - 冷启动、热启动、页面、网络、行为、卡顿、内存、native、错误、自定义 trace 均有 schema。
 - `docs/signal_collection.md` 覆盖启动、页面、网络、错误、行为、卡顿、内存、生命周期、native 和自定义 trace。
 - DevTools、server protocol、native package 不定义第二套模型。
+
+## Phase 1.5：字段契约统一
+
+目标：
+
+- 暂停 Phase 2 之前的 runtime pipeline 扩展，先统一项目内部字段。
+- 在 `docs/event_model.md` 中建立唯一字段契约，覆盖 public envelope、resource、context、attributes 和 payload。
+- 清理同一语义的重复字段，例如 `context.route.*` / `context.module.*`、`resource.device.deviceTier`、`context.lifecycle.*`、`context.native.platform`、`durationMs`、`payload.error.*` 等。
+- 让 `docs/signal_collection.md`、`docs/server_protocol.md`、`docs/devtools_integration.md`、`docs/architecture.md` 和 `AGENTS.md` 只引用统一字段，不再定义或暗示第二套字段。
+- 同步 `flutter_monitor_core` 的 `FieldPaths`、`FieldRegistry`、context/resource model、schema validation 和测试。
+
+验收：
+
+- 一个语义只有一个规范字段路径。
+- 任何字段都明确属于 `resource`、`context`、`attributes` 或 `payload` 之一。
+- 文档示例不再出现字段契约禁止的旧字段。
+- `flutter_monitor_core` 中的字段常量与 `docs/event_model.md` 的唯一字段契约一致。
+- 字段注册表包含所有目标字段的类型、隐私等级和索引建议。
+- core 测试覆盖字段注册、字段黑名单和主要 JSON round-trip。
+- Phase 2 只允许基于统一字段契约构建 pipeline。
 
 ## Phase 2：SDK Runtime Pipeline 基础设施与兼容适配
 
@@ -135,8 +157,8 @@ flowchart TD
 - 示例 App 能展示一条完整 session timeline。
 - 启动、热启动、页面加载、API、点击、PV、页面停留、卡顿、错误、最小 lifecycle 均可在 session 中看到。
 - 慢页面能关联页面 trace、相关 API 和最近 breadcrumbs。
-- 卡顿能关联当前页面/模块、最近行为和设备信息。
-- 错误能关联当前 route/module、active trace/span 和最近 breadcrumbs。
+- 卡顿能关联当前 `context.route.*` / `context.module.*`、最近行为和 `resource.device.*`。
+- 错误能关联当前 `context.route.*` / `context.module.*`、active `traceId` / `spanId` 和最近 breadcrumbs。
 
 ## Phase 4：内存、Native Bridge 与增强 Lifecycle
 
@@ -194,7 +216,7 @@ flowchart TD
 - 服务端能校验 schema。
 - SDK 能处理 2xx、4xx、413、429、5xx。
 - SDK 能记录 flush 成功、失败、丢弃事件等 self-monitoring 信息。
-- 服务端能按 session、trace、route、module、version、device tier、native platform 聚合。
+- 服务端能按 `sessionId`、`traceId`、`context.route.name`、`context.module.name`、`resource.app.appVersion`、`resource.device.deviceTier`、`context.native.platform` 聚合。
 - 服务端能基于统一事件派生启动 P95、页面 P95、API P95、卡顿率、错误率、native crash/ANR/OOM rate、内存趋势和影响用户数。
 - 采样和限流不会破坏错误、native crash、OOM、关键卡顿、关键慢页面的定位链路。
 
@@ -233,7 +255,7 @@ flowchart TD
 - 是否仍能捕获原有信号；
 - 是否能生成统一 event envelope；
 - 是否能关联 session；
-- 是否能关联 route/module；
+- 是否能关联 `context.route.*` / `context.module.*`；
 - 是否能携带 breadcrumbs；
 - 是否能被 log/custom/http/devtools/file output 消费；
 - 是否有测试或示例证明链路可还原；

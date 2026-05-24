@@ -69,7 +69,7 @@ flowchart TD
   DevUI -->|"消费导出与 bridge 数据"| Core
   MCP -->|"消费统一 envelope"| Core
 
-  Native -.->|"通过 bridge 提供 raw signal"| SDK
+  Native -->|"通过 bridge 提供 raw signal"| SDK
 ```
 
 这张图表达依赖方向：`flutter_monitor_core` 是协议核心，其他包只能复用它，不能反向污染 core，也不能各自生成第二套模型。
@@ -261,7 +261,7 @@ flowchart TD
 - Collector 只负责捕获事实，不构造最终协议。
 - NativeBridge 只负责把 native signal 转换为 SDK 可理解的 raw signal。
 - NativeBridge 不构建最终 event envelope；最终 envelope 由 SDK pipeline 或下次启动的补全流程统一构建。
-- ContextSnapshot 固化事件发生时的 route、module、user、device、network、release 和 feature flag。
+- ContextSnapshot 固化事件发生时的 `context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*`、`context.network.*`、`context.release.*` 和 `context.release.featureFlags`。
 - TraceSnapshot 固化事件发生时的 session、trace、span 和 breadcrumbs。
 - EnvelopeBuilder 是唯一 event envelope 构建入口。
 - PrivacyFilter 必须早于任何 output。

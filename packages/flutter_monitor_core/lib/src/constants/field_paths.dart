@@ -1,23 +1,93 @@
 abstract final class FieldPaths {
+  static const schemaVersion = 'schemaVersion';
+  static const eventId = 'eventId';
+  static const timestamp = 'timestamp';
+  static const startTime = 'startTime';
+  static const endTime = 'endTime';
+  static const durationMs = 'durationMs';
+  static const signalType = 'signalType';
+  static const name = 'name';
+  static const level = 'level';
+  static const status = 'status';
+  static const priority = 'priority';
+  static const sessionId = 'sessionId';
+  static const traceId = 'traceId';
+  static const spanId = 'spanId';
+  static const parentSpanId = 'parentSpanId';
+  static const resource = 'resource';
+  static const context = 'context';
+  static const attributes = 'attributes';
+  static const payload = 'payload';
+
+  static const resourceSdkName = 'resource.sdk.name';
+  static const resourceSdkVersion = 'resource.sdk.version';
+  static const resourceSdkCoreVersion = 'resource.sdk.coreVersion';
+  static const resourceSdkNativeVersion = 'resource.sdk.nativeVersion';
+
+  static const resourceAppAppKey = 'resource.app.appKey';
+  static const resourceAppAppName = 'resource.app.appName';
+  static const resourceAppAppVersion = 'resource.app.appVersion';
+  static const resourceAppBuildNumber = 'resource.app.buildNumber';
+  static const resourceAppPackageName = 'resource.app.packageName';
+  static const resourceAppEnvironment = 'resource.app.environment';
+  static const resourceAppChannel = 'resource.app.channel';
+  static const resourceAppFlavor = 'resource.app.flavor';
+
+  static const resourceDevicePlatform = 'resource.device.platform';
+  static const resourceDeviceModel = 'resource.device.model';
+  static const resourceDeviceManufacturer = 'resource.device.manufacturer';
+  static const resourceDeviceOsVersion = 'resource.device.osVersion';
+  static const resourceDeviceIsPhysicalDevice =
+      'resource.device.isPhysicalDevice';
+  static const resourceDeviceRefreshRate = 'resource.device.refreshRate';
+  static const resourceDeviceDeviceTier = 'resource.device.deviceTier';
+
+  static const resourceRuntimeFlutterVersion =
+      'resource.runtime.flutterVersion';
+  static const resourceRuntimeDartVersion = 'resource.runtime.dartVersion';
+  static const resourceRuntimeIsDebug = 'resource.runtime.isDebug';
+
+  static const contextUserUserId = 'context.user.userId';
+  static const contextUserUserType = 'context.user.userType';
+  static const contextUserUserTags = 'context.user.userTags';
+  static const contextUserCohort = 'context.user.cohort';
+
+  static const contextRouteName = 'context.route.name';
+  static const contextRouteStack = 'context.route.stack';
+  static const contextRouteSource = 'context.route.source';
+
+  static const contextModuleName = 'context.module.name';
+  static const contextModuleScene = 'context.module.scene';
+
+  static const contextNetworkType = 'context.network.type';
+  static const contextNetworkIsWeakNetwork = 'context.network.isWeakNetwork';
+
+  static const contextReleaseReleaseId = 'context.release.releaseId';
+  static const contextReleaseFeatureFlags = 'context.release.featureFlags';
+  static const contextReleaseExperiments = 'context.release.experiments';
+
+  static const contextLifecycleState = 'context.lifecycle.state';
+  static const contextLifecyclePreviousState =
+      'context.lifecycle.previousState';
+  static const contextLifecycleIsForeground = 'context.lifecycle.isForeground';
+
+  static const contextNativeAvailable = 'context.native.available';
+  static const contextNativePlatform = 'context.native.platform';
+  static const contextNativeProcessId = 'context.native.processId';
+  static const contextNativeBridgeVersion = 'context.native.bridgeVersion';
+  static const contextNativeSignalSource = 'context.native.signalSource';
+
+  static const contextMissing = 'context.missing';
+  static const contextMissingReason = 'context.missingReason';
+
   static const appStartType = 'app.start.type';
-  static const appStartDurationMs = 'app.start.duration_ms';
   static const appFirstFrameMs = 'app.first_frame_ms';
   static const appInteractiveMs = 'app.interactive_ms';
   static const sdkInitDurationMs = 'sdk.init.duration_ms';
   static const nativeStartElapsedMs = 'native.start.elapsed_ms';
-  static const appLifecycleState = 'app.lifecycle.state';
-  static const appLifecyclePreviousState = 'app.lifecycle.previous_state';
-  static const appForegroundDurationMs = 'app.foreground_duration_ms';
-  static const appBackgroundDurationMs = 'app.background_duration_ms';
-  static const appExitFlushSuccess = 'app.exit_flush.success';
 
-  static const pageRoute = 'page.route';
-  static const pageRouteSource = 'page.route.source';
-  static const pageModule = 'page.module';
-  static const pageScene = 'page.scene';
   static const pageFirstFrameMs = 'page.first_frame_ms';
   static const pageInteractiveMs = 'page.interactive_ms';
-  static const pageStayMs = 'page.stay_ms';
 
   static const httpMethod = 'http.method';
   static const httpUrlNormalized = 'http.url.normalized';
@@ -29,17 +99,20 @@ abstract final class FieldPaths {
   static const requestSizeBytes = 'request.size_bytes';
   static const responseSizeBytes = 'response.size_bytes';
 
-  static const errorType = 'error.type';
-  static const errorMessage = 'error.message';
-  static const errorStacktrace = 'error.stacktrace';
-  static const errorHandled = 'error.handled';
-  static const errorMechanism = 'error.mechanism';
-  static const errorThread = 'error.thread';
+  static const uiTarget = 'ui.target';
+  static const uiAction = 'ui.action';
+  static const businessAction = 'business.action';
+  static const businessResult = 'business.result';
 
-  static const uiFrameMaxMs = 'ui.frame.max_ms';
-  static const uiFrameCount = 'ui.frame.count';
-  static const uiJankCount = 'ui.jank.count';
-  static const uiJankDurationMs = 'ui.jank.duration_ms';
+  static const jankCount = 'jank.count';
+  static const frameMaxMs = 'frame.max_ms';
+  static const frameAvgMs = 'frame.avg_ms';
+  static const frameBudgetMs = 'frame.budget_ms';
+  static const frameFps = 'frame.fps';
+  static const frameStability = 'frame.stability';
+  static const frameP50Ms = 'frame.p50_ms';
+  static const frameP90Ms = 'frame.p90_ms';
+  static const frameP99Ms = 'frame.p99_ms';
 
   static const memoryRssMb = 'memory.rss_mb';
   static const memoryHeapUsedMb = 'memory.heap_used_mb';
@@ -51,7 +124,8 @@ abstract final class FieldPaths {
   static const memoryPressureLevel = 'memory.pressure_level';
   static const memorySampleSource = 'memory.sample_source';
 
-  static const nativePlatform = 'native.platform';
+  static const appExitFlushSuccess = 'app.exit_flush.success';
+
   static const nativeSignal = 'native.signal';
   static const nativeThread = 'native.thread';
   static const nativeThreadId = 'native.thread_id';
@@ -60,6 +134,19 @@ abstract final class FieldPaths {
   static const nativeOomReason = 'native.oom.reason';
   static const nativeMemoryUsedMb = 'native.memory.used_mb';
   static const nativeMemoryPressureLevel = 'native.memory.pressure_level';
+
+  static const errorType = 'error.type';
+  static const errorMechanism = 'error.mechanism';
+  static const errorHandled = 'error.handled';
+  static const errorFatal = 'error.fatal';
+  static const errorThread = 'error.thread';
+
+  static const payloadErrorMessage = 'payload.error.message';
+  static const payloadErrorStacktrace = 'payload.error.stacktrace';
+  static const payloadErrorLibrary = 'payload.error.library';
+  static const payloadBreadcrumbs = 'payload.breadcrumbs';
+  static const payloadTrace = 'payload.trace';
+  static const payloadNative = 'payload.native';
 
   static const httpUrlQuery = 'http.url.query';
   static const httpRequestBody = 'http.request.body';

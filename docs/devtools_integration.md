@@ -94,7 +94,7 @@ SDK 应将关键 trace/span 写入 Flutter Timeline。
 - breadcrumb 默认进入 SDK session timeline；只有调试模式或显式配置时才写 Flutter Timeline，避免 Timeline 噪声过大。
 - memory sample 默认不逐条写 Timeline；memory pressure、异常增长或 suspect leak 可写关键标记。
 
-Timeline arguments 应只包含脱敏后的必要字段，例如 `sessionId`、`traceId`、`spanId`、`route`、`module`、`status`、关键 attributes。
+Timeline arguments 应只包含脱敏后的必要字段，例如 `sessionId`、`traceId`、`spanId`、`context.route.name`、`context.module.name`、`status`、关键 attributes。
 
 DevTools 中展示的 `priority` 必须来自统一 event envelope，不应根据 UI 分组重新计算另一套优先级。
 
@@ -122,7 +122,7 @@ DevTools 中展示的 `priority` 必须来自统一 event envelope，不应根�
 - name；
 - level/status；
 - duration；
-- route/module/scene；
+- `context.route.*` / `context.module.*`；
 - trace/span；
 - priority；
 - key attributes。
@@ -158,14 +158,14 @@ DevTools 中展示的 `priority` 必须来自统一 event envelope，不应根�
 
 展示事件捕获时的上下文：
 
-- app/release；
-- user/cohort；
-- route stack；
-- module/scene；
-- network；
-- device；
-- lifecycle；
-- native runtime。
+- `resource.app.*` / `context.release.*`；
+- `context.user.*`；
+- `context.route.stack`；
+- `context.module.*`；
+- `context.network.*`；
+- `resource.device.*`；
+- `context.lifecycle.*`；
+- `context.native.*`。
 
 ### Memory / Jank View
 
@@ -259,13 +259,13 @@ DevTools 应支持导出当前 session，供 QA 转交开发。
 
 DevTools 应支持以下场景：
 
-- 页面加载慢：查看 page trace 下的 route、first frame、interactive、HTTP、jank、memory。
+- 页面加载慢：查看 page trace 下的 `context.route.name`、first frame、interactive、HTTP、jank、memory。
 - 点击后卡顿：查看 action breadcrumb、后续 span、jank sequence 和 memory sample。
 - 请求慢：查看 http span 是否影响页面 trace 或 action trace。
 - 冷启动慢：查看 app cold start trace、SDK init、first frame、interactive。
 - 热启动慢：查看 lifecycle resume、hot start trace、页面恢复和首个可交互点。
-- 内存上涨：查看 memory growth、route/action/http/native 信号和 suspect leak 线索。
-- native 异常：查看 native crash/OOM/ANR 的 session、route、breadcrumbs 和设备上下文。
+- 内存上涨：查看 memory growth、`context.route.*` / `context.module.*` / `context.network.*`、HTTP、native 信号和 suspect leak 线索。
+- native 异常：查看 native crash/OOM/ANR 的 `sessionId`、`context.route.*`、`payload.breadcrumbs` 和设备上下文。
 - QA 复现：导出 session 给开发。
 - 自定义业务流程优化：比较 custom trace 的 span 耗时。
 

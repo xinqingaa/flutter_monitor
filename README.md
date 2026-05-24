@@ -100,6 +100,8 @@ void main() async {
 }
 ```
 
+`AppInfo.channel` 和 `AppInfo.environment` 是接入配置项，进入统一 event envelope 后的规范字段分别是 `resource.app.channel` 和 `resource.app.environment`。
+
 注入 route observer，让页面、PV 和页面性能信号能关联 route context：
 
 ```dart

@@ -28,6 +28,23 @@ void main() {
           stack: ['/home', '/product/detail'],
         ),
         module: ModuleContext(name: 'product', scene: 'detail'),
+        release: ReleaseContext(
+          releaseId: 'com.example.demo@1.2.3+100',
+          featureFlags: ['new_product_detail'],
+          experiments: {'product_detail_v2': 'variant_a'},
+        ),
+        lifecycle: LifecycleContext(
+          state: 'resumed',
+          previousState: 'paused',
+          isForeground: true,
+        ),
+        native: NativeRuntimeContext(
+          available: true,
+          platform: 'android',
+          processId: 12345,
+          bridgeVersion: '1.0.0',
+          signalSource: 'android',
+        ),
       ),
       attributes: const {
         'http.method': 'GET',
@@ -47,6 +64,15 @@ void main() {
     expect(parsed.priority, EventPriority.high);
     expect(parsed.resource.app?.appVersion, '1.2.3');
     expect(parsed.context.route?.stack, ['/home', '/product/detail']);
+    expect(parsed.context.release?.featureFlags, ['new_product_detail']);
+    expect(
+      parsed.context.release?.experiments?['product_detail_v2'],
+      'variant_a',
+    );
+    expect(parsed.context.lifecycle?.state, 'resumed');
+    expect(parsed.context.lifecycle?.previousState, 'paused');
+    expect(parsed.context.native?.available, isTrue);
+    expect(parsed.context.native?.processId, 12345);
     expect(parsed.attributes['http.status_code'], 200);
   });
 

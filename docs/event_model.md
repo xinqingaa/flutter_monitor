@@ -17,7 +17,7 @@
 业务事件应尽量关联：
 
 - 所属 session；
-- 当前 route/module/scene；
+- 当前 `context.route.*` / `context.module.*` / `context.module.scene`；
 - 当前 trace 或 active span；
 - 最近 breadcrumbs；
 - app/device/network/release/user/native 上下文。
@@ -153,6 +153,170 @@ flowchart TB
 
 采集器只能提供 priority suggestion，最终 `priority` 由 pipeline 在构建 event envelope 时确定。缺省值为 `normal`。
 
+## 唯一字段契约
+
+本节是项目内部字段的唯一契约。一个语义只能出现在一个规范路径中，不允许通过 `attributes` 复制 `resource` 或 `context` 中已经存在的字段。
+
+本节只定义 canonical field paths。迁移期的历史路径不在正文中枚举，也不作为新文档、新示例和新注册表的设计依据；随着字段契约落地，它们会自然退出目标模型。
+
+字段归属规则：
+
+- public envelope fields 表达事件身份、时间、状态、优先级和链路 ID。
+- `resource`、`context`、`attributes`、`payload` 也是顶层规范字段，分别承载稳定资源、动态上下文、可检索字段和诊断详情。
+- `resource.*` 表达稳定资源，例如 SDK、App、设备和运行时。
+- `context.*` 表达事件发生时的动态上下文，例如用户、路由、模块、网络、发布、生命周期和 native runtime。
+- `attributes.*` 只表达事件特有、低基数、可聚合的结构化指标或状态。
+- `payload.*` 只表达可裁剪诊断详情，不作为主要索引来源。
+
+### Resource 字段
+
+| 字段 | 类型 | 隐私等级 | 建议索引 | 说明 |
+|---|---|---|---:|---|
+| `resource.sdk.name` | string | safe | 是 | SDK 名称 |
+| `resource.sdk.version` | string | safe | 是 | Flutter SDK package 版本 |
+| `resource.sdk.coreVersion` | string | safe | 是 | `flutter_monitor_core` 版本 |
+| `resource.sdk.nativeVersion` | string | safe | 是 | native plugin 版本，可为空 |
+| `resource.app.appKey` | string | safe | 是 | 应用标识 |
+| `resource.app.appName` | string | safe | 否 | 应用名称 |
+| `resource.app.appVersion` | string | safe | 是 | App 语义版本 |
+| `resource.app.buildNumber` | string | safe | 是 | App 构建号 |
+| `resource.app.packageName` | string | safe | 是 | 应用包名 |
+| `resource.app.environment` | string | safe | 是 | `dev`、`test`、`staging`、`production` |
+| `resource.app.channel` | string | safe | 是 | 分发渠道 |
+| `resource.app.flavor` | string | safe | 是 | Flutter flavor 或企业自定义 flavor |
+| `resource.device.platform` | string | safe | 是 | android/ios/web/macos 等 |
+| `resource.device.model` | string | queryable | 是 | 设备型号 |
+| `resource.device.manufacturer` | string | queryable | 是 | 设备厂商 |
+| `resource.device.osVersion` | string | safe | 是 | OS 版本 |
+| `resource.device.isPhysicalDevice` | boolean | safe | 是 | 是否真机 |
+| `resource.device.refreshRate` | number | safe | 是 | 屏幕刷新率 |
+| `resource.device.deviceTier` | string | safe | 是 | high/medium/low/unknown |
+| `resource.runtime.flutterVersion` | string | safe | 是 | Flutter 版本 |
+| `resource.runtime.dartVersion` | string | safe | 是 | Dart 版本 |
+| `resource.runtime.isDebug` | boolean | safe | 是 | 是否 debug runtime |
+
+### Context 字段
+
+| 字段 | 类型 | 隐私等级 | 建议索引 | 说明 |
+|---|---|---|---:|---|
+| `context.user.userId` | string | sensitive | 是 | 用户标识，必须支持匿名化或关闭 |
+| `context.user.userType` | string | queryable | 是 | 用户类型 |
+| `context.user.userTags` | array | queryable | 是 | 用户标签 |
+| `context.user.cohort` | string | queryable | 是 | 用户分群 |
+| `context.route.name` | string | queryable | 是 | 当前 route 标识 |
+| `context.route.stack` | array | queryable | 是 | 当前 route stack |
+| `context.route.source` | string | queryable | 是 | 页面来源 |
+| `context.module.name` | string | queryable | 是 | 业务模块 |
+| `context.module.scene` | string | queryable | 是 | 业务场景 |
+| `context.network.type` | string | safe | 是 | wifi/cellular/none/unknown |
+| `context.network.isWeakNetwork` | boolean | safe | 是 | 弱网判断 |
+| `context.release.releaseId` | string | safe | 是 | 可组合 app/package/version/build |
+| `context.release.featureFlags` | array | queryable | 是 | 事件发生时命中的 feature flags |
+| `context.release.experiments` | object | queryable | 是 | 实验名到分组的映射 |
+| `context.lifecycle.state` | string | safe | 是 | resumed/inactive/paused/detached/hidden |
+| `context.lifecycle.previousState` | string | safe | 是 | 上一个生命周期状态 |
+| `context.lifecycle.isForeground` | boolean | safe | 是 | 是否前台 |
+| `context.native.available` | boolean | safe | 是 | native bridge 是否可用 |
+| `context.native.platform` | string | safe | 是 | android/ios 等 native platform |
+| `context.native.processId` | number | safe | 否 | native 进程 ID |
+| `context.native.bridgeVersion` | string | safe | 是 | native bridge 版本 |
+| `context.native.signalSource` | string | safe | 是 | native 信号来源 |
+| `context.missing` | boolean | safe | 是 | 上下文是否缺失 |
+| `context.missingReason` | string | safe | 是 | 上下文缺失原因 |
+
+`context.missingReason` 必须使用固定值，不允许自由文本：
+
+| 值 | 说明 |
+|---|---|
+| `pre_session` | 事件发生时 session 尚未建立 |
+| `sdk_bootstrap_incomplete` | SDK 初始化尚未完成 |
+| `app_start_time_missing` | 启动起点缺失 |
+| `route_name_missing` | route name 不可用 |
+| `route_stack_unavailable` | route stack 不可用 |
+| `native_bridge_unavailable` | native bridge 不可用 |
+| `platform_limited` | 平台能力限制 |
+| `privacy_filtered` | 隐私策略导致字段缺失 |
+
+### Attribute 字段
+
+| 字段 | 类型 | 隐私等级 | 建议索引 | 说明 |
+|---|---|---|---:|---|
+| `app.start.type` | string | safe | 是 | cold/hot/warm |
+| `app.first_frame_ms` | duration_ms | safe | 是 | 启动首帧耗时 |
+| `app.interactive_ms` | duration_ms | safe | 是 | 启动可交互耗时 |
+| `sdk.init.duration_ms` | duration_ms | safe | 是 | SDK 初始化耗时 |
+| `native.start.elapsed_ms` | duration_ms | safe | 是 | native 启动起点到 Flutter 可观测点耗时 |
+| `page.first_frame_ms` | duration_ms | safe | 是 | 页面首帧耗时 |
+| `page.interactive_ms` | duration_ms | safe | 是 | 页面可交互耗时 |
+| `http.method` | string | safe | 是 | GET/POST 等 |
+| `http.url.normalized` | string | queryable | 是 | 归一化 URL，不含 query |
+| `http.status_code` | number | safe | 是 | HTTP 状态码 |
+| `http.success` | boolean | safe | 是 | 请求是否成功 |
+| `http.error_type` | string | queryable | 是 | 网络错误类型 |
+| `http.retry_count` | number | safe | 否 | 重试次数 |
+| `http.cache_status` | string | safe | 是 | hit/miss/bypass/unknown |
+| `request.size_bytes` | number | safe | 否 | 请求大小 |
+| `response.size_bytes` | number | safe | 否 | 响应大小 |
+| `ui.target` | string | queryable | 是 | 控件或交互目标标识 |
+| `ui.action` | string | safe | 是 | tap/scroll/input 等 |
+| `business.action` | string | queryable | 是 | 业务动作 |
+| `business.result` | string | safe | 是 | success/failure/cancelled |
+| `jank.count` | number | safe | 是 | 连续慢帧数量 |
+| `frame.max_ms` | duration_ms | safe | 是 | 最大帧耗时 |
+| `frame.avg_ms` | duration_ms | safe | 是 | 平均帧耗时 |
+| `frame.budget_ms` | duration_ms | safe | 是 | 帧预算 |
+| `frame.fps` | number | safe | 是 | 最近窗口 FPS |
+| `frame.stability` | number | safe | 是 | 稳定性 |
+| `frame.p50_ms` | duration_ms | safe | 是 | 帧耗时 P50 |
+| `frame.p90_ms` | duration_ms | safe | 是 | 帧耗时 P90 |
+| `frame.p99_ms` | duration_ms | safe | 是 | 帧耗时 P99 |
+| `memory.rss_mb` | number | safe | 是 | 进程常驻内存 |
+| `memory.heap_used_mb` | number | safe | 否 | Dart/Flutter heap 使用 |
+| `memory.heap_capacity_mb` | number | safe | 否 | heap 容量 |
+| `memory.external_mb` | number | safe | 否 | external memory |
+| `memory.native_used_mb` | number | safe | 是 | native memory，可由 native plugin 提供 |
+| `memory.growth_mb` | number | safe | 是 | 增长量 |
+| `memory.growth_duration_ms` | duration_ms | safe | 是 | 观察窗口 |
+| `memory.pressure_level` | string | safe | 是 | none/moderate/critical/unknown |
+| `memory.sample_source` | string | safe | 是 | dart/native/system/unknown |
+| `app.exit_flush.success` | boolean | safe | 是 | 退出前 flush 是否成功 |
+| `native.signal` | string | safe | 是 | memory/crash/anr/oom/lifecycle |
+| `native.thread` | string | queryable | 否 | native 线程名 |
+| `native.thread_id` | string | queryable | 否 | native 线程 ID |
+| `native.crash.type` | string | queryable | 是 | native crash 类型 |
+| `native.anr.duration_ms` | duration_ms | safe | 是 | ANR 持续时间 |
+| `native.oom.reason` | string | queryable | 否 | OOM 线索 |
+| `native.memory.used_mb` | number | safe | 是 | native 侧内存 |
+| `native.memory.pressure_level` | string | safe | 是 | native 内存压力 |
+| `error.type` | string | queryable | 是 | exception/error 类型 |
+| `error.mechanism` | string | queryable | 是 | flutter/dart/native/manual/custom |
+| `error.handled` | boolean | safe | 是 | 是否已处理 |
+| `error.fatal` | boolean | safe | 是 | 是否致命 |
+| `error.thread` | string | queryable | 否 | 线程/isolate/native thread |
+
+### Payload 字段
+
+| 字段 | 类型 | 隐私等级 | 说明 |
+|---|---|---|---|
+| `payload.error.message` | string | sensitive | 错误消息 |
+| `payload.error.stacktrace` | string | sensitive | 错误堆栈 |
+| `payload.error.library` | string | queryable | framework/library 上下文 |
+| `payload.breadcrumbs` | array | mixed | recent breadcrumbs 快照 |
+| `payload.trace` | object | mixed | active trace/span 诊断快照 |
+| `payload.native` | object | mixed | 脱敏后的 native crash/ANR/OOM 详情 |
+
+### 禁止字段
+
+以下字段默认禁止进入事件：
+
+| 字段 | 说明 |
+|---|---|
+| `http.url.query` | 原始 URL query |
+| `http.request.body` | request body |
+| `http.response.body` | response body |
+| `http.request.headers.cookie` | Cookie |
+| `auth.token` | token |
+
 ## Core Concepts
 
 ```mermaid
@@ -201,7 +365,7 @@ Session 至少应包含：
 - `endedAt`
 - `durationMs`
 - `isForeground`
-- `appLifecycleState`
+- `context.lifecycle.state`
 - `resource`
 - `context.user`
 
@@ -336,13 +500,15 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
   },
   "lifecycle": {
     "state": "resumed",
+    "previousState": "paused",
     "isForeground": true
   },
   "native": {
     "available": true,
     "platform": "android",
     "processId": 12345,
-    "threadName": "main"
+    "bridgeVersion": "1.0.0",
+    "signalSource": "android"
   }
 }
 ```
@@ -365,6 +531,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 | Flavor | `resource.app.flavor` | Flutter flavor 或企业自定义 flavor |
 | Release ID | `context.release.releaseId` | 可组合 app/package/version/build |
 | Feature Flags | `context.release.featureFlags` | 事件发生时命中的 feature flags |
+| Experiments | `context.release.experiments` | 实验名到分组的映射 |
 | User ID | `context.user.userId` | 必须支持匿名化或关闭 |
 | User Cohort | `context.user.cohort` | 用户分群 |
 | Route Name | `context.route.name` | 当前 route 标识 |
@@ -376,11 +543,12 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 | Weak Network | `context.network.isWeakNetwork` | 弱网判断 |
 | Device Tier | `resource.device.deviceTier` | high/medium/low/unknown |
 | Refresh Rate | `resource.device.refreshRate` | 设备刷新率 |
+| Lifecycle State | `context.lifecycle.state` | 当前生命周期状态 |
 | Native Platform | `context.native.platform` | android/ios 等 |
 
 新增字段前必须先判断是否已有规范路径。确需新增时，应说明字段是否可聚合、是否敏感、是否影响采样和是否需要服务端索引。
 
-完整字段注册以 `flutter_monitor_core` 的 `FieldRegistry` 为准。本文后续“推荐 attributes”中出现的字段，在进入代码实现前必须补充到 `FieldRegistry`，或明确降级为 payload/非索引字段，避免文档字段和代码字段分裂。
+完整字段注册以 `flutter_monitor_core` 的 `FieldRegistry` 为准。本文后续“信号字段规范”中出现的字段，在进入代码实现前必须补充到 `FieldRegistry`，或明确降级为 payload/非索引字段，避免文档字段和代码字段分裂。
 
 ## 隐私分级
 
@@ -445,17 +613,18 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 - `signalType = span`、`name = app.first_frame`
 - `signalType = span`、`name = app.interactive`
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
 | `app.start.type` | `cold`、`hot`、`warm` |
-| `app.start.duration_ms` | 启动总耗时 |
 | `app.first_frame_ms` | 首帧耗时 |
 | `app.interactive_ms` | 可交互耗时 |
-| `app.lifecycle.previous_state` | 热启动前状态 |
+| `context.lifecycle.previousState` | 热启动前状态 |
 | `sdk.init.duration_ms` | SDK 初始化耗时 |
 | `native.start.elapsed_ms` | native 启动起点到 Flutter 可观测点的耗时，可为空 |
+
+启动总耗时使用 envelope 公共字段 `durationMs`，不要再写入 `attributes`。
 
 ### 页面
 
@@ -471,23 +640,24 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 - `breadcrumb route.enter`
 - `breadcrumb route.leave`
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
-| `page.route` | 当前 route |
-| `page.route.source` | 来源 route |
-| `page.module` | 业务模块 |
-| `page.scene` | 业务场景 |
-| `page.stay_ms` | 页面停留时长 |
+| `context.route.name` | 当前 route |
+| `context.route.source` | 来源 route |
+| `context.module.name` | 业务模块 |
+| `context.module.scene` | 业务场景 |
 | `page.first_frame_ms` | 页面首帧 |
 | `page.interactive_ms` | 页面可交互 |
+
+页面停留时长使用 `metric page.stay` 事件的 envelope 公共字段 `durationMs`，不要再写入 `attributes`。
 
 ### 网络
 
 网络请求使用 `signalType = span`、`name = http.client`。
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -515,7 +685,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 - `trace action.submit_order`
 - `trace action.login`
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -530,7 +700,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 卡顿事件使用 `signalType = metric`、`name = ui.jank.sequence`。
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -543,7 +713,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 | `frame.p50_ms` | 帧耗时 P50 |
 | `frame.p90_ms` | 帧耗时 P90 |
 | `frame.p99_ms` | 帧耗时 P99 |
-| `device.tier` | 设备等级 |
+| `resource.device.deviceTier` | 设备等级 |
 
 卡顿应关联当前 session、页面 trace 和最近 breadcrumbs。
 
@@ -558,7 +728,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 - `metric memory.pressure`
 - `metric memory.leak.suspect`
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -583,14 +753,13 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 - `span app.resume`
 - `span app.exit_flush`
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
-| `app.lifecycle.state` | resumed/inactive/paused/detached/hidden |
-| `app.lifecycle.previous_state` | 上一个状态 |
-| `app.foreground_duration_ms` | 前台时长 |
-| `app.background_duration_ms` | 后台时长 |
+| `context.lifecycle.state` | resumed/inactive/paused/detached/hidden |
+| `context.lifecycle.previousState` | 上一个状态 |
+| `durationMs` | 前台或后台持续时间 |
 | `app.exit_flush.success` | 退出前 flush 是否成功 |
 
 ### 原生信号
@@ -606,11 +775,11 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 - `error native.crash`
 - `breadcrumb native.warning`
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
-| `native.platform` | android/ios |
+| `context.native.platform` | android/ios |
 | `native.signal` | memory/crash/anr/oom/lifecycle |
 | `native.thread` | 线程名 |
 | `native.thread_id` | 线程 ID |
@@ -626,7 +795,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 
 错误事件使用 `signalType = error`。
 
-推荐 attributes：
+推荐字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -638,12 +807,12 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 
 推荐 payload：
 
-- exception message；
-- stack；
-- library/framework context；
-- recent breadcrumbs；
-- active trace/span；
-- native crash details，脱敏后可选。
+- `payload.error.message`；
+- `payload.error.stacktrace`；
+- `payload.error.library`；
+- `payload.breadcrumbs`；
+- `payload.trace`；
+- `payload.native`，脱敏后可选。
 
 ### 自定义 Trace/Span
 
@@ -655,6 +824,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 - `span custom.step`
 - `breadcrumb custom.event`
 - `metric custom.metric`
+- `error custom.error`
 
 ## 完整 Session Batch 示例
 
@@ -692,11 +862,12 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
         "route": {"name": "/", "stack": ["/"]},
         "module": {"name": "app", "scene": "startup"},
         "network": {"type": "wifi", "isWeakNetwork": false},
-        "release": {"releaseId": "com.example.demo@1.2.3+100", "featureFlags": ["new_home"]}
+        "release": {"releaseId": "com.example.demo@1.2.3+100", "featureFlags": ["new_home"], "experiments": {}},
+        "lifecycle": {"state": "resumed", "previousState": "paused", "isForeground": true},
+        "native": {"available": true, "platform": "android", "processId": 12345, "bridgeVersion": "1.0.0", "signalSource": "android"}
       },
       "attributes": {
         "app.start.type": "cold",
-        "app.start.duration_ms": 1200,
         "app.first_frame_ms": 640,
         "app.interactive_ms": 1180
       },
@@ -738,7 +909,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/home", "stack": ["/home"]}, "module": {"name": "home", "scene": "home"}},
-      "attributes": {"page.route": "/home"},
+      "attributes": {},
       "payload": {}
     },
     {
@@ -757,7 +928,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail", "stack": ["/home", "/product/detail"], "source": "/home"}, "module": {"name": "product", "scene": "detail"}},
-      "attributes": {"page.route": "/product/detail", "page.first_frame_ms": 260, "page.interactive_ms": 860},
+      "attributes": {"page.first_frame_ms": 260, "page.interactive_ms": 860},
       "payload": {}
     },
     {
@@ -813,7 +984,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
-      "attributes": {"jank.count": 5, "frame.max_ms": 74, "frame.avg_ms": 48, "frame.budget_ms": 16.67, "frame.fps": 42, "device.tier": "high"},
+      "attributes": {"jank.count": 5, "frame.max_ms": 74, "frame.avg_ms": 48, "frame.budget_ms": 16.67, "frame.fps": 42},
       "payload": {}
     },
     {
@@ -851,8 +1022,11 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
       "attributes": {"error.type": "NoSuchMethodError", "error.mechanism": "dart", "error.handled": false, "error.fatal": false},
       "payload": {
-        "message": "NoSuchMethodError: method was called on null",
-        "stack": "...",
+        "error": {
+          "message": "NoSuchMethodError: method was called on null",
+          "stacktrace": "...",
+          "library": "app.feature"
+        },
         "breadcrumbs": [
           {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "attributes": {"http.url.normalized": "/api/product/{id}", "http.status_code": 200}},
           {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "ui.tap", "attributes": {"ui.target": "buy_now_button"}},
@@ -883,7 +1057,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 
 - 无 session；
 - 无 trace/span；
-- 无 route/module；
+- 无 `context.route.*` / `context.module.*`；
 - 无 resource/context；
 - 难以聚合；
 - 难以与错误、卡顿、行为、native 信号关联。

@@ -304,7 +304,7 @@ SDK 应支持：
 - 环境隔离；
 - native crash payload 脱敏。
 
-服务端协议不应依赖未脱敏字段完成核心聚合。聚合字段应来自 `docs/event_model.md` 的字段注册表，例如 normalized URL、route、module、app version、device tier 和 network type。
+服务端协议不应依赖未脱敏字段完成核心聚合。聚合字段应来自 `docs/event_model.md` 的字段注册表，例如 `http.url.normalized`、`context.route.name`、`context.module.name`、`resource.app.appVersion`、`resource.device.deviceTier` 和 `context.network.type`。
 
 ## Native 信号上报
 
@@ -356,23 +356,23 @@ Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运�
 
 服务端应支持按以下维度查询和聚合：
 
-- app version；
-- build number；
-- environment；
-- channel；
-- flavor；
-- feature flag；
-- route；
-- module；
-- scene；
-- device tier；
-- OS version；
-- network type；
-- user cohort；
-- session；
-- trace；
-- native platform；
-- memory pressure level。
+- `resource.app.appVersion`；
+- `resource.app.buildNumber`；
+- `resource.app.environment`；
+- `resource.app.channel`；
+- `resource.app.flavor`；
+- `context.release.featureFlags`；
+- `context.route.name`；
+- `context.module.name`；
+- `context.module.scene`；
+- `resource.device.deviceTier`；
+- `resource.device.osVersion`；
+- `context.network.type`；
+- `context.user.cohort`；
+- `sessionId`；
+- `traceId`；
+- `context.native.platform`；
+- `memory.pressure_level`。
 
 ## 服务端派生指标
 
@@ -388,7 +388,7 @@ Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运�
 - 内存增长趋势；
 - 影响用户数；
 - 版本退化；
-- feature flag 差异；
+- `context.release.featureFlags` 差异；
 - 弱网失败率；
 - 低端设备性能表现。
 

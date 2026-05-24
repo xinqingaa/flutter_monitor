@@ -29,19 +29,19 @@
 
 问题不在于这些能力错了，而在于它们现在像散落的珠子：每个事件都能单独看，但很难还原“当时到底发生了什么”。链路观测要做的事，就是把这些珠子穿成线。
 
-因此后续重构的第一目标不是“删掉旧能力再重做”，而是先保住这些信号源，再为它们补上 session、trace、span、breadcrumb、route/module、user、device、release 等关联关系。任何移除都应有明确替代方案，并且替代方案必须能提供不低于原能力的问题定位价值。
+因此后续重构的第一目标不是“删掉旧能力再重做”，而是先保住这些信号源，再为它们补上 `sessionId`、`traceId`、`spanId`、`payload.breadcrumbs`、`context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*` 和 `context.release.*` 等关联关系。任何移除都应有明确替代方案，并且替代方案必须能提供不低于原能力的问题定位价值。
 
 当前事件大多被组织成相互独立的 `category + data` 结构。这样可以知道“有事发生了”，但很难还原“事情是怎么发生的”。
 
-例如，一条卡顿事件可以说明发生了几帧慢帧，但还不能稳定回答：它属于哪个用户 session，当时在哪个页面或业务模块，卡顿前用户做了什么，哪些 API 请求与它重叠，当时的 release/channel/device/network 上下文是什么，后面是否跟着相关错误。
+例如，一条卡顿事件可以说明发生了几帧慢帧，但还不能稳定回答：它属于哪个用户 session，当时的 `context.route.*` / `context.module.*` 是什么，卡顿前用户做了什么，哪些 API 请求与它重叠，当时的 `context.release.*`、`resource.app.channel`、`resource.device.*`、`context.network.*` 是什么，后面是否跟着相关错误。
 
 当前能力的迁移归位可以按以下方向理解：
 
 | 现有能力 | 未来角色 |
 |---|---|
-| `ErrorMonitor` | 错误信号源，挂载当前 session、route/module、active trace/span 和 breadcrumbs |
+| `ErrorMonitor` | 错误信号源，挂载当前 `sessionId`、`context.route.*` / `context.module.*`、active `traceId` / `spanId` 和 `payload.breadcrumbs` |
 | `PerformanceMonitor` 启动部分 | 启动 trace/span 信号源 |
-| `PerformanceMonitor` route observer | route、page trace、PV 和页面停留信号源 |
+| `PerformanceMonitor` route observer | `context.route.*`、page trace、PV 和页面停留信号源 |
 | `MonitorDioInterceptor` | `http.client` span 信号源 |
 | `MonitoredHttpClient` | `http.client` span 信号源 |
 | `BehaviorMonitor` | breadcrumb、action timeline 和关键业务动作信号源 |
@@ -58,7 +58,7 @@
 
 - QA 说某个页面很慢，但说不清完整 route stack。
 - 用户说 App 卡住了，但不知道页面名或模块名。
-- 某个版本页面性能变差，但团队不知道原因是渲染、网络、数据解析、图片、设备等级还是 feature flag。
+- 某个版本页面性能变差，但团队不知道原因是渲染、网络、数据解析、图片、`resource.device.deviceTier` 还是 `context.release.featureFlags`。
 - 崩溃报告有堆栈，但缺少崩溃前的用户动作和网络事件。
 - 一次优化看起来降低了平均耗时，但团队无法判断低端设备或弱网用户是否真的改善。
 
@@ -77,7 +77,7 @@
 
 推荐定位：
 
-> Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路化观测 workspace。它采集错误、性能、网络、页面、行为、卡顿、内存、生命周期和自定义信号，并通过 session、trace、route/module、user、device、release 和 breadcrumb 上下文把这些信号关联起来，帮助团队复现、诊断、聚合和治理 App 质量问题。
+> Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路化观测 workspace。它采集错误、性能、网络、页面、行为、卡顿、内存、生命周期和自定义信号，并通过 `sessionId`、`traceId`、`context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*`、`context.release.*` 和 `payload.breadcrumbs` 把这些信号关联起来，帮助团队复现、诊断、聚合和治理 App 质量问题。
 
 这个定位保留了监控职责。真正变化的是组织模型：采集到的信号应该进入可诊断的时间线，而不是停留为互相独立的事件。
 
@@ -88,13 +88,13 @@
 SDK 应帮助前端团队回答实际排查问题：
 
 - 谁受到了影响？
-- 涉及哪个 app version、build、flavor、channel、feature flag、设备等级、OS 和网络？
+- 涉及哪个 `resource.app.appVersion`、`resource.app.buildNumber`、`resource.app.flavor`、`resource.app.channel`、`context.release.featureFlags`、`resource.device.deviceTier`、`resource.device.osVersion` 和 `context.network.type`？
 - 当时在哪个页面、模块、场景、route stack 或 tab？
 - 用户或 QA 在问题发生前做了什么？
 - 哪些 API 请求开始、失败、重试或与问题重叠？
 - 问题发生在启动、路由切换、首帧、页面可交互、滚动、渲染、图片解码、数据解析，还是某段自定义业务 trace 中？
 - 是否有关联的卡顿序列、内存增长、生命周期切换或错误？
-- 这个问题只发生在某个用户/session，还是能在服务端按版本、页面、设备、渠道和用户分群聚合看到？
+- 这个问题只发生在某个用户/session，还是能在服务端按 `resource.app.appVersion`、`context.route.name`、`resource.device.*`、`resource.app.channel` 和 `context.user.cohort` 聚合看到？
 
 SDK 的价值不只是上报某个指标变差。它的价值是帮助开发者足够快地还原现场并采取行动。
 
@@ -106,11 +106,11 @@ SDK 的价值不只是上报某个指标变差。它的价值是帮助开发者�
 
 可定位到：
 
-- 对应用户和 session；
-- 当时 route stack 和业务 module；
+- 对应用户和 `sessionId`；
+- 当时 `context.route.stack` 和 `context.module.name`；
 - 卡顿前最近点击和页面切换；
 - 卡顿期间重叠的 API 请求；
-- 设备等级、刷新率、网络类型、App 版本；
+- `resource.device.deviceTier`、`resource.device.refreshRate`、`context.network.type`、`resource.app.appVersion`；
 - 是否随后发生错误或重试。
 
 ### QA 反馈“订单页加载慢”
@@ -121,13 +121,13 @@ SDK 的价值不只是上报某个指标变差。它的价值是帮助开发者�
 - route push、first frame、interactive 各阶段耗时；
 - 页面依赖的 API 请求耗时和状态；
 - 列表构建、图片解码或自定义业务 span；
-- 与同版本、同设备等级、同网络环境下的其他 session 对比。
+- 与同 `resource.app.appVersion`、同 `resource.device.deviceTier`、同 `context.network.type` 下的其他 session 对比。
 
 ### 线上版本性能退化
 
 可定位到：
 
-- 哪些页面、模块或 feature flag 退化；
+- 哪些 `context.route.*`、`context.module.*` 或 `context.release.featureFlags` 退化；
 - 退化发生在哪类设备、系统或网络；
 - API 变慢是否影响页面 interactive；
 - 卡顿率、错误率、影响用户数是否同步上升；
@@ -161,8 +161,8 @@ session_abc
 - `parentSpanId`
 - route、route stack、module、scene 和业务属性
 - user 与 cohort 属性
-- app version、build number、environment、flavor、channel 和 feature flags
-- device、OS、refresh rate、device tier、memory/network 属性
+- `resource.app.appVersion`、`resource.app.buildNumber`、`resource.app.environment`、`resource.app.flavor`、`resource.app.channel` 和 `context.release.featureFlags`
+- `resource.device.*`、`resource.device.osVersion`、`resource.device.refreshRate`、`resource.device.deviceTier`、memory 和 `context.network.*` 属性
 - 最近 breadcrumbs
 
 这样才能把页面性能、API 耗时、用户行为、卡顿和错误作为一个故事来排查。
@@ -176,14 +176,14 @@ DevTools 应聚焦开发和 QA 复现：
 - 在 Flutter Timeline/Performance 视图中标记 SDK 事件；
 - 展示当前 session timeline；
 - 暴露 page/API/action/jank/error 详情，帮助本地诊断；
-- 展示当前 route/module/user/device/release 上下文；
+- 展示当前 `context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*` 和 `context.release.*` 上下文；
 - 支持导出和导入本地 session payload，便于 QA 转交开发。
 
 服务端上报应聚焦历史和聚合分析：
 
 - page 与 API 的 P50/P90/P95/P99；
 - jank rate、error rate、crash/session impact 和 affected users；
-- release、channel、feature flag、device、OS、network 和 user cohort 维度；
+- `context.release.*`、`resource.app.channel`、`context.release.featureFlags`、`resource.device.*`、`resource.device.osVersion`、`context.network.*` 和 `context.user.cohort` 维度；
 - 告警和性能退化检测；
 - 优化前后对比；
 - 长期 App 质量治理。
@@ -206,8 +206,8 @@ DevTools 回答“这次复现发生了什么”。服务端回答“这件事�
 - 离线缓存和重试；
 - SDK 版本之间的 schema 兼容；
 - SDK 自监控，例如丢弃事件数量和 flush 失败次数；
-- release、environment、flavor、channel 和 feature flag 维度；
-- 即使用户无法描述页面，也能通过 route/module/scene 归因；
+- `context.release.*`、`resource.app.environment`、`resource.app.flavor`、`resource.app.channel` 和 `context.release.featureFlags` 维度；
+- 即使用户无法描述页面，也能通过 `context.route.*`、`context.module.name` 和 `context.module.scene` 归因；
 - QA 转交开发的排查工作流；
 - 服务端协议校验和鉴权。
 
@@ -216,7 +216,7 @@ DevTools 回答“这次复现发生了什么”。服务端回答“这件事�
 ## 迁移原则
 
 1. 保留现有信号源，除非已经有明确替代方案。
-2. 围绕 session、trace、route/module context 和 breadcrumbs 重组事件。
+2. 围绕 `sessionId`、`traceId`、`context.route.*`、`context.module.*` 和 `payload.breadcrumbs` 重组事件。
 3. 先定义协议和事件模型，再大量新增指标。
 4. DevTools 与服务端消费应共享同一套数据形态。
 5. 采用渐进式迁移，保证 SDK 在迁移过程中仍然可用。
