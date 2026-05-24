@@ -4,6 +4,8 @@
 
 DevTools 集成服务于本地复现、性能优化和 QA 交接。它回答“这一次发生了什么”，不承担长期历史分析、告警和跨用户聚合职责。
 
+当前阶段的 DevTools 集成优先指接入官方 Flutter DevTools / Flutter Timeline：SDK 写入 Timeline 标记、维护本地 session timeline、提供导出数据。未来可选的 `flutter_monitor_devtools` 是自定义 DevTools extension/UI 包，用于更完整地展示 session、trace、memory、jank 和 native signals；它消费 SDK bridge/export 数据，不承担 runtime 采集。
+
 DevTools 必须消费 `flutter_monitor_core` 定义的统一 event envelope，不得定义第二套事件结构。Flutter runtime 信号和 native 信号都应通过同一 session timeline 展示。
 
 ## 本地架构

@@ -1,5 +1,5 @@
 name: example
-description: Demonstrates how to use the flutter_monitor_sdk package.
+description: Demonstrates how to use the Flutter Monitor runtime SDK package.
 publish_to: 'none'
 
 environment:

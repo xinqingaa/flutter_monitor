@@ -156,6 +156,7 @@
 - 预留 CLI、MCP、独立 DevTools tooling 的包边界。
 - 工具入口复用 `flutter_monitor_core`。
 - 工具入口消费 session export 和 event envelope。
+- `flutter_monitor_devtools` 如出现，应定位为自定义 DevTools extension/UI 包，消费 SDK bridge/export 数据，不承担 runtime 采集。
 
 验收：
 

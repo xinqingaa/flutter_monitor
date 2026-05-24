@@ -4,7 +4,7 @@
 
 ## 项目目标
 
-Flutter Monitor SDK 的目标是成为一个 **以链路为组织方式的 Flutter 端侧监控 SDK**。
+Flutter Monitor 的目标是成为一个 **以链路为组织方式的 Flutter 端侧监控 workspace**。
 
 SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生命周期、native 和自定义业务信号，并通过统一上下文将这些信号组织成可回放、可聚合、可定位的用户会话链路。
 
@@ -31,7 +31,7 @@ SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生�
 未来工具入口：
 
 - `flutter_monitor_cli`
-- `flutter_monitor_devtools`
+- `flutter_monitor_devtools`：未来可选的自定义 DevTools extension/UI 包，消费 `flutter_monitor_sdk` 暴露或导出的数据，不承担 runtime 采集。
 - `flutter_monitor_mcp`
 
 所有未来入口都必须复用 `flutter_monitor_core`。不得为 CLI、DevTools、native、MCP 或服务端创建第二套事件模型、导出格式或上报协议。
@@ -164,4 +164,3 @@ README 只作为项目入口，不作为架构、协议或 schema 的唯一事�
 - 不要让 native plugin 绕过 SDK pipeline 直接上报。
 - 不要让工具入口使用与服务端协议不兼容的导出格式。
 - 不要在缺少证据时把内存增长宣称为确定泄漏。
-

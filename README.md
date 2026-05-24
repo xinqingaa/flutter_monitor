@@ -1,6 +1,6 @@
-# Flutter Monitor SDK
+# Flutter Monitor
 
-Flutter Monitor SDK 是一个面向 Flutter 应用的端侧监控与链路观测 SDK。
+Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路观测 workspace。
 它采集错误、性能、网络、页面、行为、卡顿、内存、生命周期和自定义业务信号，并通过统一的 session/trace/span/breadcrumb/context 模型，把这些信号组织成可回放、可聚合、可定位的用户会话链路。
 
 本项目不是要用链路替代监控。现有信号采集器仍然有价值；目标是把这些信号连接起来，让团队能还原真实用户或 QA 会话里发生了什么。

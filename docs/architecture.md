@@ -2,7 +2,7 @@
 
 ## 架构目标
 
-Flutter Monitor SDK 的目标架构是一个基于 Dart pub workspaces 的多包监控与链路观测 SDK。仓库根目录作为 workspace root，发布能力拆分到 `packages/` 下的独立包。
+Flutter Monitor 的目标架构是一个基于 Dart pub workspaces 的多包监控与链路观测 workspace。仓库根目录作为 workspace root，发布能力拆分到 `packages/` 下的独立包。
 
 架构目标：
 
@@ -19,7 +19,7 @@ Flutter Monitor SDK 的目标架构是一个基于 Dart pub workspaces 的多包
 目标 workspace：
 
 ```text
-flutter_monitor_sdk/
+flutter_monitor/
   pubspec.yaml
   AGENTS.md
   README.md
@@ -55,13 +55,14 @@ flutter_monitor_core
 - `flutter_monitor_sdk` 可以依赖 Flutter、Dio、http、device/app 信息等 runtime 能力。
 - `flutter_monitor_native` 是可选 Flutter plugin，不应成为 `flutter_monitor_sdk` 的强依赖。
 - future CLI、DevTools、MCP 只能复用 `flutter_monitor_core` 的模型和协议，不得定义独立事件结构。
+- 当前阶段的 DevTools 能力属于 `flutter_monitor_sdk`：写入 Flutter Timeline、提供 DevTools bridge、暴露 session timeline 和导出数据。future `flutter_monitor_devtools` 指可选的自定义 DevTools extension/UI 包，不承担 runtime 采集。
 
 ## 目标目录结构
 
 ### Workspace
 
 ```text
-flutter_monitor_sdk/
+flutter_monitor/
   pubspec.yaml
   analysis_options.yaml
   AGENTS.md
@@ -367,7 +368,7 @@ Outputs 由 `flutter_monitor_sdk` 实现。
 
 ## DevTools Bridge
 
-DevTools bridge 由 `flutter_monitor_sdk` 提供本地数据源，未来可拆为独立工具包，但必须复用 `flutter_monitor_core`。
+DevTools bridge 由 `flutter_monitor_sdk` 提供本地数据源，并优先接入官方 Flutter DevTools / Timeline 能力。未来如果需要更完整的自定义面板，可新增 `flutter_monitor_devtools` 作为独立 DevTools extension/UI 包，但它只消费 bridge/export 数据，不承担 runtime 采集，并必须复用 `flutter_monitor_core`。
 
 模块：
 

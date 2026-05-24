@@ -1,8 +1,8 @@
 name: flutter_monitor_sdk
-description: "A Flutter Monitor SDK for monitoring errors, performance, user behavior and UI jank."
+description: "A Flutter runtime monitoring SDK for errors, performance, behavior, jank, memory, and trace observability."
 version: 1.0.0
-homepage: https://github.com/xinqingaa/flutter_monitor_sdk
-repository: https://github.com/xinqingaa/flutter_monitor_sdk
+homepage: https://github.com/xinqingaa/flutter_monitor
+repository: https://github.com/xinqingaa/flutter_monitor
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
