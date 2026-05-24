@@ -63,6 +63,8 @@ trace snapshot
 priority suggestion
 ```
 
+`priority suggestion` 不是采集器私有协议；它应由 pipeline 映射为统一 event envelope 的 `priority` 字段，默认值为 `normal`。
+
 ## 启动采集
 
 ### 采集来源
@@ -120,7 +122,7 @@ Native 增强来源：
 - `app.first_frame_ms`
 - `app.interactive_ms`
 - `sdk.init.duration_ms`
-- `app.previous_lifecycle_state`
+- `app.lifecycle.previous_state`
 - `native.start.elapsed_ms`
 
 ### 限制与降级
@@ -600,7 +602,7 @@ Native 层：
 - 内存、帧、breadcrumb 采集需要限流。
 - SDK 自身队列和缓存需要 self-monitoring。
 
-采样和限流由 pipeline 统一执行。collector 可以提供 priority suggestion，但不自行丢弃 critical/high 事件，除非为保护 App 稳定性必须降级。
+采样和限流由 pipeline 统一执行。collector 可以提供 priority suggestion，由 pipeline 映射为 event envelope 的 `priority`。collector 不自行丢弃 critical/high 事件，除非为保护 App 稳定性必须降级。
 
 ## 限制与降级策略
 

@@ -1,5 +1,6 @@
 import '../schema/schema_version.dart';
 import 'event_level.dart';
+import 'event_priority.dart';
 import 'event_status.dart';
 import 'json_utils.dart';
 import 'monitor_context.dart';
@@ -18,6 +19,7 @@ class EventEnvelope {
     required this.name,
     this.level,
     this.status,
+    this.priority = EventPriority.normal,
     this.sessionId,
     this.traceId,
     this.spanId,
@@ -38,6 +40,7 @@ class EventEnvelope {
   final String name;
   final EventLevel? level;
   final EventStatus? status;
+  final EventPriority priority;
   final String? sessionId;
   final String? traceId;
   final String? spanId;
@@ -67,6 +70,7 @@ class EventEnvelope {
       status: json.containsKey('status')
           ? EventStatus.fromJson(json['status'])
           : null,
+      priority: EventPriority.fromJson(json['priority']),
       sessionId: json['sessionId'] as String?,
       traceId: json['traceId'] as String?,
       spanId: json['spanId'] as String?,
@@ -93,6 +97,7 @@ class EventEnvelope {
     String? name,
     EventLevel? level,
     EventStatus? status,
+    EventPriority? priority,
     String? sessionId,
     String? traceId,
     String? spanId,
@@ -113,6 +118,7 @@ class EventEnvelope {
       name: name ?? this.name,
       level: level ?? this.level,
       status: status ?? this.status,
+      priority: priority ?? this.priority,
       sessionId: sessionId ?? this.sessionId,
       traceId: traceId ?? this.traceId,
       spanId: spanId ?? this.spanId,
@@ -124,24 +130,29 @@ class EventEnvelope {
     );
   }
 
-  Map<String, Object?> toJson() => jsonMap({
-    'schemaVersion': schemaVersion.toString(),
-    'eventId': eventId,
-    'timestamp': timestamp.toIso8601String(),
-    'startTime': dateTimeToJson(startTime),
-    'endTime': dateTimeToJson(endTime),
-    'durationMs': durationMs,
-    'signalType': signalType.toJson(),
-    'name': name,
-    'level': level?.toJson(),
-    'status': status?.toJson(),
-    'sessionId': sessionId,
-    'traceId': traceId,
-    'spanId': spanId,
-    'parentSpanId': parentSpanId,
-    'resource': resource.toJson(),
-    'context': context.toJson(),
-    'attributes': attributes,
-    'payload': payload,
-  });
+  Map<String, Object?> toJson() {
+    final json = jsonMap({
+      'schemaVersion': schemaVersion.toString(),
+      'eventId': eventId,
+      'timestamp': timestamp.toIso8601String(),
+      'startTime': dateTimeToJson(startTime),
+      'endTime': dateTimeToJson(endTime),
+      'durationMs': durationMs,
+      'signalType': signalType.toJson(),
+      'name': name,
+      'level': level?.toJson(),
+      'status': status?.toJson(),
+      'priority': priority.toJson(),
+      'sessionId': sessionId,
+      'traceId': traceId,
+      'spanId': spanId,
+      'parentSpanId': parentSpanId,
+    });
+
+    json['resource'] = resource.toJson();
+    json['context'] = context.toJson();
+    json['attributes'] = attributes;
+    json['payload'] = payload;
+    return json;
+  }
 }

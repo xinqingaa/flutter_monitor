@@ -76,6 +76,7 @@ URL query、request body、response body、token、cookie、手机号、身份�
   "name": "http.client",
   "level": "info",
   "status": "ok",
+  "priority": "normal",
   "sessionId": "ses_001",
   "traceId": "trace_page_product_detail",
   "spanId": "span_http_product",
@@ -101,6 +102,7 @@ URL query、request body、response body、token、cookie、手机号、身份�
 | `name` | string | required | 否 | queryable | 是 | 稳定事件名，不包含动态业务值 |
 | `level` | string | optional | 是 | safe | 是 | `debug`、`info`、`warning`、`error`、`fatal` |
 | `status` | string | optional | 是 | safe | 是 | `ok`、`error`、`cancelled`、`timeout`、`unknown` |
+| `priority` | string | default | 否 | safe | 是 | `critical`、`high`、`normal`、`low`，默认 `normal` |
 | `sessionId` | string | conditional | 是 | queryable | 是 | 普通业务事件必填；pre-session/sdk 事件可缺省 |
 | `traceId` | string | conditional | 是 | queryable | 是 | trace/span/page/http/custom flow 必填 |
 | `spanId` | string | conditional | 是 | queryable | 是 | span 必填 |
@@ -117,6 +119,21 @@ URL query、request body、response body、token、cookie、手机号、身份�
 - `durationMs` 应优先来自 monotonic clock 或平台高精度计时，避免系统时间变化影响耗时。
 - 如果只能获得 duration 而不能获得准确 start/end，可只提供 `timestamp` 和 `durationMs`。
 - 如果事件是瞬时 breadcrumb，可不提供 `startTime`、`endTime` 和 `durationMs`。
+
+### 优先级模型
+
+`priority` 表示事件在 pipeline、队列、离线缓存、重试和服务端处理中的保留优先级。
+
+建议语义：
+
+| 值 | 说明 |
+|---|---|
+| `critical` | crash、OOM、严重错误、关键链路丢失等必须尽量保留的事件 |
+| `high` | 关键错误、关键慢页面、严重卡顿、memory pressure 等高价值诊断事件 |
+| `normal` | 默认业务监控事件，例如页面、网络、行为、普通性能事件 |
+| `low` | 高频、可降采样、辅助性日志或调试事件 |
+
+采集器只能提供 priority suggestion，最终 `priority` 由 pipeline 在构建 event envelope 时确定。缺省值为 `normal`。
 
 ## Core Concepts
 
@@ -381,8 +398,9 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 | `app.start.duration_ms` | 启动总耗时 |
 | `app.first_frame_ms` | 首帧耗时 |
 | `app.interactive_ms` | 可交互耗时 |
-| `app.previous_lifecycle_state` | 热启动前状态 |
+| `app.lifecycle.previous_state` | 热启动前状态 |
 | `sdk.init.duration_ms` | SDK 初始化耗时 |
+| `native.start.elapsed_ms` | native 启动起点到 Flutter 可观测点的耗时，可为空 |
 
 ### 页面
 
@@ -604,6 +622,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "app.cold_start",
       "level": "info",
       "status": "ok",
+      "priority": "high",
       "sessionId": "ses_001",
       "traceId": "trace_start",
       "spanId": null,
@@ -637,6 +656,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "app.init",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_start",
       "spanId": "span_app_init",
@@ -656,6 +676,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "route.enter",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": null,
       "spanId": null,
@@ -674,6 +695,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "page.load",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": null,
@@ -692,6 +714,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "http.client",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": "span_http_product",
@@ -709,6 +732,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "ui.tap",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": null,
@@ -727,6 +751,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "ui.jank.sequence",
       "level": "warning",
       "status": "ok",
+      "priority": "high",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": null,
@@ -744,6 +769,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "memory.sample",
       "level": "info",
       "status": "ok",
+      "priority": "low",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": null,
@@ -761,6 +787,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "name": "error.dart",
       "level": "error",
       "status": "error",
+      "priority": "critical",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": null,

@@ -3,6 +3,8 @@ abstract final class FieldPaths {
   static const appStartDurationMs = 'app.start.duration_ms';
   static const appFirstFrameMs = 'app.first_frame_ms';
   static const appInteractiveMs = 'app.interactive_ms';
+  static const sdkInitDurationMs = 'sdk.init.duration_ms';
+  static const nativeStartElapsedMs = 'native.start.elapsed_ms';
   static const appLifecycleState = 'app.lifecycle.state';
   static const appLifecyclePreviousState = 'app.lifecycle.previous_state';
   static const appForegroundDurationMs = 'app.foreground_duration_ms';

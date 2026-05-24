@@ -44,6 +44,18 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.sdkInitDurationMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.nativeStartElapsedMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.appLifecycleState,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.safe,

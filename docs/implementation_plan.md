@@ -47,54 +47,80 @@
 - `docs/signal_collection.md` 覆盖启动、页面、网络、错误、行为、卡顿、内存、生命周期、native 和自定义 trace。
 - DevTools、server protocol、native package 不定义第二套模型。
 
-## Phase 2：SDK Runtime Pipeline
+## Phase 2：SDK Runtime Pipeline 基础设施与兼容适配
 
 目标：
 
 - 在 `flutter_monitor_sdk` 中建立 runtime 基础设施：
+  - raw signal；
+  - context snapshot；
+  - trace snapshot；
   - context manager；
   - session manager；
   - trace/span manager；
   - breadcrumb store；
   - event pipeline；
+  - envelope builder；
   - outputs。
-- 将 Reporter 从事件分发器升级为 pipeline 入口或被 pipeline 替代。
+- 将 Reporter 从最终事件分发器升级为兼容入口，或用 pipeline 入口替代。
+- 让旧 `Reporter.addEvent(category, data)` 调用可以进入 pipeline，但旧结构不再作为目标协议。
+- 接入支撑 session 切分和 hot start 的最小 lifecycle 信号。
+
+本阶段不要求：
+
+- 迁移所有现有 collector；
+- 完整实现 HTTP 重试、离线缓存和 remote config；
+- 完整实现 DevTools 面板；
+- 实现 native 深度能力；
+- 移除旧公开 API。
 
 验收：
 
-- 任意业务事件都能带 `sessionId`。
-- 页面、API、行为、卡顿、错误可以关联当前 route/module。
-- 错误、卡顿、慢 trace 可以携带最近 breadcrumbs。
-- output 消费统一 event envelope。
+- legacy/manual event 能生成统一 `EventEnvelope`。
+- 任意业务事件至少能带 `sessionId`。
+- output 消费统一 event envelope 或 envelope JSON。
 - 上下文异步变化时，事件仍使用发生时的 context snapshot。
+- Reporter 仍兼容旧 `category + data` 调用，但内部不再把该结构作为最终协议源。
 - SDK 能记录 envelope 构建失败、事件丢弃、flush 失败等 self-monitoring 事件。
+- 原 SDK example/test 继续通过。
 
 ## Phase 3：现有 Flutter 信号接入
 
 目标：
 
 - error 接入 event envelope。
-- cold start、hot start、page load 接入 trace/span。
-- Dio 和 `http` 请求接入 `http.client` span。
 - click/PV/page stay 接入 breadcrumb 或 metric。
+- route/page load 接入 trace/span。
+- cold start、hot start 接入 trace/span。
+- Dio 和 `http` 请求接入 `http.client` span。
 - jank 接入当前 page trace 和 breadcrumbs。
+- 最小 lifecycle 事件参与 session 切分、hot start 和 exit flush。
+
+建议迁移顺序：
+
+1. error；
+2. behavior / click / PV；
+3. route / page load / page stay；
+4. startup / hot start；
+5. Dio / `http`；
+6. jank。
 
 验收：
 
 - 现有功能不丢失。
 - 上报结构符合 `docs/event_model.md`。
 - 示例 App 能展示一条完整 session timeline。
-- 启动、页面加载、API、点击、PV、页面停留、卡顿、错误均可在 session 中看到。
+- 启动、热启动、页面加载、API、点击、PV、页面停留、卡顿、错误、最小 lifecycle 均可在 session 中看到。
 - 慢页面能关联页面 trace、相关 API 和最近 breadcrumbs。
 - 卡顿能关联当前页面/模块、最近行为和设备信息。
 - 错误能关联当前 route/module、active trace/span 和最近 breadcrumbs。
 
-## Phase 4：内存、生命周期与 Native Bridge
+## Phase 4：内存、Native Bridge 与增强 Lifecycle
 
 目标：
 
 - 接入 Flutter/Dart 可获得的 memory sample、growth、pressure 线索。
-- 接入 lifecycle：foreground/background/resume/exit flush。
+- 增强 lifecycle：foreground/background duration、exit flush 结果、异常生命周期线索。
 - 定义并接入 `MonitorNativeBridge`。
 - 在 `flutter_monitor_native` 中提供可选 native memory/lifecycle 基础能力。
 - 预留 native crash、OOM、ANR schema 和离线缓存策略。

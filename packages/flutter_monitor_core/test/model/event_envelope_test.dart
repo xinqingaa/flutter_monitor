@@ -14,6 +14,7 @@ void main() {
       name: 'http.client',
       level: EventLevel.info,
       status: EventStatus.ok,
+      priority: EventPriority.high,
       sessionId: 'ses_001',
       traceId: 'trace_001',
       spanId: 'span_001',
@@ -40,11 +41,30 @@ void main() {
     final parsed = EventEnvelope.fromJson(json);
 
     expect(json['schemaVersion'], '1.0');
+    expect(json['priority'], 'high');
     expect(parsed.eventId, envelope.eventId);
     expect(parsed.signalType, SignalType.span);
+    expect(parsed.priority, EventPriority.high);
     expect(parsed.resource.app?.appVersion, '1.2.3');
     expect(parsed.context.route?.stack, ['/home', '/product/detail']);
     expect(parsed.attributes['http.status_code'], 200);
+  });
+
+  test('keeps empty required objects in json', () {
+    final envelope = EventEnvelope(
+      eventId: 'evt_empty',
+      timestamp: DateTime.parse('2026-05-24T12:00:00.000+08:00'),
+      signalType: SignalType.sdk,
+      name: 'sdk.health',
+    );
+
+    final json = envelope.toJson();
+
+    expect(json['resource'], <String, Object?>{});
+    expect(json['context'], <String, Object?>{});
+    expect(json['attributes'], <String, Object?>{});
+    expect(json['payload'], <String, Object?>{});
+    expect(SchemaValidator().validateJson(json).isValid, isTrue);
   });
 
   test('enum values use stable wire values', () {

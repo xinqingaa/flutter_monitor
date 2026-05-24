@@ -68,6 +68,8 @@ SDK 应将关键 trace/span 写入 Flutter Timeline。
 
 Timeline arguments 应只包含脱敏后的必要字段，例如 `sessionId`、`traceId`、`spanId`、`route`、`module`、`status`、关键 attributes。
 
+DevTools 中展示的 `priority` 必须来自统一 event envelope，不应根据 UI 分组重新计算另一套优先级。
+
 ## DevTools 面板
 
 ### Session Timeline

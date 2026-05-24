@@ -34,6 +34,18 @@ void main() {
       FieldValueType.string,
     );
     expect(
+      registry.lookup(FieldPaths.sdkInitDurationMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
+      registry.lookup(FieldPaths.nativeStartElapsedMs)?.privacyLevel,
+      PrivacyLevel.safe,
+    );
+    expect(
+      registry.lookup(FieldPaths.appLifecyclePreviousState)?.valueType,
+      FieldValueType.string,
+    );
+    expect(
       registry.lookup(FieldPaths.nativeMemoryPressureLevel)?.privacyLevel,
       PrivacyLevel.safe,
     );

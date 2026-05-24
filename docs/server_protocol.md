@@ -56,6 +56,7 @@ POST /api/monitor/v1/events
       "name": "http.client",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_001",
       "spanId": "span_001",
@@ -212,7 +213,7 @@ SDK 重试时不得为同一事件重新生成 `eventId`。`requestId` 只表示
 
 若服务端使用 HTTP `207` 表示部分成功，response body 仍应使用本文档的部分成功结构。若服务端统一使用 HTTP `200` 表示接收成功但部分事件被拒绝，也必须通过 `accepted`、`rejected` 和 `errors` 表达事件级结果。
 
-## 重试策略
+## 重试策略与事件优先级
 
 SDK 应支持：
 
@@ -220,7 +221,7 @@ SDK 应支持：
 - 最大重试次数；
 - 最大队列长度；
 - 最大离线缓存大小；
-- 事件优先级；
+- 事件优先级，即 event envelope 的 `priority` 字段；
 - App 退出前尽力 flush；
 - 网络恢复后重试；
 - partial failure 只重试 `retryable = true` 的事件。
@@ -232,6 +233,8 @@ SDK 应支持：
 - 重试必须保持原始 `eventId`。
 - 重试队列达到上限时，应优先保留高优先级事件，并记录丢弃计数。
 - App 退出前 flush 是尽力语义，不保证所有低优先级事件都成功上报。
+
+`priority` 来自统一 event envelope，服务端和 SDK 队列都不应使用另一套优先级协议。采集器可以提供 priority suggestion，但最终值应由 pipeline 写入 envelope。
 
 优先级建议：
 

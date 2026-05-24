@@ -28,6 +28,14 @@ void main() {
     expect(result.warnings, isEmpty);
   });
 
+  test('accepts serialized envelope json', () {
+    final json = validSpan().toJson();
+    final result = validator.validateJson(json);
+
+    expect(result.isValid, isTrue);
+    expect(result.warnings, isEmpty);
+  });
+
   test('rejects span events without spanId', () {
     final result = validator.validate(validSpan(spanId: ''));
 
