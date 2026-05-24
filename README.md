@@ -24,10 +24,13 @@ packages/
 常用验证命令：
 
 ```sh
-flutter pub get
-cd packages/flutter_monitor_sdk
-flutter analyze
-flutter test
+./tools/check.sh
+```
+
+快速启动 example：
+
+```sh
+./tools/run_example.sh
 ```
 
 ## 文档
