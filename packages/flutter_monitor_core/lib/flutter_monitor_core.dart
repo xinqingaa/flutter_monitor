@@ -2,6 +2,7 @@
 library;
 
 export 'src/constants/core_package_constants.dart';
+export 'src/constants/context_missing_reasons.dart';
 export 'src/constants/default_limits.dart';
 export 'src/constants/field_paths.dart';
 export 'src/constants/schema_constants.dart';

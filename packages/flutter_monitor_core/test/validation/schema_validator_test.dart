@@ -69,6 +69,45 @@ void main() {
     );
   });
 
+  test('rejects unknown attribute fields', () {
+    final event = validSpan().copyWith(
+      attributes: const {'custom.unregistered': 'value'},
+    );
+    final result = validator.validate(event);
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      contains('unknown_attribute'),
+    );
+  });
+
+  test('rejects forbidden attribute fields', () {
+    final event = validSpan().copyWith(
+      attributes: const {FieldPaths.authToken: 'secret'},
+    );
+    final result = validator.validate(event);
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      contains('forbidden_field'),
+    );
+  });
+
+  test('rejects invalid registered attribute types', () {
+    final event = validSpan().copyWith(
+      attributes: const {FieldPaths.httpStatusCode: '200'},
+    );
+    final result = validator.validate(event);
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      contains('invalid_attribute_type'),
+    );
+  });
+
   test('rejects deprecated raw context fields', () {
     final result = validator.validateJson({
       'schemaVersion': '1.0',
@@ -98,6 +137,34 @@ void main() {
       result.warnings.map((issue) => issue.code),
       contains('session_id_missing'),
     );
+  });
+
+  test('rejects invalid context missing reason', () {
+    final event = validSpan().copyWith(
+      context: const MonitorContext(
+        missing: true,
+        missingReason: 'free_text_reason',
+      ),
+    );
+    final result = validator.validate(event);
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      contains('invalid_missing_reason'),
+    );
+  });
+
+  test('accepts registered context missing reason', () {
+    final event = validSpan().copyWith(
+      context: const MonitorContext(
+        missing: true,
+        missingReason: ContextMissingReasons.preSession,
+      ),
+    );
+    final result = validator.validate(event);
+
+    expect(result.isValid, isTrue);
   });
 
   test('validates raw json required object fields', () {
@@ -131,6 +198,25 @@ void main() {
     expect(
       result.errors.map((issue) => issue.code),
       contains('invalid_schema_version'),
+    );
+  });
+
+  test('rejects invalid raw enum values', () {
+    final result = validator.validateJson({
+      'schemaVersion': '1.0',
+      'eventId': 'evt_001',
+      'timestamp': '2026-05-24T12:00:00.000+08:00',
+      'signalType': 'unknown_signal',
+      'name': 'sdk.health',
+      'priority': 'must_keep',
+      'resource': <String, Object?>{},
+      'context': <String, Object?>{},
+    });
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.path),
+      containsAll(['signalType', 'priority']),
     );
   });
 }

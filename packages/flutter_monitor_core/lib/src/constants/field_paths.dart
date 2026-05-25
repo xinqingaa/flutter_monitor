@@ -132,8 +132,6 @@ abstract final class FieldPaths {
   static const nativeCrashType = 'native.crash.type';
   static const nativeAnrDurationMs = 'native.anr.duration_ms';
   static const nativeOomReason = 'native.oom.reason';
-  static const nativeMemoryUsedMb = 'native.memory.used_mb';
-  static const nativeMemoryPressureLevel = 'native.memory.pressure_level';
 
   static const errorType = 'error.type';
   static const errorMechanism = 'error.mechanism';

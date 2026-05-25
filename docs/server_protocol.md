@@ -76,6 +76,10 @@ POST /api/monitor/v1/events
 
 `events` 中的每一项必须符合 `docs/event_model.md` 定义的 event envelope。
 
+请求级 `appKey`、`sdk` 和 headers 只用于鉴权、路由、兼容校验和排查，不替代单个 event envelope 内的 `resource.app.*` 与 `resource.sdk.*`。每个事件仍应能脱离 batch 独立解析。
+
+如果请求级元信息与事件级 `resource` 冲突，服务端应以事件级 envelope 作为事件事实源，并将冲突作为协议校验问题记录；是否拒绝整个 batch、拒绝冲突事件或仅记录 warning，由服务端兼容策略决定，但不得用请求级字段静默覆盖事件级字段。
+
 ```mermaid
 flowchart TD
   Events["脱敏统一事件<br/>EventEnvelope"]
@@ -305,6 +309,8 @@ SDK 应支持：
 - native crash payload 脱敏。
 
 服务端协议不应依赖未脱敏字段完成核心聚合。聚合字段应来自 `docs/event_model.md` 的字段注册表，例如 `http.url.normalized`、`context.route.name`、`context.module.name`、`resource.app.appVersion`、`resource.device.deviceTier` 和 `context.network.type`。
+
+服务端默认不应把未注册 `attributes` 当作索引字段。若未来需要扩展字段索引，必须先进入字段注册和兼容策略，而不是由 SDK、native plugin 或工具入口临时约定。
 
 ## Native 信号上报
 

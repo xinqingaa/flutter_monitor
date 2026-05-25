@@ -678,18 +678,6 @@ const defaultFieldDefinitions = <FieldDefinition>[
     privacyLevel: PrivacyLevel.queryable,
   ),
   FieldDefinition(
-    path: FieldPaths.nativeMemoryUsedMb,
-    valueType: FieldValueType.number,
-    privacyLevel: PrivacyLevel.safe,
-    indexed: true,
-  ),
-  FieldDefinition(
-    path: FieldPaths.nativeMemoryPressureLevel,
-    valueType: FieldValueType.string,
-    privacyLevel: PrivacyLevel.safe,
-    indexed: true,
-  ),
-  FieldDefinition(
     path: FieldPaths.errorType,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.queryable,

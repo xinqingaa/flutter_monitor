@@ -12,7 +12,6 @@
 flowchart TD
   P0["Phase 0<br/>Workspace 与包边界"]
   P1["Phase 1<br/>Core schema 与事件模型"]
-  P15["Phase 1.5<br/>字段契约统一"]
   P2["Phase 2<br/>SDK runtime pipeline"]
   P3["Phase 3<br/>现有 Flutter 信号接入"]
   P4["Phase 4<br/>内存 / Native bridge / 增强 lifecycle"]
@@ -21,8 +20,7 @@ flowchart TD
   P7["Phase 7<br/>工具入口扩展"]
 
   P0 -->|"先确定包边界"| P1
-  P1 -->|"模型稳定后统一字段"| P15
-  P15 -->|"字段契约稳定后铺管线"| P2
+  P1 -->|"模型与字段契约稳定后铺管线"| P2
   P2 -->|"管线可用后迁移信号"| P3
   P3 -->|"基础信号稳定后增强"| P4
   P4 -->|"统一 envelope 可被本地消费"| P5
@@ -60,36 +58,26 @@ flowchart TD
 
 - 在 `flutter_monitor_core` 中建立统一模型。
 - 稳定 event envelope、schema version、field registry、privacy level。
+- 建立唯一字段契约，覆盖 public envelope、resource、context、attributes 和 payload。
+- 清理同一语义的重复字段，例如 `context.route.*` / `context.module.*`、`resource.device.deviceTier`、`context.lifecycle.*`、`context.native.platform`、`durationMs`、`payload.error.*`、`memory.native_used_mb` 等。
 - 定义 session export/import 格式。
 - 定义 schema validation 基础能力。
+- 同步 `flutter_monitor_core` 的 `FieldPaths`、`FieldRegistry`、context/resource model、schema validation、privacy filtering 和测试。
 - 稳定信号采集设计，覆盖采集来源、触发时机、链路关联和降级策略。
 
 验收：
 
 - 所有 signal type 都能映射到统一 event envelope。
 - 字段状态、可空性、隐私等级、索引建议明确。
-- 冷启动、热启动、页面、网络、行为、卡顿、内存、native、错误、自定义 trace 均有 schema。
-- `docs/signal_collection.md` 覆盖启动、页面、网络、错误、行为、卡顿、内存、生命周期、native 和自定义 trace。
-- DevTools、server protocol、native package 不定义第二套模型。
-
-## Phase 1.5：字段契约统一
-
-目标：
-
-- 暂停 Phase 2 之前的 runtime pipeline 扩展，先统一项目内部字段。
-- 在 `docs/event_model.md` 中建立唯一字段契约，覆盖 public envelope、resource、context、attributes 和 payload。
-- 清理同一语义的重复字段，例如 `context.route.*` / `context.module.*`、`resource.device.deviceTier`、`context.lifecycle.*`、`context.native.platform`、`durationMs`、`payload.error.*` 等。
-- 让 `docs/signal_collection.md`、`docs/server_protocol.md`、`docs/devtools_integration.md`、`docs/architecture.md` 和 `AGENTS.md` 只引用统一字段，不再定义或暗示第二套字段。
-- 同步 `flutter_monitor_core` 的 `FieldPaths`、`FieldRegistry`、context/resource model、schema validation 和测试。
-
-验收：
-
 - 一个语义只有一个规范字段路径。
 - 任何字段都明确属于 `resource`、`context`、`attributes` 或 `payload` 之一。
 - 文档示例不再出现字段契约禁止的旧字段。
 - `flutter_monitor_core` 中的字段常量与 `docs/event_model.md` 的唯一字段契约一致。
 - 字段注册表包含所有目标字段的类型、隐私等级和索引建议。
-- core 测试覆盖字段注册、字段黑名单和主要 JSON round-trip。
+- core 测试覆盖字段注册、字段黑名单、schema validation、privacy filtering 和主要 JSON round-trip。
+- 冷启动、热启动、页面、网络、行为、卡顿、内存、native、错误、自定义 trace 均有 schema。
+- `docs/signal_collection.md` 覆盖启动、页面、网络、错误、行为、卡顿、内存、生命周期、native 和自定义 trace。
+- DevTools、server protocol、native package 不定义第二套模型。
 - Phase 2 只允许基于统一字段契约构建 pipeline。
 
 ## Phase 2：SDK Runtime Pipeline 基础设施与兼容适配

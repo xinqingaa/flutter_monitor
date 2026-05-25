@@ -286,8 +286,6 @@ flowchart TB
 | `native.crash.type` | string | queryable | 是 | native crash 类型 |
 | `native.anr.duration_ms` | duration_ms | safe | 是 | ANR 持续时间 |
 | `native.oom.reason` | string | queryable | 否 | OOM 线索 |
-| `native.memory.used_mb` | number | safe | 是 | native 侧内存 |
-| `native.memory.pressure_level` | string | safe | 是 | native 内存压力 |
 | `error.type` | string | queryable | 是 | exception/error 类型 |
 | `error.mechanism` | string | queryable | 是 | flutter/dart/native/manual/custom |
 | `error.handled` | boolean | safe | 是 | 是否已处理 |
@@ -550,6 +548,14 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 完整字段注册以 `flutter_monitor_core` 的 `FieldRegistry` 为准。本文后续“信号字段规范”中出现的字段，在进入代码实现前必须补充到 `FieldRegistry`，或明确降级为 payload/非索引字段，避免文档字段和代码字段分裂。
 
+### 未注册字段策略
+
+`attributes` 是可检索、可聚合字段层，默认只允许使用 `FieldRegistry` 中已注册的字段路径。未注册字段不得直接作为 canonical/index 字段进入 `attributes`。
+
+确需保留但尚未注册的诊断详情，应放入 `payload`，并经过隐私过滤和大小裁剪。未来如需支持第三方扩展字段，应先定义稳定 namespace、隐私等级、服务端兼容规则和 DevTools 展示规则，再进入 `FieldRegistry` 或明确为 payload-only 字段。
+
+`resource`、`context` 和 public envelope fields 不接受随意扩展。新增稳定资源、动态上下文或公共字段必须先更新本文档、`FieldPaths`、`FieldRegistry`、schema validation 和测试。
+
 ## 隐私分级
 
 字段按隐私风险分为四类：
@@ -744,6 +750,8 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 内存泄漏判断应谨慎表达为线索。SDK 可以上报 `memory.leak.suspect`，但不应在缺少证据时宣称确定泄漏。
 
+Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pressure_level`，并通过 `memory.sample_source = native`、`name = native.memory.sample` / `native.memory.pressure` 或 `context.native.*` 表明来源。不要再新增 `native.memory.*` 平行字段表达同一内存语义。
+
 ### 生命周期
 
 推荐事件：
@@ -786,8 +794,8 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
 | `native.crash.type` | crash 类型 |
 | `native.anr.duration_ms` | ANR 持续时间 |
 | `native.oom.reason` | OOM 线索 |
-| `native.memory.used_mb` | native 侧内存 |
-| `native.memory.pressure_level` | native 内存压力 |
+| `memory.native_used_mb` | native 侧内存 |
+| `memory.pressure_level` | native 内存压力 |
 
 第一阶段可以先定义 schema 和 bridge，不要求完整实现 native crash、ANR、OOM。
 

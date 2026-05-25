@@ -321,7 +321,8 @@ SessionExport
 
 - 类型应可序列化为稳定 JSON。
 - 字段命名必须与 `docs/event_model.md` 一致。
-- 允许未知字段透传，但不得破坏已知字段语义。
+- `attributes` 默认只接受 `FieldRegistry` 已注册字段；未注册诊断详情应进入 `payload`。
+- payload-only 未知字段可以透传，但必须经过隐私过滤和大小裁剪，不得破坏已知字段语义，也不得作为服务端索引字段。
 - 模型不能依赖 Flutter runtime。
 
 ## 上下文层
@@ -445,6 +446,7 @@ Outputs 由 `flutter_monitor_sdk` 实现。
 - Output 不重新读取未脱敏原始数据。
 - HTTP output 使用 `docs/server_protocol.md`。
 - DevTools/File export 使用 `docs/devtools_integration.md` 的导出格式。
+- future `OpenTelemetryOutput` 只能从统一 event envelope 派生映射，不能成为 SDK 内部主模型或第二套协议。
 
 ## DevTools Bridge
 
@@ -487,6 +489,9 @@ abstract interface class MonitorNativeBridge {
 
 - `flutter_monitor_sdk` 只依赖 bridge 抽象，不强依赖 native plugin。
 - `flutter_monitor_native` 提供 bridge 实现。
+- `flutter_monitor_core` 承载最终 event envelope、字段注册、隐私规则和可共享的 native raw payload contract。
+- `flutter_monitor_sdk` 持有 runtime bridge 抽象、上下文补全和 pipeline 接入。
+- `flutter_monitor_native` 只实现 bridge 并提供 native raw signal，不构建最终 envelope，不定义独立上报协议。
 - native signal 进入 SDK pipeline 后再构建 envelope。
 - native 异常生命周期下无法完整进入 pipeline 时，应先持久化 native raw signal 或可补全 payload，并在下次启动后由 SDK pipeline 补全为统一 envelope。
 

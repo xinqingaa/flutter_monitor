@@ -483,8 +483,8 @@ Native 层：
 - `memory.growth_duration_ms`
 - `memory.pressure_level`
 - `memory.sample_source`
-- `native.memory.used_mb`
-- `native.memory.pressure_level`
+
+Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pressure_level`，并通过 `memory.sample_source = native`、`name = native.memory.sample` / `native.memory.pressure` 或 `context.native.*` 表明来源。采集器不应新增 `native.memory.*` 平行字段表达同一个数值。
 
 ### 限制与降级
 
@@ -585,8 +585,8 @@ Native 层：
 - `native.crash.type`
 - `native.anr.duration_ms`
 - `native.oom.reason`
-- `native.memory.used_mb`
-- `native.memory.pressure_level`
+- `memory.native_used_mb`
+- `memory.pressure_level`
 
 ### 限制与降级
 

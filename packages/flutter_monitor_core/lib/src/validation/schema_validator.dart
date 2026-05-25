@@ -1,11 +1,21 @@
+import '../constants/context_missing_reasons.dart';
 import '../model/event_envelope.dart';
+import '../model/event_level.dart';
+import '../model/event_priority.dart';
+import '../model/event_status.dart';
 import '../model/json_utils.dart';
 import '../model/signal_type.dart';
+import '../privacy/privacy_level.dart';
+import '../schema/field_registry.dart';
+import '../schema/field_value_type.dart';
 import 'schema_validation_issue.dart';
 import 'schema_validation_result.dart';
 
 class SchemaValidator {
-  const SchemaValidator();
+  SchemaValidator({FieldRegistry? registry})
+    : registry = registry ?? FieldRegistry.defaults();
+
+  final FieldRegistry registry;
 
   SchemaValidationResult validateJson(Map<String, Object?> json) {
     final errors = <SchemaValidationIssue>[];
@@ -18,6 +28,17 @@ class SchemaValidator {
     _requireJsonNonEmpty(errors, json, 'name');
     _requireJsonObject(errors, json, 'resource');
     _requireJsonObject(errors, json, 'context');
+
+    _validateWireValue(errors, json, 'signalType', _signalTypeValues);
+    _validateWireValue(errors, json, 'level', _levelValues, optional: true);
+    _validateWireValue(errors, json, 'status', _statusValues, optional: true);
+    _validateWireValue(
+      errors,
+      json,
+      'priority',
+      _priorityValues,
+      optional: true,
+    );
 
     if (json['context'] is Map) {
       errors.addAll(
@@ -108,6 +129,18 @@ class SchemaValidator {
       );
     }
 
+    final missingReason = event.context.missingReason;
+    if (!_isBlank(missingReason) &&
+        !ContextMissingReasons.contains(missingReason!)) {
+      errors.add(
+        SchemaValidationIssue(
+          path: 'context.missingReason',
+          code: 'invalid_missing_reason',
+          message: '$missingReason is not a registered missing reason',
+        ),
+      );
+    }
+
     errors.addAll(
       event.attributes.keys
           .where(_deprecatedFieldPaths.contains)
@@ -120,6 +153,8 @@ class SchemaValidator {
             ),
           ),
     );
+
+    errors.addAll(_validateAttributes(event.attributes));
 
     if (_isBlank(event.sessionId) && event.signalType != SignalType.sdk) {
       warnings.add(
@@ -183,8 +218,89 @@ class SchemaValidator {
     }
   }
 
+  static void _validateWireValue(
+    List<SchemaValidationIssue> errors,
+    Map<String, Object?> json,
+    String path,
+    Set<String> allowed, {
+    bool optional = false,
+  }) {
+    final value = json[path];
+    if (value == null && optional) return;
+    if (value is! String || !allowed.contains(value)) {
+      errors.add(
+        SchemaValidationIssue(
+          path: path,
+          code: 'invalid_enum',
+          message: '$path must be one of ${allowed.join(', ')}',
+        ),
+      );
+    }
+  }
+
+  Iterable<SchemaValidationIssue> _validateAttributes(
+    Map<String, Object?> attributes,
+  ) sync* {
+    for (final entry in attributes.entries) {
+      if (_deprecatedFieldPaths.contains(entry.key)) {
+        continue;
+      }
+
+      final definition = registry.lookup(entry.key);
+      if (definition == null) {
+        yield SchemaValidationIssue(
+          path: 'attributes.${entry.key}',
+          code: 'unknown_attribute',
+          message: '${entry.key} is not registered in FieldRegistry',
+        );
+        continue;
+      }
+
+      if (definition.privacyLevel == PrivacyLevel.forbidden) {
+        yield SchemaValidationIssue(
+          path: 'attributes.${entry.key}',
+          code: 'forbidden_field',
+          message: '${entry.key} is forbidden by the privacy contract',
+        );
+        continue;
+      }
+
+      if (!_matchesType(entry.value, definition.valueType)) {
+        yield SchemaValidationIssue(
+          path: 'attributes.${entry.key}',
+          code: 'invalid_attribute_type',
+          message:
+              '${entry.key} must be ${definition.valueType.toJson()}, got ${entry.value.runtimeType}',
+        );
+      }
+    }
+  }
+
+  static bool _matchesType(Object? value, FieldValueType type) {
+    if (value == null) return true;
+    return switch (type) {
+      FieldValueType.string => value is String,
+      FieldValueType.number || FieldValueType.durationMs => value is num,
+      FieldValueType.boolean => value is bool,
+      FieldValueType.object => value is Map,
+      FieldValueType.array => value is Iterable && value is! String,
+      FieldValueType.timestamp => value is String || value is DateTime,
+    };
+  }
+
   static bool _isBlank(String? value) => value == null || value.trim().isEmpty;
 }
+
+final _signalTypeValues = SignalType.values
+    .map((value) => value.wireValue)
+    .toSet();
+final _levelValues = EventLevel.values.map((value) => value.wireValue).toSet();
+final _statusValues = EventStatus.values
+    .map((value) => value.wireValue)
+    .toSet();
+final _priorityValues = EventPriority.values
+    .map((value) => value.wireValue)
+    .toSet();
 
 const _deprecatedFieldPaths = <String>{
   'page.route',
@@ -196,6 +312,8 @@ const _deprecatedFieldPaths = <String>{
   'app.lifecycle.state',
   'app.lifecycle.previous_state',
   'native.platform',
+  'native.memory.used_mb',
+  'native.memory.pressure_level',
   'error.message',
   'error.stacktrace',
 };
