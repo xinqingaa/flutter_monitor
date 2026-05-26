@@ -128,6 +128,10 @@ flowchart TD
 - Dio 和 `http` 请求接入 `http.client` span。
 - jank 接入当前 page trace 和 breadcrumbs。
 - 最小 lifecycle 事件参与 session 切分、hot start 和 exit flush。
+- 控制台默认输出 compact 摘要，而不是完整 JSON。
+- 完整 JSON 仍由 pipeline 保留，并可通过 node server、file ring buffer 或 session export 获取。
+- compact log 的摘要规则沉淀在 core，作为 `EventEnvelope` 的派生视图。
+- compact log 不得创建第二套事件模型、第二套服务端协议或第二套字段事实源。
 
 建议迁移顺序：
 
@@ -136,7 +140,68 @@ flowchart TD
 3. route / page load / page stay；
 4. startup / hot start；
 5. Dio / `http`；
-6. jank。
+6. jank；
+7. compact log / `EventSummary`；
+8. node server 本地完整 JSON 查询；
+9. file ring buffer 或 session export。
+
+### 输出体验与完整 JSON 获取
+
+Phase 3 的完成标准不只是不丢信号，还包括“开发者能在不被完整 JSON 淹没的情况下判断发生了什么，并能按摘要中的 id 查回完整事件”。
+
+核心原则：
+
+- `EventEnvelope` 是机器事实源。
+- `EventSummary` 是从 `EventEnvelope` 派生的人类可读摘要。
+- `CompactLog` 是 `EventSummary` 的文本渲染。
+- compact log 字段不得反向成为第二套协议；SDK、node server、DevTools、CLI/MCP 后续都应复用 core 中的摘要规则。
+
+compact log 固定为 key-value 格式，字段顺序应尽量稳定：
+
+```text
+[FM] kind=<kind> name=<event.name> status=<status> phase=<event.phase> route=<context.route.name> duration_ms=<durationMs> session=<sessionId> trace=<traceId> span=<spanId> event=<eventId>
+```
+
+通用字段顺序：
+
+```text
+kind, name, status, phase, route, duration_ms, session, trace, span, event
+```
+
+不同事件类型必须暴露的摘要字段：
+
+| kind | 必须字段 |
+|---|---|
+| `startup` | `start_type`、`duration_ms`、`first_frame_ms`、`session`、`trace`、`event` |
+| `page` | `route`、`from`、`duration_ms`、`session`、`trace`、`event` |
+| `http` | `method`、`url`、`code`、`success`、`duration_ms`、`route`、`breadcrumbs`、`session`、`trace`、`span`、`event` |
+| `jank` | `route`、`frames`、`frame_max_ms`、`frame_avg_ms`、`fps`、`session`、`trace`、`event` |
+| `error` | `mechanism`、`message`、`route`、`breadcrumbs`、`session`、`trace`、`event` |
+| `lifecycle` | `state`、`previous`、`foreground`、`session`、`trace`、`event` |
+| `sdk` | `name`、`status`、`session`、`event` |
+
+示例：
+
+```text
+[FM] kind=startup name=app.cold_start status=ok phase=end start_type=cold duration_ms=428 first_frame_ms=428 route=/ session=ses_1779781544808117_0 trace=trace_1779781544987939_0 event=evt_1779781545000000_8
+[FM] kind=page name=page.load status=ok phase=end route=/detail from=/ duration_ms=21 session=ses_1779781544808117_0 trace=trace_1779781544987939_9 event=evt_1779781545000000_22
+[FM] kind=http name=http.client status=error phase=end method=GET url=/users/flutter code=403 success=false duration_ms=612 route=/ breadcrumbs=1 session=ses_1779781544808117_0 trace=trace_1779781544987939_2 span=span_1779781545000000_12 event=evt_1779781545000000_19
+[FM] kind=jank name=ui.jank.sequence status=ok phase=instant route=/ frames=13 frame_max_ms=71.4 frame_avg_ms=51.0 fps=40.7 session=ses_1779781544808117_0 trace=trace_1779781544987939_2 event=evt_1779781545000000_17
+[FM] kind=error name=error.flutter status=error phase=instant mechanism=flutter message="NoSuchMethodError: The method 'hello' was called on null." route=/ breadcrumbs=3 session=ses_1779781544808117_0 trace=trace_1779781544987939_2 event=evt_1779781545000000_20
+```
+
+完整 JSON 获取路径：
+
+- 控制台 compact 行必须包含可回查的 `event`、`session` 和 `trace`，有 span 时包含 `span`。
+- `HttpBatchOutput` 将完整 `EventEnvelope` 批量发送到本地 node server 或正式服务端。
+- node server 在本地调试阶段至少支持：
+  - `POST /api/monitor/v1/events`
+  - `GET /api/monitor/v1/events/:eventId`
+  - `GET /api/monitor/v1/sessions/:sessionId`
+  - `GET /api/monitor/v1/traces/:traceId`
+  - `GET /api/monitor/v1/recent?limit=50`
+- 本地 file ring buffer 或 session export 应能保存最近若干 session 的完整 NDJSON。
+- 线上排查不依赖控制台保留完整 JSON，而应通过 `eventId`、`sessionId`、`traceId` 在服务端查回完整 envelope 和 session timeline。
 
 验收：
 
@@ -147,6 +212,14 @@ flowchart TD
 - 慢页面能关联页面 trace、相关 API 和最近 breadcrumbs。
 - 卡顿能关联当前 `context.route.*` / `context.module.*`、最近行为和 `resource.device.*`。
 - 错误能关联当前 `context.route.*` / `context.module.*`、active `traceId` / `spanId` 和最近 breadcrumbs。
+- 控制台默认不刷完整 JSON。
+- compact 行能看出启动耗时、页面耗时、HTTP 耗时和状态码、卡顿指标、错误摘要。
+- compact 行中的 `event`、`session`、`trace` 能查回完整 JSON。
+- node server 能按 `eventId`、`sessionId`、`traceId` 查询完整 envelope。
+- 成功 HTTP、普通 breadcrumb、`route.push` 不应在默认控制台模式刷屏。
+- 完整 JSON 仍符合 `docs/event_model.md`。
+- core 中的摘要规则可被 SDK、node server、未来 CLI/DevTools 复用。
+- compact 摘要不形成第二套事件模型或服务端协议。
 
 ## Phase 4：内存、Native Bridge 与增强 Lifecycle
 

@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flutter Monitor Local Inspector</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fb;
+        --panel: #ffffff;
+        --line: #d9dee8;
+        --text: #1f2937;
+        --muted: #667085;
+        --accent: #0f766e;
+        --danger: #b42318;
+        --code: #101828;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 360px minmax(0, 1fr);
+        gap: 16px;
+        padding: 16px;
+      }
+
+      section,
+      aside {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-width: 0;
+      }
+
+      aside {
+        padding: 14px;
+      }
+
+      section {
+        overflow: hidden;
+      }
+
+      .toolbar,
+      .query-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .query-row {
+        margin-top: 10px;
+      }
+
+      input,
+      select,
+      button {
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      input,
+      select {
+        min-width: 0;
+        padding: 0 10px;
+      }
+
+      input {
+        flex: 1;
+      }
+
+      button {
+        padding: 0 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .list {
+        height: calc(100vh - 112px);
+        overflow: auto;
+        border-top: 1px solid var(--line);
+      }
+
+      .event {
+        display: grid;
+        gap: 5px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer;
+      }
+
+      .event:hover,
+      .event.active {
+        background: #eef6f5;
+      }
+
+      .event-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-weight: 700;
+      }
+
+      .event-meta,
+      .event-ids {
+        color: var(--muted);
+        font-size: 12px;
+        word-break: break-all;
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      pre {
+        margin: 0;
+        padding: 14px;
+        height: calc(100vh - 112px);
+        overflow: auto;
+        color: var(--code);
+        background: #fbfcfe;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        .list,
+        pre {
+          height: 50vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Flutter Monitor Local Inspector</h1>
+      <div class="toolbar">
+        <button id="refresh" class="primary">刷新最近事件</button>
+        <span id="status" class="status">未加载</span>
+      </div>
+    </header>
+
+    <main>
+      <aside>
+        <div class="query-row">
+          <select id="queryType" aria-label="查询类型">
+            <option value="event">event</option>
+            <option value="session">session</option>
+            <option value="trace">trace</option>
+          </select>
+          <input id="queryId" placeholder="输入 eventId / sessionId / traceId" />
+          <button id="query">查询</button>
+        </div>
+        <div id="list" class="list"></div>
+      </aside>
+      <section>
+        <pre id="detail">{}</pre>
+      </section>
+    </main>
+
+    <script>
+      const listEl = document.querySelector("#list");
+      const detailEl = document.querySelector("#detail");
+      const statusEl = document.querySelector("#status");
+      const refreshButton = document.querySelector("#refresh");
+      const queryButton = document.querySelector("#query");
+      const queryTypeEl = document.querySelector("#queryType");
+      const queryIdEl = document.querySelector("#queryId");
+
+      refreshButton.addEventListener("click", loadRecent);
+      queryButton.addEventListener("click", runQuery);
+      queryIdEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") runQuery();
+      });
+
+      loadRecent();
+
+      async function loadRecent() {
+        setStatus("加载最近事件...");
+        const data = await requestJson("/api/monitor/v1/recent?limit=100");
+        renderEvents(data.events || []);
+        showJson(data);
+        setStatus(`最近事件 ${data.count || 0} 条`);
+      }
+
+      async function runQuery() {
+        const type = queryTypeEl.value;
+        const id = queryIdEl.value.trim();
+        if (!id) return;
+
+        const path =
+          type === "event"
+            ? `/api/monitor/v1/events/${encodeURIComponent(id)}`
+            : type === "session"
+              ? `/api/monitor/v1/sessions/${encodeURIComponent(id)}`
+              : `/api/monitor/v1/traces/${encodeURIComponent(id)}`;
+
+        setStatus(`查询 ${type}...`);
+        const data = await requestJson(path);
+        renderEvents(data.events || (data.event ? [data.event] : []));
+        showJson(data);
+        setStatus(`${type} 查询完成`);
+      }
+
+      async function requestJson(path) {
+        try {
+          const response = await fetch(path);
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || response.statusText);
+          }
+          return data;
+        } catch (error) {
+          setStatus(error.message, true);
+          showJson({ error: error.message });
+          return {};
+        }
+      }
+
+      function renderEvents(events) {
+        listEl.textContent = "";
+        if (events.length === 0) {
+          listEl.innerHTML = '<div class="event"><div class="event-meta">暂无事件</div></div>';
+          return;
+        }
+
+        for (const event of events) {
+          const item = document.createElement("div");
+          item.className = "event";
+          item.innerHTML = `
+            <div class="event-title">
+              <span>${escapeHtml(event.name || "(unknown)")}</span>
+              <span>${escapeHtml(event.status || event.signalType || "")}</span>
+            </div>
+            <div class="event-meta">
+              route=${escapeHtml(event.context?.route?.name || "-")}
+              duration=${escapeHtml(String(event.durationMs ?? "-"))}
+              time=${escapeHtml(event.timestamp || "-")}
+            </div>
+            <div class="event-ids">
+              event=${escapeHtml(event.eventId || "-")}
+              session=${escapeHtml(event.sessionId || "-")}
+              trace=${escapeHtml(event.traceId || "-")}
+            </div>
+          `;
+          item.addEventListener("click", () => {
+            document.querySelectorAll(".event.active").forEach((el) => {
+              el.classList.remove("active");
+            });
+            item.classList.add("active");
+            showJson(event);
+          });
+          listEl.appendChild(item);
+        }
+      }
+
+      function showJson(value) {
+        detailEl.textContent = JSON.stringify(value, null, 2);
+      }
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle("error", isError);
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>"']/g, (char) => {
+          return {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;",
+          }[char];
+        });
+      }
+    </script>
+  </body>
+</html>

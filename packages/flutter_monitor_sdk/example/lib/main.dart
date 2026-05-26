@@ -40,14 +40,14 @@ final dio = Dio()..interceptors.add(FlutterMonitorSDK.dioInterceptor);
 void main() async {
   // 记录启动时间
   final appStartTime = DateTime.now();
+  const monitorServerUrl = String.fromEnvironment('FM_SERVER_URL');
 
   // 确保Flutter绑定
   WidgetsFlutterBinding.ensureInitialized();
 
   final List<MonitorOutput> monitorOutputs = [];
 
-  // 自测阶段使用，发布正式包后使用后端日志查看
-  // 默认日志输出
+  // 自测阶段默认使用 compact 控制台预览；完整 JSON 通过 HttpOutput / node_server 查询。
   if (kDebugMode) {
     monitorOutputs.add(LogMonitorOutput());
   }
@@ -59,15 +59,18 @@ void main() async {
   //   );
   // }
 
-  // 配置服务端上报
-  // monitorOutputs.add(
-  //   HttpOutput(
-  //     serverUrl: 'http://192.168.100.85:3000/report',
-  //     enablePeriodicReporting: false, // 是否开启定时上报
-  //     periodicReportDuration: const Duration(seconds: 15), // 设置为15秒
-  //     batchReportSize: 5,
-  //   ),
-  // );
+  // 配置服务端上报。启动时传入：
+  // --dart-define=FM_SERVER_URL=http://<your-host-ip>:3000/api/monitor/v1/events
+  if (monitorServerUrl.isNotEmpty) {
+    monitorOutputs.add(
+      HttpOutput(
+        serverUrl: monitorServerUrl,
+        enablePeriodicReporting: true,
+        periodicReportDuration: const Duration(seconds: 5),
+        batchReportSize: 5,
+      ),
+    );
+  }
 
   // 自动获取应用信息
   final appInfo = await AppInfo.fromPackageInfo(appKey: 'TEST_APP_KEY');
@@ -108,10 +111,9 @@ void main() async {
   //   outputs: monitorOutputs, // 可选，不传则使用默认输出
   // );
 
-
   // 初始化监控SDK
   await FlutterMonitorSDK.init(
-    config:monitorConfig,
+    config: monitorConfig,
     appStartTime: appStartTime,
   );
 
@@ -131,9 +133,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       // 注入路由观察者
-      navigatorObservers: [
-        FlutterMonitorSDK.routeObserver
-      ],
+      navigatorObservers: [FlutterMonitorSDK.routeObserver],
       routes: {
         '/': (context) => HomePage(dio: dio),
         '/detail': (context) => const DetailPage(),

@@ -52,6 +52,87 @@ class _FakeHttpClient extends http.BaseClient {
 }
 
 void main() {
+  test('log output prints compact summaries for important events', () {
+    final messages = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) messages.add(message);
+    };
+    addTearDown(() {
+      debugPrint = previousDebugPrint;
+    });
+
+    final output = LogMonitorOutput();
+    output.add(
+      EventEnvelope(
+        eventId: 'evt_http',
+        timestamp: DateTime.parse('2026-05-26T15:46:09.206020'),
+        durationMs: 612,
+        signalType: SignalType.span,
+        name: 'http.client',
+        level: EventLevel.info,
+        status: EventStatus.error,
+        sessionId: 'ses_1',
+        traceId: 'trace_1',
+        spanId: 'span_1',
+        context: const MonitorContext(route: RouteContext(name: '/')),
+        attributes: const <String, Object?>{
+          FieldPaths.eventPhase: 'end',
+          FieldPaths.httpMethod: 'GET',
+          FieldPaths.httpUrlNormalized: '/users/flutter',
+          FieldPaths.httpStatusCode: 403,
+          FieldPaths.httpSuccess: false,
+        },
+      ).toJson().cast<String, dynamic>(),
+    );
+
+    expect(messages, hasLength(1));
+    expect(messages.single, contains('[FM] kind=http name=http.client'));
+    expect(messages.single, contains('code=403'));
+    expect(messages.single, contains('duration_ms=612'));
+    expect(messages.single, contains('event=evt_http'));
+  });
+
+  test('log output hides noisy successful events in compact mode', () {
+    final messages = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) messages.add(message);
+    };
+    addTearDown(() {
+      debugPrint = previousDebugPrint;
+    });
+
+    final output = LogMonitorOutput();
+    output.add(
+      EventEnvelope(
+        eventId: 'evt_route',
+        timestamp: DateTime.parse('2026-05-26T15:46:00.522551'),
+        signalType: SignalType.span,
+        name: 'route.push',
+        status: EventStatus.ok,
+        attributes: const <String, Object?>{FieldPaths.eventPhase: 'end'},
+      ).toJson().cast<String, dynamic>(),
+    );
+    output.add(
+      EventEnvelope(
+        eventId: 'evt_http_ok',
+        timestamp: DateTime.parse('2026-05-26T15:46:00.522551'),
+        durationMs: 120,
+        signalType: SignalType.span,
+        name: 'http.client',
+        status: EventStatus.ok,
+        attributes: const <String, Object?>{
+          FieldPaths.eventPhase: 'end',
+          FieldPaths.httpStatusCode: 200,
+          FieldPaths.httpSuccess: true,
+        },
+      ).toJson().cast<String, dynamic>(),
+    );
+
+    expect(messages, isEmpty);
+  });
+
   test('legacy reporter events are emitted as unified envelopes', () {
     final output = RecordingOutput();
     final reporter = Reporter(
