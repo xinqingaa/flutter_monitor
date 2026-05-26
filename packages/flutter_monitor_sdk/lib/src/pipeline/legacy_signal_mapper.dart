@@ -139,7 +139,8 @@ class LegacySignalMapper {
         status: EventStatus.ok,
         attributes: <String, Object?>{
           FieldPaths.uiAction: 'click',
-          if (data['identifier'] != null) FieldPaths.uiTarget: data['identifier'],
+          if (data['identifier'] != null)
+            FieldPaths.uiTarget: data['identifier'],
         },
         payload: <String, Object?>{
           'legacy.category': 'behavior',
@@ -204,7 +205,9 @@ class LegacySignalMapper {
 
   Object? _normalizeValue(Object? value) {
     if (value is Map) {
-      return value.map((key, value) => MapEntry('$key', _normalizeValue(value)));
+      return value.map(
+        (key, value) => MapEntry('$key', _normalizeValue(value)),
+      );
     }
     if (value is Iterable && value is! String) {
       return value.map(_normalizeValue).toList(growable: false);
@@ -216,10 +219,13 @@ class LegacySignalMapper {
     if (value is! Map) return const <String, Object?>{};
     final data = value.map((key, value) => MapEntry('$key', value));
     final percentiles = data['percentiles'] is Map
-        ? (data['percentiles'] as Map).map((key, value) => MapEntry('$key', value))
+        ? (data['percentiles'] as Map).map(
+            (key, value) => MapEntry('$key', value),
+          )
         : const <String, Object?>{};
     return <String, Object?>{
-      if (_numValue(data['fps']) != null) FieldPaths.frameFps: _numValue(data['fps']),
+      if (_numValue(data['fps']) != null)
+        FieldPaths.frameFps: _numValue(data['fps']),
       if (_numValue(data['stability']) != null)
         FieldPaths.frameStability: _numValue(data['stability']),
       if (_numValue(percentiles['p50']) != null)

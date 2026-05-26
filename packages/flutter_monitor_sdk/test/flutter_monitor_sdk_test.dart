@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 class RecordingOutput extends MonitorOutput {
   final List<Map<String, dynamic>> events = <Map<String, dynamic>>[];
   var initCount = 0;
+  var flushCount = 0;
+  bool? lastFlushIsAppExiting;
 
   @override
   void init() {
@@ -22,7 +24,10 @@ class RecordingOutput extends MonitorOutput {
   }
 
   @override
-  Future<void> flush({bool isAppExiting = false}) async {}
+  Future<void> flush({bool isAppExiting = false}) async {
+    flushCount++;
+    lastFlushIsAppExiting = isAppExiting;
+  }
 }
 
 void main() {
@@ -55,10 +60,19 @@ void main() {
     expect(event['signalType'], 'breadcrumb');
     expect(event['name'], 'ui.click');
     expect(event['sessionId'], isNotEmpty);
-    expect((event['resource'] as Map)['app'], containsPair('appKey', 'app_key'));
+    expect(
+      (event['resource'] as Map)['app'],
+      containsPair('appKey', 'app_key'),
+    );
     expect((event['attributes'] as Map), containsPair('ui.action', 'click'));
-    expect((event['attributes'] as Map), containsPair('ui.target', 'login_button'));
-    expect(SchemaValidator().validateJson(event.cast<String, Object?>()).isValid, isTrue);
+    expect(
+      (event['attributes'] as Map),
+      containsPair('ui.target', 'login_button'),
+    );
+    expect(
+      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+      isTrue,
+    );
   });
 
   test('context is captured when the event is reported', () {
@@ -99,36 +113,42 @@ void main() {
     );
   });
 
-  test('legacy performance api maps queryable fields and keeps details in payload', () {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(appKey: 'app_key'),
-        outputs: <MonitorOutput>[output],
-      ),
-    );
+  test(
+    'legacy performance api maps queryable fields and keeps details in payload',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
 
-    reporter.addEvent('performance', {
-      'type': 'api',
-      'url': 'https://example.com/api/user?id=1',
-      'method': 'GET',
-      'status': 200,
-      'duration_ms': 42,
-      'success': true,
-    });
+      reporter.addEvent('performance', {
+        'type': 'api',
+        'url': 'https://example.com/api/user?id=1',
+        'method': 'GET',
+        'status': 200,
+        'duration_ms': 42,
+        'success': true,
+      });
 
-    final event = output.events.single;
-    final attributes = event['attributes'] as Map;
-    final payload = event['payload'] as Map;
+      final event = output.events.single;
+      final attributes = event['attributes'] as Map;
+      final payload = event['payload'] as Map;
 
-    expect(event['name'], 'http.client');
-    expect(event['durationMs'], 42);
-    expect(attributes['http.method'], 'GET');
-    expect(attributes['http.url.normalized'], '/api/user');
-    expect(attributes['http.status_code'], 200);
-    expect(attributes['http.success'], isTrue);
-    expect((payload['legacy.data'] as Map)['url'], 'https://example.com/api/user?id=1');
-  });
+      expect(event['name'], 'http.client');
+      expect(event['durationMs'], 42);
+      expect(attributes['http.method'], 'GET');
+      expect(attributes['http.url.normalized'], '/api/user');
+      expect(attributes['http.status_code'], 200);
+      expect(attributes['http.success'], isTrue);
+      expect(
+        (payload['legacy.data'] as Map)['url'],
+        'https://example.com/api/user?id=1',
+      );
+    },
+  );
 
   test('privacy filter removes forbidden fields before output', () {
     final output = RecordingOutput();
@@ -149,7 +169,12 @@ void main() {
     final legacyData = payload['legacy.data'] as Map;
 
     expect(legacyData.containsKey(FieldPaths.authToken), isFalse);
-    expect((legacyData['nested'] as Map).containsKey(FieldPaths.httpRequestHeadersCookie), isFalse);
+    expect(
+      (legacyData['nested'] as Map).containsKey(
+        FieldPaths.httpRequestHeadersCookie,
+      ),
+      isFalse,
+    );
     expect((legacyData['nested'] as Map)['keep'], 'value');
   });
 
@@ -172,12 +197,99 @@ void main() {
       traceSnapshot: const TraceSnapshot(sessionId: 'ses_test'),
     );
 
-    expect(envelope.attributes, containsPair(FieldPaths.businessAction, 'checkout'));
+    expect(
+      envelope.attributes,
+      containsPair(FieldPaths.businessAction, 'checkout'),
+    );
     expect(envelope.attributes.containsKey('custom.detail'), isFalse);
     expect(
       envelope.payload['unregistered.attributes'],
       containsPair('custom.detail', 'kept in payload'),
     );
     expect(SchemaValidator().validate(envelope).isValid, isTrue);
+  });
+
+  test('trace and span runtime APIs emit first-class envelope events', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    final traceId = reporter.startTrace(
+      'custom.checkout',
+      attributes: const <String, Object?>{
+        FieldPaths.businessAction: 'checkout',
+      },
+    );
+    final parentSpanId = reporter.startSpan('custom.validate_cart');
+    final childSpanId = reporter.startSpan('custom.pay');
+    reporter.endSpan(childSpanId, status: EventStatus.ok);
+    reporter.endSpan(parentSpanId, status: EventStatus.ok);
+    reporter.endTrace(traceId, status: EventStatus.ok);
+
+    final traceEvents = output.events
+        .where((event) => event['signalType'] == 'trace')
+        .toList(growable: false);
+    final spanEvents = output.events
+        .where((event) => event['signalType'] == 'span')
+        .toList(growable: false);
+
+    expect(traceEvents, hasLength(2));
+    expect(spanEvents, hasLength(4));
+    expect(traceEvents.first['traceId'], traceId);
+    expect(traceEvents.last['durationMs'], isA<num>());
+    expect(traceEvents.last['status'], 'ok');
+    expect(spanEvents[1]['spanId'], childSpanId);
+    expect(spanEvents[1]['parentSpanId'], parentSpanId);
+    expect(spanEvents[2]['durationMs'], isA<num>());
+
+    for (final event in output.events) {
+      expect(
+        SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+        isTrue,
+      );
+    }
+  });
+
+  test('manual breadcrumbs are attached to later error payload', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addBreadcrumb('ui.tap.checkout');
+    reporter.addEvent('error', {
+      'type': 'dart_error',
+      'error': 'boom',
+      'stack': 'trace',
+    });
+
+    final errorEvent = output.events.last;
+    final payload = errorEvent['payload'] as Map;
+    final breadcrumbs = payload[FieldPaths.payloadBreadcrumbs] as List;
+
+    expect(errorEvent['signalType'], 'error');
+    expect((breadcrumbs.single as Map)['name'], 'ui.tap.checkout');
+  });
+
+  test('flush delegates to outputs', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    await reporter.flush(isAppExiting: true);
+
+    expect(output.flushCount, 1);
+    expect(output.lastFlushIsAppExiting, isTrue);
   });
 }

@@ -12,6 +12,9 @@ class RawSignal {
     this.level,
     this.status,
     this.priority = EventPriority.normal,
+    this.traceId,
+    this.spanId,
+    this.parentSpanId,
     this.attributes = const <String, Object?>{},
     this.payload = const <String, Object?>{},
   });
@@ -26,6 +29,9 @@ class RawSignal {
   final EventLevel? level;
   final EventStatus? status;
   final EventPriority priority;
+  final String? traceId;
+  final String? spanId;
+  final String? parentSpanId;
   final Map<String, Object?> attributes;
   final Map<String, Object?> payload;
 }

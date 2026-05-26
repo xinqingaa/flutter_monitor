@@ -19,14 +19,14 @@ class EventPipeline {
     EnvelopeBuilder? envelopeBuilder,
     SchemaValidator? schemaValidator,
     PrivacyFilter? privacyFilter,
-  })  : _contextManager = contextManager,
-        _sessionManager = sessionManager,
-        _traceManager = traceManager,
-        _breadcrumbStore = breadcrumbStore,
-        _outputs = outputs,
-        _envelopeBuilder = envelopeBuilder ?? EnvelopeBuilder(),
-        _schemaValidator = schemaValidator ?? SchemaValidator(),
-        _privacyFilter = privacyFilter ?? PrivacyFilter();
+  }) : _contextManager = contextManager,
+       _sessionManager = sessionManager,
+       _traceManager = traceManager,
+       _breadcrumbStore = breadcrumbStore,
+       _outputs = outputs,
+       _envelopeBuilder = envelopeBuilder ?? EnvelopeBuilder(),
+       _schemaValidator = schemaValidator ?? SchemaValidator(),
+       _privacyFilter = privacyFilter ?? PrivacyFilter();
 
   final ContextManager _contextManager;
   final SessionManager _sessionManager;
@@ -39,10 +39,16 @@ class EventPipeline {
 
   PipelineResult capture(RawSignal signal) {
     final contextSnapshot = _contextManager.capture();
-    final traceSnapshot = _traceManager.capture(
-      sessionId: _sessionManager.currentSessionId,
-      breadcrumbs: _breadcrumbStore.snapshot(),
-    );
+    final traceSnapshot = _traceManager
+        .capture(
+          sessionId: _sessionManager.currentSessionId,
+          breadcrumbs: _breadcrumbStore.snapshot(),
+        )
+        .overrideWith(
+          traceId: signal.traceId,
+          spanId: signal.spanId,
+          parentSpanId: signal.parentSpanId,
+        );
 
     final built = _envelopeBuilder.build(
       signal: signal,
@@ -76,7 +82,9 @@ class EventPipeline {
       try {
         output.add(json);
       } catch (error) {
-        debugPrint('Error while dispatching event to ${output.runtimeType}: $error');
+        debugPrint(
+          'Error while dispatching event to ${output.runtimeType}: $error',
+        );
         _emitSelfMonitoring(
           name: 'sdk.output.dispatch_failed',
           payload: <String, Object?>{
@@ -84,6 +92,24 @@ class EventPipeline {
             'error': error.toString(),
           },
           dispatch: false,
+        );
+      }
+    }
+  }
+
+  Future<void> flush({bool isAppExiting = false}) async {
+    for (final output in _outputs) {
+      try {
+        await output.flush(isAppExiting: isAppExiting);
+      } catch (error) {
+        debugPrint('Error while flushing ${output.runtimeType}: $error');
+        _emitSelfMonitoring(
+          name: 'sdk.output.flush_failed',
+          payload: <String, Object?>{
+            'output': output.runtimeType.toString(),
+            'error': error.toString(),
+            'isAppExiting': isAppExiting,
+          },
         );
       }
     }

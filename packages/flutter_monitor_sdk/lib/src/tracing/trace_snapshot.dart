@@ -14,4 +14,18 @@ class TraceSnapshot {
   final String? spanId;
   final String? parentSpanId;
   final List<Breadcrumb> breadcrumbs;
+
+  TraceSnapshot overrideWith({
+    String? traceId,
+    String? spanId,
+    String? parentSpanId,
+  }) {
+    return TraceSnapshot(
+      sessionId: sessionId,
+      traceId: traceId ?? this.traceId,
+      spanId: spanId ?? this.spanId,
+      parentSpanId: parentSpanId ?? this.parentSpanId,
+      breadcrumbs: breadcrumbs,
+    );
+  }
 }

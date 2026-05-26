@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/legacy_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
 import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
@@ -108,6 +110,154 @@ class Reporter {
     return _pipeline.capture(signal);
   }
 
+  String startTrace(
+    String name, {
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final record = _traceManager.startTrace(
+      name: name,
+      attributes: attributes,
+      payload: payload,
+    );
+    _pipeline.capture(
+      RawSignal(
+        source: 'sdk.api',
+        name: name,
+        signalType: SignalType.trace,
+        timestamp: record.startTime,
+        startTime: record.startTime,
+        level: EventLevel.info,
+        status: EventStatus.unknown,
+        traceId: record.traceId,
+        attributes: record.attributes,
+        payload: record.payload,
+      ),
+    );
+    return record.traceId;
+  }
+
+  PipelineResult? endTrace(
+    String traceId, {
+    EventStatus status = EventStatus.ok,
+    EventLevel level = EventLevel.info,
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final record = _traceManager.endTrace(
+      traceId,
+      status: status,
+      level: level,
+      attributes: attributes,
+      payload: payload,
+    );
+    if (record == null) return null;
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.api',
+        name: record.name,
+        signalType: SignalType.trace,
+        timestamp: record.endTime ?? DateTime.now(),
+        startTime: record.startTime,
+        endTime: record.endTime,
+        durationMs: record.durationMs,
+        level: record.level,
+        status: record.status,
+        traceId: record.traceId,
+        attributes: record.attributes,
+        payload: record.payload,
+      ),
+    );
+  }
+
+  String startSpan(
+    String name, {
+    String? traceId,
+    String? parentSpanId,
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final record = _traceManager.startSpan(
+      name: name,
+      traceId: traceId,
+      parentSpanId: parentSpanId,
+      attributes: attributes,
+      payload: payload,
+    );
+    _pipeline.capture(
+      RawSignal(
+        source: 'sdk.api',
+        name: name,
+        signalType: SignalType.span,
+        timestamp: record.startTime,
+        startTime: record.startTime,
+        level: EventLevel.info,
+        status: EventStatus.unknown,
+        traceId: record.traceId,
+        spanId: record.spanId,
+        parentSpanId: record.parentSpanId,
+        attributes: record.attributes,
+        payload: record.payload,
+      ),
+    );
+    return record.spanId;
+  }
+
+  PipelineResult? endSpan(
+    String spanId, {
+    EventStatus status = EventStatus.ok,
+    EventLevel level = EventLevel.info,
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final record = _traceManager.endSpan(
+      spanId,
+      status: status,
+      level: level,
+      attributes: attributes,
+      payload: payload,
+    );
+    if (record == null) return null;
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.api',
+        name: record.name,
+        signalType: SignalType.span,
+        timestamp: record.endTime ?? DateTime.now(),
+        startTime: record.startTime,
+        endTime: record.endTime,
+        durationMs: record.durationMs,
+        level: record.level,
+        status: record.status,
+        traceId: record.traceId,
+        spanId: record.spanId,
+        parentSpanId: record.parentSpanId,
+        attributes: record.attributes,
+        payload: record.payload,
+      ),
+    );
+  }
+
+  PipelineResult addBreadcrumb(
+    String name, {
+    EventLevel level = EventLevel.info,
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.api',
+        name: name,
+        signalType: SignalType.breadcrumb,
+        timestamp: DateTime.now(),
+        level: level,
+        status: EventStatus.ok,
+        attributes: attributes,
+        payload: payload,
+      ),
+    );
+  }
+
   /// 动态设置用户信息（运行时更新）
   void setUserInfo(UserInfo userInfo) {
     _contextManager.setUserInfo(userInfo);
@@ -142,8 +292,17 @@ class Reporter {
     _contextManager.setRouteName(routeName);
   }
 
+  void setModule({String? name, String? scene}) {
+    _contextManager.setModule(name: name, scene: scene);
+  }
+
+  Future<void> flush({bool isAppExiting = false}) {
+    return _pipeline.flush(isAppExiting: isAppExiting);
+  }
+
   /// 清理资源，在应用关闭时调用。
-  void dispose() {
+  Future<void> dispose() async {
+    await flush(isAppExiting: true);
     // 调用所有输出器的 dispose 方法，让它们清理自己的资源。
     for (final output in _config.effectiveOutputs) {
       output.dispose();

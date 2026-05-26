@@ -6,8 +6,8 @@ import 'package:flutter_monitor_sdk/src/utils/id_generator.dart';
 
 class EnvelopeBuilder {
   EnvelopeBuilder({FieldRegistry? registry, IdGenerator? idGenerator})
-      : _registry = registry ?? FieldRegistry.defaults(),
-        _idGenerator = idGenerator ?? IdGenerator();
+    : _registry = registry ?? FieldRegistry.defaults(),
+      _idGenerator = idGenerator ?? IdGenerator();
 
   final FieldRegistry _registry;
   final IdGenerator _idGenerator;

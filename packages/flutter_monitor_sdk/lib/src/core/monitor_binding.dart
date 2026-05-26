@@ -9,7 +9,6 @@ import '../modules/performance_monitor.dart';
 /// 一个单例绑定类，它将所有监控模块粘合在一起。
 /// 这是 SDK 内部的核心枢纽。
 class MonitorBinding {
-
   late final JankMonitor jankMonitor; // JankMonitor 实例
   String? _currentPage; // 用于给 JankMonitor 提供当前页面信息
 
@@ -83,7 +82,6 @@ class MonitorBinding {
         debugPrint("错误: JankMonitor 初始化失败: $e");
       }
     }
-
   }
 
   /// 静态的、私有的单例实例。
@@ -92,8 +90,10 @@ class MonitorBinding {
   /// 公开的、用于获取单例实例的静态 getter。
   /// 如果在初始化之前就尝试访问，会触发断言错误。
   static MonitorBinding get instance {
-    assert(_instance != null,
-    'MonitorBinding 尚未初始化，请先调用 FlutterMonitorSDK.init()。');
+    assert(
+      _instance != null,
+      'MonitorBinding 尚未初始化，请先调用 FlutterMonitorSDK.init()。',
+    );
     return _instance!;
   }
 
@@ -101,7 +101,10 @@ class MonitorBinding {
 
   /// 这是创建和设置 MonitorBinding 的主要入口点。
   /// 它由公开的 FlutterMonitorSDK.init() 方法调用。
-  static Future<void> init({required MonitorConfig config, required DateTime appStartTime}) async {
+  static Future<void> init({
+    required MonitorConfig config,
+    required DateTime appStartTime,
+  }) async {
     // 错误恢复：如果已经初始化，直接返回现有实例
     if (_instance != null) {
       debugPrint("注意: MonitorBinding 已经被初始化过了。返回现有实例。");
@@ -136,11 +139,14 @@ class MonitorBinding {
   /// 行为监控服务。
   late final BehaviorMonitor behaviorMonitor;
 
-
   /// 在 App 关闭时，用于释放资源的方法。
-  void dispose() {
+  Future<void> flush({bool isAppExiting = false}) {
+    return reporter.flush(isAppExiting: isAppExiting);
+  }
+
+  Future<void> dispose() async {
     try {
-      reporter.dispose();
+      await reporter.dispose();
     } catch (e) {
       debugPrint("错误: Reporter dispose 失败: $e");
     }
@@ -150,6 +156,9 @@ class MonitorBinding {
       } catch (e) {
         debugPrint("错误: JankMonitor dispose 失败: $e");
       }
+    }
+    if (identical(_instance, this)) {
+      _instance = null;
     }
   }
 }

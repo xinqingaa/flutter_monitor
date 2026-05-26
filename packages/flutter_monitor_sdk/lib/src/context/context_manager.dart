@@ -29,7 +29,8 @@ class ContextManager {
   ContextSnapshot capture() {
     final userInfo = _runtimeUserInfo ?? _config.userInfo;
     final effectiveCustomData = customData;
-    final hasContext = userInfo != null ||
+    final hasContext =
+        userInfo != null ||
         effectiveCustomData != null ||
         _currentRouteName != null ||
         _currentModuleName != null ||
@@ -69,8 +70,9 @@ class ContextManager {
           signalSource: 'flutter',
         ),
         missing: !hasContext,
-        missingReason:
-            hasContext ? null : ContextMissingReasons.sdkBootstrapIncomplete,
+        missingReason: hasContext
+            ? null
+            : ContextMissingReasons.sdkBootstrapIncomplete,
       ),
       customData: effectiveCustomData,
       userProperties: userInfo?.userProperties?.cast<String, Object?>(),
@@ -114,10 +116,7 @@ class ContextManager {
 
   MonitorResource _buildResource() {
     return MonitorResource(
-      sdk: const SdkResource(
-        name: 'flutter_monitor_sdk',
-        coreVersion: '0.1.0',
-      ),
+      sdk: const SdkResource(name: 'flutter_monitor_sdk', coreVersion: '0.1.0'),
       app: AppResource(
         appKey: _config.appInfo.appKey,
         appName: _config.appInfo.appName,
@@ -131,7 +130,8 @@ class ContextManager {
         platform: _platform,
         model: _stringDeviceValue('model') ?? _stringDeviceValue('device'),
         osVersion:
-            _stringDeviceValue('version') ?? _stringDeviceValue('systemVersion'),
+            _stringDeviceValue('version') ??
+            _stringDeviceValue('systemVersion'),
         isPhysicalDevice: _deviceInfo?['isPhysicalDevice'] as bool?,
       ),
       runtime: RuntimeResource(
