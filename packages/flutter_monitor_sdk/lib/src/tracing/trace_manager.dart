@@ -15,6 +15,8 @@ class TraceManager {
   String? get activeTraceId => _activeTraceId;
   String? get activeSpanId => _spanStack.isEmpty ? null : _spanStack.last;
 
+  bool hasTrace(String traceId) => _traces.containsKey(traceId);
+
   TraceRecord startTrace({
     required String name,
     DateTime? startTime,
@@ -66,10 +68,12 @@ class TraceManager {
     final effectiveTraceId =
         traceId ?? _activeTraceId ?? _idGenerator.next('trace');
     _activeTraceId = effectiveTraceId;
+    final inferredParentSpanId =
+        parentSpanId ?? _activeSpanIdForTrace(effectiveTraceId);
     final record = SpanRecord(
       traceId: effectiveTraceId,
       spanId: _idGenerator.next('span'),
-      parentSpanId: parentSpanId ?? activeSpanId,
+      parentSpanId: inferredParentSpanId,
       name: name,
       startTime: startTime ?? DateTime.now(),
       attributes: attributes,
@@ -126,6 +130,13 @@ class TraceManager {
   String? get _parentSpanId {
     if (_spanStack.length < 2) return null;
     return _spanStack[_spanStack.length - 2];
+  }
+
+  String? _activeSpanIdForTrace(String traceId) {
+    if (_spanStack.isEmpty) return null;
+    final active = _spans[_spanStack.last];
+    if (active?.traceId != traceId) return null;
+    return active?.spanId;
   }
 }
 

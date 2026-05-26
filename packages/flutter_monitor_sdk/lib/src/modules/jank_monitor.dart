@@ -22,7 +22,7 @@ import '../utils/performance_utils.dart';
 // 为什么捕获不到？ 因为在线程被冻结期间，SchedulerBinding.instance.addTimingsCallback 根本不会被触发。当阻塞结束后，只会产生一个超长的帧，而我们的逻辑是寻找"连续的"慢帧，所以单个的"巨型帧"会被忽略。
 
 /// 优化的UI卡顿监控器
-/// 
+///
 /// 主要改进：
 /// 1. 自适应阈值：根据设备性能动态调整卡顿标准
 /// 2. 抖动容忍：允许设备正常抖动，只检测真正的连续卡顿
@@ -36,9 +36,12 @@ class JankMonitor {
   // 添加回调标记，防止重复移除
   bool _isCallbackAdded = false;
 
-  JankMonitor(this._reporter, {String Function()? getCurrentPage, JankConfig? config})
-      : _getCurrentPage = getCurrentPage,
-        _config = config ?? JankConfig.defaultConfig();
+  JankMonitor(
+    this._reporter, {
+    String Function()? getCurrentPage,
+    JankConfig? config,
+  }) : _getCurrentPage = getCurrentPage,
+       _config = config ?? JankConfig.defaultConfig();
 
   // --- 自适应阈值相关 ---
   double _frameBudgetMs = 16.67; // 默认60fps
@@ -56,6 +59,7 @@ class JankMonitor {
   double _maxJankDurationInSequence = 0;
   double _totalJankDurationInSequence = 0;
   DateTime? _lastJankTime; // 上次卡顿时间，用于防抖
+  bool _jankSequenceReported = false;
 
   // --- 采样控制 ---
   int _frameCounter = 0;
@@ -80,9 +84,16 @@ class JankMonitor {
   void _initializeAdaptiveThresholds() {
     const double defaultRefreshRate = 60.0;
     // 使用 PlatformDispatcher 替代已弃用的 window
-    final double refreshRate = SchedulerBinding.instance.platformDispatcher.views.first.display.refreshRate;
-    _frameBudgetMs = 1000 / (refreshRate > 0 ? refreshRate : defaultRefreshRate);
-    
+    final double refreshRate = SchedulerBinding
+        .instance
+        .platformDispatcher
+        .views
+        .first
+        .display
+        .refreshRate;
+    _frameBudgetMs =
+        1000 / (refreshRate > 0 ? refreshRate : defaultRefreshRate);
+
     // 根据配置和帧预算计算阈值
     _jankThresholdMs = _frameBudgetMs * _config.jankFrameTimeMultiplier;
     _consecutiveJankThreshold = _config.consecutiveJankThreshold;
@@ -101,10 +112,10 @@ class JankMonitor {
 
     for (final timing in timings) {
       final totalDuration = timing.totalSpan.inMicroseconds / 1000.0;
-      
+
       // 更新性能统计
       _updatePerformanceStats(totalDuration);
-      
+
       // 使用自适应阈值判断卡顿
       if (_isJankFrame(totalDuration)) {
         _handleJankFrame(totalDuration);
@@ -120,11 +131,15 @@ class JankMonitor {
     if (_recentFrameTimes.length > _frameHistorySize) {
       _recentFrameTimes.removeAt(0);
     }
-    
+
     // 计算平均帧时间和方差
     if (_recentFrameTimes.isNotEmpty) {
-      _averageFrameTime = _recentFrameTimes.reduce((a, b) => a + b) / _recentFrameTimes.length;
-      _frameTimeVariance = _calculateVariance(_recentFrameTimes, _averageFrameTime);
+      _averageFrameTime =
+          _recentFrameTimes.reduce((a, b) => a + b) / _recentFrameTimes.length;
+      _frameTimeVariance = _calculateVariance(
+        _recentFrameTimes,
+        _averageFrameTime,
+      );
     }
   }
 
@@ -139,14 +154,14 @@ class JankMonitor {
   bool _isJankFrame(double frameTime) {
     // 基础阈值判断
     if (frameTime <= _jankThresholdMs) return false;
-    
+
     // 抖动容忍：如果帧时间在抖动容忍范围内，不算卡顿
     if (frameTime <= _jankThresholdMs + _config.jitterToleranceMs) {
       // 检查是否在正常抖动范围内
       final jitterThreshold = _averageFrameTime + 2 * sqrt(_frameTimeVariance);
       return frameTime > jitterThreshold;
     }
-    
+
     return true;
   }
 
@@ -155,11 +170,6 @@ class JankMonitor {
     _consecutiveJankFrames++;
     _maxJankDurationInSequence = max(_maxJankDurationInSequence, frameTime);
     _totalJankDurationInSequence += frameTime;
-    
-    // 如果连续卡顿达到阈值，立即上报
-    if (_consecutiveJankFrames >= _consecutiveJankThreshold) {
-      _reportJankSequence();
-    }
   }
 
   /// 处理流畅帧
@@ -173,19 +183,20 @@ class JankMonitor {
   /// 检查并上报卡顿序列（带防抖）
   void _checkAndReportJankSequence() {
     final now = DateTime.now();
-    
+
     // 防抖：如果距离上次卡顿时间太近，不重复上报
-    if (_lastJankTime != null && 
+    if (_lastJankTime != null &&
         now.difference(_lastJankTime!).inMilliseconds < _config.debounceMs) {
       _resetJankState();
       return;
     }
-    
+
     // 如果连续卡顿的帧数达到了阈值
-    if (_consecutiveJankFrames >= _consecutiveJankThreshold) {
+    if (_consecutiveJankFrames >= _consecutiveJankThreshold &&
+        !_jankSequenceReported) {
       _reportJankSequence();
     }
-    
+
     _resetJankState();
   }
 
@@ -193,6 +204,7 @@ class JankMonitor {
   void _reportJankSequence() {
     // 计算详细的性能指标
     final metrics = PerformanceMetrics.fromFrameTimes(_recentFrameTimes);
+
     /// 核心卡顿数据
     /// type: 事件类型
     /// page: 当前页面
@@ -202,7 +214,7 @@ class JankMonitor {
     /// frame_budget_ms: 帧预算时间
     /// jank_threshold_ms: 卡顿阈值
     /// device_performance: 设备性能指标
-    /// 
+    ///
     /// 设备性能分析
     /// average_frame_time_ms: 平均帧时间
     /// frame_time_variance: 帧时间方差
@@ -211,15 +223,16 @@ class JankMonitor {
     /// percentiles: 帧时间百分位数
     /// anomalous_frame_count: 异常帧数
     /// device_level: 设备性能等级
-    /// recent_frame_count: 最近帧数 
-    /// 
+    /// recent_frame_count: 最近帧数
+    ///
 
     final data = {
       'type': 'jank_sequence',
       'page': _getCurrentPage?.call() ?? 'unknown',
       'jank_count': _consecutiveJankFrames,
       'max_duration_ms': _maxJankDurationInSequence,
-      'average_duration_ms': _totalJankDurationInSequence / _consecutiveJankFrames,
+      'average_duration_ms':
+          _totalJankDurationInSequence / _consecutiveJankFrames,
       'frame_budget_ms': _frameBudgetMs,
       'jank_threshold_ms': _jankThresholdMs,
       'device_performance': {
@@ -233,9 +246,10 @@ class JankMonitor {
         'recent_frame_count': _recentFrameTimes.length,
       },
     };
-    
+
     _reporter.addEvent('performance', data);
     _lastJankTime = DateTime.now();
+    _jankSequenceReported = true;
   }
 
   /// 重置卡顿状态
@@ -243,6 +257,7 @@ class JankMonitor {
     _consecutiveJankFrames = 0;
     _maxJankDurationInSequence = 0;
     _totalJankDurationInSequence = 0;
+    _jankSequenceReported = false;
   }
 
   void dispose() {
@@ -267,16 +282,16 @@ class JankMonitor {
 class JankConfig {
   /// 单帧卡顿阈值乘数（默认2.5，比原来的2.0更宽松）
   final double jankFrameTimeMultiplier;
-  
+
   /// 连续卡顿帧数阈值（默认4，比原来的3更严格）
   final int consecutiveJankThreshold;
-  
+
   /// 抖动容忍时间（毫秒），允许设备正常抖动
   final double jitterToleranceMs;
-  
+
   /// 防抖时间（毫秒），避免短时间内重复上报
   final int debounceMs;
-  
+
   /// 是否启用自适应阈值
   final bool enableAdaptiveThresholds;
 
@@ -290,7 +305,7 @@ class JankConfig {
 
   /// 默认配置
   static JankConfig defaultConfig() => const JankConfig();
-  
+
   /// 宽松配置（适合低端设备）
   static JankConfig lenient() => const JankConfig(
     jankFrameTimeMultiplier: 3.0,
@@ -298,7 +313,7 @@ class JankConfig {
     jitterToleranceMs: 12.0,
     debounceMs: 2000,
   );
-  
+
   /// 严格配置（适合高端设备）
   static JankConfig strict() => const JankConfig(
     jankFrameTimeMultiplier: 2.0,

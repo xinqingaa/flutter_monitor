@@ -17,11 +17,16 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     if (route is PageRoute && route.settings.name != null) {
       final pageName = route.settings.name!;
       if (pageName.isNotEmpty) {
-        _pagePushTimes[pageName] = DateTime.now();
-        _reporter.setCurrentRoute(pageName);
+        final now = DateTime.now();
+        final previousPageName = previousRoute?.settings.name;
+        _pagePushTimes[pageName] = now;
+        _reporter.startPageLoad(
+          pageName,
+          previousRouteName: previousPageName,
+          startTime: now,
+        );
         onPageRoutePushed?.call(pageName); // 触发回调
-        // 上报PV
-        _reporter.addEvent('behavior', {'type': 'pv', 'page': pageName});
+        _reporter.recordPageView(pageName);
       }
     }
   }
@@ -32,18 +37,14 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     if (route is PageRoute && route.settings.name != null) {
       final pageName = route.settings.name!;
       if (pageName.isNotEmpty) {
+        final previousPageName = previousRoute?.settings.name;
         final pushTime = _pagePushTimes.remove(pageName);
         if (pushTime != null) {
-          final duration = DateTime.now().difference(pushTime);
-          _reporter.addEvent('behavior', {
-            'type': 'page_stay',
-            'page': pageName,
-            'duration_ms': duration.inMilliseconds,
-          });
+          _reporter.finishPageLoad(pageName, nextRouteName: previousPageName);
         }
-        final previousPageName = previousRoute?.settings.name;
         if (previousPageName != null && previousPageName.isNotEmpty) {
           _reporter.setCurrentRoute(previousPageName);
+          _reporter.activatePageTrace(previousPageName);
           onPageRoutePushed?.call(previousPageName);
         }
       }
@@ -57,13 +58,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     }
     final pushTime = _pagePushTimes[pageName];
     if (pushTime != null) {
-      final duration = DateTime.now().difference(pushTime);
-      final data = {
-        'type': 'page_load',
-        'page': pageName,
-        'duration_ms': duration.inMilliseconds,
-      };
-      _reporter.addEvent('performance', data);
+      _reporter.finishPageFirstFrame(pageName);
     } else {
       debugPrint("警告: 未找到页面 $pageName 的推送时间");
     }
@@ -85,36 +80,50 @@ class MonitorDioInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     final startTime = response.requestOptions.extra['startTime'] as DateTime;
-    final duration = DateTime.now().difference(startTime);
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime);
 
-    final data = {
-      'type': 'api',
-      'url': response.requestOptions.uri.toString(),
-      'method': response.requestOptions.method,
-      'status': response.statusCode,
-      'duration_ms': duration.inMilliseconds,
-      'success': true,
-    };
-    _reporter.addEvent('performance', data);
+    _reporter.recordHttpClient(
+      url: response.requestOptions.uri.toString(),
+      method: response.requestOptions.method,
+      statusCode: response.statusCode,
+      durationMs: duration.inMilliseconds,
+      success: _isSuccessfulStatusCode(response.statusCode),
+      errorType: _isSuccessfulStatusCode(response.statusCode)
+          ? null
+          : 'http_status',
+      source: 'sdk.dio',
+      startTime: startTime,
+      endTime: endTime,
+      payload: <String, Object?>{'http.source': 'dio'},
+    );
     super.onResponse(response, handler);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final startTime = err.requestOptions.extra['startTime'] as DateTime;
-    final duration = DateTime.now().difference(startTime);
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime);
 
-    final data = {
-      'type': 'api',
-      'url': err.requestOptions.uri.toString(),
-      'method': err.requestOptions.method,
-      'status': err.response?.statusCode,
-      'duration_ms': duration.inMilliseconds,
-      'success': false,
-      'error': err.message,
-    };
-    _reporter.addEvent('performance', data);
+    _reporter.recordHttpClient(
+      url: err.requestOptions.uri.toString(),
+      method: err.requestOptions.method,
+      statusCode: err.response?.statusCode,
+      durationMs: duration.inMilliseconds,
+      success: false,
+      error: err.message,
+      source: 'sdk.dio',
+      startTime: startTime,
+      endTime: endTime,
+      payload: <String, Object?>{'http.source': 'dio'},
+    );
     super.onError(err, handler);
+  }
+
+  bool _isSuccessfulStatusCode(int? statusCode) {
+    if (statusCode == null) return false;
+    return statusCode >= 200 && statusCode < 400;
   }
 }
 

@@ -26,6 +26,8 @@ class Reporter {
   /// 缓存的设备信息，避免每次上报都重新获取。
   Map<String, dynamic>? _deviceInfo;
   var _backgroundFlushPending = false;
+  final Map<String, _PageTraceRecord> _pageTraces =
+      <String, _PageTraceRecord>{};
 
   Reporter(this._config) {
     _init();
@@ -145,6 +147,7 @@ class Reporter {
     DateTime? endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
+    bool? includeBreadcrumbs,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
@@ -175,6 +178,7 @@ class Reporter {
         level: record.level,
         status: record.status,
         traceId: record.traceId,
+        includeBreadcrumbs: includeBreadcrumbs,
         attributes: record.attributes,
         payload: record.payload,
       ),
@@ -221,6 +225,7 @@ class Reporter {
     DateTime? endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
+    bool? includeBreadcrumbs,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
@@ -253,6 +258,7 @@ class Reporter {
         traceId: record.traceId,
         spanId: record.spanId,
         parentSpanId: record.parentSpanId,
+        includeBreadcrumbs: includeBreadcrumbs,
         attributes: record.attributes,
         payload: record.payload,
       ),
@@ -275,6 +281,182 @@ class Reporter {
         status: EventStatus.ok,
         attributes: attributes,
         payload: payload,
+      ),
+    );
+  }
+
+  void startPageLoad(
+    String routeName, {
+    String? previousRouteName,
+    DateTime? startTime,
+  }) {
+    if (routeName.isEmpty) return;
+    final existing = _pageTraces.remove(routeName);
+    if (existing != null) {
+      _finishPageTrace(
+        existing,
+        endTime: startTime ?? DateTime.now(),
+        status: EventStatus.unknown,
+        payload: const <String, Object?>{'page.replaced': true},
+      );
+    }
+
+    final startedAt = startTime ?? DateTime.now();
+    setCurrentRoute(routeName);
+    final traceId = startTrace(
+      'page.load',
+      startTime: startedAt,
+      payload: <String, Object?>{
+        'route.name': routeName,
+        if (previousRouteName != null) 'route.previous': previousRouteName,
+      },
+    );
+    _recordCompletedSpan(
+      name: 'route.push',
+      traceId: traceId,
+      startTime: startedAt,
+      endTime: startedAt,
+      includeBreadcrumbs: false,
+      payload: <String, Object?>{
+        'route.name': routeName,
+        if (previousRouteName != null) 'route.previous': previousRouteName,
+      },
+    );
+    _pageTraces[routeName] = _PageTraceRecord(
+      routeName: routeName,
+      traceId: traceId,
+      startedAt: startedAt,
+      previousRouteName: previousRouteName,
+    );
+    _traceManager.setActiveTrace(traceId: traceId);
+  }
+
+  PipelineResult recordPageView(String routeName) {
+    return addBreadcrumb(
+      'page.view',
+      payload: <String, Object?>{
+        'legacy.category': 'behavior',
+        'legacy.data': <String, Object?>{'type': 'pv', 'page': routeName},
+      },
+    );
+  }
+
+  void finishPageFirstFrame(String routeName, {DateTime? endTime}) {
+    final record = _pageTraces[routeName];
+    if (record == null || record.firstFrameReported) {
+      return;
+    }
+    final finishedAt = endTime ?? DateTime.now();
+    final durationMs = finishedAt.difference(record.startedAt).inMilliseconds;
+    final spanId = startSpan(
+      'page.first_frame',
+      traceId: record.traceId,
+      startTime: record.startedAt,
+      attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
+      payload: <String, Object?>{'route.name': routeName},
+    );
+    endSpan(
+      spanId,
+      endTime: finishedAt,
+      includeBreadcrumbs: false,
+      attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
+      payload: <String, Object?>{'route.name': routeName},
+    );
+    if (!record.loadTraceFinished) {
+      endTrace(
+        record.traceId,
+        endTime: finishedAt,
+        includeBreadcrumbs: false,
+        attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
+        payload: <String, Object?>{'route.name': routeName},
+      );
+    }
+    _pageTraces[routeName] = record.copyWith(
+      firstFrameReported: true,
+      loadTraceFinished: true,
+    );
+    _traceManager.setActiveTrace(traceId: record.traceId);
+  }
+
+  void finishPageLoad(
+    String routeName, {
+    String? nextRouteName,
+    DateTime? endTime,
+  }) {
+    final record = _pageTraces.remove(routeName);
+    if (record == null) return;
+    _finishPageTrace(record, endTime: endTime ?? DateTime.now());
+  }
+
+  PipelineResult recordHttpClient({
+    required String url,
+    required String method,
+    required num durationMs,
+    int? statusCode,
+    required bool success,
+    String? error,
+    String? errorType,
+    String source = 'sdk.http',
+    DateTime? startTime,
+    DateTime? endTime,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final finishedAt = endTime ?? DateTime.now();
+    final startedAt =
+        startTime ??
+        finishedAt.subtract(Duration(milliseconds: durationMs.round()));
+    final effectiveErrorType = success
+        ? null
+        : errorType ?? (statusCode == null ? 'network_error' : 'http_status');
+    final attributes = <String, Object?>{
+      FieldPaths.httpMethod: method,
+      FieldPaths.httpUrlNormalized: _normalizedUrl(url),
+      if (statusCode != null) FieldPaths.httpStatusCode: statusCode,
+      FieldPaths.httpSuccess: success,
+      if (effectiveErrorType != null)
+        FieldPaths.httpErrorType: effectiveErrorType,
+    };
+    final span = _traceManager.startSpan(
+      name: 'http.client',
+      startTime: startedAt,
+      attributes: attributes,
+      payload: <String, Object?>{
+        ...payload,
+        'url': url,
+        if (error != null) 'error': error,
+      },
+    );
+    final finished = _traceManager.endSpan(
+      span.spanId,
+      endTime: finishedAt,
+      status: success ? EventStatus.ok : EventStatus.error,
+      level: EventLevel.info,
+    );
+    if (finished == null) {
+      return reportSdkEvent(
+        'sdk.http.span_end_failed',
+        level: EventLevel.warning,
+        status: EventStatus.error,
+        payload: <String, Object?>{'spanId': span.spanId},
+      );
+    }
+    return _pipeline.capture(
+      RawSignal(
+        source: source,
+        name: finished.name,
+        signalType: SignalType.span,
+        timestamp: finishedAt,
+        startTime: finished.startTime,
+        endTime: finishedAt,
+        durationMs: finished.durationMs,
+        level: EventLevel.info,
+        status: success ? EventStatus.ok : EventStatus.error,
+        traceId: finished.traceId,
+        spanId: finished.spanId,
+        parentSpanId: finished.parentSpanId,
+        includeBreadcrumbs: !success,
+        attributes: finished.attributes,
+        payload: finished.payload,
       ),
     );
   }
@@ -408,6 +590,7 @@ class Reporter {
       traceId,
       endTime: timestamp,
       status: EventStatus.ok,
+      includeBreadcrumbs: false,
       attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
       payload: <String, Object?>{
         'session.started_new': startedNewSession,
@@ -450,6 +633,10 @@ class Reporter {
     _contextManager.setRouteName(routeName);
   }
 
+  void activatePageTrace(String? routeName) {
+    _activatePageTrace(routeName);
+  }
+
   void setModule({String? name, String? scene}) {
     _contextManager.setModule(name: name, scene: scene);
   }
@@ -477,5 +664,147 @@ class Reporter {
         );
       }
     }
+  }
+
+  void _finishPageTrace(
+    _PageTraceRecord record, {
+    DateTime? endTime,
+    EventStatus status = EventStatus.ok,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final finishedAt = endTime ?? DateTime.now();
+    final stayMs = finishedAt.difference(record.startedAt).inMilliseconds;
+    if (!record.loadTraceFinished) {
+      endTrace(
+        record.traceId,
+        endTime: finishedAt,
+        status: status,
+        payload: <String, Object?>{
+          'route.name': record.routeName,
+          if (record.previousRouteName != null)
+            'route.previous': record.previousRouteName,
+          ...payload,
+        },
+      );
+    }
+    _pipeline.capture(
+      RawSignal(
+        source: 'sdk.page',
+        name: 'page.stay',
+        signalType: SignalType.metric,
+        timestamp: finishedAt,
+        durationMs: stayMs,
+        level: EventLevel.info,
+        status: EventStatus.ok,
+        traceId: record.traceId,
+        includeBreadcrumbs: false,
+        payload: <String, Object?>{
+          'legacy.category': 'behavior',
+          'legacy.data': <String, Object?>{
+            'type': 'page_stay',
+            'page': record.routeName,
+            'duration_ms': stayMs,
+          },
+        },
+      ),
+    );
+  }
+
+  PipelineResult _recordCompletedSpan({
+    required String name,
+    required String traceId,
+    required DateTime startTime,
+    required DateTime endTime,
+    EventStatus status = EventStatus.ok,
+    EventLevel level = EventLevel.info,
+    bool? includeBreadcrumbs,
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final span = _traceManager.startSpan(
+      name: name,
+      traceId: traceId,
+      startTime: startTime,
+      attributes: attributes,
+      payload: payload,
+    );
+    final finished = _traceManager.endSpan(
+      span.spanId,
+      endTime: endTime,
+      status: status,
+      level: level,
+    );
+    if (finished == null) {
+      return reportSdkEvent(
+        'sdk.span.end_unknown',
+        level: EventLevel.warning,
+        payload: <String, Object?>{'spanId': span.spanId},
+      );
+    }
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.api',
+        name: finished.name,
+        signalType: SignalType.span,
+        timestamp: endTime,
+        startTime: finished.startTime,
+        endTime: finished.endTime,
+        durationMs: finished.durationMs,
+        level: finished.level,
+        status: finished.status,
+        traceId: finished.traceId,
+        spanId: finished.spanId,
+        parentSpanId: finished.parentSpanId,
+        includeBreadcrumbs: includeBreadcrumbs,
+        attributes: finished.attributes,
+        payload: finished.payload,
+      ),
+    );
+  }
+
+  void _activatePageTrace(String? routeName) {
+    final record = routeName == null ? null : _pageTraces[routeName];
+    _traceManager.setActiveTrace(traceId: record?.traceId);
+  }
+
+  String _normalizedUrl(String rawUrl) {
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null) return rawUrl.split('?').first;
+    if (uri.hasScheme) {
+      return uri.path.isEmpty ? '/' : uri.path;
+    }
+    return rawUrl.split('?').first;
+  }
+}
+
+class _PageTraceRecord {
+  const _PageTraceRecord({
+    required this.routeName,
+    required this.traceId,
+    required this.startedAt,
+    this.previousRouteName,
+    this.firstFrameReported = false,
+    this.loadTraceFinished = false,
+  });
+
+  final String routeName;
+  final String traceId;
+  final DateTime startedAt;
+  final String? previousRouteName;
+  final bool firstFrameReported;
+  final bool loadTraceFinished;
+
+  _PageTraceRecord copyWith({
+    bool? firstFrameReported,
+    bool? loadTraceFinished,
+  }) {
+    return _PageTraceRecord(
+      routeName: routeName,
+      traceId: traceId,
+      startedAt: startedAt,
+      previousRouteName: previousRouteName,
+      firstFrameReported: firstFrameReported ?? this.firstFrameReported,
+      loadTraceFinished: loadTraceFinished ?? this.loadTraceFinished,
+    );
   }
 }

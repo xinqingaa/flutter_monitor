@@ -30,6 +30,9 @@ class LegacySignalMapper {
     };
     final message = data['exception'] ?? data['error'] ?? data['message'];
 
+    final legacyData = Map<String, Object?>.from(data);
+    legacyData.remove('stack');
+
     return RawSignal(
       source: 'legacy.reporter',
       name: switch (mechanism) {
@@ -55,7 +58,7 @@ class LegacySignalMapper {
         if (data['library'] != null)
           FieldPaths.payloadErrorLibrary: data['library'].toString(),
         'legacy.category': 'error',
-        'legacy.data': data,
+        'legacy.data': legacyData,
       },
     );
   }
@@ -86,7 +89,7 @@ class LegacySignalMapper {
         attributes[FieldPaths.pageFirstFrameMs] = durationMs;
       }
     } else if (type == 'jank_sequence') {
-      name = 'jank.sequence';
+      name = 'ui.jank.sequence';
       attributes.addAll({
         if (_numValue(data['jank_count']) != null)
           FieldPaths.jankCount: _numValue(data['jank_count']),

@@ -5,8 +5,10 @@ import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_snapshot.dart';
+import 'package:flutter_monitor_sdk/src/utils/monitored_http_client.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
 class RecordingOutput extends MonitorOutput {
   final List<Map<String, dynamic>> events = <Map<String, dynamic>>[];
@@ -35,6 +37,17 @@ class ThrowingDisposeOutput extends RecordingOutput {
   @override
   void dispose() {
     throw StateError('dispose failed');
+  }
+}
+
+class _FakeHttpClient extends http.BaseClient {
+  _FakeHttpClient(this.response);
+
+  final http.StreamedResponse response;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    return response;
   }
 }
 
@@ -157,6 +170,45 @@ void main() {
       );
     },
   );
+
+  test('legacy jank sequence uses documented event name and frame fields', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addEvent('performance', {
+      'type': 'jank_sequence',
+      'jank_count': 5,
+      'max_duration_ms': 71.396,
+      'average_duration_ms': 57.0778,
+      'frame_budget_ms': 8.33,
+      'device_performance': {
+        'fps': 18.49,
+        'stability': 0.0,
+        'percentiles': {'p50': 4.5, 'p90': 58.3, 'p99': 1032.9},
+      },
+    });
+
+    final event = output.events.single;
+    final attributes = event['attributes'] as Map;
+
+    expect(event['name'], 'ui.jank.sequence');
+    expect(event['signalType'], 'metric');
+    expect(attributes[FieldPaths.jankCount], 5);
+    expect(attributes[FieldPaths.frameMaxMs], 71.396);
+    expect(attributes[FieldPaths.frameAvgMs], 57.0778);
+    expect(attributes[FieldPaths.frameBudgetMs], 8.33);
+    expect(attributes[FieldPaths.frameFps], 18.49);
+    expect(attributes[FieldPaths.frameP99Ms], 1032.9);
+    expect(
+      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+      isTrue,
+    );
+  });
 
   test('privacy filter removes forbidden fields before output', () {
     final output = RecordingOutput();
@@ -445,6 +497,240 @@ void main() {
 
     expect(route['name'], '/');
     expect(context['missing'], isFalse);
+  });
+
+  testWidgets(
+    'route observer emits page load trace and page first frame span',
+    (tester) async {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+      final routeObserver = MonitorRouteObserver(reporter);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorObservers: <NavigatorObserver>[routeObserver],
+          initialRoute: '/',
+          routes: <String, WidgetBuilder>{'/': (_) => const SizedBox.shrink()},
+        ),
+      );
+      routeObserver.onPageRendered('/');
+
+      final pageLoadEvents = output.events
+          .where((event) => event['name'] == 'page.load')
+          .toList(growable: false);
+      final routePushEvents = output.events
+          .where((event) => event['name'] == 'route.push')
+          .toList(growable: false);
+      final pageFirstFrameEvents = output.events
+          .where((event) => event['name'] == 'page.first_frame')
+          .toList(growable: false);
+      final pageView = output.events.firstWhere(
+        (event) => event['name'] == 'page.view',
+      );
+
+      expect(pageLoadEvents, hasLength(2));
+      expect(routePushEvents, hasLength(1));
+      expect(pageFirstFrameEvents, hasLength(2));
+
+      final pageTraceId = pageLoadEvents.first['traceId'];
+      expect(pageView['traceId'], pageTraceId);
+      expect(pageLoadEvents.last['status'], 'ok');
+      expect(pageLoadEvents.last['durationMs'], isA<num>());
+      expect(routePushEvents.single['status'], 'ok');
+      expect(
+        routePushEvents.every((event) => event['traceId'] == pageTraceId),
+        isTrue,
+      );
+      expect(
+        pageFirstFrameEvents.every((event) => event['traceId'] == pageTraceId),
+        isTrue,
+      );
+      expect(
+        (pageFirstFrameEvents.last['attributes']
+            as Map)[FieldPaths.pageFirstFrameMs],
+        isA<num>(),
+      );
+      expect(
+        (pageFirstFrameEvents.last['payload'] as Map).containsKey(
+          FieldPaths.payloadBreadcrumbs,
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets('popping a page clears stale page trace before later events', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final routeObserver = MonitorRouteObserver(reporter);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[routeObserver],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/detail'),
+              child: const Text('detail'),
+            ),
+          ),
+          '/detail': (_) => const SizedBox(key: Key('detail-page')),
+        },
+      ),
+    );
+    routeObserver.onPageRendered('/');
+    final homeTraceId = output.events.firstWhere(
+      (event) => event['name'] == 'page.load',
+    )['traceId'];
+
+    await tester.tap(find.text('detail'));
+    await tester.pumpAndSettle();
+    routeObserver.onPageRendered('/detail');
+    final detailTraceId = output.events
+        .where((event) => event['name'] == 'page.load')
+        .last['traceId'];
+
+    Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
+    await tester.pumpAndSettle();
+    reporter.recordHttpClient(
+      url: 'https://example.com/after-pop',
+      method: 'GET',
+      statusCode: 200,
+      durationMs: 12,
+      success: true,
+    );
+
+    final httpSpan = output.events.lastWhere(
+      (event) => event['name'] == 'http.client',
+    );
+    final pageStay = output.events.lastWhere(
+      (event) => event['name'] == 'page.stay',
+    );
+    final stayContext = pageStay['context'] as Map;
+    final stayRoute = stayContext['route'] as Map;
+    final httpContext = httpSpan['context'] as Map;
+    final httpRoute = httpContext['route'] as Map;
+
+    expect(homeTraceId, isNot(detailTraceId));
+    expect(pageStay['traceId'], detailTraceId);
+    expect(stayRoute['name'], '/detail');
+    expect(httpSpan['traceId'], homeTraceId);
+    expect(httpSpan['traceId'], isNot(detailTraceId));
+    expect(httpRoute['name'], '/');
+  });
+
+  test('http client span is attached to the active page trace', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    reporter.startPageLoad('/home', startTime: startedAt);
+    final pageTrace = output.events.firstWhere(
+      (event) => event['name'] == 'page.load',
+    );
+    reporter.recordHttpClient(
+      url: 'https://example.com/api/items?page=1',
+      method: 'GET',
+      statusCode: 200,
+      durationMs: 32,
+      success: true,
+      startTime: startedAt.add(const Duration(milliseconds: 10)),
+      endTime: startedAt.add(const Duration(milliseconds: 42)),
+    );
+
+    final httpSpan = output.events.singleWhere(
+      (event) => event['name'] == 'http.client',
+    );
+    final attributes = httpSpan['attributes'] as Map;
+
+    expect(httpSpan['signalType'], 'span');
+    expect(httpSpan['traceId'], pageTrace['traceId']);
+    expect(httpSpan['durationMs'], 32);
+    expect(attributes[FieldPaths.httpMethod], 'GET');
+    expect(attributes[FieldPaths.httpUrlNormalized], '/api/items');
+    expect(attributes[FieldPaths.httpSuccess], isTrue);
+    expect(
+      (httpSpan['payload'] as Map).containsKey(FieldPaths.payloadBreadcrumbs),
+      isFalse,
+    );
+  });
+
+  test('failed http span includes breadcrumbs and error type', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addBreadcrumb('ui.tap.load');
+    reporter.recordHttpClient(
+      url: 'https://example.com/missing',
+      method: 'GET',
+      statusCode: 404,
+      durationMs: 18,
+      success: false,
+      errorType: 'http_status',
+    );
+
+    final httpSpan = output.events.last;
+    final attributes = httpSpan['attributes'] as Map;
+    final payload = httpSpan['payload'] as Map;
+
+    expect(httpSpan['status'], 'error');
+    expect(attributes[FieldPaths.httpSuccess], isFalse);
+    expect(attributes[FieldPaths.httpErrorType], 'http_status');
+    expect(payload[FieldPaths.payloadBreadcrumbs], isA<List>());
+  });
+
+  test('monitored http client treats 4xx responses as failed spans', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final client = MonitoredHttpClient(
+      reporter,
+      _FakeHttpClient(
+        http.StreamedResponse(
+          const Stream<List<int>>.empty(),
+          404,
+          request: http.Request('GET', Uri.parse('https://example.com/404')),
+        ),
+      ),
+    );
+
+    await client.get(Uri.parse('https://example.com/404'));
+
+    final httpSpan = output.events.singleWhere(
+      (event) => event['name'] == 'http.client',
+    );
+    final attributes = httpSpan['attributes'] as Map;
+
+    expect(httpSpan['status'], 'error');
+    expect(attributes[FieldPaths.httpSuccess], isFalse);
+    expect(attributes[FieldPaths.httpErrorType], 'http_status');
   });
 
   testWidgets('cold start trace starts before initial route page view', (
