@@ -1,4 +1,5 @@
 import '../constants/context_missing_reasons.dart';
+import '../constants/field_paths.dart';
 import '../model/event_envelope.dart';
 import '../model/event_level.dart';
 import '../model/event_priority.dart';
@@ -128,6 +129,8 @@ class SchemaValidator {
         ),
       );
     }
+
+    errors.addAll(_validateEventPhase(event));
 
     final missingReason = event.context.missingReason;
     if (!_isBlank(missingReason) &&
@@ -276,6 +279,42 @@ class SchemaValidator {
     }
   }
 
+  Iterable<SchemaValidationIssue> _validateEventPhase(
+    EventEnvelope event,
+  ) sync* {
+    final phase = event.attributes[FieldPaths.eventPhase];
+    if (phase == null) return;
+    if (phase is! String || !_eventPhaseValues.contains(phase)) {
+      yield SchemaValidationIssue(
+        path: 'attributes.${FieldPaths.eventPhase}',
+        code: 'invalid_event_phase',
+        message:
+            '${FieldPaths.eventPhase} must be one of '
+            '${_eventPhaseValues.join(', ')}',
+      );
+      return;
+    }
+
+    if (phase == 'end' &&
+        (event.signalType == SignalType.trace ||
+            event.signalType == SignalType.span)) {
+      if (event.endTime == null) {
+        yield const SchemaValidationIssue(
+          path: 'endTime',
+          code: 'end_time_required',
+          message: 'end phase trace/span events must provide endTime',
+        );
+      }
+      if (event.durationMs == null) {
+        yield const SchemaValidationIssue(
+          path: 'durationMs',
+          code: 'duration_required',
+          message: 'end phase trace/span events must provide durationMs',
+        );
+      }
+    }
+  }
+
   static bool _matchesType(Object? value, FieldValueType type) {
     if (value == null) return true;
     return switch (type) {
@@ -301,6 +340,7 @@ final _statusValues = EventStatus.values
 final _priorityValues = EventPriority.values
     .map((value) => value.wireValue)
     .toSet();
+const _eventPhaseValues = <String>{'start', 'end', 'instant'};
 
 const _deprecatedFieldPaths = <String>{
   'page.route',

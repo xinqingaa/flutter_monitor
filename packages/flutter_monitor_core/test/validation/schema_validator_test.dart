@@ -56,6 +56,45 @@ void main() {
     );
   });
 
+  test('accepts registered event phase attributes', () {
+    final result = validator.validate(
+      validSpan().copyWith(
+        endTime: DateTime.parse('2026-05-24T12:00:00.012+08:00'),
+        attributes: const <String, Object?>{FieldPaths.eventPhase: 'end'},
+      ),
+    );
+
+    expect(result.isValid, isTrue);
+  });
+
+  test('rejects invalid event phase values', () {
+    final result = validator.validate(
+      validSpan().copyWith(
+        attributes: const <String, Object?>{FieldPaths.eventPhase: 'finished'},
+      ),
+    );
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      contains('invalid_event_phase'),
+    );
+  });
+
+  test('end phase trace and span events require completion fields', () {
+    final result = validator.validate(
+      validSpan(durationMs: null).copyWith(
+        attributes: const <String, Object?>{FieldPaths.eventPhase: 'end'},
+      ),
+    );
+
+    expect(result.isValid, isFalse);
+    expect(
+      result.errors.map((issue) => issue.code),
+      containsAll(<String>['end_time_required', 'duration_required']),
+    );
+  });
+
   test('rejects deprecated duplicate attribute fields', () {
     final event = validSpan().copyWith(
       attributes: const {'page.route': '/home', 'device.tier': 'high'},

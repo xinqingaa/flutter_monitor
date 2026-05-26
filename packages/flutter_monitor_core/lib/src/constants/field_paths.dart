@@ -18,6 +18,7 @@ abstract final class FieldPaths {
   static const context = 'context';
   static const attributes = 'attributes';
   static const payload = 'payload';
+  static const eventPhase = 'event.phase';
 
   static const resourceSdkName = 'resource.sdk.name';
   static const resourceSdkVersion = 'resource.sdk.version';

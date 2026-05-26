@@ -157,6 +157,7 @@ void main() {
       FieldPaths.context,
       FieldPaths.attributes,
       FieldPaths.payload,
+      FieldPaths.eventPhase,
       FieldPaths.resourceSdkName,
       FieldPaths.resourceSdkVersion,
       FieldPaths.resourceSdkCoreVersion,

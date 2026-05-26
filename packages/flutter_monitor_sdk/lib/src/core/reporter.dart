@@ -25,6 +25,7 @@ class Reporter {
 
   /// 缓存的设备信息，避免每次上报都重新获取。
   Map<String, dynamic>? _deviceInfo;
+  var _backgroundFlushPending = false;
 
   Reporter(this._config) {
     _init();
@@ -112,11 +113,13 @@ class Reporter {
 
   String startTrace(
     String name, {
+    DateTime? startTime,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
     final record = _traceManager.startTrace(
       name: name,
+      startTime: startTime,
       attributes: attributes,
       payload: payload,
     );
@@ -182,6 +185,7 @@ class Reporter {
     String name, {
     String? traceId,
     String? parentSpanId,
+    DateTime? startTime,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
@@ -189,6 +193,7 @@ class Reporter {
       name: name,
       traceId: traceId,
       parentSpanId: parentSpanId,
+      startTime: startTime,
       attributes: attributes,
       payload: payload,
     );
@@ -301,31 +306,40 @@ class Reporter {
     final occurredAt = timestamp ?? DateTime.now();
     final previousState = _contextManager.lifecycleState;
     _contextManager.setLifecycleState(state);
+    final contextState = _contextManager.lifecycleState;
 
     final sessionId = _sessionManager.currentSessionId;
+    final isBackgroundState =
+        state == 'paused' || state == 'hidden' || state == 'detached';
     if (state == 'paused' || state == 'hidden' || state == 'detached') {
-      _sessionManager.markBackgrounded(occurredAt);
+      if (_sessionManager.backgroundAt == null) {
+        _sessionManager.markBackgrounded(occurredAt);
+      }
     }
 
-    _pipeline.captureForSession(
-      sessionId: sessionId,
-      signal: RawSignal(
-        source: 'sdk.lifecycle',
-        name: 'app.lifecycle',
-        signalType: SignalType.breadcrumb,
-        timestamp: occurredAt,
-        level: EventLevel.info,
-        status: EventStatus.ok,
-        attributes: <String, Object?>{
-          FieldPaths.contextLifecycleState: state,
-          if (previousState != null)
-            FieldPaths.contextLifecyclePreviousState: previousState,
-          FieldPaths.contextLifecycleIsForeground: state == 'resumed',
-        },
-      ),
-    );
+    if (previousState != state) {
+      _pipeline.captureForSession(
+        sessionId: sessionId,
+        signal: RawSignal(
+          source: 'sdk.lifecycle',
+          name: 'app.lifecycle',
+          signalType: SignalType.breadcrumb,
+          timestamp: occurredAt,
+          level: EventLevel.info,
+          status: EventStatus.ok,
+          includeBreadcrumbs: false,
+          attributes: <String, Object?>{
+            FieldPaths.contextLifecycleState: state,
+            if (previousState != null)
+              FieldPaths.contextLifecyclePreviousState: previousState,
+            FieldPaths.contextLifecycleIsForeground: state == 'resumed',
+          },
+        ),
+      );
+    }
 
     if (state == 'resumed') {
+      _backgroundFlushPending = false;
       final resume = _sessionManager.handleResumed(
         timestamp: occurredAt,
         backgroundSessionTimeout:
@@ -343,13 +357,18 @@ class Reporter {
     }
 
     if (_config.effectiveSessionConfig.flushOnBackground &&
-        (state == 'paused' || state == 'hidden' || state == 'detached')) {
+        isBackgroundState &&
+        !_backgroundFlushPending) {
+      _backgroundFlushPending = true;
       try {
         await flush(isAppExiting: state == 'detached');
         reportSdkEvent(
           'sdk.lifecycle.flush',
           attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: true},
-          payload: <String, Object?>{'lifecycle.state': state},
+          payload: <String, Object?>{
+            'lifecycle.trigger_state': state,
+            if (contextState != null) 'lifecycle.context_state': contextState,
+          },
         );
       } catch (error) {
         reportSdkEvent(
@@ -358,7 +377,8 @@ class Reporter {
           status: EventStatus.error,
           attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: false},
           payload: <String, Object?>{
-            'lifecycle.state': state,
+            'lifecycle.trigger_state': state,
+            if (contextState != null) 'lifecycle.context_state': contextState,
             'error': error.toString(),
           },
         );

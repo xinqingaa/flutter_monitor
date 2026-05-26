@@ -139,7 +139,7 @@ Native 增强来源：
 
 - `trace app.cold_start`
 - `trace app.hot_start`
-- `span app.init`
+- `span sdk.init`
 - `span app.first_frame`
 - `span app.interactive`
 - `breadcrumb app.lifecycle`
@@ -156,6 +156,7 @@ Native 增强来源：
 推荐字段：
 
 - `app.start.type`
+- `event.phase`
 - `app.first_frame_ms`
 - `app.interactive_ms`
 - `sdk.init.duration_ms`

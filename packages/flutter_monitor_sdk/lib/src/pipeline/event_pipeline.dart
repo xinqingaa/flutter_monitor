@@ -161,10 +161,39 @@ class EventPipeline {
           name: envelope.name,
           level: envelope.level ?? EventLevel.info,
           attributes: envelope.attributes,
-          payload: envelope.payload,
+          payload: _breadcrumbPayload(envelope),
         ),
       );
     }
+  }
+
+  Map<String, Object?> _breadcrumbPayload(EventEnvelope envelope) {
+    final payload = Map<String, Object?>.from(envelope.payload);
+    payload.remove(FieldPaths.payloadBreadcrumbs);
+
+    if (envelope.signalType != SignalType.error) {
+      return payload;
+    }
+
+    final legacyData = payload['legacy.data'];
+    return <String, Object?>{
+      if (payload[FieldPaths.payloadErrorMessage] != null)
+        FieldPaths.payloadErrorMessage: payload[FieldPaths.payloadErrorMessage],
+      if (payload[FieldPaths.payloadErrorLibrary] != null)
+        FieldPaths.payloadErrorLibrary: payload[FieldPaths.payloadErrorLibrary],
+      if (legacyData is Map) 'legacy.data': _compactErrorLegacyData(legacyData),
+    };
+  }
+
+  Map<String, Object?> _compactErrorLegacyData(Map<Object?, Object?> data) {
+    return <String, Object?>{
+      if (data['type'] != null) 'type': data['type'],
+      if (data['exception'] != null) 'exception': data['exception'],
+      if (data['error'] != null) 'error': data['error'],
+      if (data['library'] != null) 'library': data['library'],
+      if (data['context'] != null) 'context': data['context'],
+      if (data['timestamp'] != null) 'timestamp': data['timestamp'],
+    };
   }
 
   void _emitSelfMonitoring({

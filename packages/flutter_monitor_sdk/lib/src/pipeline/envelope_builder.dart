@@ -17,7 +17,13 @@ class EnvelopeBuilder {
     required ContextSnapshot contextSnapshot,
     required TraceSnapshot traceSnapshot,
   }) {
-    final unregisteredAttributes = _unregisteredAttributes(signal.attributes);
+    final attributes = <String, Object?>{
+      FieldPaths.eventPhase: signal.eventPhase ?? _defaultEventPhase(signal),
+      ...signal.attributes,
+    };
+    final unregisteredAttributes = _unregisteredAttributes(attributes);
+    final includeBreadcrumbs =
+        signal.includeBreadcrumbs ?? _defaultIncludeBreadcrumbs(signal);
     final payload = <String, Object?>{
       ...signal.payload,
       if (unregisteredAttributes.isNotEmpty)
@@ -26,7 +32,7 @@ class EnvelopeBuilder {
         'legacy.customData': contextSnapshot.customData,
       if (contextSnapshot.userProperties?.isNotEmpty ?? false)
         'legacy.userProperties': contextSnapshot.userProperties,
-      if (traceSnapshot.breadcrumbs.isNotEmpty)
+      if (includeBreadcrumbs && traceSnapshot.breadcrumbs.isNotEmpty)
         FieldPaths.payloadBreadcrumbs: traceSnapshot.breadcrumbs
             .map((breadcrumb) => breadcrumb.toJson())
             .toList(growable: false),
@@ -49,9 +55,26 @@ class EnvelopeBuilder {
       parentSpanId: traceSnapshot.parentSpanId,
       resource: contextSnapshot.resource,
       context: contextSnapshot.context,
-      attributes: _registeredAttributes(signal.attributes),
+      attributes: _registeredAttributes(attributes),
       payload: payload,
     );
+  }
+
+  String _defaultEventPhase(RawSignal signal) {
+    return switch (signal.signalType) {
+      SignalType.trace ||
+      SignalType.span => signal.endTime == null ? 'start' : 'end',
+      _ => 'instant',
+    };
+  }
+
+  bool _defaultIncludeBreadcrumbs(RawSignal signal) {
+    return switch (signal.signalType) {
+      SignalType.error => true,
+      SignalType.trace || SignalType.span => signal.endTime != null,
+      SignalType.metric => signal.status == EventStatus.error,
+      _ => false,
+    };
   }
 
   Map<String, Object?> _registeredAttributes(Map<String, Object?> attributes) {

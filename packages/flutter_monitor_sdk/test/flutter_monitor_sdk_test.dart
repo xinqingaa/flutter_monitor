@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
@@ -285,6 +286,48 @@ void main() {
     expect((breadcrumbs.single as Map)['name'], 'ui.tap.checkout');
   });
 
+  test('breadcrumb payloads never carry nested breadcrumb snapshots', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addBreadcrumb(
+      'ui.tap.home',
+      payload: const <String, Object?>{'target': 'home'},
+    );
+    reporter.addEvent('error', {
+      'type': 'dart_error',
+      'error': 'first boom',
+      'stack': 'trace',
+    });
+    reporter.addEvent('error', {
+      'type': 'dart_error',
+      'error': 'second boom',
+      'stack': 'trace',
+    });
+
+    final secondError = output.events.last;
+    final breadcrumbs =
+        (secondError['payload'] as Map)[FieldPaths.payloadBreadcrumbs] as List;
+
+    expect(secondError['signalType'], 'error');
+    expect(breadcrumbs.length, 2);
+    for (final breadcrumb in breadcrumbs.cast<Map>()) {
+      final payload =
+          breadcrumb['payload'] as Map? ?? const <Object?, Object?>{};
+      expect(payload.containsKey(FieldPaths.payloadBreadcrumbs), isFalse);
+      expect(payload.containsKey(FieldPaths.payloadErrorStacktrace), isFalse);
+      final legacyData = payload['legacy.data'];
+      if (legacyData is Map) {
+        expect(legacyData.containsKey('stack'), isFalse);
+      }
+    }
+  });
+
   test('flush delegates to outputs', () async {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -327,6 +370,162 @@ void main() {
     expect(
       output.events.any((event) => event['name'] == 'sdk.lifecycle.flush'),
       isTrue,
+    );
+  });
+
+  test('background lifecycle sequence flushes once until resumed', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    await reporter.handleLifecycleState(
+      'inactive',
+      timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+    );
+    await reporter.handleLifecycleState(
+      'hidden',
+      timestamp: DateTime.parse('2026-05-25T12:00:01.000+08:00'),
+    );
+    await reporter.handleLifecycleState(
+      'paused',
+      timestamp: DateTime.parse('2026-05-25T12:00:02.000+08:00'),
+    );
+
+    expect(output.flushCount, 1);
+    expect(
+      output.events.where((event) => event['name'] == 'sdk.lifecycle.flush'),
+      hasLength(1),
+    );
+    final flushEvent = output.events.singleWhere(
+      (event) => event['name'] == 'sdk.lifecycle.flush',
+    );
+    expect((flushEvent['payload'] as Map)['lifecycle.trigger_state'], 'hidden');
+    expect((flushEvent['payload'] as Map)['lifecycle.context_state'], 'hidden');
+    expect(
+      output.events
+          .where((event) => event['name'] == 'app.lifecycle')
+          .every(
+            (event) => !(event['payload'] as Map).containsKey(
+              FieldPaths.payloadBreadcrumbs,
+            ),
+          ),
+      isTrue,
+    );
+  });
+
+  testWidgets('route observer sets route context before reporting page view', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final routeObserver = MonitorRouteObserver(reporter);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[routeObserver],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{'/': (_) => const SizedBox.shrink()},
+      ),
+    );
+
+    final pageView = output.events.firstWhere(
+      (event) => event['name'] == 'page.view',
+    );
+    final context = pageView['context'] as Map;
+    final route = context['route'] as Map;
+
+    expect(route['name'], '/');
+    expect(context['missing'], isFalse);
+  });
+
+  testWidgets('cold start trace starts before initial route page view', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    final appStartTime = DateTime.now().subtract(
+      const Duration(milliseconds: 8),
+    );
+
+    await FlutterMonitorSDK.init(
+      config: MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(
+          enableLifecycleTracking: false,
+          flushOnBackground: false,
+        ),
+        enableErrorMonitor: false,
+        enableBehaviorMonitor: false,
+        enableJankMonitor: false,
+        outputs: <MonitorOutput>[output],
+      ),
+      appStartTime: appStartTime,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[
+          FlutterMonitorSDK.routeObserver,
+        ],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{'/': (_) => const SizedBox.shrink()},
+      ),
+    );
+    await tester.pump();
+    await FlutterMonitorSDK.dispose();
+
+    final names = output.events
+        .map((event) => event['name'] as String)
+        .toList(growable: false);
+    final coldStartEvents = output.events
+        .where((event) => event['name'] == 'app.cold_start')
+        .toList(growable: false);
+    final firstFrameSpans = output.events
+        .where((event) => event['name'] == 'app.first_frame')
+        .toList(growable: false);
+
+    expect(names.first, 'app.cold_start');
+    expect(
+      names.indexOf('app.cold_start'),
+      lessThan(names.indexOf('page.view')),
+    );
+    expect(coldStartEvents, hasLength(2));
+    expect(firstFrameSpans, hasLength(2));
+    expect(coldStartEvents.first['signalType'], 'trace');
+    expect(coldStartEvents.first['status'], 'unknown');
+    expect(
+      (coldStartEvents.first['attributes'] as Map)[FieldPaths.eventPhase],
+      'start',
+    );
+    expect(coldStartEvents.last['status'], 'ok');
+    expect(coldStartEvents.last['durationMs'], isA<num>());
+    expect(
+      (coldStartEvents.last['attributes'] as Map)[FieldPaths.eventPhase],
+      'end',
+    );
+    expect(
+      (coldStartEvents.last['attributes'] as Map)[FieldPaths.appStartType],
+      'cold',
+    );
+    expect(
+      (coldStartEvents.last['attributes'] as Map)[FieldPaths.appFirstFrameMs],
+      isA<num>(),
+    );
+    expect(
+      (firstFrameSpans.first['attributes'] as Map)[FieldPaths.eventPhase],
+      'start',
+    );
+    expect(
+      (firstFrameSpans.last['attributes'] as Map)[FieldPaths.eventPhase],
+      'end',
     );
   });
 

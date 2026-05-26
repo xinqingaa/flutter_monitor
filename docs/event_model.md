@@ -33,6 +33,12 @@ Trace 和 span 都是一等事件：
 
 不要用 `signalType = trace` 同时表达 root trace 和内部 span。HTTP 请求、route push、首帧、可交互、图片解码、列表构建、native step 等阶段应使用 `signalType = span`。
 
+Trace/span 可按生命周期流式上报，也可只上报完成态摘要。流式上报时必须使用 `event.phase` 明确区分：
+
+- `start`：区间开始，允许 `status = unknown`，可无 `endTime` 和 `durationMs`。
+- `end`：区间结束，必须包含 `endTime`、`durationMs` 和最终 `status`。
+- `instant`：瞬时事件，例如 breadcrumb、metric、error、log、sdk event。
+
 ### 字段分层
 
 - `resource` 放稳定资源，例如 SDK、App、设备、系统和运行环境。
@@ -242,6 +248,7 @@ flowchart TB
 | 字段 | 类型 | 隐私等级 | 建议索引 | 说明 |
 |---|---|---|---:|---|
 | `app.start.type` | string | safe | 是 | cold/hot/warm |
+| `event.phase` | string | safe | 是 | start/end/instant，用于区分 trace/span 生命周期事件 |
 | `app.first_frame_ms` | duration_ms | safe | 是 | 启动首帧耗时 |
 | `app.interactive_ms` | duration_ms | safe | 是 | 启动可交互耗时 |
 | `sdk.init.duration_ms` | duration_ms | safe | 是 | SDK 初始化耗时 |
@@ -323,7 +330,7 @@ flowchart TD
   StartTrace["启动链路<br/>Trace: app.cold_start"]
   PageTrace["页面链路<br/>Trace: page.load"]
   ActionTrace["业务操作链路<br/>Trace: action.* / custom.trace"]
-  InitSpan["启动阶段<br/>Span: app.init"]
+  InitSpan["启动阶段<br/>Span: sdk.init"]
   FirstFrame["首帧阶段<br/>Span: app.first_frame"]
   RouteSpan["路由阶段<br/>Span: route.push"]
   HttpSpan["网络请求<br/>Span: http.client"]
@@ -389,7 +396,7 @@ Trace 事件通常表示流程整体，内部阶段应使用 span 表达。
 
 典型 span：
 
-- `app.init`
+- `sdk.init`
 - `app.first_frame`
 - `app.interactive`
 - `route.push`
@@ -615,7 +622,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 - `signalType = trace`、`name = app.cold_start`
 - `signalType = trace`、`name = app.hot_start`
-- `signalType = span`、`name = app.init`
+- `signalType = span`、`name = sdk.init`
 - `signalType = span`、`name = app.first_frame`
 - `signalType = span`、`name = app.interactive`
 
@@ -623,6 +630,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 | 字段 | 说明 |
 |---|---|
+| `event.phase` | `start`、`end`、`instant` |
 | `app.start.type` | `cold`、`hot`、`warm` |
 | `app.first_frame_ms` | 首帧耗时 |
 | `app.interactive_ms` | 可交互耗时 |
@@ -887,7 +895,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "timestamp": "2026-05-24T12:00:00.050+08:00",
       "durationMs": 220,
       "signalType": "span",
-      "name": "app.init",
+      "name": "sdk.init",
       "level": "info",
       "status": "ok",
       "priority": "normal",
@@ -898,6 +906,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "resource": {},
       "context": {},
       "attributes": {
+        "event.phase": "end",
         "sdk.init.duration_ms": 45
       },
       "payload": {}

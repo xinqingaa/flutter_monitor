@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
+import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 
 // 用于页面路由监听  可以适当修改泛型 <Route<dynamic>>
 class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
@@ -17,6 +18,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
       final pageName = route.settings.name!;
       if (pageName.isNotEmpty) {
         _pagePushTimes[pageName] = DateTime.now();
+        _reporter.setCurrentRoute(pageName);
         onPageRoutePushed?.call(pageName); // 触发回调
         // 上报PV
         _reporter.addEvent('behavior', {'type': 'pv', 'page': pageName});
@@ -38,6 +40,11 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
             'page': pageName,
             'duration_ms': duration.inMilliseconds,
           });
+        }
+        final previousPageName = previousRoute?.settings.name;
+        if (previousPageName != null && previousPageName.isNotEmpty) {
+          _reporter.setCurrentRoute(previousPageName);
+          onPageRoutePushed?.call(previousPageName);
         }
       }
     }
@@ -114,21 +121,21 @@ class MonitorDioInterceptor extends Interceptor {
 // 性能监控主类
 class PerformanceMonitor {
   final Reporter _reporter;
+  final StartupTraceController? _startupTraceController;
   late final MonitorRouteObserver routeObserver;
 
-  PerformanceMonitor(this._reporter) {
+  PerformanceMonitor(
+    this._reporter, {
+    StartupTraceController? startupTraceController,
+  }) : _startupTraceController = startupTraceController {
     routeObserver = MonitorRouteObserver(_reporter);
   }
 
   void init(DateTime appStartTime) {
     // 监听第一帧渲染完成
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final duration = DateTime.now().difference(appStartTime);
-      final data = {
-        'type': 'app_launch',
-        'duration_ms': duration.inMilliseconds,
-      };
-      _reporter.addEvent('performance', data);
+      final now = DateTime.now();
+      _startupTraceController?.finishFirstFrame(endTime: now);
     });
   }
 }

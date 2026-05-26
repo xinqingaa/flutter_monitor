@@ -143,6 +143,12 @@ const defaultFieldDefinitions = <FieldDefinition>[
     privacyLevel: PrivacyLevel.mixed,
   ),
   FieldDefinition(
+    path: FieldPaths.eventPhase,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.resourceSdkName,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.safe,

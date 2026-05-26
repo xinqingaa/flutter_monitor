@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
+import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 import '../modules/jank_monitor.dart';
 import 'monitor_config.dart';
 import 'reporter.dart';
@@ -12,6 +13,7 @@ import '../modules/performance_monitor.dart';
 class MonitorBinding {
   late final JankMonitor jankMonitor; // JankMonitor 实例
   LifecycleManager? _lifecycleManager;
+  StartupTraceController? _startupTraceController;
   String? _currentPage; // 用于给 JankMonitor 提供当前页面信息
 
   // --- 单例模式设置 ---
@@ -24,6 +26,12 @@ class MonitorBinding {
     // 1. 首先初始化上报器（Reporter），因为其他模块都依赖它。
     try {
       reporter = Reporter(config);
+      if (config.enablePerformanceMonitor) {
+        _startupTraceController = StartupTraceController(
+          reporter: reporter,
+          appStartTime: appStartTime,
+        )..startSdkInit();
+      }
     } catch (e) {
       debugPrint("错误: Reporter 初始化失败: $e");
       rethrow;
@@ -43,7 +51,10 @@ class MonitorBinding {
     //  3. Performance Monitor 先于 JankMonitor 初始化
     if (config.enablePerformanceMonitor) {
       try {
-        performanceMonitor = PerformanceMonitor(reporter);
+        performanceMonitor = PerformanceMonitor(
+          reporter,
+          startupTraceController: _startupTraceController,
+        );
         // 将 App 启动时间传递给性能监控器，用于计算启动耗时。
         performanceMonitor.init(appStartTime);
         // 监听路由变化，更新当前页面
@@ -94,6 +105,8 @@ class MonitorBinding {
     } catch (e) {
       debugPrint("错误: LifecycleManager 初始化失败: $e");
     }
+
+    _startupTraceController?.finishSdkInit();
   }
 
   /// 静态的、私有的单例实例。

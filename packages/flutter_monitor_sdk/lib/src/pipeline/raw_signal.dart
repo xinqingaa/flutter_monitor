@@ -15,6 +15,8 @@ class RawSignal {
     this.traceId,
     this.spanId,
     this.parentSpanId,
+    this.includeBreadcrumbs,
+    this.eventPhase,
     this.attributes = const <String, Object?>{},
     this.payload = const <String, Object?>{},
   });
@@ -32,6 +34,8 @@ class RawSignal {
   final String? traceId;
   final String? spanId;
   final String? parentSpanId;
+  final bool? includeBreadcrumbs;
+  final String? eventPhase;
   final Map<String, Object?> attributes;
   final Map<String, Object?> payload;
 }

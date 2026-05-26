@@ -80,11 +80,6 @@ class LegacySignalMapper {
         if (data['success'] is bool) FieldPaths.httpSuccess: data['success'],
         if (data['error'] != null) FieldPaths.httpErrorType: 'network_error',
       });
-    } else if (type == 'app_launch') {
-      name = 'app.launch';
-      if (durationMs != null) {
-        attributes[FieldPaths.appFirstFrameMs] = durationMs;
-      }
     } else if (type == 'page_load') {
       name = 'page.load';
       if (durationMs != null) {

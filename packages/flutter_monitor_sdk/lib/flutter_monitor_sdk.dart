@@ -68,6 +68,7 @@ class FlutterMonitorSDK {
 
   static String startTrace(
     String name, {
+    DateTime? startTime,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
@@ -78,6 +79,7 @@ class FlutterMonitorSDK {
     }
     return MonitorBinding.instance.reporter.startTrace(
       name,
+      startTime: startTime,
       attributes: attributes,
       payload: payload,
     );
@@ -106,6 +108,7 @@ class FlutterMonitorSDK {
     String name, {
     String? traceId,
     String? parentSpanId,
+    DateTime? startTime,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
@@ -118,6 +121,7 @@ class FlutterMonitorSDK {
       name,
       traceId: traceId,
       parentSpanId: parentSpanId,
+      startTime: startTime,
       attributes: attributes,
       payload: payload,
     );
