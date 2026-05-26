@@ -1,0 +1,134 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
+import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
+import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
+import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
+import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
+
+class EventPipeline {
+  EventPipeline({
+    required ContextManager contextManager,
+    required SessionManager sessionManager,
+    required TraceManager traceManager,
+    required BreadcrumbStore breadcrumbStore,
+    required List<MonitorOutput> outputs,
+    EnvelopeBuilder? envelopeBuilder,
+    SchemaValidator? schemaValidator,
+    PrivacyFilter? privacyFilter,
+  })  : _contextManager = contextManager,
+        _sessionManager = sessionManager,
+        _traceManager = traceManager,
+        _breadcrumbStore = breadcrumbStore,
+        _outputs = outputs,
+        _envelopeBuilder = envelopeBuilder ?? EnvelopeBuilder(),
+        _schemaValidator = schemaValidator ?? SchemaValidator(),
+        _privacyFilter = privacyFilter ?? PrivacyFilter();
+
+  final ContextManager _contextManager;
+  final SessionManager _sessionManager;
+  final TraceManager _traceManager;
+  final BreadcrumbStore _breadcrumbStore;
+  final List<MonitorOutput> _outputs;
+  final EnvelopeBuilder _envelopeBuilder;
+  final SchemaValidator _schemaValidator;
+  final PrivacyFilter _privacyFilter;
+
+  PipelineResult capture(RawSignal signal) {
+    final contextSnapshot = _contextManager.capture();
+    final traceSnapshot = _traceManager.capture(
+      sessionId: _sessionManager.currentSessionId,
+      breadcrumbs: _breadcrumbStore.snapshot(),
+    );
+
+    final built = _envelopeBuilder.build(
+      signal: signal,
+      contextSnapshot: contextSnapshot,
+      traceSnapshot: traceSnapshot,
+    );
+    final validation = _schemaValidator.validate(built);
+    if (!validation.isValid) {
+      _emitSelfMonitoring(
+        name: 'sdk.pipeline.validation_failed',
+        payload: <String, Object?>{
+          'source': signal.source,
+          'signal.name': signal.name,
+          'issues': validation.errors
+              .map((issue) => issue.toJson())
+              .toList(growable: false),
+        },
+      );
+      return PipelineResult.rejected(validation.errors);
+    }
+
+    final filtered = _privacyFilter.filterEnvelope(built);
+    _recordBreadcrumb(filtered);
+    _dispatch(filtered);
+    return PipelineResult.accepted(filtered);
+  }
+
+  void _dispatch(EventEnvelope envelope) {
+    final json = envelope.toJson();
+    for (final output in _outputs) {
+      try {
+        output.add(json);
+      } catch (error) {
+        debugPrint('Error while dispatching event to ${output.runtimeType}: $error');
+        _emitSelfMonitoring(
+          name: 'sdk.output.dispatch_failed',
+          payload: <String, Object?>{
+            'output': output.runtimeType.toString(),
+            'error': error.toString(),
+          },
+          dispatch: false,
+        );
+      }
+    }
+  }
+
+  void _recordBreadcrumb(EventEnvelope envelope) {
+    if (envelope.signalType == SignalType.sdk) return;
+    if (envelope.signalType == SignalType.breadcrumb ||
+        envelope.signalType == SignalType.error) {
+      _breadcrumbStore.add(
+        Breadcrumb(
+          timestamp: envelope.timestamp,
+          name: envelope.name,
+          level: envelope.level ?? EventLevel.info,
+          attributes: envelope.attributes,
+          payload: envelope.payload,
+        ),
+      );
+    }
+  }
+
+  void _emitSelfMonitoring({
+    required String name,
+    Map<String, Object?> payload = const <String, Object?>{},
+    bool dispatch = true,
+  }) {
+    final event = EventEnvelope(
+      eventId: 'evt_sdk_${DateTime.now().microsecondsSinceEpoch}',
+      timestamp: DateTime.now(),
+      signalType: SignalType.sdk,
+      name: name,
+      level: EventLevel.warning,
+      status: EventStatus.error,
+      priority: EventPriority.high,
+      sessionId: _sessionManager.currentSessionId,
+      resource: _contextManager.capture().resource,
+      context: const MonitorContext(
+        missing: true,
+        missingReason: ContextMissingReasons.sdkBootstrapIncomplete,
+      ),
+      payload: payload,
+    );
+    final filtered = _privacyFilter.filterEnvelope(event);
+    if (dispatch) {
+      _dispatch(filtered);
+    }
+  }
+}
