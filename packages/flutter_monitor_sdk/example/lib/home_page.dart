@@ -4,9 +4,38 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
-class HomePage extends StatelessWidget {
+enum _RequestAction { dioSuccess, dioFailure, httpSuccess, httpFailure }
+
+class HomePage extends StatefulWidget {
   final Dio dio;
   const HomePage({super.key, required this.dio});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  static final Uri _githubSuccessUri = Uri.parse(
+    'https://api.github.com/users/flutter',
+  );
+  static final Uri _githubFailureUri = Uri.parse(
+    'https://api.github.com/non-existent-path',
+  );
+
+  late final http.Client _monitoredHttpClient;
+  final Set<_RequestAction> _loadingRequests = <_RequestAction>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _monitoredHttpClient = FlutterMonitorSDK.httpClient;
+  }
+
+  @override
+  void dispose() {
+    _monitoredHttpClient.close();
+    super.dispose();
+  }
 
   void _showSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -15,9 +44,73 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  Future<void> _runRequest(
+    _RequestAction action, {
+    required Future<void> Function() request,
+    required String successMessage,
+    required String failureMessage,
+  }) async {
+    if (_loadingRequests.contains(action)) return;
+    setState(() {
+      _loadingRequests.add(action);
+    });
+    try {
+      await request();
+      if (!mounted) return;
+      _showSnackBar(context, successMessage);
+    } catch (error) {
+      if (!mounted) return;
+      _showSnackBar(context, '$failureMessage: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingRequests.remove(action);
+        });
+      }
+    }
+  }
+
+  bool _isLoading(_RequestAction action) => _loadingRequests.contains(action);
+
+  Widget _requestButton({
+    required _RequestAction action,
+    required Color backgroundColor,
+    required String label,
+    required Future<void> Function() request,
+    required String successMessage,
+    required String failureMessage,
+  }) {
+    final loading = _isLoading(action);
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(backgroundColor: backgroundColor),
+      onPressed: loading
+          ? null
+          : () => _runRequest(
+              action,
+              request: request,
+              successMessage: successMessage,
+              failureMessage: failureMessage,
+            ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading) ...[
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Text(loading ? '请求中...' : label),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final http.Client monitoredHttpClient = FlutterMonitorSDK.httpClient;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Monitor SDK Demo'),
@@ -30,77 +123,71 @@ class HomePage extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const Text("页面与性能监控",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                "页面与性能监控",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const Divider(),
               ElevatedButton(
                 onPressed: () => Navigator.pushNamed(context, '/detail'),
                 child: const Text('跳转详情页 (监控PV和页面加载)'),
               ),
               const SizedBox(height: 10),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                onPressed: () async {
-                  try {
-                    await dio.get('https://api.github.com/users/flutter');
-                    if (!context.mounted) return;
-                    _showSnackBar(context, 'API 调用成功! 请查看后端日志。');
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    _showSnackBar(context, 'API 调用失败: $e');
-                  }
-                },
-                child: const Text('发起成功的API请求'),
+              _requestButton(
+                action: _RequestAction.dioSuccess,
+                backgroundColor: Colors.green,
+                label: '发起成功的 API 请求',
+                request: () => widget.dio.getUri(_githubSuccessUri),
+                successMessage: 'Dio API 调用成功，请查看监控日志。',
+                failureMessage: 'Dio API 调用失败',
               ),
               const SizedBox(height: 10),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade200),
-                onPressed: () async {
-                  try {
-                    await dio.get('https://api.github.com/non-existent-path');
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    _showSnackBar(context, 'API 调用失败 (预期)! 请查看后端日志。');
-                  }
-                },
-                child: const Text('发起失败的API请求'),
+              _requestButton(
+                action: _RequestAction.dioFailure,
+                backgroundColor: Colors.green.shade200,
+                label: '发起失败的 API 请求',
+                request: () => widget.dio.getUri(_githubFailureUri),
+                successMessage: 'Dio 失败请求未按预期失败，请查看监控日志。',
+                failureMessage: 'Dio API 调用失败 (预期)',
               ),
               const SizedBox(height: 24),
 
               // --- http 包监控 ---
-              const Text("原生 http 包监控",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                "原生 http 包监控",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const Divider(),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                onPressed: () async {
-                  try {
-                    await monitoredHttpClient.get(Uri.parse(
-                        'https://jsonplaceholder.typicode.com/posts/1'));
-                    if (!context.mounted) return;
-                    _showSnackBar(context, 'http API 调用成功! 请查看后端日志。');
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    _showSnackBar(context, 'http API 调用失败: $e');
+              _requestButton(
+                action: _RequestAction.httpSuccess,
+                backgroundColor: Colors.teal,
+                label: '发起成功的 http 请求',
+                request: () async {
+                  final response = await _monitoredHttpClient.get(
+                    _githubSuccessUri,
+                  );
+                  if (response.statusCode >= 400) {
+                    throw StateError('HTTP ${response.statusCode}');
                   }
                 },
-                child: const Text('发起成功的 http 请求'),
+                successMessage: 'http API 调用成功，请查看监控日志。',
+                failureMessage: 'http API 调用失败',
               ),
               const SizedBox(height: 10),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade200),
-                onPressed: () async {
-                  try {
-                    await monitoredHttpClient.get(Uri.parse(
-                        'https://jsonplaceholder.typicode.com/non-existent'));
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    _showSnackBar(context, 'http API 调用失败 (预期)! 请查看后端日志。');
+              _requestButton(
+                action: _RequestAction.httpFailure,
+                backgroundColor: Colors.teal.shade200,
+                label: '发起失败的 http 请求',
+                request: () async {
+                  final response = await _monitoredHttpClient.get(
+                    _githubFailureUri,
+                  );
+                  if (response.statusCode >= 400) {
+                    throw StateError('HTTP ${response.statusCode}');
                   }
                 },
-                child: const Text('发起失败的 http 请求'),
+                successMessage: 'http 失败请求未按预期失败，请查看监控日志。',
+                failureMessage: 'http API 调用失败 (预期)',
               ),
               const SizedBox(height: 24),
 
@@ -125,21 +212,24 @@ class HomePage extends StatelessWidget {
               const JankTriggerButton(),
               const SizedBox(height: 10),
 
-              const Text("真实场景卡顿监控",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                "真实场景卡顿监控",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const Divider(),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amberAccent),
+                  backgroundColor: Colors.amberAccent,
+                ),
                 onPressed: () => Navigator.pushNamed(context, '/complex_list'),
                 child: const Text('进入复杂列表页面 (测试滑动卡顿)'),
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.cyan),
-                onPressed:() => Navigator.pushNamed(context, '/performance_test'),
-               
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan),
+                onPressed: () =>
+                    Navigator.pushNamed(context, '/performance_test'),
+
                 child: const Text('进入性能测试页面 (测试优化效果)'),
               ),
 
@@ -156,16 +246,20 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 10),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade200),
+                  backgroundColor: Colors.orange.shade200,
+                ),
                 onPressed: () {
                   showDialog(
                     context: context,
                     builder: (context) => const AlertDialog(
                       title: Text("布局错误"),
-                      content: Row(children: [
-                        Text(
-                            "这段文字非常非常长，它会超出行的宽度限制，从而导致一个经典的布局溢出错误，这个错误会被FlutterError捕获。")
-                      ]),
+                      content: Row(
+                        children: [
+                          Text(
+                            "这段文字非常非常长，它会超出行的宽度限制，从而导致一个经典的布局溢出错误，这个错误会被FlutterError捕获。",
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -173,8 +267,10 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              const Text("行为与自定义事件监控",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                "行为与自定义事件监控",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const Divider(),
 
               // 案例1: 使用 MonitoredGestureDetector 监控关键点击
@@ -189,9 +285,9 @@ class HomePage extends StatelessWidget {
                       userProperties: {
                         "age": 30,
                         "city": "Beijing",
-                        "subscription": "premium"
-                      }
-                    )
+                        "subscription": "premium",
+                      },
+                    ),
                   );
                   _showSnackBar(context, '用户信息已设置为 user_007_bond (Premium用户)');
                 },
@@ -202,8 +298,10 @@ class HomePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('设置用户ID (监控点击)',
-                      style: TextStyle(color: Colors.white)),
+                  child: const Text(
+                    '设置用户ID (监控点击)',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -222,8 +320,10 @@ class HomePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('设置简单用户ID',
-                      style: TextStyle(color: Colors.white)),
+                  child: const Text(
+                    '设置简单用户ID',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -242,8 +342,10 @@ class HomePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('清除用户信息',
-                      style: TextStyle(color: Colors.white)),
+                  child: const Text(
+                    '清除用户信息',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -253,7 +355,8 @@ class HomePage extends StatelessWidget {
                 identifier: 'set-custom-data-button',
                 onTap: () {
                   FlutterMonitorSDK.instance.setCustomData({
-                    'sessionId': 'session_${DateTime.now().millisecondsSinceEpoch}',
+                    'sessionId':
+                        'session_${DateTime.now().millisecondsSinceEpoch}',
                     'featureFlags': ['new_ui', 'beta_features', 'analytics'],
                     'appVersion': '1.0.0',
                     'deviceType': 'mobile',
@@ -267,8 +370,10 @@ class HomePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('设置自定义数据',
-                      style: TextStyle(color: Colors.white)),
+                  child: const Text(
+                    '设置自定义数据',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -276,16 +381,18 @@ class HomePage extends StatelessWidget {
               // 案例5: 手动上报一个自定义事件
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple.shade100),
+                  backgroundColor: Colors.purple.shade100,
+                ),
                 onPressed: () {
                   FlutterMonitorSDK.instance.reportEvent(
-                      'user_share', // 自定义事件分类
-                      {
-                        // 自定义事件的数据
-                        'content_id': 'article_123',
-                        'content_type': 'article',
-                        'content_platform': 'wechat_timeline',
-                      });
+                    'user_share', // 自定义事件分类
+                    {
+                      // 自定义事件的数据
+                      'content_id': 'article_123',
+                      'content_type': 'article',
+                      'content_platform': 'wechat_timeline',
+                    },
+                  );
                   _showSnackBar(context, '已手动上报“分享”事件，请查看后端日志。');
                 },
                 child: const Text('手动上报“分享”事件'),
@@ -305,8 +412,10 @@ class HomePage extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.mail_outline,
-                            color: Theme.of(context).primaryColor),
+                        Icon(
+                          Icons.mail_outline,
+                          color: Theme.of(context).primaryColor,
+                        ),
                         const SizedBox(width: 8),
                         const Text("订阅我们的 Newsletter (监控点击)"),
                       ],
