@@ -21,10 +21,18 @@
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
       body {
         margin: 0;
         background: var(--bg);
         color: var(--text);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
@@ -49,6 +57,8 @@
         grid-template-columns: 360px minmax(0, 1fr);
         gap: 16px;
         padding: 16px;
+        min-height: 0;
+        overflow: hidden;
       }
 
       section,
@@ -57,21 +67,42 @@
         border: 1px solid var(--line);
         border-radius: 8px;
         min-width: 0;
+        min-height: 0;
       }
 
       aside {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
         padding: 14px;
+        overflow: hidden;
       }
 
       section {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr);
         overflow: hidden;
       }
 
       .toolbar,
+      .aside-head,
       .query-row {
         display: flex;
         gap: 8px;
         align-items: center;
+      }
+
+      .aside-head {
+        justify-content: space-between;
+      }
+
+      .aside-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .sort-control {
+        width: 94px;
       }
 
       .query-row {
@@ -117,7 +148,8 @@
       }
 
       .list {
-        height: calc(100vh - 112px);
+        min-height: 0;
+        margin-top: 12px;
         overflow: auto;
         border-top: 1px solid var(--line);
       }
@@ -136,10 +168,22 @@
       }
 
       .event-title {
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
         gap: 10px;
         font-weight: 700;
+      }
+
+      .event-time,
+      .event-state {
+        white-space: nowrap;
+      }
+
+      .event-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .event-meta,
@@ -156,7 +200,7 @@
       pre {
         margin: 0;
         padding: 14px;
-        height: calc(100vh - 112px);
+        min-height: 0;
         overflow: auto;
         color: var(--code);
         background: #fbfcfe;
@@ -166,11 +210,12 @@
       @media (max-width: 900px) {
         main {
           grid-template-columns: 1fr;
+          grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
         }
 
         .list,
         pre {
-          height: 50vh;
+          min-height: 0;
         }
       }
     </style>
@@ -186,6 +231,13 @@
 
     <main>
       <aside>
+        <div class="aside-head">
+          <h2 class="aside-title">事件列表</h2>
+          <select id="sortOrder" class="sort-control" aria-label="排序">
+            <option value="desc">新到旧</option>
+            <option value="asc">旧到新</option>
+          </select>
+        </div>
         <div class="query-row">
           <select id="queryType" aria-label="查询类型">
             <option value="event">event</option>
@@ -210,9 +262,14 @@
       const queryButton = document.querySelector("#query");
       const queryTypeEl = document.querySelector("#queryType");
       const queryIdEl = document.querySelector("#queryId");
+      const sortOrderEl = document.querySelector("#sortOrder");
+      let currentEvents = [];
 
       refreshButton.addEventListener("click", loadRecent);
       queryButton.addEventListener("click", runQuery);
+      sortOrderEl.addEventListener("change", () => {
+        renderEvents(currentEvents);
+      });
       queryIdEl.addEventListener("keydown", (event) => {
         if (event.key === "Enter") runQuery();
       });
@@ -222,7 +279,8 @@
       async function loadRecent() {
         setStatus("加载最近事件...");
         const data = await requestJson("/api/monitor/v1/recent?limit=100");
-        renderEvents(data.events || []);
+        currentEvents = data.events || [];
+        renderEvents(currentEvents);
         showJson(data);
         setStatus(`最近事件 ${data.count || 0} 条`);
       }
@@ -241,7 +299,8 @@
 
         setStatus(`查询 ${type}...`);
         const data = await requestJson(path);
-        renderEvents(data.events || (data.event ? [data.event] : []));
+        currentEvents = data.events || (data.event ? [data.event] : []);
+        renderEvents(currentEvents);
         showJson(data);
         setStatus(`${type} 查询完成`);
       }
@@ -268,18 +327,20 @@
           return;
         }
 
-        for (const event of events) {
+        const sortedEvents = [...events].sort(compareEventsByTime);
+
+        for (const event of sortedEvents) {
           const item = document.createElement("div");
           item.className = "event";
           item.innerHTML = `
             <div class="event-title">
-              <span>${escapeHtml(event.name || "(unknown)")}</span>
-              <span>${escapeHtml(event.status || event.signalType || "")}</span>
+              <span class="event-time">${escapeHtml(formatTime(event.timestamp))}</span>
+              <span class="event-name">${escapeHtml(event.name || "(unknown)")}</span>
+              <span class="event-state">${escapeHtml(event.status || event.signalType || "")}</span>
             </div>
             <div class="event-meta">
               route=${escapeHtml(event.context?.route?.name || "-")}
               duration=${escapeHtml(String(event.durationMs ?? "-"))}
-              time=${escapeHtml(event.timestamp || "-")}
             </div>
             <div class="event-ids">
               event=${escapeHtml(event.eventId || "-")}
@@ -296,6 +357,26 @@
           });
           listEl.appendChild(item);
         }
+      }
+
+      function compareEventsByTime(a, b) {
+        const left = timestampValue(a.timestamp);
+        const right = timestampValue(b.timestamp);
+        if (left === right) return 0;
+        return sortOrderEl.value === "asc" ? left - right : right - left;
+      }
+
+      function timestampValue(timestamp) {
+        const value = Date.parse(timestamp || "");
+        return Number.isNaN(value) ? 0 : value;
+      }
+
+      function formatTime(timestamp) {
+        if (!timestamp) return "--:--:--";
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return timestamp;
+        const pad = (value, length = 2) => String(value).padStart(length, "0");
+        return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
       }
 
       function showJson(value) {
