@@ -8,28 +8,56 @@ class MonitorQueueConfig {
   /// 最大队列大小（默认 50）
   final int maxQueueSize;
 
-  const MonitorQueueConfig({
-    this.maxQueueSize = 50,
-  });
+  const MonitorQueueConfig({this.maxQueueSize = 50});
 
   /// 默认配置
   static const MonitorQueueConfig defaultConfig = MonitorQueueConfig();
+}
+
+/// Session 与生命周期配置
+class MonitorSessionConfig {
+  /// 后台超过该时间后恢复前台会切分新 session。
+  final Duration backgroundSessionTimeout;
+
+  /// 是否监听 Flutter lifecycle。
+  final bool enableLifecycleTracking;
+
+  /// 是否在后台恢复时生成 app.hot_start trace。
+  final bool enableHotStartTrace;
+
+  /// 进入后台或退出时是否触发 flush。
+  final bool flushOnBackground;
+
+  const MonitorSessionConfig({
+    this.backgroundSessionTimeout = const Duration(minutes: 30),
+    this.enableLifecycleTracking = true,
+    this.enableHotStartTrace = true,
+    this.flushOnBackground = true,
+  });
+
+  static const MonitorSessionConfig defaultConfig = MonitorSessionConfig();
 }
 
 /// 应用信息配置
 class AppInfo {
   /// 应用标识（必填）
   final String appKey;
+
   /// 应用版本号
   final String? appVersion;
+
   /// 应用构建号
   final String? buildNumber;
+
   /// 应用包名
   final String? packageName;
+
   /// 应用名称
   final String? appName;
+
   /// 应用渠道
   final String? channel;
+
   /// 应用环境（dev/test/prod）
   final String? environment;
 
@@ -72,10 +100,13 @@ class AppInfo {
 class UserInfo {
   /// 用户ID
   final String? userId;
+
   /// 用户类型
   final String? userType;
+
   /// 用户标签
   final List<String>? userTags;
+
   /// 用户属性
   final Map<String, dynamic>? userProperties;
 
@@ -91,6 +122,7 @@ class UserInfo {
 class MonitorConfig {
   /// 应用信息（必填）
   final AppInfo appInfo;
+
   /// 用户信息（可选）
   final UserInfo? userInfo;
 
@@ -109,6 +141,9 @@ class MonitorConfig {
   /// 队列配置（可选）
   final MonitorQueueConfig? queueConfig;
 
+  /// Session 与生命周期配置（可选）
+  final MonitorSessionConfig? sessionConfig;
+
   /// 自定义全局附加数据
   final Map<String, dynamic>? customData;
 
@@ -122,25 +157,25 @@ class MonitorConfig {
     this.outputs,
     this.jankConfig,
     this.queueConfig,
+    this.sessionConfig,
     this.customData,
   });
-
 
   /// 获取实际使用的输出列表
   List<MonitorOutput> get effectiveOutputs {
     if (outputs != null && outputs!.isNotEmpty) {
       return outputs!;
     }
-    
+
     // 默认输出配置
     final defaultOutputs = <MonitorOutput>[];
-    
+
     // 开发环境默认使用日志输出
     if (kDebugMode) {
       // 这里需要导入 LogMonitorOutput，暂时注释掉
       // defaultOutputs.add(LogMonitorOutput());
     }
-    
+
     return defaultOutputs;
   }
 
@@ -157,4 +192,8 @@ class MonitorConfig {
     return queueConfig ?? MonitorQueueConfig.defaultConfig;
   }
 
+  /// 获取实际使用的 session 配置
+  MonitorSessionConfig get effectiveSessionConfig {
+    return sessionConfig ?? MonitorSessionConfig.defaultConfig;
+  }
 }

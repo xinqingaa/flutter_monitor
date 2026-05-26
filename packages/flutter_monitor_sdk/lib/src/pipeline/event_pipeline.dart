@@ -38,42 +38,78 @@ class EventPipeline {
   final PrivacyFilter _privacyFilter;
 
   PipelineResult capture(RawSignal signal) {
-    final contextSnapshot = _contextManager.capture();
-    final traceSnapshot = _traceManager
-        .capture(
-          sessionId: _sessionManager.currentSessionId,
-          breadcrumbs: _breadcrumbStore.snapshot(),
-        )
-        .overrideWith(
-          traceId: signal.traceId,
-          spanId: signal.spanId,
-          parentSpanId: signal.parentSpanId,
-        );
-
-    final built = _envelopeBuilder.build(
+    return _capture(
       signal: signal,
-      contextSnapshot: contextSnapshot,
-      traceSnapshot: traceSnapshot,
+      sessionId: _sessionManager.currentSessionId,
     );
-    final validation = _schemaValidator.validate(built);
-    if (!validation.isValid) {
+  }
+
+  PipelineResult captureForSession({
+    required RawSignal signal,
+    required String sessionId,
+  }) {
+    return _capture(signal: signal, sessionId: sessionId);
+  }
+
+  PipelineResult _capture({
+    required RawSignal signal,
+    required String sessionId,
+  }) {
+    try {
+      final contextSnapshot = _contextManager.capture();
+      final traceSnapshot = _traceManager
+          .capture(
+            sessionId: sessionId,
+            breadcrumbs: _breadcrumbStore.snapshot(),
+          )
+          .overrideWith(
+            traceId: signal.traceId,
+            spanId: signal.spanId,
+            parentSpanId: signal.parentSpanId,
+          );
+
+      final built = _envelopeBuilder.build(
+        signal: signal,
+        contextSnapshot: contextSnapshot,
+        traceSnapshot: traceSnapshot,
+      );
+      final validation = _schemaValidator.validate(built);
+      if (!validation.isValid) {
+        _emitSelfMonitoring(
+          name: 'sdk.pipeline.validation_failed',
+          payload: <String, Object?>{
+            'source': signal.source,
+            'signal.name': signal.name,
+            'issues': validation.errors
+                .map((issue) => issue.toJson())
+                .toList(growable: false),
+          },
+        );
+        return PipelineResult.rejected(validation.errors);
+      }
+
+      final filtered = _privacyFilter.filterEnvelope(built);
+      _recordBreadcrumb(filtered);
+      _dispatch(filtered);
+      return PipelineResult.accepted(filtered);
+    } catch (error, stackTrace) {
       _emitSelfMonitoring(
-        name: 'sdk.pipeline.validation_failed',
+        name: 'sdk.pipeline.envelope_build_failed',
         payload: <String, Object?>{
           'source': signal.source,
           'signal.name': signal.name,
-          'issues': validation.errors
-              .map((issue) => issue.toJson())
-              .toList(growable: false),
+          'error': error.toString(),
+          'stack': stackTrace.toString(),
         },
       );
-      return PipelineResult.rejected(validation.errors);
+      return PipelineResult.rejected([
+        SchemaValidationIssue(
+          path: 'pipeline',
+          code: 'envelope_build_failed',
+          message: error.toString(),
+        ),
+      ]);
     }
-
-    final filtered = _privacyFilter.filterEnvelope(built);
-    _recordBreadcrumb(filtered);
-    _dispatch(filtered);
-    return PipelineResult.accepted(filtered);
   }
 
   void _dispatch(EventEnvelope envelope) {

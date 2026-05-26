@@ -19,6 +19,9 @@ class ContextManager {
   String? _lifecycleState;
   String? _previousLifecycleState;
 
+  String? get lifecycleState => _lifecycleState;
+  String? get previousLifecycleState => _previousLifecycleState;
+
   set deviceInfo(Map<String, Object?>? value) {
     _deviceInfo = value;
   }

@@ -30,6 +30,13 @@ class RecordingOutput extends MonitorOutput {
   }
 }
 
+class ThrowingDisposeOutput extends RecordingOutput {
+  @override
+  void dispose() {
+    throw StateError('dispose failed');
+  }
+}
+
 void main() {
   test('legacy reporter events are emitted as unified envelopes', () {
     final output = RecordingOutput();
@@ -291,5 +298,142 @@ void main() {
 
     expect(output.flushCount, 1);
     expect(output.lastFlushIsAppExiting, isTrue);
+  });
+
+  test('lifecycle updates context and flushes on background', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    await reporter.handleLifecycleState(
+      'paused',
+      timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+    );
+
+    final lifecycleEvent = output.events.firstWhere(
+      (event) => event['name'] == 'app.lifecycle',
+    );
+    final context = lifecycleEvent['context'] as Map;
+    final lifecycle = context['lifecycle'] as Map;
+
+    expect(lifecycle['state'], 'paused');
+    expect(lifecycle['isForeground'], isFalse);
+    expect(output.flushCount, 1);
+    expect(output.lastFlushIsAppExiting, isFalse);
+    expect(
+      output.events.any((event) => event['name'] == 'sdk.lifecycle.flush'),
+      isTrue,
+    );
+  });
+
+  test('resume within timeout keeps session and emits hot start', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(
+          backgroundSessionTimeout: Duration(minutes: 30),
+          flushOnBackground: false,
+        ),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addEvent('behavior', {'type': 'pv'});
+    final originalSessionId = output.events.single['sessionId'];
+    await reporter.handleLifecycleState(
+      'paused',
+      timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+    );
+    await reporter.handleLifecycleState(
+      'resumed',
+      timestamp: DateTime.parse('2026-05-25T12:05:00.000+08:00'),
+    );
+
+    final hotStartEnd = output.events.lastWhere(
+      (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',
+    );
+
+    expect(hotStartEnd['sessionId'], originalSessionId);
+    expect(hotStartEnd['durationMs'], 300000);
+    expect((hotStartEnd['attributes'] as Map)[FieldPaths.appStartType], 'hot');
+    expect((hotStartEnd['payload'] as Map)['session.started_new'], isFalse);
+  });
+
+  test('resume after timeout starts a new session', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(
+          backgroundSessionTimeout: Duration(minutes: 30),
+          flushOnBackground: false,
+        ),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addEvent('behavior', {'type': 'pv'});
+    final originalSessionId = output.events.single['sessionId'];
+    await reporter.handleLifecycleState(
+      'hidden',
+      timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+    );
+    await reporter.handleLifecycleState(
+      'resumed',
+      timestamp: DateTime.parse('2026-05-25T12:45:00.000+08:00'),
+    );
+
+    final hotStartEnd = output.events.lastWhere(
+      (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',
+    );
+
+    expect(hotStartEnd['sessionId'], isNot(originalSessionId));
+    expect((hotStartEnd['payload'] as Map)['session.started_new'], isTrue);
+  });
+
+  test('unknown trace and span endings emit sdk self-monitoring events', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.endTrace('missing_trace');
+    reporter.endSpan('missing_span');
+
+    expect(
+      output.events.map((event) => event['name']),
+      containsAll(<String>['sdk.trace.end_unknown', 'sdk.span.end_unknown']),
+    );
+    expect(
+      output.events.every((event) => event['signalType'] == 'sdk'),
+      isTrue,
+    );
+  });
+
+  test('dispose failures emit sdk self-monitoring events', () async {
+    final output = ThrowingDisposeOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    await reporter.dispose();
+
+    expect(
+      output.events.any(
+        (event) => event['name'] == 'sdk.output.dispose_failed',
+      ),
+      isTrue,
+    );
   });
 }

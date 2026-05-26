@@ -85,6 +85,7 @@ class FlutterMonitorSDK {
 
   static void endTrace(
     String traceId, {
+    DateTime? endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
     Map<String, Object?> attributes = const <String, Object?>{},
@@ -93,6 +94,7 @@ class FlutterMonitorSDK {
     if (!_isInitialized) return;
     MonitorBinding.instance.reporter.endTrace(
       traceId,
+      endTime: endTime,
       status: status,
       level: level,
       attributes: attributes,
@@ -123,6 +125,7 @@ class FlutterMonitorSDK {
 
   static void endSpan(
     String spanId, {
+    DateTime? endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
     Map<String, Object?> attributes = const <String, Object?>{},
@@ -131,6 +134,7 @@ class FlutterMonitorSDK {
     if (!_isInitialized) return;
     MonitorBinding.instance.reporter.endSpan(
       spanId,
+      endTime: endTime,
       status: status,
       level: level,
       attributes: attributes,
@@ -156,6 +160,17 @@ class FlutterMonitorSDK {
   static void setModule({String? name, String? scene}) {
     if (!_isInitialized) return;
     MonitorBinding.instance.reporter.setModule(name: name, scene: scene);
+  }
+
+  static Future<void> handleLifecycleState(
+    String state, {
+    DateTime? timestamp,
+  }) {
+    if (!_isInitialized) return Future<void>.value();
+    return MonitorBinding.instance.handleLifecycleState(
+      state,
+      timestamp: timestamp,
+    );
   }
 
   static Future<void> flush({bool isAppExiting = false}) {

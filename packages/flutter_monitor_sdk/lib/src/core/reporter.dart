@@ -139,6 +139,7 @@ class Reporter {
 
   PipelineResult? endTrace(
     String traceId, {
+    DateTime? endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
     Map<String, Object?> attributes = const <String, Object?>{},
@@ -146,12 +147,19 @@ class Reporter {
   }) {
     final record = _traceManager.endTrace(
       traceId,
+      endTime: endTime,
       status: status,
       level: level,
       attributes: attributes,
       payload: payload,
     );
-    if (record == null) return null;
+    if (record == null) {
+      return reportSdkEvent(
+        'sdk.trace.end_unknown',
+        level: EventLevel.warning,
+        payload: <String, Object?>{'traceId': traceId},
+      );
+    }
     return _pipeline.capture(
       RawSignal(
         source: 'sdk.api',
@@ -205,6 +213,7 @@ class Reporter {
 
   PipelineResult? endSpan(
     String spanId, {
+    DateTime? endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
     Map<String, Object?> attributes = const <String, Object?>{},
@@ -212,12 +221,19 @@ class Reporter {
   }) {
     final record = _traceManager.endSpan(
       spanId,
+      endTime: endTime,
       status: status,
       level: level,
       attributes: attributes,
       payload: payload,
     );
-    if (record == null) return null;
+    if (record == null) {
+      return reportSdkEvent(
+        'sdk.span.end_unknown',
+        level: EventLevel.warning,
+        payload: <String, Object?>{'spanId': spanId},
+      );
+    }
     return _pipeline.capture(
       RawSignal(
         source: 'sdk.api',
@@ -255,6 +271,128 @@ class Reporter {
         attributes: attributes,
         payload: payload,
       ),
+    );
+  }
+
+  PipelineResult reportSdkEvent(
+    String name, {
+    EventLevel level = EventLevel.info,
+    EventStatus status = EventStatus.ok,
+    EventPriority priority = EventPriority.normal,
+    Map<String, Object?> attributes = const <String, Object?>{},
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.runtime',
+        name: name,
+        signalType: SignalType.sdk,
+        timestamp: DateTime.now(),
+        level: level,
+        status: status,
+        priority: priority,
+        attributes: attributes,
+        payload: payload,
+      ),
+    );
+  }
+
+  Future<void> handleLifecycleState(String state, {DateTime? timestamp}) async {
+    final occurredAt = timestamp ?? DateTime.now();
+    final previousState = _contextManager.lifecycleState;
+    _contextManager.setLifecycleState(state);
+
+    final sessionId = _sessionManager.currentSessionId;
+    if (state == 'paused' || state == 'hidden' || state == 'detached') {
+      _sessionManager.markBackgrounded(occurredAt);
+    }
+
+    _pipeline.captureForSession(
+      sessionId: sessionId,
+      signal: RawSignal(
+        source: 'sdk.lifecycle',
+        name: 'app.lifecycle',
+        signalType: SignalType.breadcrumb,
+        timestamp: occurredAt,
+        level: EventLevel.info,
+        status: EventStatus.ok,
+        attributes: <String, Object?>{
+          FieldPaths.contextLifecycleState: state,
+          if (previousState != null)
+            FieldPaths.contextLifecyclePreviousState: previousState,
+          FieldPaths.contextLifecycleIsForeground: state == 'resumed',
+        },
+      ),
+    );
+
+    if (state == 'resumed') {
+      final resume = _sessionManager.handleResumed(
+        timestamp: occurredAt,
+        backgroundSessionTimeout:
+            _config.effectiveSessionConfig.backgroundSessionTimeout,
+      );
+      if (_config.effectiveSessionConfig.enableHotStartTrace &&
+          resume.backgroundDuration != null) {
+        _emitHotStartTrace(
+          timestamp: occurredAt,
+          duration: resume.backgroundDuration!,
+          startedNewSession: resume.startedNewSession,
+          previousState: previousState,
+        );
+      }
+    }
+
+    if (_config.effectiveSessionConfig.flushOnBackground &&
+        (state == 'paused' || state == 'hidden' || state == 'detached')) {
+      try {
+        await flush(isAppExiting: state == 'detached');
+        reportSdkEvent(
+          'sdk.lifecycle.flush',
+          attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: true},
+          payload: <String, Object?>{'lifecycle.state': state},
+        );
+      } catch (error) {
+        reportSdkEvent(
+          'sdk.lifecycle.flush',
+          level: EventLevel.warning,
+          status: EventStatus.error,
+          attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: false},
+          payload: <String, Object?>{
+            'lifecycle.state': state,
+            'error': error.toString(),
+          },
+        );
+      }
+    }
+  }
+
+  void _emitHotStartTrace({
+    required DateTime timestamp,
+    required Duration duration,
+    required bool startedNewSession,
+    String? previousState,
+  }) {
+    final traceId = _traceManager
+        .startTrace(
+          name: 'app.hot_start',
+          startTime: timestamp.subtract(duration),
+          attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
+          payload: <String, Object?>{
+            'session.started_new': startedNewSession,
+            if (previousState != null)
+              'lifecycle.previous_state': previousState,
+          },
+        )
+        .traceId;
+    endTrace(
+      traceId,
+      endTime: timestamp,
+      status: EventStatus.ok,
+      attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
+      payload: <String, Object?>{
+        'session.started_new': startedNewSession,
+        if (previousState != null) 'lifecycle.previous_state': previousState,
+      },
     );
   }
 
@@ -305,7 +443,19 @@ class Reporter {
     await flush(isAppExiting: true);
     // 调用所有输出器的 dispose 方法，让它们清理自己的资源。
     for (final output in _config.effectiveOutputs) {
-      output.dispose();
+      try {
+        output.dispose();
+      } catch (error) {
+        reportSdkEvent(
+          'sdk.output.dispose_failed',
+          level: EventLevel.warning,
+          status: EventStatus.error,
+          payload: <String, Object?>{
+            'output': output.runtimeType.toString(),
+            'error': error.toString(),
+          },
+        );
+      }
     }
   }
 }

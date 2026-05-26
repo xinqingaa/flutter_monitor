@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
 import '../modules/jank_monitor.dart';
 import 'monitor_config.dart';
 import 'reporter.dart';
@@ -10,6 +11,7 @@ import '../modules/performance_monitor.dart';
 /// 这是 SDK 内部的核心枢纽。
 class MonitorBinding {
   late final JankMonitor jankMonitor; // JankMonitor 实例
+  LifecycleManager? _lifecycleManager;
   String? _currentPage; // 用于给 JankMonitor 提供当前页面信息
 
   // --- 单例模式设置 ---
@@ -82,6 +84,16 @@ class MonitorBinding {
         debugPrint("错误: JankMonitor 初始化失败: $e");
       }
     }
+
+    try {
+      _lifecycleManager = LifecycleManager(
+        config: config.effectiveSessionConfig,
+        onStateChanged: reporter.handleLifecycleState,
+      )..init();
+      debugPrint("✅ LifecycleManager 初始化成功");
+    } catch (e) {
+      debugPrint("错误: LifecycleManager 初始化失败: $e");
+    }
   }
 
   /// 静态的、私有的单例实例。
@@ -144,6 +156,10 @@ class MonitorBinding {
     return reporter.flush(isAppExiting: isAppExiting);
   }
 
+  Future<void> handleLifecycleState(String state, {DateTime? timestamp}) {
+    return reporter.handleLifecycleState(state, timestamp: timestamp);
+  }
+
   Future<void> dispose() async {
     try {
       await reporter.dispose();
@@ -156,6 +172,11 @@ class MonitorBinding {
       } catch (e) {
         debugPrint("错误: JankMonitor dispose 失败: $e");
       }
+    }
+    try {
+      _lifecycleManager?.dispose();
+    } catch (e) {
+      debugPrint("错误: LifecycleManager dispose 失败: $e");
     }
     if (identical(_instance, this)) {
       _instance = null;
