@@ -303,6 +303,50 @@ flowchart TB
 | `error.fatal` | boolean | safe | 是 | 是否致命 |
 | `error.thread` | string | queryable | 否 | 线程/isolate/native thread |
 
+## 业务主动埋点 API 契约
+
+自动采集负责启动、页面、HTTP、错误、卡顿、生命周期等基础链路。业务侧只在关键业务点主动埋点，并且只使用一个主入口：
+
+```dart
+FlutterMonitorSDK.track(
+  action: 'profile.save',
+  result: MonitorTrackResult.failed,
+  level: MonitorEventLevel.warning,
+  error: 'validation_failed',
+  target: 'save_button',
+  properties: {
+    'field': 'phone',
+  },
+);
+```
+
+业务层不得直接依赖 `FieldPaths`、`RawSignal`、`EventEnvelope`、breadcrumb store 或 pipeline 内部结构。`FieldPaths` 是 `flutter_monitor_core` 中的 schema 契约，由 SDK 内部使用；业务 API 参数必须保持稳定、简单，并由 SDK 映射到 canonical fields。
+
+`track` 参数契约：
+
+| 参数 | 类型 | 必填 | 说明 | 内部映射 |
+|---|---|---:|---|---|
+| `action` | string | 是 | 稳定业务动作名，例如 `checkout.submit`、`profile.save`。不得包含订单号、用户 ID 等动态值。 | `name`、`attributes.business.action` |
+| `result` | `MonitorTrackResult` | 否 | 业务结果，默认 `unknown`。 | `attributes.business.result`、`status` |
+| `target` | string | 否 | 控件或业务对象标识，例如 `save_button`。 | `attributes.ui.target` |
+| `level` | `MonitorEventLevel` | 否 | 事件等级；未传时由 `result` 推导。 | envelope `level` |
+| `error` | string | 否 | 业务错误摘要，例如 `validation_failed`。不得放长堆栈或敏感原文。 | `payload.error.message` |
+| `properties` | map | 否 | 业务详情。默认进入 payload，不作为主要聚合字段。 | `payload.properties` |
+
+`MonitorTrackResult` 取值：
+
+| 值 | 说明 | 默认 status | 默认 level |
+|---|---|---|---|
+| `started` | 业务动作开始 | `ok` | `info` |
+| `success` | 业务动作成功 | `ok` | `info` |
+| `failed` | 业务动作失败 | `error` | `warning` |
+| `cancelled` | 用户或业务取消 | `cancelled` | `info` |
+| `unknown` | 未提供明确结果 | `unknown` | `info` |
+
+`track` 生成 `signalType = breadcrumb` 的完整 `EventEnvelope`，进入 session timeline，并由 pipeline 自动加入 recent breadcrumb store。后续 error、jank、failed HTTP 可携带它作为 `payload.breadcrumbs` 上下文。业务层不需要也不应该主动调用 `addBreadcrumb` 来实现常规埋点。
+
+`reportEvent(category, data)` 属于 legacy compatibility API，只用于迁移旧接入，不作为新文档和 example 的推荐路径。`startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点示例。
+
 ### Payload 字段
 
 | 字段 | 类型 | 隐私等级 | 说明 |

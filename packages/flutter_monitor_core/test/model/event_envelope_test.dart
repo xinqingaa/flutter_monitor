@@ -98,6 +98,11 @@ void main() {
     expect(EventLevel.warning.toJson(), 'warning');
     expect(EventStatus.timeout.toJson(), 'timeout');
     expect(EventPriority.critical.toJson(), 'critical');
+    expect(MonitorTrackResult.failed.toJson(), 'failed');
+    expect(
+      MonitorTrackResult.fromJson('cancelled'),
+      MonitorTrackResult.cancelled,
+    );
     expect(PrivacyLevel.forbidden.toJson(), 'forbidden');
   });
 }

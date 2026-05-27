@@ -42,6 +42,7 @@ class MonitoredHttpClient extends http.BaseClient {
         durationMs: duration.inMilliseconds,
         success: success,
         errorType: success ? null : 'http_status',
+        responseSizeBytes: response.contentLength,
         source: 'sdk.http',
         startTime: startTime,
         endTime: endTime,

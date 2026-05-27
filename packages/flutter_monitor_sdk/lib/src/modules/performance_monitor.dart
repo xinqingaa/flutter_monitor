@@ -93,8 +93,11 @@ class MonitorDioInterceptor extends Interceptor {
       statusCode: response.statusCode,
       durationMs: duration.inMilliseconds,
       success: _isSuccessfulStatusCode(response.statusCode),
-      errorType:
-          _isSuccessfulStatusCode(response.statusCode) ? null : 'http_status',
+      errorType: _isSuccessfulStatusCode(response.statusCode)
+          ? null
+          : 'http_status',
+      requestSizeBytes: _dioRequestSize(response.requestOptions),
+      responseSizeBytes: _dioResponseSize(response),
       source: 'sdk.dio',
       startTime: startTime,
       endTime: endTime,
@@ -116,6 +119,11 @@ class MonitorDioInterceptor extends Interceptor {
       durationMs: duration.inMilliseconds,
       success: false,
       error: err.message,
+      errorType: err.type.name,
+      requestSizeBytes: _dioRequestSize(err.requestOptions),
+      responseSizeBytes: err.response == null
+          ? null
+          : _dioResponseSize(err.response!),
       source: 'sdk.dio',
       startTime: startTime,
       endTime: endTime,
@@ -127,6 +135,34 @@ class MonitorDioInterceptor extends Interceptor {
   bool _isSuccessfulStatusCode(int? statusCode) {
     if (statusCode == null) return false;
     return statusCode >= 200 && statusCode < 400;
+  }
+
+  num? _dioRequestSize(RequestOptions options) {
+    final contentLength = options.headers[Headers.contentLengthHeader];
+    final parsedLength = _numHeaderValue(contentLength);
+    if (parsedLength != null) return parsedLength;
+    return _estimatedBodySize(options.data);
+  }
+
+  num? _dioResponseSize(Response response) {
+    final headerLength = response.headers.value(Headers.contentLengthHeader);
+    final parsedLength = _numHeaderValue(headerLength);
+    if (parsedLength != null) return parsedLength;
+    return _estimatedBodySize(response.data);
+  }
+
+  num? _numHeaderValue(Object? value) {
+    if (value is num) return value;
+    if (value is String) return num.tryParse(value);
+    return null;
+  }
+
+  num? _estimatedBodySize(Object? data) {
+    if (data == null) return null;
+    if (data is String) return data.length;
+    if (data is List<int>) return data.length;
+    if (data is Map || data is Iterable) return data.toString().length;
+    return null;
   }
 }
 

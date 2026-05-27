@@ -152,6 +152,7 @@ abstract final class FieldPaths {
   static const payloadTruncatedReason = 'payload.truncated.reason';
   static const payloadTrace = 'payload.trace';
   static const payloadNative = 'payload.native';
+  static const payloadProperties = 'payload.properties';
 
   static const httpUrlQuery = 'http.url.query';
   static const httpRequestBody = 'http.request.body';

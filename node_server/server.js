@@ -85,6 +85,30 @@ app.get('/api/monitor/v1/groups', (req, res) => {
   res.send({ by, count: groups.length, groups });
 });
 
+app.get('/api/test/slow', (req, res) => {
+  const delayMs = clampNumber(req.query.delayMs, 1000, 0, 10000);
+  const bytes = clampNumber(req.query.bytes, 128, 0, 1024 * 1024);
+  setTimeout(() => {
+    res.set('Content-Type', 'application/json');
+    res.send({
+      ok: true,
+      delayMs,
+      bytes,
+      data: 'x'.repeat(bytes),
+      time: new Date().toISOString(),
+    });
+  }, delayMs);
+});
+
+app.get('/api/test/status/:statusCode', (req, res) => {
+  const statusCode = clampNumber(req.params.statusCode, 500, 100, 599);
+  res.status(statusCode).send({
+    ok: statusCode >= 200 && statusCode < 400,
+    statusCode,
+    time: new Date().toISOString(),
+  });
+});
+
 app.listen(port, '0.0.0.0', () => {
   console.log(
     `Flutter Monitor local server listening at http://localhost:${port}`
@@ -182,6 +206,12 @@ function clampLimit(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, 1), 500);
+}
+
+function clampNumber(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
 }
 
 function isObject(value) {

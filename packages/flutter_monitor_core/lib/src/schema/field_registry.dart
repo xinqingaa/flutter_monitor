@@ -777,6 +777,11 @@ const defaultFieldDefinitions = <FieldDefinition>[
     privacyLevel: PrivacyLevel.mixed,
   ),
   FieldDefinition(
+    path: FieldPaths.payloadProperties,
+    valueType: FieldValueType.object,
+    privacyLevel: PrivacyLevel.mixed,
+  ),
+  FieldDefinition(
     path: FieldPaths.httpUrlQuery,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.forbidden,

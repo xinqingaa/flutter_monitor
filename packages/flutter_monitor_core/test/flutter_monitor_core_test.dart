@@ -8,6 +8,8 @@ void main() {
 
   test('exports core event model types', () {
     expect(SignalType.trace.toJson(), 'trace');
+    expect(MonitorEventLevel.warning.toJson(), 'warning');
+    expect(MonitorTrackResult.success.toJson(), 'success');
     expect(SchemaVersion.current.toString(), '1.0');
   });
 }

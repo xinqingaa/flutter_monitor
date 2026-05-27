@@ -19,7 +19,7 @@ export 'package:flutter_monitor_sdk/src/outputs/log_monitor_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/http_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/custom_log_output.dart';
 export 'package:flutter_monitor_core/flutter_monitor_core.dart'
-    show EventLevel, EventStatus;
+    show EventLevel, EventStatus, MonitorEventLevel, MonitorTrackResult;
 
 class FlutterMonitorSDK {
   FlutterMonitorSDK._();
@@ -158,6 +158,25 @@ class FlutterMonitorSDK {
       level: level,
       attributes: attributes,
       payload: payload,
+    );
+  }
+
+  static void track({
+    required String action,
+    MonitorTrackResult result = MonitorTrackResult.unknown,
+    String? target,
+    MonitorEventLevel? level,
+    String? error,
+    Map<String, Object?> properties = const <String, Object?>{},
+  }) {
+    if (!_isInitialized) return;
+    MonitorBinding.instance.reporter.track(
+      action: action,
+      result: result,
+      target: target,
+      level: level,
+      error: error,
+      properties: properties,
     );
   }
 

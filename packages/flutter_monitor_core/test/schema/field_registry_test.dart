@@ -266,6 +266,7 @@ void main() {
       FieldPaths.payloadTruncatedReason,
       FieldPaths.payloadTrace,
       FieldPaths.payloadNative,
+      FieldPaths.payloadProperties,
       FieldPaths.httpUrlQuery,
       FieldPaths.httpRequestBody,
       FieldPaths.httpResponseBody,

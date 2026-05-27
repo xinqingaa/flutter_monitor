@@ -345,11 +345,10 @@ void main() {
     reporter.addEvent('manual', {'type': 'custom'});
 
     final manualPayload = output.events.last['payload'] as Map;
-    expect(
-      manualPayload['legacy.customData'],
-      containsPair('buildFlavor', 'qa'),
-    );
-    expect(manualPayload['legacy.userProperties'], containsPair('plan', 'pro'));
+    final manualContext = output.events.last['context'] as Map;
+    expect(manualPayload.containsKey('legacy.customData'), isFalse);
+    expect(manualPayload.containsKey('legacy.userProperties'), isFalse);
+    expect((manualContext['user'] as Map)['userId'], 'user_c');
   });
 
   test('breadcrumb payload does not inherit legacy context details', () {
@@ -559,6 +558,47 @@ void main() {
     }
   });
 
+  test('track API maps simple business parameters to canonical envelope', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.startPageLoad('/profile');
+    reporter.track(
+      action: 'profile.save',
+      result: MonitorTrackResult.failed,
+      target: 'save_button',
+      error: 'validation_failed',
+      properties: const <String, Object?>{'field': 'phone'},
+    );
+
+    final event = output.events.last;
+    final attributes = event['attributes'] as Map;
+    final payload = event['payload'] as Map;
+
+    expect(event['name'], 'profile.save');
+    expect(event['signalType'], 'breadcrumb');
+    expect(event['status'], 'error');
+    expect(event['level'], 'warning');
+    expect(attributes[FieldPaths.businessAction], 'profile.save');
+    expect(attributes[FieldPaths.businessResult], 'failed');
+    expect(attributes[FieldPaths.uiTarget], 'save_button');
+    expect(payload[FieldPaths.payloadErrorMessage], 'validation_failed');
+    expect(
+      payload[FieldPaths.payloadProperties],
+      containsPair('field', 'phone'),
+    );
+    expect(event['traceId'], isNotEmpty);
+    expect(
+      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+      isTrue,
+    );
+  });
+
   test('manual breadcrumbs are attached to later error payload', () {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -706,10 +746,9 @@ void main() {
       output.events
           .where((event) => event['name'] == 'app.lifecycle')
           .every(
-            (event) =>
-                !(event['payload'] as Map).containsKey(
-                  FieldPaths.payloadBreadcrumbs,
-                ),
+            (event) => !(event['payload'] as Map).containsKey(
+              FieldPaths.payloadBreadcrumbs,
+            ),
           ),
       isTrue,
     );
@@ -807,8 +846,8 @@ void main() {
         isTrue,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes'] as Map)[FieldPaths
-            .pageFirstFrameMs],
+        (pageFirstFrameEvents.last['attributes']
+            as Map)[FieldPaths.pageFirstFrameMs],
         isA<num>(),
       );
       expect(
@@ -837,16 +876,12 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/':
-              (_) => Builder(
-                builder:
-                    (context) => TextButton(
-                      onPressed:
-                          () =>
-                              Navigator.of(context).pushNamed('/complex_list'),
-                      child: const Text('complex'),
-                    ),
-              ),
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/complex_list'),
+              child: const Text('complex'),
+            ),
+          ),
           '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
         },
       ),
@@ -913,31 +948,26 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/':
-              (_) => Builder(
-                builder:
-                    (context) => TextButton(
-                      onPressed:
-                          () => Navigator.of(context).pushNamed('/detail'),
-                      child: const Text('detail'),
-                    ),
-              ),
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/detail'),
+              child: const Text('detail'),
+            ),
+          ),
           '/detail': (_) => const SizedBox(key: Key('detail-page')),
         },
       ),
     );
     await tester.pump();
-    final homeTraceId =
-        output.events.firstWhere(
-          (event) => event['name'] == 'page.visit',
-        )['traceId'];
+    final homeTraceId = output.events.firstWhere(
+      (event) => event['name'] == 'page.visit',
+    )['traceId'];
 
     await tester.tap(find.text('detail'));
     await tester.pumpAndSettle();
-    final detailTraceId =
-        output.events
-            .where((event) => event['name'] == 'page.visit')
-            .last['traceId'];
+    final detailTraceId = output.events
+        .where((event) => event['name'] == 'page.visit')
+        .last['traceId'];
 
     Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
     await tester.pumpAndSettle();
@@ -1019,6 +1049,9 @@ void main() {
     );
 
     reporter.addBreadcrumb('ui.tap.load');
+    reporter.addBreadcrumb('ui.filter.status');
+    reporter.addBreadcrumb('ui.filter.owner');
+    reporter.addBreadcrumb('ui.filter.sort');
     reporter.recordHttpClient(
       url: 'https://example.com/missing',
       method: 'GET',
@@ -1027,6 +1060,7 @@ void main() {
       success: false,
       errorType: 'http_status',
       error: 'very long dio error text',
+      responseSizeBytes: 128,
     );
 
     final httpSpan = output.events.last;
@@ -1036,7 +1070,9 @@ void main() {
     expect(httpSpan['status'], 'error');
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], 'http_status');
+    expect(attributes[FieldPaths.responseSizeBytes], 128);
     expect(payload[FieldPaths.payloadBreadcrumbs], isA<List>());
+    expect(payload[FieldPaths.payloadBreadcrumbs], hasLength(3));
   });
 
   test('critical event breadcrumbs are relevant, limited and compact', () {
@@ -1133,6 +1169,7 @@ void main() {
         http.StreamedResponse(
           const Stream<List<int>>.empty(),
           404,
+          contentLength: 256,
           request: http.Request('GET', Uri.parse('https://example.com/404')),
         ),
       ),
@@ -1148,6 +1185,7 @@ void main() {
     expect(httpSpan['status'], 'error');
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], 'http_status');
+    expect(attributes[FieldPaths.responseSizeBytes], 256);
   });
 
   test(

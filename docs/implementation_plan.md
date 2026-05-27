@@ -229,6 +229,8 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - node server 能按 `eventId`、`sessionId`、`traceId` 查询完整 envelope。
 - 成功 HTTP、普通 breadcrumb、`route.push` 不应在默认控制台模式刷屏。
 - 普通 breadcrumb payload 不应自动携带 `legacy.userProperties` / `legacy.customData`；HTTP/error/jank breadcrumb 快照不得递归携带 breadcrumbs 或长 stacktrace。
+- 业务主动埋点统一使用 `FlutterMonitorSDK.track(...)`；example 和新文档不得使用 `FieldPaths`、`addBreadcrumb` 或 legacy `reportEvent(category, data)` 作为普通业务埋点路径。
+- `track` 由 SDK 内部映射 `business.action`、`business.result`、`ui.target`、`payload.properties` 等 canonical fields，并自动进入 breadcrumb store。
 - 完整 JSON 仍符合 `docs/event_model.md`。
 - core 中的摘要规则可被 SDK、node server、未来 CLI/DevTools 复用。
 - compact 摘要不形成第二套事件模型或服务端协议。

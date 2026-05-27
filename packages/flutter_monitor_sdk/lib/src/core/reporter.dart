@@ -435,6 +435,10 @@ class Reporter {
     required bool success,
     String? error,
     String? errorType,
+    num? requestSizeBytes,
+    num? responseSizeBytes,
+    num? retryCount,
+    String? cacheStatus,
     String source = 'sdk.http',
     DateTime? startTime,
     DateTime? endTime,
@@ -444,11 +448,9 @@ class Reporter {
     final startedAt =
         startTime ??
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
-    final effectiveErrorType =
-        success
-            ? null
-            : errorType ??
-                (statusCode == null ? 'network_error' : 'http_status');
+    final effectiveErrorType = success
+        ? null
+        : errorType ?? (statusCode == null ? 'network_error' : 'http_status');
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -456,6 +458,12 @@ class Reporter {
       FieldPaths.httpSuccess: success,
       if (effectiveErrorType != null)
         FieldPaths.httpErrorType: effectiveErrorType,
+      if (retryCount != null) FieldPaths.httpRetryCount: retryCount,
+      if (cacheStatus != null) FieldPaths.httpCacheStatus: cacheStatus,
+      if (requestSizeBytes != null)
+        FieldPaths.requestSizeBytes: requestSizeBytes,
+      if (responseSizeBytes != null)
+        FieldPaths.responseSizeBytes: responseSizeBytes,
     };
     final span = _traceManager.startSpan(
       name: 'http.client',
@@ -535,6 +543,38 @@ class Reporter {
           if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
         },
         payload: payload,
+      ),
+    );
+  }
+
+  PipelineResult track({
+    required String action,
+    MonitorTrackResult result = MonitorTrackResult.unknown,
+    String? target,
+    EventLevel? level,
+    String? error,
+    Map<String, Object?> properties = const <String, Object?>{},
+  }) {
+    final status = _trackStatus(result);
+    final effectiveLevel = level ?? _trackLevel(result);
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.track',
+        name: action,
+        signalType: SignalType.breadcrumb,
+        timestamp: DateTime.now(),
+        level: effectiveLevel,
+        status: status,
+        attributes: <String, Object?>{
+          FieldPaths.businessAction: action,
+          FieldPaths.businessResult: result.toJson(),
+          if (target != null && target.isNotEmpty) FieldPaths.uiTarget: target,
+        },
+        payload: <String, Object?>{
+          if (error != null && error.isNotEmpty)
+            FieldPaths.payloadErrorMessage: error,
+          if (properties.isNotEmpty) FieldPaths.payloadProperties: properties,
+        },
       ),
     );
   }
@@ -652,19 +692,18 @@ class Reporter {
     required bool startedNewSession,
     String? previousState,
   }) {
-    final traceId =
-        _traceManager
-            .startTrace(
-              name: 'app.hot_start',
-              startTime: timestamp.subtract(duration),
-              attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
-              payload: <String, Object?>{
-                'session.started_new': startedNewSession,
-                if (previousState != null)
-                  'lifecycle.previous_state': previousState,
-              },
-            )
-            .traceId;
+    final traceId = _traceManager
+        .startTrace(
+          name: 'app.hot_start',
+          startTime: timestamp.subtract(duration),
+          attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
+          payload: <String, Object?>{
+            'session.started_new': startedNewSession,
+            if (previousState != null)
+              'lifecycle.previous_state': previousState,
+          },
+        )
+        .traceId;
     endTrace(
       traceId,
       endTime: timestamp,
@@ -887,6 +926,23 @@ class Reporter {
       return uri.path.isEmpty ? '/' : uri.path;
     }
     return rawUrl.split('?').first;
+  }
+
+  EventStatus _trackStatus(MonitorTrackResult result) {
+    return switch (result) {
+      MonitorTrackResult.started ||
+      MonitorTrackResult.success => EventStatus.ok,
+      MonitorTrackResult.failed => EventStatus.error,
+      MonitorTrackResult.cancelled => EventStatus.cancelled,
+      MonitorTrackResult.unknown => EventStatus.unknown,
+    };
+  }
+
+  EventLevel _trackLevel(MonitorTrackResult result) {
+    return switch (result) {
+      MonitorTrackResult.failed => EventLevel.warning,
+      _ => EventLevel.info,
+    };
   }
 }
 

@@ -102,6 +102,7 @@ ensure_local_server() {
 }
 
 MONITOR_SERVER_URL=""
+TEST_API_BASE_URL=""
 FLUTTER_ARGS=()
 
 while [ "$#" -gt 0 ]; do
@@ -122,6 +123,7 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       MONITOR_SERVER_URL="http://$HOST_IP:$SERVER_PORT/api/monitor/v1/events"
+      TEST_API_BASE_URL="http://$HOST_IP:$SERVER_PORT"
       shift
       ;;
     -h|--help)
@@ -138,6 +140,11 @@ done
 if [ -n "$MONITOR_SERVER_URL" ]; then
   echo "Flutter Monitor server: $MONITOR_SERVER_URL"
   FLUTTER_ARGS+=("--dart-define=FM_SERVER_URL=$MONITOR_SERVER_URL")
+fi
+
+if [ -n "$TEST_API_BASE_URL" ]; then
+  echo "Flutter Monitor test API: $TEST_API_BASE_URL"
+  FLUTTER_ARGS+=("--dart-define=FM_TEST_API_BASE_URL=$TEST_API_BASE_URL")
 fi
 
 cd "$EXAMPLE_DIR"

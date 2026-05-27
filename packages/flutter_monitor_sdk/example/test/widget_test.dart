@@ -19,6 +19,6 @@ void main() {
     await tester.pumpWidget(const MyApp());
     await tester.pump();
 
-    expect(find.text('Monitor SDK Demo'), findsOneWidget);
+    expect(find.text('Flutter Monitor Example'), findsOneWidget);
   });
 }

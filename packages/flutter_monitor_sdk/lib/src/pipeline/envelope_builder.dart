@@ -23,17 +23,10 @@ class EnvelopeBuilder {
     };
     final unregisteredAttributes = _unregisteredAttributes(attributes);
     final breadcrumbLimit = defaultBreadcrumbLimit(signal);
-    final includeLegacyContext = signal.signalType != SignalType.breadcrumb;
     final payload = <String, Object?>{
       ...signal.payload,
       if (unregisteredAttributes.isNotEmpty)
         'unregistered.attributes': unregisteredAttributes,
-      if (includeLegacyContext &&
-          (contextSnapshot.customData?.isNotEmpty ?? false))
-        'legacy.customData': contextSnapshot.customData,
-      if (includeLegacyContext &&
-          (contextSnapshot.userProperties?.isNotEmpty ?? false))
-        'legacy.userProperties': contextSnapshot.userProperties,
       if (breadcrumbLimit != null &&
           breadcrumbLimit > 0 &&
           traceSnapshot.breadcrumbs.isNotEmpty)
@@ -75,8 +68,7 @@ class EnvelopeBuilder {
   int? defaultBreadcrumbLimit(RawSignal signal) {
     if (signal.includeBreadcrumbs == false) return null;
     if (signal.breadcrumbLimit != null) return signal.breadcrumbLimit;
-    if (signal.includeBreadcrumbs == true) return 8;
-    return switch (signal.signalType) {
+    final defaultLimit = switch (signal.signalType) {
       SignalType.error => 8,
       SignalType.metric when signal.name == 'ui.jank.sequence' => 5,
       SignalType.span
@@ -86,6 +78,9 @@ class EnvelopeBuilder {
       SignalType.metric when signal.status == EventStatus.error => 3,
       _ => null,
     };
+    if (defaultLimit != null) return defaultLimit;
+    if (signal.includeBreadcrumbs == true) return 8;
+    return null;
   }
 
   Map<String, Object?> _registeredAttributes(Map<String, Object?> attributes) {

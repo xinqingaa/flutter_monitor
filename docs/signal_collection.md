@@ -342,9 +342,8 @@ Native 增强来源：
 ### 采集来源
 
 - `MonitoredGestureDetector`。
-- 业务手动 breadcrumb API。
 - 页面访问/PV。
-- 关键业务 action API。
+- 业务主动埋点 API：`FlutterMonitorSDK.track(...)`。
 
 ### 触发时机
 
@@ -352,21 +351,19 @@ Native 增强来源：
 - scroll。
 - tab switch。
 - dialog show/dismiss。
-- business action start/end。
+- 业务关键动作，例如 checkout、profile save、search、share。
 
 ### 生成事件
 
 - `breadcrumb ui.click`
 - `breadcrumb ui.scroll`
 - `breadcrumb business.action`
-- `trace action.*`，仅关键业务动作。
 
 ### 链路关联
 
 - 普通行为进入 breadcrumb store。
-- 关键行为可创建 action trace。
 - 行为应关联当前 `context.route.*` / `context.module.*` / `context.module.scene`。
-- 后续 HTTP、jank、error 可关联 action trace 或使用 breadcrumb 还原上下文。
+- 后续 HTTP、jank、error 可使用 recent breadcrumbs 还原上下文。
 - 普通 breadcrumb 的 payload 不应自动继承 `legacy.userProperties` 或 `legacy.customData`；用户和业务上下文应保留在 `context` 或显式业务字段中。
 
 ### 字段映射
@@ -382,6 +379,7 @@ Native 增强来源：
 
 - 不应默认全量采集所有点击。
 - 控件标识应由业务显式传入，避免从 widget tree 推断敏感文本。
+- 普通业务接入不应直接调用 `addBreadcrumb` 或使用 `FieldPaths`；SDK 内部负责将 `track` 参数映射到 canonical fields。
 - 高频行为需采样或限流。
 
 ## 卡顿与帧采集
@@ -601,38 +599,46 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - 异常生命周期中无法保证完整 envelope，可先持久化 native raw signal，再由下次启动补全和上报。
 - native plugin 是可选增强，不应增加主 SDK 基础接入成本。
 
-## 自定义 Trace/Span 采集
+## 业务主动埋点采集
 
 ### 采集来源
 
-- 业务 API：start trace、finish trace、start span、finish span。
-- 业务 API：add breadcrumb、record metric、capture error。
+- 业务 API：`FlutterMonitorSDK.track(...)`。
+- 旧 `reportEvent(category, data)` 仅作为 legacy compatibility，不作为新接入推荐路径。
+- `startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点。
 
 ### 触发时机
 
-- 业务流程开始/结束。
-- 业务阶段开始/结束。
-- 业务关键状态变化。
+- 用户触发关键业务动作。
+- 业务动作成功、失败、取消或开始。
+- 业务错误、降级或关键状态变化。
 
 ### 生成事件
 
-- `trace custom.trace`
-- `span custom.step`
-- `breadcrumb custom.event`
-- `metric custom.metric`
-- `error custom.error`
+- `breadcrumb <action>`，其中 `<action>` 来自 `track(action: ...)`。
 
 ### 链路关联
 
-- 自定义 trace 默认归属当前 session。
-- 自定义 span 必须归属 trace。
-- 自定义事件应继承当前 context snapshot。
+- `track` 事件默认归属当前 session、当前 route/module context 和当前 active trace。
+- pipeline 会将 `track` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
+- 业务层不需要知道 breadcrumb store，也不需要手动调用 `addBreadcrumb` 来实现常规埋点。
+
+### 字段映射
+
+`track` 参数由 SDK 内部映射：
+
+- `action` -> `name`、`business.action`
+- `result` -> `business.result`、`status`
+- `target` -> `ui.target`
+- `level` -> envelope `level`
+- `error` -> `payload.error.message`
+- `properties` -> payload 中的业务详情
 
 ### 限制与降级
 
-- 自定义 name 必须稳定。
-- 动态业务 ID 不得进入 name。
-- 自定义 payload 仍必须经过隐私过滤。
+- `action` 必须稳定，动态业务 ID 不得进入 action/name。
+- `properties` 仍必须经过隐私过滤，不得包含 token、cookie、原始请求体、精确位置等 forbidden 字段。
+- `FieldPaths` 是 core/schema 内部契约，不暴露给普通业务接入。
 
 ## 隐私、采样与性能开销
 

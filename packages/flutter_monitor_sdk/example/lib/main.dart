@@ -34,8 +34,12 @@ import 'performance_test_page.dart';
 //   }
 // }
 
-// 创建一个全局的Dio实例，并添加我们的拦截器
-final dio = Dio()..interceptors.add(FlutterMonitorSDK.dioInterceptor);
+final dio = Dio(
+  BaseOptions(
+    connectTimeout: const Duration(seconds: 2),
+    receiveTimeout: const Duration(seconds: 3),
+  ),
+)..interceptors.add(FlutterMonitorSDK.dioInterceptor);
 
 void main() async {
   // 记录启动时间
