@@ -164,3 +164,22 @@ README 只作为项目入口，不作为架构、协议或 schema 的唯一事�
 - 不要让 native plugin 绕过 SDK pipeline 直接上报。
 - 不要让工具入口使用与服务端协议不兼容的导出格式。
 - 不要在缺少证据时把内存增长宣称为确定泄漏。
+
+## Git 提交规范
+
+当用户要求“提交到 git”、“帮我 commit”或类似操作时，agent 应主动完成以下流程，不需要用户手动编写 commit message：
+
+- 先查看 `git status --short`、`git diff --stat` 和必要的 `git diff`，确认本次未提交内容的主题与边界。
+- 不得把明显无关的用户改动混入同一个提交；如果工作区存在无法判断归属的无关改动，应先向用户确认。
+- 提交前按改动风险运行合适的验证命令；若未运行或失败，必须在回复中说明。
+- commit message 遵守仓库既有 Conventional Commits 风格：`type(scope): 中文摘要`。
+- 常用 `type`：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`。
+- 常用 `scope`：`core`、`sdk`、`example`、`server`、`docs`、`scripts`。
+- 当一次提交横跨多个目录时，scope 选择本次改动的主责任域；例如协议/schema/SDK 输出主线优先用 `sdk` 或 `core`，纯文档用 `docs`，示例体验主线用 `example`。
+- 中文摘要应概括用户可感知的结果，避免只写“更新代码”“修改文件”等无信息内容。
+
+示例：
+
+- `feat(sdk): 收口 Phase 3 业务埋点 API 与 raw JSON 质量`
+- `fix(sdk): 限制 failed HTTP breadcrumb 数量`
+- `docs(core): 补充事件模型字段注册约束`
