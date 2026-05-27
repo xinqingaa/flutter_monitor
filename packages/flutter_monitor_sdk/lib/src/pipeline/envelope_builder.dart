@@ -22,17 +22,21 @@ class EnvelopeBuilder {
       ...signal.attributes,
     };
     final unregisteredAttributes = _unregisteredAttributes(attributes);
-    final includeBreadcrumbs =
-        signal.includeBreadcrumbs ?? _defaultIncludeBreadcrumbs(signal);
+    final breadcrumbLimit = defaultBreadcrumbLimit(signal);
+    final includeLegacyContext = signal.signalType != SignalType.breadcrumb;
     final payload = <String, Object?>{
       ...signal.payload,
       if (unregisteredAttributes.isNotEmpty)
         'unregistered.attributes': unregisteredAttributes,
-      if (contextSnapshot.customData?.isNotEmpty ?? false)
+      if (includeLegacyContext &&
+          (contextSnapshot.customData?.isNotEmpty ?? false))
         'legacy.customData': contextSnapshot.customData,
-      if (contextSnapshot.userProperties?.isNotEmpty ?? false)
+      if (includeLegacyContext &&
+          (contextSnapshot.userProperties?.isNotEmpty ?? false))
         'legacy.userProperties': contextSnapshot.userProperties,
-      if (includeBreadcrumbs && traceSnapshot.breadcrumbs.isNotEmpty)
+      if (breadcrumbLimit != null &&
+          breadcrumbLimit > 0 &&
+          traceSnapshot.breadcrumbs.isNotEmpty)
         FieldPaths.payloadBreadcrumbs: traceSnapshot.breadcrumbs
             .map((breadcrumb) => breadcrumb.toJson())
             .toList(growable: false),
@@ -68,12 +72,19 @@ class EnvelopeBuilder {
     };
   }
 
-  bool _defaultIncludeBreadcrumbs(RawSignal signal) {
+  int? defaultBreadcrumbLimit(RawSignal signal) {
+    if (signal.includeBreadcrumbs == false) return null;
+    if (signal.breadcrumbLimit != null) return signal.breadcrumbLimit;
+    if (signal.includeBreadcrumbs == true) return 8;
     return switch (signal.signalType) {
-      SignalType.error => true,
-      SignalType.trace || SignalType.span => signal.endTime != null,
-      SignalType.metric => signal.status == EventStatus.error,
-      _ => false,
+      SignalType.error => 8,
+      SignalType.metric when signal.name == 'ui.jank.sequence' => 5,
+      SignalType.span
+          when signal.name == 'http.client' &&
+              signal.status == EventStatus.error =>
+        3,
+      SignalType.metric when signal.status == EventStatus.error => 3,
+      _ => null,
     };
   }
 

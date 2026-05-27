@@ -226,7 +226,7 @@ class JankMonitor {
     /// recent_frame_count: 最近帧数
     ///
 
-    final data = {
+    final data = <String, Object?>{
       'type': 'jank_sequence',
       'page': _getCurrentPage?.call() ?? 'unknown',
       'jank_count': _consecutiveJankFrames,
@@ -247,7 +247,22 @@ class JankMonitor {
       },
     };
 
-    _reporter.addEvent('performance', data);
+    final percentiles = metrics.percentiles;
+    _reporter.recordJankSequence(
+      frameCount: _consecutiveJankFrames,
+      frameMaxMs: _maxJankDurationInSequence,
+      frameAvgMs: _totalJankDurationInSequence / _consecutiveJankFrames,
+      frameBudgetMs: _frameBudgetMs,
+      frameFps: metrics.fps,
+      frameStability: metrics.stability,
+      frameP50Ms: percentiles['p50'],
+      frameP90Ms: percentiles['p90'],
+      frameP99Ms: percentiles['p99'],
+      payload: <String, Object?>{
+        'legacy.category': 'performance',
+        'legacy.data': data,
+      },
+    );
     _lastJankTime = DateTime.now();
     _jankSequenceReported = true;
   }

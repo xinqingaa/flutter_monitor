@@ -328,13 +328,55 @@ void main() {
     expect((firstContext['user'] as Map)['userId'], 'user_a');
     expect((secondContext['user'] as Map)['userId'], 'user_b');
     expect(
-      (output.events[0]['payload'] as Map)['legacy.customData'],
-      containsPair('buildFlavor', 'qa'),
+      (output.events[0]['payload'] as Map).containsKey('legacy.customData'),
+      isFalse,
     );
     expect(
-      (output.events[0]['payload'] as Map)['legacy.userProperties'],
-      containsPair('plan', 'pro'),
+      (output.events[0]['payload'] as Map).containsKey('legacy.userProperties'),
+      isFalse,
     );
+
+    reporter.setUserInfo(
+      const UserInfo(
+        userId: 'user_c',
+        userProperties: <String, Object?>{'plan': 'pro'},
+      ),
+    );
+    reporter.addEvent('manual', {'type': 'custom'});
+
+    final manualPayload = output.events.last['payload'] as Map;
+    expect(
+      manualPayload['legacy.customData'],
+      containsPair('buildFlavor', 'qa'),
+    );
+    expect(manualPayload['legacy.userProperties'], containsPair('plan', 'pro'));
+  });
+
+  test('breadcrumb payload does not inherit legacy context details', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        userInfo: const UserInfo(
+          userId: 'user_a',
+          userProperties: <String, Object?>{'plan': 'pro'},
+        ),
+        customData: const <String, Object?>{'buildFlavor': 'qa'},
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.addBreadcrumb('ui.tap.profile');
+
+    final event = output.events.single;
+    final payload = event['payload'] as Map;
+    final context = event['context'] as Map;
+    final user = context['user'] as Map;
+
+    expect(event['signalType'], 'breadcrumb');
+    expect(user['userId'], 'user_a');
+    expect(payload.containsKey('legacy.customData'), isFalse);
+    expect(payload.containsKey('legacy.userProperties'), isFalse);
   });
 
   test(
@@ -664,9 +706,10 @@ void main() {
       output.events
           .where((event) => event['name'] == 'app.lifecycle')
           .every(
-            (event) => !(event['payload'] as Map).containsKey(
-              FieldPaths.payloadBreadcrumbs,
-            ),
+            (event) =>
+                !(event['payload'] as Map).containsKey(
+                  FieldPaths.payloadBreadcrumbs,
+                ),
           ),
       isTrue,
     );
@@ -691,6 +734,7 @@ void main() {
         routes: <String, WidgetBuilder>{'/': (_) => const SizedBox.shrink()},
       ),
     );
+    await tester.pump();
 
     final pageView = output.events.firstWhere(
       (event) => event['name'] == 'page.view',
@@ -721,8 +765,11 @@ void main() {
           routes: <String, WidgetBuilder>{'/': (_) => const SizedBox.shrink()},
         ),
       );
-      routeObserver.onPageRendered('/');
+      await tester.pump();
 
+      final pageVisitEvents = output.events
+          .where((event) => event['name'] == 'page.visit')
+          .toList(growable: false);
       final pageLoadEvents = output.events
           .where((event) => event['name'] == 'page.load')
           .toList(growable: false);
@@ -736,14 +783,20 @@ void main() {
         (event) => event['name'] == 'page.view',
       );
 
+      expect(pageVisitEvents, hasLength(1));
       expect(pageLoadEvents, hasLength(2));
       expect(routePushEvents, hasLength(1));
       expect(pageFirstFrameEvents, hasLength(2));
 
-      final pageTraceId = pageLoadEvents.first['traceId'];
+      final pageTraceId = pageVisitEvents.first['traceId'];
       expect(pageView['traceId'], pageTraceId);
+      expect(pageLoadEvents.first['signalType'], 'span');
       expect(pageLoadEvents.last['status'], 'ok');
       expect(pageLoadEvents.last['durationMs'], isA<num>());
+      expect(
+        (pageLoadEvents.last['attributes'] as Map)[FieldPaths.pageLoadMs],
+        isA<num>(),
+      );
       expect(routePushEvents.single['status'], 'ok');
       expect(
         routePushEvents.every((event) => event['traceId'] == pageTraceId),
@@ -754,8 +807,8 @@ void main() {
         isTrue,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes']
-            as Map)[FieldPaths.pageFirstFrameMs],
+        (pageFirstFrameEvents.last['attributes'] as Map)[FieldPaths
+            .pageFirstFrameMs],
         isA<num>(),
       );
       expect(
@@ -766,6 +819,82 @@ void main() {
       );
     },
   );
+
+  testWidgets('route observer closes page load on first rendered frame', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final routeObserver = MonitorRouteObserver(reporter);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[routeObserver],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{
+          '/':
+              (_) => Builder(
+                builder:
+                    (context) => TextButton(
+                      onPressed:
+                          () =>
+                              Navigator.of(context).pushNamed('/complex_list'),
+                      child: const Text('complex'),
+                    ),
+              ),
+          '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('complex'));
+    await tester.pumpAndSettle();
+
+    final complexLoadEvents = output.events
+        .where(
+          (event) =>
+              event['name'] == 'page.load' &&
+              ((event['context'] as Map)['route'] as Map)['name'] ==
+                  '/complex_list',
+        )
+        .toList(growable: false);
+    final complexFirstFrameEvents = output.events
+        .where(
+          (event) =>
+              event['name'] == 'page.first_frame' &&
+              ((event['context'] as Map)['route'] as Map)['name'] ==
+                  '/complex_list',
+        )
+        .toList(growable: false);
+
+    expect(complexLoadEvents, hasLength(2));
+    expect(complexFirstFrameEvents, hasLength(2));
+    expect(complexLoadEvents.last['status'], 'ok');
+    expect(
+      (complexLoadEvents.last['attributes'] as Map)[FieldPaths.pageLoadMs],
+      isA<num>(),
+    );
+
+    Navigator.of(tester.element(find.byKey(const Key('complex-page')))).pop();
+    await tester.pumpAndSettle();
+
+    final laterComplexLoadEnds = output.events
+        .where(
+          (event) =>
+              event['name'] == 'page.load' &&
+              (event['attributes'] as Map)[FieldPaths.eventPhase] == 'end' &&
+              ((event['context'] as Map)['route'] as Map)['name'] ==
+                  '/complex_list',
+        )
+        .toList(growable: false);
+    expect(laterComplexLoadEnds, hasLength(1));
+  });
 
   testWidgets('popping a page clears stale page trace before later events', (
     tester,
@@ -784,27 +913,31 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/': (_) => Builder(
-            builder: (context) => TextButton(
-              onPressed: () => Navigator.of(context).pushNamed('/detail'),
-              child: const Text('detail'),
-            ),
-          ),
+          '/':
+              (_) => Builder(
+                builder:
+                    (context) => TextButton(
+                      onPressed:
+                          () => Navigator.of(context).pushNamed('/detail'),
+                      child: const Text('detail'),
+                    ),
+              ),
           '/detail': (_) => const SizedBox(key: Key('detail-page')),
         },
       ),
     );
-    routeObserver.onPageRendered('/');
-    final homeTraceId = output.events.firstWhere(
-      (event) => event['name'] == 'page.load',
-    )['traceId'];
+    await tester.pump();
+    final homeTraceId =
+        output.events.firstWhere(
+          (event) => event['name'] == 'page.visit',
+        )['traceId'];
 
     await tester.tap(find.text('detail'));
     await tester.pumpAndSettle();
-    routeObserver.onPageRendered('/detail');
-    final detailTraceId = output.events
-        .where((event) => event['name'] == 'page.load')
-        .last['traceId'];
+    final detailTraceId =
+        output.events
+            .where((event) => event['name'] == 'page.visit')
+            .last['traceId'];
 
     Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
     await tester.pumpAndSettle();
@@ -847,7 +980,7 @@ void main() {
 
     reporter.startPageLoad('/home', startTime: startedAt);
     final pageTrace = output.events.firstWhere(
-      (event) => event['name'] == 'page.load',
+      (event) => event['name'] == 'page.visit',
     );
     reporter.recordHttpClient(
       url: 'https://example.com/api/items?page=1',
@@ -893,6 +1026,7 @@ void main() {
       durationMs: 18,
       success: false,
       errorType: 'http_status',
+      error: 'very long dio error text',
     );
 
     final httpSpan = output.events.last;
@@ -903,6 +1037,86 @@ void main() {
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], 'http_status');
     expect(payload[FieldPaths.payloadBreadcrumbs], isA<List>());
+  });
+
+  test('critical event breadcrumbs are relevant, limited and compact', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    reporter.startPageLoad('/old', startTime: startedAt);
+    reporter.recordPageView('/old');
+    reporter.finishPageFirstFrame(
+      '/old',
+      endTime: startedAt.add(const Duration(milliseconds: 16)),
+    );
+    reporter.finishPageLoad(
+      '/old',
+      endTime: startedAt.add(const Duration(seconds: 1)),
+    );
+    reporter.startPageLoad(
+      '/home',
+      startTime: startedAt.add(const Duration(seconds: 2)),
+    );
+    reporter.recordPageView('/home');
+    reporter.finishPageFirstFrame(
+      '/home',
+      endTime: startedAt.add(const Duration(seconds: 2, milliseconds: 32)),
+    );
+
+    for (var index = 0; index < 6; index++) {
+      reporter.addBreadcrumb(
+        'ui.tap.$index',
+        payload: <String, Object?>{'index': index},
+      );
+    }
+    reporter.recordJankSequence(
+      frameCount: 5,
+      frameMaxMs: 72,
+      frameAvgMs: 55,
+      frameBudgetMs: 16.67,
+    );
+
+    final jankEvent = output.events.last;
+    final jankBreadcrumbs =
+        (jankEvent['payload'] as Map)[FieldPaths.payloadBreadcrumbs] as List;
+
+    expect(jankEvent['name'], 'ui.jank.sequence');
+    expect(jankBreadcrumbs, hasLength(5));
+    expect((jankBreadcrumbs.first as Map)['route'], '/home');
+    expect(
+      jankBreadcrumbs.map((item) => (item as Map)['route']).toSet(),
+      contains('/home'),
+    );
+
+    reporter.addEvent('error', {
+      'type': 'dart_error',
+      'error': 'boom',
+      'stack': 'trace',
+    });
+
+    final errorEvent = output.events.last;
+    final errorBreadcrumbs =
+        (errorEvent['payload'] as Map)[FieldPaths.payloadBreadcrumbs] as List;
+    expect(errorBreadcrumbs.length, lessThanOrEqualTo(8));
+    expect(
+      errorBreadcrumbs.map((item) => (item as Map)['name']),
+      contains('ui.jank.sequence'),
+    );
+    for (final breadcrumb in errorBreadcrumbs.cast<Map>()) {
+      final payload =
+          breadcrumb['payload'] as Map? ?? const <Object?, Object?>{};
+      expect(payload.containsKey(FieldPaths.payloadBreadcrumbs), isFalse);
+      expect(payload.containsKey(FieldPaths.payloadErrorStacktrace), isFalse);
+      if (breadcrumb['name'] == 'http.client') {
+        expect(payload.containsKey('error'), isFalse);
+      }
+    }
   });
 
   test('monitored http client treats 4xx responses as failed spans', () async {
@@ -935,6 +1149,94 @@ void main() {
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], 'http_status');
   });
+
+  test(
+    'session timeline json links page http jank error and lifecycle',
+    () async {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          sessionConfig: const MonitorSessionConfig(flushOnBackground: false),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+      final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+      reporter.startPageLoad('/home', startTime: startedAt);
+      reporter.recordPageView('/home');
+      reporter.finishPageFirstFrame(
+        '/home',
+        endTime: startedAt.add(const Duration(milliseconds: 40)),
+      );
+      reporter.addBreadcrumb('ui.tap.load_users');
+      reporter.recordHttpClient(
+        url: 'https://example.com/users/flutter?id=1',
+        method: 'GET',
+        statusCode: 403,
+        durationMs: 321,
+        success: false,
+        startTime: startedAt.add(const Duration(milliseconds: 50)),
+        endTime: startedAt.add(const Duration(milliseconds: 371)),
+      );
+      reporter.recordJankSequence(
+        frameCount: 13,
+        frameMaxMs: 71.4,
+        frameAvgMs: 51.0,
+        frameBudgetMs: 16.67,
+        frameFps: 40.7,
+      );
+      reporter.addEvent('error', {
+        'type': 'dart_error',
+        'error': 'NoSuchMethodError',
+        'stack': 'trace',
+      });
+      await reporter.handleLifecycleState(
+        'paused',
+        timestamp: startedAt.add(const Duration(seconds: 2)),
+      );
+
+      for (final event in output.events) {
+        expect(
+          SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+          isTrue,
+        );
+      }
+
+      final pageVisit = output.events.firstWhere(
+        (event) => event['name'] == 'page.visit',
+      );
+      final pageTraceId = pageVisit['traceId'];
+      final httpSpan = output.events.singleWhere(
+        (event) => event['name'] == 'http.client',
+      );
+      final jankEvent = output.events.singleWhere(
+        (event) => event['name'] == 'ui.jank.sequence',
+      );
+      final errorEvent = output.events.lastWhere(
+        (event) => event['signalType'] == 'error',
+      );
+
+      expect(httpSpan['traceId'], pageTraceId);
+      expect(jankEvent['traceId'], pageTraceId);
+      expect(errorEvent['traceId'], pageTraceId);
+      expect((httpSpan['attributes'] as Map)[FieldPaths.httpStatusCode], 403);
+      expect((jankEvent['attributes'] as Map)[FieldPaths.jankCount], 13);
+      expect(
+        (jankEvent['context'] as Map)['route'],
+        containsPair('name', '/home'),
+      );
+
+      final errorBreadcrumbs =
+          (errorEvent['payload'] as Map)[FieldPaths.payloadBreadcrumbs] as List;
+      final breadcrumbNames = errorBreadcrumbs
+          .map((item) => (item as Map)['name'])
+          .toList(growable: false);
+      expect(breadcrumbNames, contains('ui.tap.load_users'));
+      expect(breadcrumbNames, contains('http.client'));
+      expect(breadcrumbNames, contains('ui.jank.sequence'));
+    },
+  );
 
   testWidgets('cold start trace starts before initial route page view', (
     tester,

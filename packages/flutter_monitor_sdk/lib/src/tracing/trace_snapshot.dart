@@ -28,4 +28,19 @@ class TraceSnapshot {
       breadcrumbs: breadcrumbs,
     );
   }
+
+  TraceSnapshot copyWith({
+    String? traceId,
+    String? spanId,
+    String? parentSpanId,
+    List<Breadcrumb>? breadcrumbs,
+  }) {
+    return TraceSnapshot(
+      sessionId: sessionId,
+      traceId: traceId ?? this.traceId,
+      spanId: spanId ?? this.spanId,
+      parentSpanId: parentSpanId ?? this.parentSpanId,
+      breadcrumbs: breadcrumbs ?? this.breadcrumbs,
+    );
+  }
 }

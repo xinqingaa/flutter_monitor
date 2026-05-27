@@ -5,6 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/packages/flutter_monitor_sdk/example"
 SERVER_DIR="$ROOT_DIR/node_server"
 SERVER_PORT="${FM_SERVER_PORT:-3000}"
+SERVER_PID=""
+SERVER_STARTED_BY_SCRIPT=0
+NODE_SERVER_LOG="${FM_NODE_SERVER_LOG:-/tmp/flutter_monitor_node_server.log}"
 
 usage() {
   cat <<'EOF'
@@ -21,6 +24,29 @@ Examples:
 EOF
 }
 
+cleanup() {
+  local exit_code=$?
+  trap - EXIT INT TERM HUP
+  if [ "$SERVER_STARTED_BY_SCRIPT" -eq 1 ] && [ -n "$SERVER_PID" ]; then
+    if kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+      echo "Stopping Flutter Monitor local server pid=$SERVER_PID..."
+      kill "$SERVER_PID" >/dev/null 2>&1 || true
+      for _ in $(seq 1 20); do
+        if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+          break
+        fi
+        sleep 0.1
+      done
+      if kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+        kill -9 "$SERVER_PID" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+  exit "$exit_code"
+}
+
+trap cleanup EXIT INT TERM HUP
+
 detect_host_ip() {
   ipconfig getifaddr en0 2>/dev/null ||
     ipconfig getifaddr en1 2>/dev/null ||
@@ -28,13 +54,8 @@ detect_host_ip() {
 }
 
 package_runner() {
-  if command -v pnpm >/dev/null 2>&1; then
-    echo "pnpm run server"
-    return
-  fi
-
-  if command -v npm >/dev/null 2>&1; then
-    echo "npm run server"
+  if command -v node >/dev/null 2>&1; then
+    echo "node server.js"
     return
   fi
 
@@ -55,15 +76,17 @@ ensure_local_server() {
   local runner
   runner="$(package_runner)"
   if [ -z "$runner" ]; then
-    echo "Neither pnpm nor npm was found. Cannot start node_server." >&2
+    echo "Node.js was not found. Cannot start node_server." >&2
     exit 1
   fi
 
   echo "Starting Flutter Monitor local server on port $SERVER_PORT..."
   (
     cd "$SERVER_DIR"
-    PORT="$SERVER_PORT" $runner >/tmp/flutter_monitor_node_server.log 2>&1
+    exec env PORT="$SERVER_PORT" $runner >"$NODE_SERVER_LOG" 2>&1
   ) &
+  SERVER_PID=$!
+  SERVER_STARTED_BY_SCRIPT=1
 
   for _ in $(seq 1 30); do
     if local_server_ready; then
@@ -74,7 +97,7 @@ ensure_local_server() {
     sleep 0.2
   done
 
-  echo "Failed to start node_server. See /tmp/flutter_monitor_node_server.log" >&2
+  echo "Failed to start node_server. See $NODE_SERVER_LOG" >&2
   exit 1
 }
 

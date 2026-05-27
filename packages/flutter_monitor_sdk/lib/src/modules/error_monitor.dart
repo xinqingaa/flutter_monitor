@@ -25,7 +25,7 @@ class ErrorMonitor {
     final data = {
       'type': 'flutter_error',
       'exception': details.exceptionAsString(),
-      'stack': details.stack.toString(),
+      if (details.stack != null) 'stack': details.stack.toString(),
       'library': details.library,
       'context': details.context?.toString(),
       'timestamp': DateTime.now().toIso8601String(),

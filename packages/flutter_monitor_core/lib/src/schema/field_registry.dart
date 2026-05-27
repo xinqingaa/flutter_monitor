@@ -465,6 +465,30 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.pageFrom,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.pageTo,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.pageInstanceId,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.pageLoadMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.httpMethod,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.safe,
@@ -731,6 +755,16 @@ const defaultFieldDefinitions = <FieldDefinition>[
     path: FieldPaths.payloadBreadcrumbs,
     valueType: FieldValueType.array,
     privacyLevel: PrivacyLevel.mixed,
+  ),
+  FieldDefinition(
+    path: FieldPaths.payloadTruncated,
+    valueType: FieldValueType.boolean,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.payloadTruncatedReason,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
   ),
   FieldDefinition(
     path: FieldPaths.payloadTrace,

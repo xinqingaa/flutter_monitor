@@ -16,6 +16,7 @@ class RawSignal {
     this.spanId,
     this.parentSpanId,
     this.includeBreadcrumbs,
+    this.breadcrumbLimit,
     this.eventPhase,
     this.attributes = const <String, Object?>{},
     this.payload = const <String, Object?>{},
@@ -35,6 +36,7 @@ class RawSignal {
   final String? spanId;
   final String? parentSpanId;
   final bool? includeBreadcrumbs;
+  final int? breadcrumbLimit;
   final String? eventPhase;
   final Map<String, Object?> attributes;
   final Map<String, Object?> payload;

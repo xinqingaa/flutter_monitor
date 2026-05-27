@@ -56,11 +56,20 @@ class EventPipeline {
     required String sessionId,
   }) {
     try {
+      final breadcrumbLimit = _envelopeBuilder.defaultBreadcrumbLimit(signal);
       final contextSnapshot = _contextManager.capture();
-      final traceSnapshot = _traceManager
-          .capture(
-            sessionId: sessionId,
-            breadcrumbs: _breadcrumbStore.snapshot(),
+      final activeTraceSnapshot = _traceManager.capture(
+        sessionId: sessionId,
+        breadcrumbs: const <Breadcrumb>[],
+      );
+      final effectiveTraceId = signal.traceId ?? activeTraceSnapshot.traceId;
+      final traceSnapshot = activeTraceSnapshot
+          .copyWith(
+            breadcrumbs: _breadcrumbStore.relevantSnapshot(
+              limit: breadcrumbLimit,
+              traceId: effectiveTraceId,
+              route: contextSnapshot.context.route?.name,
+            ),
           )
           .overrideWith(
             traceId: signal.traceId,
@@ -152,14 +161,18 @@ class EventPipeline {
   }
 
   void _recordBreadcrumb(EventEnvelope envelope) {
-    if (envelope.signalType == SignalType.sdk) return;
-    if (envelope.signalType == SignalType.breadcrumb ||
-        envelope.signalType == SignalType.error) {
+    if (!_shouldRecordBreadcrumb(envelope)) return;
+    {
       _breadcrumbStore.add(
         Breadcrumb(
           timestamp: envelope.timestamp,
           name: envelope.name,
           level: envelope.level ?? EventLevel.info,
+          eventId: envelope.eventId,
+          sessionId: envelope.sessionId,
+          traceId: envelope.traceId,
+          spanId: envelope.spanId,
+          route: envelope.context.route?.name,
           attributes: envelope.attributes,
           payload: _breadcrumbPayload(envelope),
         ),
@@ -167,10 +180,29 @@ class EventPipeline {
     }
   }
 
+  bool _shouldRecordBreadcrumb(EventEnvelope envelope) {
+    if (envelope.signalType == SignalType.sdk) return false;
+    if (envelope.signalType == SignalType.breadcrumb) return true;
+    if (envelope.signalType == SignalType.error) return true;
+    if (envelope.name == 'ui.jank.sequence') return true;
+    if (envelope.name == 'http.client' &&
+        envelope.status == EventStatus.error) {
+      return true;
+    }
+    return false;
+  }
+
   Map<String, Object?> _breadcrumbPayload(EventEnvelope envelope) {
     final payload = Map<String, Object?>.from(envelope.payload);
     payload.remove(FieldPaths.payloadBreadcrumbs);
+    payload.remove(FieldPaths.payloadErrorStacktrace);
 
+    if (envelope.name == 'http.client') {
+      return _compactHttpPayload(envelope, payload);
+    }
+    if (envelope.name == 'ui.jank.sequence') {
+      return _compactJankPayload(envelope, payload);
+    }
     if (envelope.signalType != SignalType.error) {
       return payload;
     }
@@ -182,6 +214,29 @@ class EventPipeline {
       if (payload[FieldPaths.payloadErrorLibrary] != null)
         FieldPaths.payloadErrorLibrary: payload[FieldPaths.payloadErrorLibrary],
       if (legacyData is Map) 'legacy.data': _compactErrorLegacyData(legacyData),
+    };
+  }
+
+  Map<String, Object?> _compactHttpPayload(
+    EventEnvelope envelope,
+    Map<String, Object?> payload,
+  ) {
+    return <String, Object?>{
+      if (payload['http.source'] != null) 'http.source': payload['http.source'],
+      if (payload['url'] != null) 'url': payload['url'],
+      if (envelope.durationMs != null) 'duration_ms': envelope.durationMs,
+    };
+  }
+
+  Map<String, Object?> _compactJankPayload(
+    EventEnvelope envelope,
+    Map<String, Object?> payload,
+  ) {
+    final legacyData = payload['legacy.data'];
+    final route = legacyData is Map ? legacyData['page'] : null;
+    return <String, Object?>{
+      if (route != null) 'route.name': route,
+      if (envelope.durationMs != null) 'duration_ms': envelope.durationMs,
     };
   }
 

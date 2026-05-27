@@ -89,6 +89,10 @@ abstract final class FieldPaths {
 
   static const pageFirstFrameMs = 'page.first_frame_ms';
   static const pageInteractiveMs = 'page.interactive_ms';
+  static const pageFrom = 'page.from';
+  static const pageTo = 'page.to';
+  static const pageInstanceId = 'page.instance_id';
+  static const pageLoadMs = 'page.load_ms';
 
   static const httpMethod = 'http.method';
   static const httpUrlNormalized = 'http.url.normalized';
@@ -144,6 +148,8 @@ abstract final class FieldPaths {
   static const payloadErrorStacktrace = 'payload.error.stacktrace';
   static const payloadErrorLibrary = 'payload.error.library';
   static const payloadBreadcrumbs = 'payload.breadcrumbs';
+  static const payloadTruncated = 'payload.truncated';
+  static const payloadTruncatedReason = 'payload.truncated.reason';
   static const payloadTrace = 'payload.trace';
   static const payloadNative = 'payload.native';
 

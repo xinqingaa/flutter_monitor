@@ -27,6 +27,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
         );
         onPageRoutePushed?.call(pageName); // 触发回调
         _reporter.recordPageView(pageName);
+        _schedulePageFirstFrameFallback(pageName);
       }
     }
   }
@@ -38,10 +39,8 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
       final pageName = route.settings.name!;
       if (pageName.isNotEmpty) {
         final previousPageName = previousRoute?.settings.name;
-        final pushTime = _pagePushTimes.remove(pageName);
-        if (pushTime != null) {
-          _reporter.finishPageLoad(pageName, nextRouteName: previousPageName);
-        }
+        _pagePushTimes.remove(pageName);
+        _reporter.finishPageLoad(pageName, nextRouteName: previousPageName);
         if (previousPageName != null && previousPageName.isNotEmpty) {
           _reporter.setCurrentRoute(previousPageName);
           _reporter.activatePageTrace(previousPageName);
@@ -56,12 +55,17 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
       debugPrint("警告: onPageRendered 收到空页面名称，跳过上报");
       return;
     }
-    final pushTime = _pagePushTimes[pageName];
-    if (pushTime != null) {
+    if (_reporter.hasActivePageTrace(pageName)) {
       _reporter.finishPageFirstFrame(pageName);
     } else {
       debugPrint("警告: 未找到页面 $pageName 的推送时间");
     }
+  }
+
+  void _schedulePageFirstFrameFallback(String pageName) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reporter.finishPageFirstFrame(pageName);
+    });
   }
 }
 
@@ -89,9 +93,8 @@ class MonitorDioInterceptor extends Interceptor {
       statusCode: response.statusCode,
       durationMs: duration.inMilliseconds,
       success: _isSuccessfulStatusCode(response.statusCode),
-      errorType: _isSuccessfulStatusCode(response.statusCode)
-          ? null
-          : 'http_status',
+      errorType:
+          _isSuccessfulStatusCode(response.statusCode) ? null : 'http_status',
       source: 'sdk.dio',
       startTime: startTime,
       endTime: endTime,

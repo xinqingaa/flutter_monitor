@@ -83,6 +83,7 @@ class Reporter {
           // 来源: device_info_plus
           'device': info.device,
           'model': info.model,
+          'manufacturer': info.manufacturer,
           'version': info.version.release,
           'isPhysicalDevice': info.isPhysicalDevice,
         };
@@ -92,6 +93,7 @@ class Reporter {
           // 来源: device_info_plus
           'name': info.name,
           'model': info.model,
+          'manufacturer': 'Apple',
           'systemVersion': info.systemVersion,
           'isPhysicalDevice': info.isPhysicalDevice,
         };
@@ -302,10 +304,15 @@ class Reporter {
     }
 
     final startedAt = startTime ?? DateTime.now();
+    final pageInstanceId = '${routeName}_${startedAt.microsecondsSinceEpoch}';
     setCurrentRoute(routeName);
     final traceId = startTrace(
-      'page.load',
+      'page.visit',
       startTime: startedAt,
+      attributes: <String, Object?>{
+        FieldPaths.pageInstanceId: pageInstanceId,
+        if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
+      },
       payload: <String, Object?>{
         'route.name': routeName,
         if (previousRouteName != null) 'route.previous': previousRouteName,
@@ -317,6 +324,23 @@ class Reporter {
       startTime: startedAt,
       endTime: startedAt,
       includeBreadcrumbs: false,
+      attributes: <String, Object?>{
+        FieldPaths.pageInstanceId: pageInstanceId,
+        if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
+      },
+      payload: <String, Object?>{
+        'route.name': routeName,
+        if (previousRouteName != null) 'route.previous': previousRouteName,
+      },
+    );
+    final loadSpanId = startSpan(
+      'page.load',
+      traceId: traceId,
+      startTime: startedAt,
+      attributes: <String, Object?>{
+        FieldPaths.pageInstanceId: pageInstanceId,
+        if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
+      },
       payload: <String, Object?>{
         'route.name': routeName,
         if (previousRouteName != null) 'route.previous': previousRouteName,
@@ -325,6 +349,8 @@ class Reporter {
     _pageTraces[routeName] = _PageTraceRecord(
       routeName: routeName,
       traceId: traceId,
+      loadSpanId: loadSpanId,
+      pageInstanceId: pageInstanceId,
       startedAt: startedAt,
       previousRouteName: previousRouteName,
     );
@@ -363,11 +389,17 @@ class Reporter {
       payload: <String, Object?>{'route.name': routeName},
     );
     if (!record.loadTraceFinished) {
-      endTrace(
-        record.traceId,
+      endSpan(
+        record.loadSpanId,
         endTime: finishedAt,
         includeBreadcrumbs: false,
-        attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
+        attributes: <String, Object?>{
+          FieldPaths.pageInstanceId: record.pageInstanceId,
+          FieldPaths.pageFirstFrameMs: durationMs,
+          FieldPaths.pageLoadMs: durationMs,
+          if (record.previousRouteName != null)
+            FieldPaths.pageFrom: record.previousRouteName,
+        },
         payload: <String, Object?>{'route.name': routeName},
       );
     }
@@ -378,6 +410,10 @@ class Reporter {
     _traceManager.setActiveTrace(traceId: record.traceId);
   }
 
+  bool hasActivePageTrace(String routeName) {
+    return _pageTraces.containsKey(routeName);
+  }
+
   void finishPageLoad(
     String routeName, {
     String? nextRouteName,
@@ -385,7 +421,10 @@ class Reporter {
   }) {
     final record = _pageTraces.remove(routeName);
     if (record == null) return;
-    _finishPageTrace(record, endTime: endTime ?? DateTime.now());
+    _finishPageTrace(
+      record.copyWith(nextRouteName: nextRouteName),
+      endTime: endTime ?? DateTime.now(),
+    );
   }
 
   PipelineResult recordHttpClient({
@@ -405,9 +444,11 @@ class Reporter {
     final startedAt =
         startTime ??
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
-    final effectiveErrorType = success
-        ? null
-        : errorType ?? (statusCode == null ? 'network_error' : 'http_status');
+    final effectiveErrorType =
+        success
+            ? null
+            : errorType ??
+                (statusCode == null ? 'network_error' : 'http_status');
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -457,6 +498,43 @@ class Reporter {
         includeBreadcrumbs: !success,
         attributes: finished.attributes,
         payload: finished.payload,
+      ),
+    );
+  }
+
+  PipelineResult recordJankSequence({
+    required int frameCount,
+    required num frameMaxMs,
+    required num frameAvgMs,
+    required num frameBudgetMs,
+    num? frameFps,
+    num? frameStability,
+    num? frameP50Ms,
+    num? frameP90Ms,
+    num? frameP99Ms,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.jank',
+        name: 'ui.jank.sequence',
+        signalType: SignalType.metric,
+        timestamp: DateTime.now(),
+        level: EventLevel.info,
+        status: EventStatus.ok,
+        breadcrumbLimit: 5,
+        attributes: <String, Object?>{
+          FieldPaths.jankCount: frameCount,
+          FieldPaths.frameMaxMs: frameMaxMs,
+          FieldPaths.frameAvgMs: frameAvgMs,
+          FieldPaths.frameBudgetMs: frameBudgetMs,
+          if (frameFps != null) FieldPaths.frameFps: frameFps,
+          if (frameStability != null) FieldPaths.frameStability: frameStability,
+          if (frameP50Ms != null) FieldPaths.frameP50Ms: frameP50Ms,
+          if (frameP90Ms != null) FieldPaths.frameP90Ms: frameP90Ms,
+          if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
+        },
+        payload: payload,
       ),
     );
   }
@@ -574,18 +652,19 @@ class Reporter {
     required bool startedNewSession,
     String? previousState,
   }) {
-    final traceId = _traceManager
-        .startTrace(
-          name: 'app.hot_start',
-          startTime: timestamp.subtract(duration),
-          attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
-          payload: <String, Object?>{
-            'session.started_new': startedNewSession,
-            if (previousState != null)
-              'lifecycle.previous_state': previousState,
-          },
-        )
-        .traceId;
+    final traceId =
+        _traceManager
+            .startTrace(
+              name: 'app.hot_start',
+              startTime: timestamp.subtract(duration),
+              attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
+              payload: <String, Object?>{
+                'session.started_new': startedNewSession,
+                if (previousState != null)
+                  'lifecycle.previous_state': previousState,
+              },
+            )
+            .traceId;
     endTrace(
       traceId,
       endTime: timestamp,
@@ -675,10 +754,18 @@ class Reporter {
     final finishedAt = endTime ?? DateTime.now();
     final stayMs = finishedAt.difference(record.startedAt).inMilliseconds;
     if (!record.loadTraceFinished) {
-      endTrace(
-        record.traceId,
+      endSpan(
+        record.loadSpanId,
         endTime: finishedAt,
-        status: status,
+        status: EventStatus.unknown,
+        includeBreadcrumbs: false,
+        attributes: <String, Object?>{
+          FieldPaths.pageInstanceId: record.pageInstanceId,
+          if (record.previousRouteName != null)
+            FieldPaths.pageFrom: record.previousRouteName,
+          if (record.nextRouteName != null)
+            FieldPaths.pageTo: record.nextRouteName,
+        },
         payload: <String, Object?>{
           'route.name': record.routeName,
           if (record.previousRouteName != null)
@@ -687,6 +774,25 @@ class Reporter {
         },
       );
     }
+    endTrace(
+      record.traceId,
+      endTime: finishedAt,
+      status: status,
+      includeBreadcrumbs: false,
+      attributes: <String, Object?>{
+        FieldPaths.pageInstanceId: record.pageInstanceId,
+        if (record.previousRouteName != null)
+          FieldPaths.pageFrom: record.previousRouteName,
+        if (record.nextRouteName != null)
+          FieldPaths.pageTo: record.nextRouteName,
+      },
+      payload: <String, Object?>{
+        'route.name': record.routeName,
+        if (record.previousRouteName != null)
+          'route.previous': record.previousRouteName,
+        ...payload,
+      },
+    );
     _pipeline.capture(
       RawSignal(
         source: 'sdk.page',
@@ -698,6 +804,13 @@ class Reporter {
         status: EventStatus.ok,
         traceId: record.traceId,
         includeBreadcrumbs: false,
+        attributes: <String, Object?>{
+          FieldPaths.pageInstanceId: record.pageInstanceId,
+          if (record.previousRouteName != null)
+            FieldPaths.pageFrom: record.previousRouteName,
+          if (record.nextRouteName != null)
+            FieldPaths.pageTo: record.nextRouteName,
+        },
         payload: <String, Object?>{
           'legacy.category': 'behavior',
           'legacy.data': <String, Object?>{
@@ -781,28 +894,38 @@ class _PageTraceRecord {
   const _PageTraceRecord({
     required this.routeName,
     required this.traceId,
+    required this.loadSpanId,
+    required this.pageInstanceId,
     required this.startedAt,
     this.previousRouteName,
+    this.nextRouteName,
     this.firstFrameReported = false,
     this.loadTraceFinished = false,
   });
 
   final String routeName;
   final String traceId;
+  final String loadSpanId;
+  final String pageInstanceId;
   final DateTime startedAt;
   final String? previousRouteName;
+  final String? nextRouteName;
   final bool firstFrameReported;
   final bool loadTraceFinished;
 
   _PageTraceRecord copyWith({
+    String? nextRouteName,
     bool? firstFrameReported,
     bool? loadTraceFinished,
   }) {
     return _PageTraceRecord(
       routeName: routeName,
       traceId: traceId,
+      loadSpanId: loadSpanId,
+      pageInstanceId: pageInstanceId,
       startedAt: startedAt,
       previousRouteName: previousRouteName,
+      nextRouteName: nextRouteName ?? this.nextRouteName,
       firstFrameReported: firstFrameReported ?? this.firstFrameReported,
       loadTraceFinished: loadTraceFinished ?? this.loadTraceFinished,
     );

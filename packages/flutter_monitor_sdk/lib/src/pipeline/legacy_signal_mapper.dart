@@ -29,6 +29,7 @@ class LegacySignalMapper {
       _ => 'manual',
     };
     final message = data['exception'] ?? data['error'] ?? data['message'];
+    final isManual = mechanism == 'manual';
 
     final legacyData = Map<String, Object?>.from(data);
     legacyData.remove('stack');
@@ -48,8 +49,10 @@ class LegacySignalMapper {
       attributes: <String, Object?>{
         FieldPaths.errorType: type ?? 'manual',
         FieldPaths.errorMechanism: mechanism,
-        FieldPaths.errorHandled: false,
-        FieldPaths.errorFatal: false,
+        FieldPaths.errorHandled: data['handled'] is bool
+            ? data['handled']
+            : isManual,
+        FieldPaths.errorFatal: data['fatal'] is bool ? data['fatal'] : false,
       },
       payload: <String, Object?>{
         if (message != null) FieldPaths.payloadErrorMessage: message.toString(),

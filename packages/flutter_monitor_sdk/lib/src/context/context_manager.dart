@@ -132,10 +132,13 @@ class ContextManager {
       device: DeviceResource(
         platform: _platform,
         model: _stringDeviceValue('model') ?? _stringDeviceValue('device'),
+        manufacturer: _stringDeviceValue('manufacturer'),
         osVersion:
             _stringDeviceValue('version') ??
             _stringDeviceValue('systemVersion'),
         isPhysicalDevice: _deviceInfo?['isPhysicalDevice'] as bool?,
+        refreshRate: _refreshRate,
+        deviceTier: _deviceTier,
       ),
       runtime: RuntimeResource(
         dartVersion: Platform.version.split(' ').first,
@@ -147,6 +150,23 @@ class ContextManager {
   String? _stringDeviceValue(String key) {
     final value = _deviceInfo?[key];
     return value?.toString();
+  }
+
+  double? get _refreshRate {
+    if (kIsWeb) return null;
+    final views = PlatformDispatcher.instance.views;
+    if (views.isEmpty) return null;
+    final refreshRate = views.first.display.refreshRate;
+    if (refreshRate <= 0) return null;
+    return refreshRate;
+  }
+
+  String get _deviceTier {
+    final refreshRate = _refreshRate;
+    if (refreshRate == null) return 'unknown';
+    if (refreshRate >= 120) return 'high';
+    if (refreshRate >= 90) return 'mid';
+    return 'unknown';
   }
 
   String get _platform => kIsWeb ? 'web' : Platform.operatingSystem;
