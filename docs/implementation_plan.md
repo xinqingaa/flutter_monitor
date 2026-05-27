@@ -254,25 +254,28 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - native 信号可关联 session/trace/context；无法关联时明确 missing reason。
 - 主 SDK 不因 native 能力增加强制平台配置。
 
-## Phase 5：DevTools 本地诊断
+## Phase 5：DevTools 桥接、Timeline 与会话导出
 
 目标：
 
-- 写入 Flutter Timeline。
-- 提供当前 session timeline。
-- 提供 trace detail、event detail、context snapshot、SDK health。
-- 支持本地 session export/import。
-- 展示 jank、memory 和 native signals。
+- 将 SDK trace/span 写入 Flutter Timeline。
+- 将启动、页面、HTTP、卡顿、错误、memory、native 和关键业务事件以 Timeline mark/instant/flow 形式接入官方 DevTools Performance。
+- 提供 SDK bridge，用于读取当前 session、event stream、SDK health 和导出数据。
+- 支持 session export/import。
+- 保持导出、bridge、HTTP 上报和 Workbench 消费的数据语义一致。
+- DevTools 集成只承担官方 DevTools runtime 调试入口的桥接，不重复建设完整 session timeline 工作台。
 
 验收：
 
 - 开发者能在 DevTools Performance 中看到关键 trace/span。
-- QA 能导出 session payload。
-- 开发者能基于导出内容查看事件顺序和详情。
-- 导出的 session payload 使用统一 event envelope。
+- Timeline 中的 SDK trace/span/mark 能回查到 `eventId`、`sessionId` 和 `traceId`。
+- QA 能导出 session payload，开发者能导入后基于统一 envelope 查看事件顺序和详情。
+- 导出的 session payload 使用统一 `EventEnvelope` 和 session export 格式。
 - 导出前已执行隐私过滤。
-- DevTools 展示的事件与 HTTP 上报事件语义一致。
-- native signals 在 DevTools 中只作为统一 envelope 展示，不单独建模。
+- SDK bridge 输出的事件与 HTTP 上报事件语义一致。
+- native、memory、jank、error 和 HTTP signals 在 DevTools 集成中只通过统一 envelope 和 Timeline 标记表达，不单独建模。
+- DevTools 集成不复制 Workbench 的完整 session timeline、trace detail、event detail 和 breadcrumb detail UI。
+- Workbench 可消费 Phase 5 export/bridge 数据，但两者不共享第二套协议。
 
 ## Phase 6：服务端协议与稳定性
 
