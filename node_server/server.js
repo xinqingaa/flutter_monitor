@@ -3,7 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 
 const app = express();
-const port = 3000;
+const port = Number.parseInt(process.env.PORT || '3000', 10);
 const maxEvents = 5000;
 const events = [];
 const eventsById = new Map();

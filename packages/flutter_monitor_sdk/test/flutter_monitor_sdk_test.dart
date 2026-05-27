@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
@@ -51,6 +53,26 @@ class _FakeHttpClient extends http.BaseClient {
   }
 }
 
+class _RecordingHttpClient extends http.BaseClient {
+  _RecordingHttpClient(this.handler);
+
+  final Future<http.Response> Function(http.BaseRequest request) handler;
+  final requests = <http.BaseRequest>[];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    requests.add(request);
+    final response = await handler(request);
+    return http.StreamedResponse(
+      Stream<List<int>>.value(response.bodyBytes),
+      response.statusCode,
+      headers: response.headers,
+      reasonPhrase: response.reasonPhrase,
+      request: request,
+    );
+  }
+}
+
 void main() {
   test('log output prints compact summaries for important events', () {
     final messages = <String>[];
@@ -93,7 +115,7 @@ void main() {
     expect(messages.single, contains('event=evt_http'));
   });
 
-  test('log output hides noisy successful events in compact mode', () {
+  test('log output prints every event in compact mode', () {
     final messages = <String>[];
     final previousDebugPrint = debugPrint;
     debugPrint = (String? message, {int? wrapWidth}) {
@@ -130,7 +152,107 @@ void main() {
       ).toJson().cast<String, dynamic>(),
     );
 
+    expect(messages, hasLength(2));
+    expect(messages[0], contains('name=route.push'));
+    expect(messages[1], contains('name=http.client'));
+    expect(messages[1], contains('code=200'));
+  });
+
+  test('log output hides noisy successful events in quiet mode', () {
+    final messages = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) messages.add(message);
+    };
+    addTearDown(() {
+      debugPrint = previousDebugPrint;
+    });
+
+    final output = LogMonitorOutput(mode: LogMonitorOutputMode.quiet);
+    output.add(
+      EventEnvelope(
+        eventId: 'evt_route',
+        timestamp: DateTime.parse('2026-05-26T15:46:00.522551'),
+        signalType: SignalType.span,
+        name: 'route.push',
+        status: EventStatus.ok,
+        attributes: const <String, Object?>{FieldPaths.eventPhase: 'end'},
+      ).toJson().cast<String, dynamic>(),
+    );
+    output.add(
+      EventEnvelope(
+        eventId: 'evt_http_ok',
+        timestamp: DateTime.parse('2026-05-26T15:46:00.522551'),
+        durationMs: 120,
+        signalType: SignalType.span,
+        name: 'http.client',
+        status: EventStatus.ok,
+        attributes: const <String, Object?>{
+          FieldPaths.eventPhase: 'end',
+          FieldPaths.httpStatusCode: 200,
+          FieldPaths.httpSuccess: true,
+        },
+      ).toJson().cast<String, dynamic>(),
+    );
+
     expect(messages, isEmpty);
+  });
+
+  test(
+    'http output cools down after failures to avoid repeated flushes',
+    () async {
+      final messages = <String>[];
+      final previousDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) messages.add(message);
+      };
+      addTearDown(() {
+        debugPrint = previousDebugPrint;
+      });
+
+      final client = _RecordingHttpClient((request) async {
+        return http.Response('down', 500);
+      });
+      final output = HttpOutput(
+        serverUrl: 'http://localhost:3000/api/monitor/v1/events',
+        client: client,
+        batchReportSize: 1,
+        failureCooldown: const Duration(minutes: 1),
+      );
+
+      output.add(<String, dynamic>{'eventId': 'evt_1'});
+      await output.flush();
+      output.add(<String, dynamic>{'eventId': 'evt_2'});
+      await output.flush();
+
+      expect(client.requests, hasLength(1));
+      expect(
+        messages.where((message) => message.startsWith('Failed to report')),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('http output allows one active flush at a time', () async {
+    final completer = Completer<http.Response>();
+    final client = _RecordingHttpClient((request) => completer.future);
+    final output = HttpOutput(
+      serverUrl: 'http://localhost:3000/api/monitor/v1/events',
+      client: client,
+      batchReportSize: 10,
+    );
+
+    output.add(<String, dynamic>{'eventId': 'evt_1'});
+    final firstFlush = output.flush();
+    final secondFlush = output.flush();
+
+    expect(client.requests, hasLength(1));
+
+    completer.complete(http.Response('ok', 202));
+    await firstFlush;
+    await secondFlush;
+
+    expect(client.requests, hasLength(1));
   });
 
   test('legacy reporter events are emitted as unified envelopes', () {

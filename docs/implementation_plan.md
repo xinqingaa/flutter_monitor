@@ -154,6 +154,7 @@ Phase 3 的完成标准不只是不丢信号，还包括“开发者能在不被
 - `EventEnvelope` 是机器事实源。
 - `EventSummary` 是从 `EventEnvelope` 派生的人类可读摘要。
 - `CompactLog` 是 `EventSummary` 的文本渲染。
+- compact 行中的 `kind` 是 core 从 `EventEnvelope.signalType`、`name` 和标准字段推导出的摘要分类，不是 `EventEnvelope` 标准协议字段，采集侧不需要上报或维护该字段。
 - compact log 字段不得反向成为第二套协议；SDK、node server、DevTools、CLI/MCP 后续都应复用 core 中的摘要规则。
 
 compact log 固定为 key-value 格式，字段顺序应尽量稳定：

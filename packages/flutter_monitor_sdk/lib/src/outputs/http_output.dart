@@ -31,6 +31,17 @@ class HttpOutput extends MonitorOutput {
   /// 默认为 `true`。
   final bool flushOnAppExit;
 
+  /// 上报失败后的冷却时间，避免服务不可达时持续刷屏。
+  final Duration failureCooldown;
+
+  /// 队列最大缓存事件数量，超过后丢弃最旧事件。
+  final int maxQueueSize;
+
+  /// HTTP 上报超时时间。
+  final Duration requestTimeout;
+
+  final http.Client _client;
+
   /// 内部事件队列，用于缓存待上报的监控事件。
   final List<Map<String, dynamic>> _eventQueue = [];
 
@@ -39,6 +50,10 @@ class HttpOutput extends MonitorOutput {
 
   /// App 生命周期监听器，用于在 App 状态变化时触发上报。
   AppLifecycleListener? _lifecycleListener;
+  Future<void>? _activeFlush;
+  DateTime? _cooldownUntil;
+  Object? _lastError;
+  var _suppressedFailureCount = 0;
 
   /// 创建一个 `HttpOutput` 实例。
   ///
@@ -50,7 +65,11 @@ class HttpOutput extends MonitorOutput {
     this.periodicReportDuration = const Duration(seconds: 20),
     this.batchReportSize = 10,
     this.flushOnAppExit = true,
-  });
+    this.failureCooldown = const Duration(seconds: 15),
+    this.maxQueueSize = 200,
+    this.requestTimeout = const Duration(seconds: 10),
+    http.Client? client,
+  }) : _client = client ?? http.Client();
 
   @override
   void init() {
@@ -71,6 +90,7 @@ class HttpOutput extends MonitorOutput {
   @override
   void add(Map<String, dynamic> event) {
     _eventQueue.add(event);
+    _trimQueue();
     // 当事件数量达到批量上报的阈值时，立即上报。
     if (_eventQueue.length >= batchReportSize) {
       flush();
@@ -79,6 +99,21 @@ class HttpOutput extends MonitorOutput {
 
   @override
   Future<void> flush({bool isAppExiting = false}) async {
+    if (_activeFlush != null) {
+      return _activeFlush;
+    }
+    if (!isAppExiting && _isCoolingDown) return;
+    if (_eventQueue.isEmpty) return;
+
+    _activeFlush = _flushNow(isAppExiting: isAppExiting);
+    try {
+      await _activeFlush;
+    } finally {
+      _activeFlush = null;
+    }
+  }
+
+  Future<void> _flushNow({required bool isAppExiting}) async {
     if (_eventQueue.isEmpty) return;
 
     // 复制队列内容，然后立即清空原队列，防止在上报期间有新事件进入导致数据错乱。
@@ -89,28 +124,71 @@ class HttpOutput extends MonitorOutput {
       final body = json.encode({'events': eventsToSend});
       final headers = {'Content-Type': 'application/json'};
 
-      final response = await http.post(
-        Uri.parse(serverUrl),
-        headers: headers,
-        body: body,
-      ).timeout(const Duration(seconds: 10)); // 增加超时时间以应对弱网
+      final response = await _client
+          .post(Uri.parse(serverUrl), headers: headers, body: body)
+          .timeout(requestTimeout);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        debugPrint("Reported ${eventsToSend.length} events successfully via HTTP.");
+        _clearFailureState();
       } else {
-        debugPrint('Failed to report events: ${response.statusCode} ${response.body}');
-        // MODIFIED: 只有在非 App 退出时，上报失败才将事件重新加回队列等待下次机会。
-        if (!isAppExiting) {
-          _eventQueue.addAll(eventsToSend);
-        }
+        _handleFailure(
+          'Failed to report events: ${response.statusCode} ${response.body}',
+          eventsToSend,
+          isAppExiting: isAppExiting,
+        );
       }
     } catch (e) {
-      debugPrint('Error reporting events: $e');
-      // MODIFIED: 同样，只有在非 App 退出时，发生异常才重试。
-      if (!isAppExiting) {
-        _eventQueue.addAll(eventsToSend);
-      }
+      _handleFailure(
+        'Error reporting events: $e',
+        eventsToSend,
+        isAppExiting: isAppExiting,
+      );
     }
+  }
+
+  bool get _isCoolingDown {
+    final until = _cooldownUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  void _handleFailure(
+    Object error,
+    List<Map<String, dynamic>> eventsToSend, {
+    required bool isAppExiting,
+  }) {
+    if (!isAppExiting) {
+      _eventQueue.insertAll(0, eventsToSend);
+      _trimQueue();
+    }
+
+    _cooldownUntil = DateTime.now().add(failureCooldown);
+    if (_lastError == error) {
+      _suppressedFailureCount++;
+      return;
+    }
+
+    final suffix = _suppressedFailureCount > 0
+        ? ' (suppressed $_suppressedFailureCount repeated failures)'
+        : '';
+    debugPrint('$error$suffix');
+    _lastError = error;
+    _suppressedFailureCount = 0;
+  }
+
+  void _clearFailureState() {
+    if (_suppressedFailureCount > 0) {
+      debugPrint(
+        'HTTP reporting recovered after $_suppressedFailureCount suppressed failures.',
+      );
+    }
+    _cooldownUntil = null;
+    _lastError = null;
+    _suppressedFailureCount = 0;
+  }
+
+  void _trimQueue() {
+    if (_eventQueue.length <= maxQueueSize) return;
+    _eventQueue.removeRange(0, _eventQueue.length - maxQueueSize);
   }
 
   @override
@@ -119,5 +197,6 @@ class HttpOutput extends MonitorOutput {
     _lifecycleListener?.dispose();
     // 确保在 dispose 时也尝试最后上报一次，以防队列中仍有未发送的事件。
     flush(isAppExiting: true);
+    _client.close();
   }
 }

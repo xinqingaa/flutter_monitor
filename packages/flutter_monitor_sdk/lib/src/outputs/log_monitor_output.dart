@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'monitor_output.dart';
 
-enum LogMonitorOutputMode { compact, json, silent }
+enum LogMonitorOutputMode { compact, quiet, json, silent }
 
 /// 一个将监控事件输出到开发控制台的 MonitorOutput 实现。
 class LogMonitorOutput extends MonitorOutput {
@@ -35,7 +35,10 @@ class LogMonitorOutput extends MonitorOutput {
 
       final envelope = EventEnvelope.fromJson(event.cast<String, Object?>());
       final summary = _formatter.summarizer.summarize(envelope);
-      if (!visibilityPolicy.shouldDisplay(summary)) return;
+      if (mode == LogMonitorOutputMode.quiet &&
+          !visibilityPolicy.shouldDisplay(summary)) {
+        return;
+      }
       debugPrint(_formatter.format(summary));
     } catch (e) {
       debugPrint('Error formatting event for logging: $e');
