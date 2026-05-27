@@ -77,7 +77,9 @@ SDK 应将关键 trace/span 写入 Flutter Timeline。
 - `app.first_frame`
 - `app.interactive`
 - `route.push` / `route.pop`
+- `page.visit`
 - `page.load`
+- `page.first_frame`
 - `http.client`
 - `custom.trace` / `custom.step`
 - `ui.jank.sequence`
@@ -106,9 +108,10 @@ DevTools 中展示的 `priority` 必须来自统一 event envelope，不应根�
 
 ```text
 12:00:00 app.cold_start
-12:00:01 route.enter /home
-12:00:03 ui.tap home_banner
+12:00:01 page.view /home
+12:00:03 ui.click home_banner
 12:00:03 http.client GET /campaign
+12:00:04 page.visit /product/detail
 12:00:04 page.load /product/detail
 12:00:05 ui.jank.sequence
 12:00:05 memory.sample

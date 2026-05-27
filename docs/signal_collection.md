@@ -190,20 +190,20 @@ Native 增强来源：
 
 ### 生成事件
 
-- `breadcrumb route.enter`
-- `breadcrumb route.leave`
-- `trace page.load`
+- `trace page.visit`
 - `span route.push`
+- `span page.load`
 - `span page.first_frame`
 - `span page.interactive`
 - `metric page.stay`
+- `breadcrumb page.view`
 
 ### 链路关联
 
-- route enter 创建或更新当前 route context。
-- page load trace 作为页面打开流程。
+- route push 创建或更新当前 route context。
+- page visit trace 作为页面活动窗口，page load span 作为页面加载阶段。
 - 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。
-- route leave/page stay 应结束页面 activity window。
+- route pop/replace/page stay 应结束页面 activity window。
 
 ### 字段映射
 
@@ -213,6 +213,10 @@ Native 增强来源：
 - `context.route.source`
 - `context.module.name`
 - `context.module.scene`
+- `page.instance_id`
+- `page.from`
+- `page.to`
+- `page.load_ms`
 - `page.first_frame_ms`
 - `page.interactive_ms`
 
@@ -352,7 +356,7 @@ Native 增强来源：
 
 ### 生成事件
 
-- `breadcrumb ui.tap`
+- `breadcrumb ui.click`
 - `breadcrumb ui.scroll`
 - `breadcrumb business.action`
 - `trace action.*`，仅关键业务动作。
@@ -363,6 +367,7 @@ Native 增强来源：
 - 关键行为可创建 action trace。
 - 行为应关联当前 `context.route.*` / `context.module.*` / `context.module.scene`。
 - 后续 HTTP、jank、error 可关联 action trace 或使用 breadcrumb 还原上下文。
+- 普通 breadcrumb 的 payload 不应自动继承 `legacy.userProperties` 或 `legacy.customData`；用户和业务上下文应保留在 `context` 或显式业务字段中。
 
 ### 字段映射
 
@@ -404,7 +409,7 @@ Native 增强来源：
 ### 链路关联
 
 - 卡顿应关联当前 `sessionId`、`context.route.*` / `context.module.*`、active page trace 或 action trace。
-- 卡顿事件应携带最近 breadcrumbs。
+- 卡顿事件应携带裁剪后的相关 breadcrumbs，优先选择同 trace / 同 route 足迹。
 - 卡顿前后的 HTTP、memory、native signals 可用于定位原因。
 
 ### 字段映射

@@ -140,15 +140,15 @@ SDK 的价值不只是上报某个指标变差。它的价值是帮助开发者�
 ```text
 session_abc
   app.cold_start
-  route.enter /home
-  action.tap home_banner
+  page.view /home
+  ui.click home_banner
   http.client GET /campaign
-  route.enter /product/detail
+  page.visit /product/detail
   page.load /product/detail
   http.client GET /product/{id}
   ui.jank.sequence /product/detail
   error NoSuchMethodError
-  route.leave /product/detail
+  page.stay /product/detail
 ```
 
 这段示例只说明迁移后的诊断体验。规范字段、事件 envelope 和信号映射以 `docs/event_model.md` 为准。

@@ -123,10 +123,10 @@ flowchart TD
 
 - error 接入 event envelope。
 - click/PV/page stay 接入 breadcrumb 或 metric。
-- route/page load 接入 trace/span。
+- route/page visit/page load 接入 trace/span，其中 `page.visit` 是页面 trace，`page.load` 是页面加载 span。
 - cold start、hot start 接入 trace/span。
 - Dio 和 `http` 请求接入 `http.client` span。
-- jank 接入当前 page trace 和 breadcrumbs。
+- jank 接入当前 page trace 和裁剪后的相关 breadcrumbs。
 - 最小 lifecycle 事件参与 session 切分、hot start 和 exit flush。
 - 控制台默认输出 compact 摘要，而不是完整 JSON。
 - 完整 JSON 仍由 pipeline 保留，并可通过 node server、file ring buffer 或 session export 获取。
@@ -144,6 +144,15 @@ flowchart TD
 7. compact log / `EventSummary`；
 8. node server 本地完整 JSON 查询；
 9. file ring buffer 或 session export。
+
+Phase 3 当前页面事件语义：
+
+- `trace page.visit`：页面活动窗口，进入时 start，离开时 end。
+- `span route.push`：路由切换阶段。
+- `span page.load`：页面加载阶段，应在首帧或 fallback 首帧时结束。
+- `span page.first_frame`：页面首帧阶段。
+- `metric page.stay`：页面停留时长，使用 envelope `durationMs`。
+- `breadcrumb page.view`：页面访问足迹。
 
 ### 输出体验与完整 JSON 获取
 
@@ -185,7 +194,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 
 ```text
 [FM] kind=startup name=app.cold_start status=ok phase=end start_type=cold duration_ms=428 first_frame_ms=428 route=/ session=ses_1779781544808117_0 trace=trace_1779781544987939_0 event=evt_1779781545000000_8
-[FM] kind=page name=page.load status=ok phase=end route=/detail from=/ duration_ms=21 session=ses_1779781544808117_0 trace=trace_1779781544987939_9 event=evt_1779781545000000_22
+[FM] kind=page name=page.load status=ok phase=end route=/detail from=/ duration_ms=21 session=ses_1779781544808117_0 trace=trace_1779781544987939_9 span=span_1779781545000000_10 event=evt_1779781545000000_22
 [FM] kind=http name=http.client status=error phase=end method=GET url=/users/flutter code=403 success=false duration_ms=612 route=/ breadcrumbs=1 session=ses_1779781544808117_0 trace=trace_1779781544987939_2 span=span_1779781545000000_12 event=evt_1779781545000000_19
 [FM] kind=jank name=ui.jank.sequence status=ok phase=instant route=/ frames=13 frame_max_ms=71.4 frame_avg_ms=51.0 fps=40.7 session=ses_1779781544808117_0 trace=trace_1779781544987939_2 event=evt_1779781545000000_17
 [FM] kind=error name=error.flutter status=error phase=instant mechanism=flutter message="NoSuchMethodError: The method 'hello' was called on null." route=/ breadcrumbs=3 session=ses_1779781544808117_0 trace=trace_1779781544987939_2 event=evt_1779781545000000_20
@@ -210,14 +219,16 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 上报结构符合 `docs/event_model.md`。
 - 示例 App 能展示一条完整 session timeline。
 - 启动、热启动、页面加载、API、点击、PV、页面停留、卡顿、错误、最小 lifecycle 均可在 session 中看到。
+- 根路由和后续 route 的 `page.load` / `page.first_frame` 都能闭合；未拿到首帧时不得把页面停留时长伪装为成功加载耗时。
 - 慢页面能关联页面 trace、相关 API 和最近 breadcrumbs。
-- 卡顿能关联当前 `context.route.*` / `context.module.*`、最近行为和 `resource.device.*`。
+- 卡顿能关联当前 `context.route.*` / `context.module.*`、当前 page trace、最近相关 breadcrumbs 和 `resource.device.*`。
 - 错误能关联当前 `context.route.*` / `context.module.*`、active `traceId` / `spanId` 和最近 breadcrumbs。
 - 控制台默认不刷完整 JSON。
 - compact 行能看出启动耗时、页面耗时、HTTP 耗时和状态码、卡顿指标、错误摘要。
 - compact 行中的 `event`、`session`、`trace` 能查回完整 JSON。
 - node server 能按 `eventId`、`sessionId`、`traceId` 查询完整 envelope。
 - 成功 HTTP、普通 breadcrumb、`route.push` 不应在默认控制台模式刷屏。
+- 普通 breadcrumb payload 不应自动携带 `legacy.userProperties` / `legacy.customData`；HTTP/error/jank breadcrumb 快照不得递归携带 breadcrumbs 或长 stacktrace。
 - 完整 JSON 仍符合 `docs/event_model.md`。
 - core 中的摘要规则可被 SDK、node server、未来 CLI/DevTools 复用。
 - compact 摘要不形成第二套事件模型或服务端协议。

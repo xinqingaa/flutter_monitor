@@ -255,6 +255,10 @@ flowchart TB
 | `native.start.elapsed_ms` | duration_ms | safe | 是 | native 启动起点到 Flutter 可观测点耗时 |
 | `page.first_frame_ms` | duration_ms | safe | 是 | 页面首帧耗时 |
 | `page.interactive_ms` | duration_ms | safe | 是 | 页面可交互耗时 |
+| `page.from` | string | queryable | 是 | 页面来源 route |
+| `page.to` | string | queryable | 是 | 页面离开后进入的 route |
+| `page.instance_id` | string | queryable | 是 | 单次页面实例 ID，用于区分同 route 多次进入 |
+| `page.load_ms` | duration_ms | safe | 是 | 页面加载耗时，通常等于首次可渲染帧耗时 |
 | `http.method` | string | safe | 是 | GET/POST 等 |
 | `http.url.normalized` | string | queryable | 是 | 归一化 URL，不含 query |
 | `http.status_code` | number | safe | 是 | HTTP 状态码 |
@@ -307,6 +311,8 @@ flowchart TB
 | `payload.error.stacktrace` | string | sensitive | 错误堆栈 |
 | `payload.error.library` | string | queryable | framework/library 上下文 |
 | `payload.breadcrumbs` | array | mixed | recent breadcrumbs 快照 |
+| `payload.truncated` | boolean | safe | payload 是否被裁剪 |
+| `payload.truncated.reason` | string | safe | payload 被裁剪的原因 |
 | `payload.trace` | object | mixed | active trace/span 诊断快照 |
 | `payload.native` | object | mixed | 脱敏后的 native crash/ANR/OOM 详情 |
 
@@ -328,7 +334,7 @@ flowchart TB
 flowchart TD
   Session["用户会话<br/>Session"]
   StartTrace["启动链路<br/>Trace: app.cold_start"]
-  PageTrace["页面链路<br/>Trace: page.load"]
+  PageTrace["页面链路<br/>Trace: page.visit"]
   ActionTrace["业务操作链路<br/>Trace: action.* / custom.trace"]
   InitSpan["启动阶段<br/>Span: sdk.init"]
   FirstFrame["首帧阶段<br/>Span: app.first_frame"]
@@ -336,8 +342,8 @@ flowchart TD
   HttpSpan["网络请求<br/>Span: http.client"]
   CustomSpan["业务步骤<br/>Span: custom.step"]
   Breadcrumbs["上下文足迹<br/>Breadcrumbs"]
-  RouteBc["页面进入<br/>route.enter"]
-  TapBc["用户点击<br/>ui.tap"]
+  PageViewBc["页面访问<br/>page.view"]
+  ClickBc["用户点击<br/>ui.click"]
   JankBc["卡顿线索<br/>ui.jank.sequence"]
   ErrorEvent["错误事件<br/>error.dart / error.flutter"]
 
@@ -350,8 +356,8 @@ flowchart TD
   PageTrace --> HttpSpan
   ActionTrace --> CustomSpan
   Session --> Breadcrumbs
-  Breadcrumbs --> RouteBc
-  Breadcrumbs --> TapBc
+  Breadcrumbs --> PageViewBc
+  Breadcrumbs --> ClickBc
   Breadcrumbs --> JankBc
   Breadcrumbs --> ErrorEvent
   ErrorEvent -.->|"携带最近 breadcrumbs"| Breadcrumbs
@@ -414,8 +420,8 @@ Span 必须能通过 `traceId` 关联所属 trace。除 root span 外，span 应
 
 典型 breadcrumb：
 
-- route enter/leave
-- tap
+- page view
+- click / tap
 - scroll
 - dialog show/dismiss
 - http request start/end
@@ -428,7 +434,24 @@ Span 必须能通过 `traceId` 关联所属 trace。除 root span 外，span 应
 
 Breadcrumb 可以独立作为 `signalType = breadcrumb` 事件进入 session timeline，也可以作为错误、卡顿、慢 trace、native crash/OOM/ANR 的相关上下文快照进入 `payload.breadcrumbs`。
 
-Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
+Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹，但附加到事件 payload 时应按事件类型裁剪：错误默认最多 8 条，卡顿默认最多 5 条，失败 HTTP 默认最多 3 条。快照应优先选择同 `traceId` / 同 `route` 的 breadcrumb，再用最近全局关键 breadcrumb 补足。
+
+`payload.breadcrumbs` 中的单条 breadcrumb 使用以下结构：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `timestamp` | string | breadcrumb 发生时间 |
+| `name` | string | 稳定事件名，例如 `page.view`、`ui.click`、`http.client` |
+| `level` | string | `debug`、`info`、`warning`、`error`、`fatal` |
+| `eventId` | string | 原始事件 ID，可用于回查完整 envelope |
+| `sessionId` | string | 原始事件所属 session |
+| `traceId` | string | 原始事件所属 trace |
+| `spanId` | string | 原始事件 span，可为空 |
+| `route` | string | 原始事件发生时的 route |
+| `attributes` | object | 精简后的关键 attributes |
+| `payload` | object | 精简后的 payload |
+
+为避免递归和 payload 过载，breadcrumb 快照中的 `payload` 不应携带嵌套 `payload.breadcrumbs` 或 `payload.error.stacktrace`。失败 HTTP 进入 breadcrumb 时只保留 source、url、duration 等精简信息；普通 breadcrumb 不应自动继承 `legacy.userProperties` 或 `legacy.customData`。
 
 ## Resource
 
@@ -591,12 +614,15 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 - `app.hot_start`
 - `app.first_frame`
 - `app.interactive`
+- `page.visit`
 - `page.load`
+- `page.first_frame`
 - `page.stay`
-- `route.enter`
-- `route.leave`
+- `page.view`
+- `route.push`
 - `http.client`
-- `ui.tap`
+- `ui.click`
+- `ui.scroll`
 - `ui.jank.sequence`
 - `memory.sample`
 - `memory.growth`
@@ -646,13 +672,13 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 推荐事件：
 
-- `trace page.load`
+- `trace page.visit`
 - `span route.push`
+- `span page.load`
 - `span page.first_frame`
 - `span page.interactive`
 - `metric page.stay`
-- `breadcrumb route.enter`
-- `breadcrumb route.leave`
+- `breadcrumb page.view`
 
 推荐字段：
 
@@ -662,10 +688,15 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 | `context.route.source` | 来源 route |
 | `context.module.name` | 业务模块 |
 | `context.module.scene` | 业务场景 |
+| `page.instance_id` | 单次页面实例 ID |
+| `page.from` | 来源 route |
+| `page.to` | 离开后进入的 route |
+| `page.load_ms` | 页面加载耗时 |
 | `page.first_frame_ms` | 页面首帧 |
 | `page.interactive_ms` | 页面可交互 |
 
 页面停留时长使用 `metric page.stay` 事件的 envelope 公共字段 `durationMs`，不要再写入 `attributes`。
+`page.load` 是页面 trace 内的 span，不应再作为页面整体 trace 使用；页面整体生命周期使用 `page.visit` trace 表达。
 
 ### 网络
 
@@ -693,7 +724,7 @@ Breadcrumb 数量应有限制，建议以环形缓冲保存最近 50 条。
 
 推荐事件：
 
-- `breadcrumb ui.tap`
+- `breadcrumb ui.click`
 - `breadcrumb ui.scroll`
 - `breadcrumb business.action`
 - `trace action.submit_order`
@@ -913,31 +944,48 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
     },
     {
       "schemaVersion": "1.0",
-      "eventId": "evt_route_home",
+      "eventId": "evt_page_visit_home",
       "timestamp": "2026-05-24T12:00:01.250+08:00",
-      "signalType": "breadcrumb",
-      "name": "route.enter",
+      "signalType": "trace",
+      "name": "page.visit",
       "level": "info",
-      "status": "ok",
+      "status": "unknown",
       "priority": "normal",
       "sessionId": "ses_001",
-      "traceId": null,
+      "traceId": "trace_page_home",
       "spanId": null,
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/home", "stack": ["/home"]}, "module": {"name": "home", "scene": "home"}},
-      "attributes": {},
+      "attributes": {"event.phase": "start", "page.instance_id": "/home_001"},
       "payload": {}
     },
     {
       "schemaVersion": "1.0",
-      "eventId": "evt_page_trace",
-      "timestamp": "2026-05-24T12:00:02.000+08:00",
-      "durationMs": 860,
-      "signalType": "trace",
-      "name": "page.load",
+      "eventId": "evt_page_view_home",
+      "timestamp": "2026-05-24T12:00:01.260+08:00",
+      "signalType": "breadcrumb",
+      "name": "page.view",
       "level": "info",
       "status": "ok",
+      "priority": "normal",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_home",
+      "spanId": null,
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/home", "stack": ["/home"]}, "module": {"name": "home", "scene": "home"}},
+      "attributes": {"event.phase": "instant"},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_page_visit_product",
+      "timestamp": "2026-05-24T12:00:02.000+08:00",
+      "signalType": "trace",
+      "name": "page.visit",
+      "level": "info",
+      "status": "unknown",
       "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
@@ -945,7 +993,28 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail", "stack": ["/home", "/product/detail"], "source": "/home"}, "module": {"name": "product", "scene": "detail"}},
-      "attributes": {"page.first_frame_ms": 260, "page.interactive_ms": 860},
+      "attributes": {"event.phase": "start", "page.instance_id": "/product/detail_001", "page.from": "/home"},
+      "payload": {}
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "evt_page_load_product",
+      "timestamp": "2026-05-24T12:00:02.260+08:00",
+      "startTime": "2026-05-24T12:00:02.000+08:00",
+      "endTime": "2026-05-24T12:00:02.260+08:00",
+      "durationMs": 260,
+      "signalType": "span",
+      "name": "page.load",
+      "level": "info",
+      "status": "ok",
+      "priority": "normal",
+      "sessionId": "ses_001",
+      "traceId": "trace_page_product",
+      "spanId": "span_page_load_product",
+      "parentSpanId": null,
+      "resource": {},
+      "context": {"route": {"name": "/product/detail", "stack": ["/home", "/product/detail"], "source": "/home"}, "module": {"name": "product", "scene": "detail"}},
+      "attributes": {"event.phase": "end", "page.instance_id": "/product/detail_001", "page.from": "/home", "page.load_ms": 260, "page.first_frame_ms": 260},
       "payload": {}
     },
     {
@@ -961,7 +1030,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": "span_http_product",
-      "parentSpanId": "span_page_load",
+      "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
       "attributes": {"http.method": "GET", "http.url.normalized": "/api/product/{id}", "http.status_code": 200, "http.success": true, "response.size_bytes": 23000},
@@ -972,7 +1041,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "eventId": "evt_tap_buy",
       "timestamp": "2026-05-24T12:00:04.000+08:00",
       "signalType": "breadcrumb",
-      "name": "ui.tap",
+      "name": "ui.click",
       "level": "info",
       "status": "ok",
       "priority": "normal",
@@ -982,7 +1051,7 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
-      "attributes": {"ui.target": "buy_now_button", "ui.action": "tap"},
+      "attributes": {"event.phase": "instant", "ui.target": "buy_now_button", "ui.action": "click"},
       "payload": {}
     },
     {
@@ -1039,15 +1108,13 @@ Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一�
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
       "attributes": {"error.type": "NoSuchMethodError", "error.mechanism": "dart", "error.handled": false, "error.fatal": false},
       "payload": {
-        "error": {
-          "message": "NoSuchMethodError: method was called on null",
-          "stacktrace": "...",
-          "library": "app.feature"
-        },
-        "breadcrumbs": [
-          {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "attributes": {"http.url.normalized": "/api/product/{id}", "http.status_code": 200}},
-          {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "ui.tap", "attributes": {"ui.target": "buy_now_button"}},
-          {"timestamp": "2026-05-24T12:00:04.500+08:00", "name": "ui.jank.sequence", "attributes": {"jank.count": 5}}
+        "payload.error.message": "NoSuchMethodError: method was called on null",
+        "payload.error.stacktrace": "...",
+        "payload.error.library": "app.feature",
+        "payload.breadcrumbs": [
+          {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "level": "info", "eventId": "evt_http_product", "sessionId": "ses_001", "traceId": "trace_page_product", "spanId": "span_http_product", "route": "/product/detail", "attributes": {"http.url.normalized": "/api/product/{id}", "http.status_code": 200}, "payload": {"duration_ms": 520}},
+          {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "ui.click", "level": "info", "eventId": "evt_tap_buy", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"ui.target": "buy_now_button", "ui.action": "click"}, "payload": {}},
+          {"timestamp": "2026-05-24T12:00:04.500+08:00", "name": "ui.jank.sequence", "level": "warning", "eventId": "evt_jank", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"jank.count": 5}, "payload": {}}
         ]
       }
     }

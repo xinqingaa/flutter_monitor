@@ -304,6 +304,7 @@ SDK 应支持：
 - URL normalize；
 - request/response body 默认不上报；
 - payload 大小限制；
+- payload 裁剪标记应使用 `payload.truncated` 和 `payload.truncated.reason`；
 - 用户标识匿名化；
 - 环境隔离；
 - native crash payload 脱敏。
@@ -322,6 +323,7 @@ Native 信号必须通过统一 envelope 上报。
 - native plugin 不得绕过 `flutter_monitor_sdk` pipeline 使用独立 HTTP 协议。
 - 如果异常发生时无法拿到完整 context，应提供 `context.missing = true` 和 `context.missingReason`。
 - native 信号应保留 `sessionId`、`traceId` 和 breadcrumbs；无法保留时必须说明原因。
+- `payload.breadcrumbs` 中的 breadcrumb item 可以携带 `eventId`、`sessionId`、`traceId`、`spanId` 和 `route`，服务端可用这些 ID 回查完整 envelope，但不应依赖 breadcrumb payload 中的长错误文本、堆栈或嵌套 breadcrumbs。
 
 ## Remote Config 预留
 

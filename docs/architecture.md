@@ -262,7 +262,7 @@ flowchart TD
 - NativeBridge 只负责把 native signal 转换为 SDK 可理解的 raw signal。
 - NativeBridge 不构建最终 event envelope；最终 envelope 由 SDK pipeline 或下次启动的补全流程统一构建。
 - ContextSnapshot 固化事件发生时的 `context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*`、`context.network.*`、`context.release.*` 和 `context.release.featureFlags`。
-- TraceSnapshot 固化事件发生时的 session、trace、span 和 breadcrumbs。
+- TraceSnapshot 固化事件发生时的 session、trace、span 和裁剪后的相关 breadcrumbs。
 - EnvelopeBuilder 是唯一 event envelope 构建入口。
 - PrivacyFilter 必须早于任何 output。
 - Outputs 只能消费脱敏后的 event envelope。
@@ -363,9 +363,10 @@ SessionExport
 要求：
 
 - session 是绝大多数业务事件的最小归属单位。
-- cold start、hot start、page load、关键 action、自定义业务流程应优先建模为 trace。
-- route push、first frame、interactive、http request、image decode、list build、custom step 应建模为 span。
-- breadcrumbs 使用环形缓冲，错误、卡顿、慢 trace 和 native 异常应携带相关窗口内 breadcrumbs。
+- cold start、hot start、page visit、关键 action、自定义业务流程应优先建模为 trace。
+- route push、page load、first frame、interactive、http request、image decode、list build、custom step 应建模为 span。
+- breadcrumbs 使用环形缓冲；错误、卡顿、失败 HTTP、慢 trace 和 native 异常应携带相关窗口内 breadcrumbs。
+- 事件附加的 breadcrumb 快照应优先选择同 `traceId` / 同 `route` 足迹，再补最近全局关键足迹，并移除嵌套 breadcrumbs、长 stacktrace 等高风险 payload。
 
 ## 采集层
 
