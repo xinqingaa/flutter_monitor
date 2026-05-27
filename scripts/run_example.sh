@@ -66,6 +66,22 @@ local_server_ready() {
   curl -fsS "http://127.0.0.1:$SERVER_PORT/api/monitor/v1/recent?limit=1" >/dev/null 2>&1
 }
 
+node_server_dependencies_ready() {
+  (
+    cd "$SERVER_DIR"
+    node -e "require.resolve('express'); require.resolve('body-parser'); require.resolve('cors')" >/dev/null 2>&1
+  )
+}
+
+ensure_node_server_dependencies() {
+  if node_server_dependencies_ready; then
+    return
+  fi
+
+  echo "Installing Flutter Monitor local server dependencies..."
+  bash "$ROOT_DIR/scripts/node_server.sh" install
+}
+
 ensure_local_server() {
   if local_server_ready; then
     echo "Flutter Monitor local server is already running on port $SERVER_PORT."
@@ -79,6 +95,8 @@ ensure_local_server() {
     echo "Node.js was not found. Cannot start node_server." >&2
     exit 1
   fi
+
+  ensure_node_server_dependencies
 
   echo "Starting Flutter Monitor local server on port $SERVER_PORT..."
   (
@@ -104,6 +122,10 @@ ensure_local_server() {
 MONITOR_SERVER_URL=""
 TEST_API_BASE_URL=""
 FLUTTER_ARGS=()
+
+if [ "$#" -eq 0 ]; then
+  set -- --local-server
+fi
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -148,4 +170,8 @@ if [ -n "$TEST_API_BASE_URL" ]; then
 fi
 
 cd "$EXAMPLE_DIR"
-fvm flutter run "${FLUTTER_ARGS[@]}"
+if [ "${#FLUTTER_ARGS[@]}" -gt 0 ]; then
+  fvm flutter run "${FLUTTER_ARGS[@]}"
+else
+  fvm flutter run
+fi
