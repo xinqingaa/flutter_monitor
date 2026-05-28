@@ -546,12 +546,22 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 
 ## Native 信号采集
 
+Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依赖。完成启动、页面、HTTP、错误、卡顿、行为和基础 lifecycle 后，Flutter 层仍存在一些天然盲区：
+
+- Flutter/Dart 层难以稳定获得进程 RSS、native heap、graphics memory 或 VM 之外的内存。
+- Android/iOS low memory warning 和 memory pressure 往往发生在 native 层，Flutter 层可能只能看到后续卡顿、错误或进程退出。
+- OOM、ANR 和 native crash 不属于 Dart/Flutter error collector 的稳定捕获范围。
+- 一些生命周期线索发生在 Flutter engine 可观测点之前或之外。
+- 仅靠 Flutter 层 raw JSON 难以解释“为什么某次卡顿、页面慢或崩溃前设备处于内存压力状态”。
+
+`flutter_monitor_native` 的价值是补充这些线索，并把它们放回同一条 session timeline。native signal 只有进入 SDK pipeline 并补齐统一 context 后，才算完成采集；native 包自身不形成独立监控链路。
+
 ### 采集来源
 
 - `flutter_monitor_native` plugin。
 - Android platform callbacks。
 - iOS platform callbacks。
-- MethodChannel / EventChannel / Pigeon 等 bridge 技术，具体实现后续决定。
+- MethodChannel / EventChannel / Pigeon 等 bridge 技术。第一阶段优先使用 MethodChannel 请求 snapshot，使用 EventChannel 接收异步 native signal。
 
 ### 触发时机
 
@@ -598,6 +608,21 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - 原始 crash dump 默认不上报。
 - 异常生命周期中无法保证完整 envelope，可先持久化 native raw signal，再由下次启动补全和上报。
 - native plugin 是可选增强，不应增加主 SDK 基础接入成本。
+- 未接入 `flutter_monitor_native` 时，SDK 应继续保留 Flutter-only 能力，并将 `context.native.available` 设为 `false` 或在需要时标记 `context.missingReason = native_bridge_unavailable`。
+- 用户忘记添加 native 包、没有注册 bridge、平台未实现、channel 注册失败、Web/desktop 不支持 native 能力等情况，都应走同一降级路径。
+- 如果 bridge 显式启用但不可用，应产生 SDK self-monitoring 事件，不能让业务 App 因 native 监控缺失而崩溃。
+- native memory、pressure、OOM、ANR 和 crash 线索可能不完整。事件必须表达证据来源和 missing reason，不能暗示 SDK 已经拿到完整原始 dump 或确定性根因。
+
+#### 常见场景有这些：
+
+- App 只想做 Flutter 层监控，不想引入 native plugin。
+- Web/desktop 项目没有 Android/iOS native 能力。
+- 企业项目暂时不允许新增 native 依赖。
+- 用户忘了在 pubspec.yaml 加 flutter_monitor_native。
+- 用户加了包，但没有在 FlutterMonitorSDK.init 里注册 bridge。
+- 插件在某个平台没实现，比如只实现 Android，iOS 返回 no-op。
+- native channel 注册失败或运行时不可用。
+- OOM/crash 发生得太早，native 也只能下次启动补交线索。
 
 ## 业务主动埋点采集
 

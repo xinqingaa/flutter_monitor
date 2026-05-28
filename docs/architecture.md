@@ -475,6 +475,15 @@ DevTools bridge 由 `flutter_monitor_sdk` 提供本地数据源，并优先接�
 
 Native bridge 是 `flutter_monitor_sdk` 与 `flutter_monitor_native` 的连接边界。
 
+`flutter_monitor_native` 是可选增强包，不是第二个监控 SDK。它的职责是通过 Flutter plugin 能力把 Android/iOS 原生信号送到主 SDK；最终事件模型、字段注册、隐私过滤、session/trace 关联、采样、输出和上报仍由 `flutter_monitor_core` 与 `flutter_monitor_sdk` 负责。
+
+完整 native 能力需要 `flutter_monitor_native` 提供 Flutter 与原生平台之间的通信层。第一阶段建议使用：
+
+- `MethodChannel`：SDK 主动请求 native resource snapshot、memory snapshot 或 flush。
+- `EventChannel`：native 主动推送 low memory warning、native lifecycle、OOM/ANR/crash 线索等异步信号。
+
+后续如果 native payload 和类型契约变复杂，可迁移到 Pigeon，但不得因此改变最终 `EventEnvelope` 或服务端协议。
+
 建议形态：
 
 ```dart
@@ -495,6 +504,47 @@ abstract interface class MonitorNativeBridge {
 - `flutter_monitor_native` 只实现 bridge 并提供 native raw signal，不构建最终 envelope，不定义独立上报协议。
 - native signal 进入 SDK pipeline 后再构建 envelope。
 - native 异常生命周期下无法完整进入 pipeline 时，应先持久化 native raw signal 或可补全 payload，并在下次启动后由 SDK pipeline 补全为统一 envelope。
+
+推荐数据流：
+
+```text
+Android / iOS native callbacks
+  -> MethodChannel / EventChannel
+  -> flutter_monitor_native Dart bridge
+  -> MonitorNativeBridge
+  -> flutter_monitor_sdk native signal mapper
+  -> RawSignal
+  -> EventPipeline
+  -> EventEnvelope
+  -> Outputs
+```
+
+`flutter_monitor_native` 应主要包含：
+
+- Dart bridge 实现，例如 `FlutterMonitorNativeBridge`。
+- native signal DTO 和 mapper，字段必须映射到 core 中的 canonical fields。
+- Android/iOS memory collector，例如 RSS、native heap 或平台可获得的内存线索。
+- Android/iOS memory pressure / low memory warning listener。
+- Android/iOS native lifecycle 补充信号。
+- OOM、ANR、native crash 的 schema 入口、bridge 入口和异常生命周期下的 raw signal 暂存能力。
+- no-op/fake bridge，保证没有平台实现时也能测试 SDK 降级路径。
+
+`flutter_monitor_native` 不得包含：
+
+- HTTP output、独立上传队列或服务端鉴权逻辑。
+- 第二套 session id、trace id 或 event id 生成体系。
+- 第二套 event model、导出格式或字段注册表。
+- 会让主 SDK 基础接入变成强制 native 接入的配置。
+
+如果用户不接入 `flutter_monitor_native`，或接入失败，SDK 必须无损降级：
+
+- Phase 3 的启动、页面、HTTP、错误、卡顿、行为、基础 lifecycle 和业务 `track` 能力继续工作。
+- Flutter/Dart 层可获得的 memory/lifecycle 仍可工作。
+- native memory、native pressure、native lifecycle、native crash/OOM/ANR 线索缺失。
+- `context.native.available` 应为 `false`；需要解释缺失时使用 `context.missingReason = native_bridge_unavailable`。
+- 如果用户显式启用了 native bridge 但 bridge 不可用，应记录 SDK self-monitoring warning，而不是抛出影响 App 运行的异常。
+
+完成 native bridge 后，相比 Flutter-only 能力，SDK 增强的是对 Flutter runtime 视野之外问题的解释能力：进程级/native 内存、平台 low memory warning、native lifecycle 缺口、OOM/ANR/native crash 线索，以及这些信号与当前 session、route、jank、error、HTTP 和 breadcrumbs 的统一关联。
 
 ## Public API
 

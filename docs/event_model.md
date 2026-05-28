@@ -303,6 +303,110 @@ flowchart TB
 | `error.fatal` | boolean | safe | 是 | 是否致命 |
 | `error.thread` | string | queryable | 否 | 线程/isolate/native thread |
 
+## 内存、Lifecycle 与 Native 事件契约
+
+内存、增强 lifecycle 和 native bridge 不改变统一 envelope。所有 memory、lifecycle 和 native 信号仍必须使用本文件定义的 public fields、`resource`、`context`、`attributes` 和 `payload` 分层。
+
+### 内存事件
+
+内存事件用于解释页面慢、卡顿、错误、OOM 线索和资源增长趋势。Flutter/Dart 层只能上报实际可获得的字段；拿不到的 RSS、native memory、heap capacity 等字段必须省略，或在上下文中标记 `context.missingReason = platform_limited`，不得伪造。
+
+| name | signalType | status | priority 建议 | 必须/条件字段 | 说明 |
+|---|---|---|---|---|---|
+| `memory.sample` | `metric` | `ok` | `low` | `memory.sample_source`；至少一个 `memory.*_mb` 字段 | 低频内存采样，用于时间线和趋势观察 |
+| `memory.growth` | `metric` | `ok` / `warning` | `normal` | `memory.growth_mb`、`memory.growth_duration_ms`、`memory.sample_source` | 观察窗口内增长量；没有足够样本不得生成 |
+| `memory.pressure` | `metric` | `warning` / `error` | `high` | `memory.pressure_level`、`memory.sample_source` | memory pressure / low memory warning 线索，应进入 breadcrumb store |
+| `memory.leak.suspect` | `metric` | `warning` | `high` | `memory.growth_mb`、`memory.growth_duration_ms`、`memory.sample_source` | 只能表达疑似泄漏线索，payload 必须说明依据 |
+| `native.memory.sample` | `metric` | `ok` | `normal` | `memory.sample_source = native`，条件字段 `memory.native_used_mb` | native bridge 提供的内存采样 |
+| `native.memory.pressure` | `metric` | `warning` / `error` | `high` | `memory.sample_source = native`、`memory.pressure_level` | native bridge 提供的 pressure / low memory warning |
+
+内存字段归属：
+
+- `attributes.memory.*` 保存可聚合数值和状态，例如 `memory.heap_used_mb`、`memory.native_used_mb`、`memory.growth_mb`、`memory.pressure_level`。
+- `context.route.*` / `context.module.*` 表达采样发生时的页面和业务场景。
+- `resource.device.*` 表达设备、刷新率和设备等级。
+- `payload` 只保存诊断详情，例如采样窗口、样本数量、触发原因、裁剪状态和 suspect leak 依据。
+
+`memory.sample_source` 取值必须稳定：
+
+| 值 | 说明 |
+|---|---|
+| `dart` | Dart/Flutter runtime 可获得的 heap/external 等线索 |
+| `native` | `flutter_monitor_native` 或其他 native bridge 提供的内存线索 |
+| `system` | 平台或系统 API 提供的进程级线索 |
+| `sdk` | SDK 自身队列、缓存或 offline store 状态 |
+| `unknown` | 来源不可判断 |
+
+`memory.pressure_level` 取值必须稳定：
+
+| 值 | 说明 |
+|---|---|
+| `none` | 未观察到内存压力 |
+| `moderate` | 中等压力或平台 low memory warning |
+| `critical` | 严重压力，可能影响稳定性 |
+| `unknown` | 平台只提供了 pressure 信号，但无法判断等级 |
+
+`memory.leak.suspect` 不是确定性泄漏结论。SDK、example、DevTools、Workbench 和服务端展示都只能使用“疑似泄漏”或“泄漏线索”表达；只有业务或外部工具提供额外证据时，才能在 payload 中附带该证据来源。
+
+### 增强 Lifecycle 事件
+
+Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中断、后台 flush、卡顿和 native 异常。状态字段属于 `context.lifecycle.*`，持续时间使用 envelope `durationMs`，不要新增平行 duration 字段。
+
+| name | signalType | phase | status | priority 建议 | 必须/条件字段 | 说明 |
+|---|---|---|---|---|---|---|
+| `app.lifecycle` | `breadcrumb` | `instant` | `ok` | `normal` | `context.lifecycle.state`、`context.lifecycle.isForeground`，条件字段 `context.lifecycle.previousState` | 生命周期状态变化足迹 |
+| `app.foreground_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.state` | 一段前台 activity window 的持续时间 |
+| `app.background_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.previousState` | 一段后台停留时间，可辅助 hot start 和 session 切分 |
+| `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot` | 后台恢复到前台的恢复链路 |
+| `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `high` | `app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果 |
+
+`sdk.lifecycle.flush` 是 SDK self-monitoring 事件，不是业务事件。触发状态、flush 错误摘要等诊断信息可放在 `payload`，但 `app.exit_flush.success` 必须放在 attributes，方便 DevTools 和服务端判断 flush 是否成功。
+
+### Native Bridge 事件
+
+Native bridge 只负责把 native 信号转换为 SDK 可消费的 raw signal。最终 event envelope 必须由 SDK pipeline 构建，native 包不得直接 HTTP 上报，不得维护第二套 session/trace id，不得定义独立字段协议。
+
+| name | signalType | status | priority 建议 | 必须/条件字段 | 说明 |
+|---|---|---|---|---|---|
+| `native.memory.sample` | `metric` | `ok` | `normal` | `native.signal = memory`、`memory.sample_source = native` | native memory 采样 |
+| `native.memory.pressure` | `metric` | `warning` / `error` | `high` | `native.signal = memory`、`memory.pressure_level` | native low memory / pressure |
+| `native.lifecycle` | `breadcrumb` | `ok` | `normal` | `native.signal = lifecycle`、`context.native.*` | native lifecycle 补充足迹 |
+| `native.warning` | `breadcrumb` | `warning` | `high` | `native.signal` | native 侧可恢复 warning |
+| `native.crash` | `error` | `error` | `critical` | `native.signal = crash`、`error.mechanism = native`，条件字段 `native.crash.type` | native crash schema 和 bridge 入口 |
+| `native.oom` | `error` | `error` | `critical` | `native.signal = oom`、`error.mechanism = native`，条件字段 `native.oom.reason` | OOM schema 和 bridge 入口 |
+| `native.anr` | `error` | `error` | `critical` | `native.signal = anr`、`error.mechanism = native`，条件字段 `native.anr.duration_ms` | ANR schema 和 bridge 入口 |
+
+`native.signal` 取值必须稳定：
+
+| 值 | 说明 |
+|---|---|
+| `memory` | native memory sample 或 pressure |
+| `lifecycle` | native lifecycle 补充 |
+| `crash` | native crash |
+| `oom` | OOM 线索 |
+| `anr` | ANR 线索 |
+
+native runtime 上下文使用 `context.native.*`：
+
+- `context.native.available` 表示 bridge 是否可用。
+- `context.native.platform` 表示 android/ios 等 native platform。
+- `context.native.processId`、`context.native.bridgeVersion`、`context.native.signalSource` 保存可安全公开的 bridge 元信息。
+
+native 诊断详情使用 `payload.native`。原始 crash dump、寄存器、线程堆栈、系统日志等内容默认不应上传；确需上传时必须先经过隐私过滤、大小裁剪和显式配置。
+
+异常生命周期中拿不到完整上下文时，事件仍可进入 pipeline，但必须保留可用的 `sessionId` / `traceId` / `context.route.*` / `context.module.*` / breadcrumbs，并设置：
+
+```json
+{
+  "context": {
+    "missing": true,
+    "missingReason": "native_bridge_unavailable"
+  }
+}
+```
+
+`context.missingReason` 必须使用本文档定义的固定值。native 事件不得使用自由文本 missing reason。
+
 ## 业务主动埋点 API 契约
 
 自动采集负责启动、页面、HTTP、错误、卡顿、生命周期等基础链路。业务侧只在关键业务点主动埋点，并且只使用一个主入口：

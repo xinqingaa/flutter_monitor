@@ -239,20 +239,58 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 
 目标：
 
-- 接入 Flutter/Dart 可获得的 memory sample、growth、pressure 线索。
+- 接入 Flutter/Dart 可获得的 memory sample、growth、pressure 线索，并保持采样频率克制。
 - 增强 lifecycle：foreground/background duration、exit flush 结果、异常生命周期线索。
-- 定义并接入 `MonitorNativeBridge`。
-- 在 `flutter_monitor_native` 中提供可选 native memory/lifecycle 基础能力。
-- 预留 native crash、OOM、ANR schema 和离线缓存策略。
+- 定义并接入 `MonitorNativeBridge`，让 native 信号以 raw signal 形式进入 SDK pipeline。
+- 在 `flutter_monitor_native` 中提供可选 native memory/lifecycle 基础能力或可测试的 no-op/fake bridge。
+- 预留 native crash、OOM、ANR schema、bridge 入口和异常生命周期下的离线补全策略。
+
+本阶段不要求：
+
+- 完整、可靠地捕获所有 native crash。
+- 完整、可靠地捕获 OOM 或 ANR。
+- 实现生产级离线缓存、重试、服务端聚合或告警。
+- 建设 Workbench UI 或 DevTools 面板。
+- 让主 SDK 强依赖 `flutter_monitor_native` 或要求业务增加强制平台配置。
+
+边界说明：
+
+- 完整 Phase 4 需要把 `packages/flutter_monitor_native` 从占位包推进为可选 Flutter plugin，但主 SDK 必须在没有该包时继续正常运行。
+- `flutter_monitor_native` 只负责 Flutter 与 Android/iOS 原生能力之间的 bridge 和 native raw signal 采集，不负责构建最终 envelope、不负责 HTTP 上报、不负责维护 session/trace。
+- Native 能力完成后，相比 Phase 3 的增强点是补齐 Flutter-only 视野之外的 native memory、memory pressure、native lifecycle、OOM/ANR/native crash 线索，并把它们关联到当前 session、route、jank、error、HTTP 和 breadcrumbs。
+- 未接入 native 包、漏注册 bridge、平台不支持或 channel 初始化失败时，SDK 应降级为 Flutter-only 模式，并通过 `context.native.available = false`、`context.missingReason = native_bridge_unavailable` 或 SDK self-monitoring 事件说明原因。
+
+建议迁移顺序：
+
+1. 文档补细 memory/native/lifecycle 事件契约和验收标准。
+2. 在 core 中补齐 Phase 4 所需枚举、字段注册、schema validation 和 summary 规则。
+3. 在 SDK 中实现 Flutter 层 `MemoryCollector`，先覆盖 session、route、lifecycle、jank 后的低频采样。
+4. 在 SDK 中增强 lifecycle duration、background flush 结果和 hot start 关联。
+5. 定义 SDK 侧 `MonitorNativeBridge` 抽象和 native raw signal mapper。
+6. 在 `flutter_monitor_native` 中提供 no-op/fake bridge，并逐步补 native memory/lifecycle 基础能力。
+7. 更新 example，提供 memory sample、growth、pressure、lifecycle、fake native signal 的清晰测试入口。
+8. 使用 raw JSON 验证 memory/native/lifecycle 是否能进入同一 session timeline。
 
 验收：
 
-- memory.sample、memory.growth、memory.pressure 进入统一 envelope。
-- 内存泄漏只表达为 suspect，不做缺乏证据的确定性判断。
-- 增强 lifecycle 可补充 foreground/background duration、exit flush 结果和异常生命周期线索。
-- native 包不绕过 pipeline 上报。
-- native 信号可关联 session/trace/context；无法关联时明确 missing reason。
-- 主 SDK 不因 native 能力增加强制平台配置。
+- `metric memory.sample` 进入统一 envelope，至少包含可获得的 `memory.*` 字段、`memory.sample_source`、当前 `sessionId`、`context.route.*` / `context.module.*` 和 `resource.device.*`。
+- `metric memory.growth` 进入统一 envelope，必须包含 `memory.growth_mb`、`memory.growth_duration_ms` 和观察窗口上下文；没有足够样本时不得生成增长结论。
+- `metric memory.pressure` 进入统一 envelope，必须包含 `memory.pressure_level`，并作为 critical/high 价值线索进入 breadcrumb store，帮助后续 error、jank、OOM 解释上下文。
+- `metric memory.leak.suspect` 只能表达疑似线索，必须在 payload 中说明依据，例如采样窗口、页面切换后增长、pressure 信号或 native 补充信息；不得在缺少证据时宣称确定泄漏。
+- Flutter/Dart 层拿不到的内存字段必须省略或标记 `context.missingReason = platform_limited`，不得伪造 RSS、native memory 或 heap capacity。
+- memory sample 默认低频采集，普通 sample 不应在默认控制台模式刷屏；pressure、growth、suspect leak 可进入 compact 摘要或高价值 breadcrumb。
+- `breadcrumb app.lifecycle` 继续表达状态变化，并更新 `context.lifecycle.state`、`context.lifecycle.previousState` 和 `context.lifecycle.isForeground`。
+- `metric app.foreground_duration` 和 `metric app.background_duration` 使用 envelope `durationMs` 表达前台/后台持续时间，不新增重复 duration 字段。
+- `sdk.lifecycle.flush` 必须使用 `app.exit_flush.success` 表达退出前 flush 结果，失败时记录 SDK self-monitoring，但不得污染普通业务 payload。
+- hot start trace 继续由 resumed 生命周期驱动，且能与 background duration、当前 session 切分结果和首个页面上下文关联。
+- SDK 提供 `MonitorNativeBridge` 抽象；主 SDK 只依赖抽象，不强依赖 `flutter_monitor_native`。
+- native bridge 输出 native raw signal，不构建最终 envelope，不直接调用 HTTP output，不维护第二套 session/trace id。
+- `flutter_monitor_native` 至少提供可测试的 no-op/fake bridge；若平台能力可用，可提供 native memory sample、memory pressure 和 native lifecycle 基础信号。
+- `metric native.memory.sample` 和 `metric native.memory.pressure` 复用 `memory.native_used_mb`、`memory.pressure_level`、`memory.sample_source = native`，不得新增 `native.memory.*` 平行字段表达同一语义。
+- native crash/OOM/ANR 本阶段至少完成 schema、bridge 入口和 payload 脱敏边界；未实现可靠捕获时文档、example 和日志不得暗示已经完整支持。
+- native 信号可关联 `sessionId`、`traceId`、`context.route.*`、`context.module.*` 和 breadcrumbs；无法关联时必须设置 `context.missing = true` 和固定 `context.missingReason`。
+- example 能触发并在 raw JSON 中验证 memory sample、memory growth 或 pressure、foreground/background duration、exit flush 结果和 fake/native bridge 信号。
+- Phase 4 完成后仍满足 Phase 3 验收：page/http/error/jank/lifecycle/startup/track 的 raw JSON 链路不退化，breadcrumb 数量裁剪规则不被破坏。
 
 ## Phase 5：DevTools 桥接、Timeline 与会话导出
 
