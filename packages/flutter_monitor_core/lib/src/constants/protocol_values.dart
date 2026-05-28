@@ -40,6 +40,19 @@ abstract final class PlatformSignalSources {
   static const flutter = 'flutter';
 }
 
+abstract final class SignalSources {
+  static const sdkApi = 'sdk.api';
+  static const sdkHttp = 'sdk.http';
+  static const sdkDio = 'sdk.dio';
+  static const sdkError = 'sdk.error';
+  static const sdkJank = 'sdk.jank';
+  static const sdkLifecycle = 'sdk.lifecycle';
+  static const sdkMemory = 'sdk.memory';
+  static const sdkPage = 'sdk.page';
+  static const sdkRuntime = 'sdk.runtime';
+  static const sdkTrack = 'sdk.track';
+}
+
 abstract final class StartTypes {
   static const cold = 'cold';
   static const hot = 'hot';
@@ -53,4 +66,18 @@ abstract final class StartupPhases {
 
 abstract final class TriggerValues {
   static const manual = 'manual';
+  static const jankSequence = 'jank.sequence';
+  static const lifecyclePaused = 'lifecycle.paused';
+  static const lifecycleHidden = 'lifecycle.hidden';
+  static const lifecycleResumed = 'lifecycle.resumed';
+  static const sessionStart = 'session.start';
+
+  static String lifecycleState(String state) {
+    return switch (state) {
+      LifecycleStates.paused => lifecyclePaused,
+      LifecycleStates.hidden => lifecycleHidden,
+      LifecycleStates.resumed => lifecycleResumed,
+      _ => 'lifecycle.$state',
+    };
+  }
 }

@@ -359,6 +359,17 @@ flowchart TB
 | `critical` | 严重压力，可能影响稳定性 |
 | `unknown` | 平台只提供了 pressure 信号，但无法判断等级 |
 
+`payload.trigger` 用于说明 SDK 内部采样或诊断事件的触发来源。当前标准值：
+
+| 值 | 说明 |
+|---|---|
+| `manual` | 手动或测试触发 |
+| `session.start` | session 建立后的初始采样 |
+| `jank.sequence` | 卡顿序列后触发的采样或增长检查 |
+| `lifecycle.paused` | 进入 paused 后触发的采样 |
+| `lifecycle.hidden` | 进入 hidden 后触发的采样 |
+| `lifecycle.resumed` | 回到 resumed 后触发的增长检查 |
+
 `memory.leak.suspect` 不是确定性泄漏结论。SDK、example、DevTools、Workbench 和服务端展示都只能使用“疑似泄漏”或“泄漏线索”表达；只有业务或外部工具提供额外证据时，才能在 payload 中附带该证据来源。
 
 ### 增强 Lifecycle 事件
@@ -464,7 +475,24 @@ FlutterMonitorSDK.track(
 
 `track` 生成 `signalType = breadcrumb` 的完整 `EventEnvelope`，进入 session timeline，并由 pipeline 自动加入 recent breadcrumb store。后续 error、jank、failed HTTP 可携带它作为 `payload.breadcrumbs` 上下文。业务层不需要也不应该主动调用 `addBreadcrumb` 来实现常规埋点。
 
-`reportEvent(category, data)` 和组件式点击埋点不再作为 SDK 业务接入 API。`startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点示例。
+`reportEvent(category, data)`、组件式点击埋点、`startTrace` / `startSpan` / `addBreadcrumb` 不作为当前 `FlutterMonitorSDK` 公开业务接入 API。后续只有出现明确业务场景时，才重新设计并暴露高级诊断 API。
+
+### SDK 内部 source 标准值
+
+`RawSignal.source` 是 SDK pipeline 内部来源标识，不是业务 API 参数，也不是 envelope 顶层字段。它可出现在 SDK self-monitoring payload 中，用于排查采集器或 pipeline 问题。标准值由 `flutter_monitor_core` 维护：
+
+| 值 | 说明 |
+|---|---|
+| `sdk.api` | SDK 内部 trace/span/breadcrumb 基础入口 |
+| `sdk.http` | `package:http` 采集 |
+| `sdk.dio` | Dio interceptor 采集 |
+| `sdk.error` | Flutter/Dart error 采集 |
+| `sdk.jank` | frame/jank 采集 |
+| `sdk.lifecycle` | lifecycle/session 采集 |
+| `sdk.memory` | memory collector 采集 |
+| `sdk.page` | page/route 采集 |
+| `sdk.runtime` | SDK runtime self-monitoring |
+| `sdk.track` | `FlutterMonitorSDK.track(...)` 业务埋点 |
 
 ### 通用上下文入口
 

@@ -128,13 +128,19 @@ final dio = Dio()..interceptors.add(FlutterMonitorSDK.dioInterceptor);
 final http.Client client = FlutterMonitorSDK.httpClient;
 ```
 
-包裹关键用户行为，让它们成为 breadcrumb 或业务 trace 的入口：
+关键业务行为使用统一业务埋点入口。SDK 内部会把它映射到标准 event envelope，并自动加入当前 session timeline 和 breadcrumb store：
 
 ```dart
-MonitoredGestureDetector(
-  identifier: 'buy_now_button',
-  onTap: () {
-    // 业务逻辑。
+ElevatedButton(
+  onPressed: () {
+    FlutterMonitorSDK.track(
+      action: 'checkout.submit',
+      result: MonitorTrackResult.started,
+      target: 'buy_now_button',
+      properties: const <String, Object?>{
+        'cart.items': 3,
+      },
+    );
   },
   child: const Text('立即购买'),
 )

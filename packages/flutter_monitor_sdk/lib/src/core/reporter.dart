@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
-import 'package:flutter_monitor_sdk/src/core/signal_sources.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';

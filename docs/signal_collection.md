@@ -632,7 +632,7 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 ### 采集来源
 
 - 业务 API：`FlutterMonitorSDK.track(...)`。
-- `startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点。
+- `startTrace` / `startSpan` / `addBreadcrumb` 当前不作为 `FlutterMonitorSDK` 公开业务接入 API；后续只有出现明确业务场景时才重新设计高级诊断入口。
 
 普通真实 App 接入的业务面应尽量收敛为：
 

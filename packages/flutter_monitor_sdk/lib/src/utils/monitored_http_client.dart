@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
-import 'package:flutter_monitor_sdk/src/core/signal_sources.dart';
 
 /// 一个实现了 http.BaseClient 的装饰器类，用于监控使用 `http` 包发出的网络请求。
 ///

@@ -82,7 +82,7 @@ class MonitorBinding {
           onJankSequenceReported: () {
             unawaited(
               _memoryCollector?.recordGrowth(
-                    trigger: 'jank.sequence',
+                    trigger: TriggerValues.jankSequence,
                     emitSample: true,
                   ) ??
                   Future<void>.value(),
@@ -103,7 +103,9 @@ class MonitorBinding {
           reporter,
           config: config.effectiveMemoryConfig,
         );
-        unawaited(_memoryCollector!.recordSample(trigger: 'session.start'));
+        unawaited(
+          _memoryCollector!.recordSample(trigger: TriggerValues.sessionStart),
+        );
         debugPrint("✅ MemoryCollector 初始化成功");
       } catch (e) {
         debugPrint("错误: MemoryCollector 初始化失败: $e");
@@ -187,12 +189,16 @@ class MonitorBinding {
           state == LifecycleStates.hidden) {
         if (state == LifecycleStates.resumed) {
           unawaited(
-            _memoryCollector?.recordGrowth(trigger: 'lifecycle.resumed') ??
+            _memoryCollector?.recordGrowth(
+                  trigger: TriggerValues.lifecycleResumed,
+                ) ??
                 Future<void>.value(),
           );
         } else {
           unawaited(
-            _memoryCollector?.recordSample(trigger: 'lifecycle.$state') ??
+            _memoryCollector?.recordSample(
+                  trigger: TriggerValues.lifecycleState(state),
+                ) ??
                 Future<void>.value(),
           );
         }
