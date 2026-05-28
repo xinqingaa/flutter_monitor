@@ -8,6 +8,15 @@
 
 服务端不应要求不同模块发送不同结构。所有 Flutter 信号、native 信号、SDK self-monitoring 信号都应通过统一 envelope 表达。
 
+本文档描述 Phase 6 的生产服务端协议与稳定性要求，不等同于当前 `node_server` 或 local workbench service。`node_server` 可以兼容部分 API 方便本地调试和 QA 复现，但不承担生产鉴权、长期存储、离线缓存、动态采样、告警和多租户治理。
+
+服务端能力应拆成两条链路：
+
+- 写入链路：SDK 批量上报完整 `EventEnvelope`，服务端负责鉴权、schema 校验、大小限制、幂等、重试语义和接收结果。
+- 查询链路：Workbench 或工具入口按 userId、time range、sessionId、traceId、route、版本、错误和性能问题回查 session、trace、event 和聚合结果。
+
+真实 App 默认不应无策略实时逐条上报。近实时写入本地 Workbench 或测试环境可以通过 SDK 初始化配置显式开启，但仍应使用 batch、优先级、关键时机 flush 和请求大小控制。
+
 ## Endpoint
 
 建议默认接口：
@@ -364,6 +373,7 @@ Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运�
 
 服务端应支持按以下维度查询和聚合：
 
+- `context.user.userId` + time range，用于 QA/用户维度 session 检索；
 - `resource.app.appVersion`；
 - `resource.app.buildNumber`；
 - `resource.app.environment`；
@@ -381,6 +391,8 @@ Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运�
 - `traceId`；
 - `context.native.platform`；
 - `memory.pressure_level`。
+
+`context.user.userId` 是推荐增强上下文。未提供 userId 的 App 仍应能按时间、版本、页面、错误、慢请求、卡顿、启动问题、sessionId、traceId 和 eventId 查询；服务端不得伪造用户维度。
 
 ## 服务端派生指标
 

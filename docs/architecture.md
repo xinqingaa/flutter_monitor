@@ -345,7 +345,8 @@ SessionExport
 
 - 事件捕获时必须取快照，避免异步 flush 时上下文漂移。
 - 用户登录、登出、切换账号时应更新 context，但不得改写已捕获事件。
-- route name 不稳定时，应允许业务通过 module/scene/scope API 补充业务语义。
+- route name 不稳定时，可以通过统一上下文入口补充可选业务语义；module/scene 不作为基础接入前置条件。
+- 用户维度排查依赖 `context.user.userId`。未提供 userId 时，SDK 仍必须能按时间、版本、route、错误和性能信号构建可查询链路。
 
 ## 链路层
 
@@ -560,19 +561,16 @@ await FlutterMonitorSDK.init(
 公开 API 应覆盖：
 
 - SDK 初始化；
-- 设置用户信息；
-- 设置自定义上下文；
-- 设置当前 module/scene；
-- 开始/结束自定义 trace；
-- 开始/结束自定义 span；
-- 添加 breadcrumb；
+- 业务主动埋点 `track(...)`；
+- 设置通用上下文，例如目标 `setContext(...)`；
 - 手动上报 error；
-- 手动上报 metric；
 - 获取 route observer；
 - 获取 Dio interceptor；
 - 获取 `http` client；
 - 注册可选 native bridge；
 - flush；
+
+普通真实 App 接入不应被要求理解 trace/span/breadcrumb、`FieldPaths`、`RawSignal`、`EventEnvelope`、attributes/payload。`startTrace`、`startSpan`、`addBreadcrumb`、自定义 attributes/payload 等能力如保留，应定位为 SDK 内部、高级诊断或调试能力，不作为普通业务接入推荐路径。历史 `setUserId`、`setUserInfo`、`setCustomData` 应逐步归并到统一上下文语义，避免 public API 面形成多套概念。
 - dispose。
 
 API 要求：

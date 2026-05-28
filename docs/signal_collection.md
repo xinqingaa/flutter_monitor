@@ -177,8 +177,8 @@ Native 增强来源：
 - `NavigatorObserver` / `RouteObserver`。
 - `Route.settings.name`。
 - 页面级 wrapper，例如 `PageRenderMonitor`。
-- 业务显式设置的 module/scene/scope。
 - 未来可支持 GoRouter、AutoRoute、GetX 等 router integration。
+- 可选统一上下文入口补充 module/scene；该能力不作为基础接入前置条件。
 
 ### 触发时机
 
@@ -226,7 +226,8 @@ Native 增强来源：
 
 - 匿名路由可能没有稳定 route name。
 - 嵌套路由、tab 页面和业务态可能无法仅靠 route name 区分。
-- SDK 应提供显式 module/scene/scope API。
+- module/scene 属于可选增强上下文。SDK 不应要求业务方在每个页面或代码模块手动设置 module 才能获得基础链路。
+- 如果未来提供 `setContext(module: ..., scene: ...)` 一类能力，应定位为增强检索维度，而不是普通接入必填步骤。
 - route stack 不可用时应保留当前 route 和 missing reason。
 
 ## 网络采集
@@ -362,7 +363,7 @@ Native 增强来源：
 ### 链路关联
 
 - 普通行为进入 breadcrumb store。
-- 行为应关联当前 `context.route.*` / `context.module.*` / `context.module.scene`。
+- 行为应关联当前 `context.route.*`，并在可用时携带可选 `context.module.*` / `context.module.scene`。
 - 后续 HTTP、jank、error 可使用 recent breadcrumbs 还原上下文。
 - 普通 breadcrumb 的 payload 不应自动继承 `legacy.userProperties` 或 `legacy.customData`；用户和业务上下文应保留在 `context` 或显式业务字段中。
 
@@ -632,6 +633,13 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 - 旧 `reportEvent(category, data)` 仅作为 legacy compatibility，不作为新接入推荐路径。
 - `startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点。
 
+普通真实 App 接入的业务面应尽量收敛为：
+
+- `track(...)`：记录一次关键业务动作。
+- 未来统一上下文入口，例如 `setContext(...)`：设置后续事件的通用排查上下文。
+
+业务方不应为了常规排查去理解或拼装 `FieldPaths`、`RawSignal`、`EventEnvelope`、trace/span/breadcrumb store、attributes/payload。
+
 ### 触发时机
 
 - 用户触发关键业务动作。
@@ -644,7 +652,7 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 
 ### 链路关联
 
-- `track` 事件默认归属当前 session、当前 route/module context 和当前 active trace。
+- `track` 事件默认归属当前 session、当前 route context 和当前 active trace；module/scene 仅在上下文已存在时携带。
 - pipeline 会将 `track` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
 - 业务层不需要知道 breadcrumb store，也不需要手动调用 `addBreadcrumb` 来实现常规埋点。
 
@@ -659,11 +667,46 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 - `error` -> `payload.error.message`
 - `properties` -> payload 中的业务详情
 
+`properties` 是本次业务动作的诊断详情，默认不作为主要聚合索引。业务方需要按用户排查 session 时，应通过统一上下文入口写入 `context.user.userId`，而不是把 userId 放进 `track.properties`。
+
 ### 限制与降级
 
 - `action` 必须稳定，动态业务 ID 不得进入 action/name。
 - `properties` 仍必须经过隐私过滤，不得包含 token、cookie、原始请求体、精确位置等 forbidden 字段。
 - `FieldPaths` 是 core/schema 内部契约，不暴露给普通业务接入。
+
+## 通用上下文采集
+
+通用上下文用于帮助 QA 和开发者从人类排查入口找到 session。它不是一次业务动作，也不应该通过 `track.properties` 承担。
+
+### 采集来源
+
+- SDK 自动采集：app、device、runtime、route、network、lifecycle 等。
+- 业务可选提供：`userId`、`userType`、`userTags`、`cohort`。
+- module/scene 如未来支持，只作为可选增强上下文。
+
+### 推荐 API 方向
+
+目标 API 应收敛到统一上下文语义，例如：
+
+```dart
+FlutterMonitorSDK.setContext(
+  userId: 'user_001',
+  userType: 'qa',
+);
+```
+
+历史 API 归位：
+
+- `setUserId`、`setUserInfo` 应归并到统一上下文入口。
+- `setCustomData` 不应作为可索引上下文来源；如保留，应明确映射到标准 context 或 payload-only 详情。
+- `userProperties`、任意 custom map 不得默认提升为 `attributes` 或服务端索引。
+
+### 查询影响
+
+- 提供 `context.user.userId` 后，Workbench 可以按 `userId + time range` 查找 session。
+- 未提供 userId 时，SDK 仍必须能采集基础链路，Workbench 仍可按时间、版本、页面、错误、慢请求、卡顿、启动问题和 session/trace/event ID 查询。
+- 不考虑未登录用户的特殊链路推断；没有 userId 就不支持按用户维度查询。
 
 ## 隐私、采样与性能开销
 

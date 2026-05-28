@@ -10,6 +10,8 @@
 - 可聚合：能按页面、模块、版本、设备、网络、用户分群、feature flag 等维度统计。
 - 可定位：能把错误、慢请求、页面慢、卡顿、内存、native 信号和用户操作关联到同一条链路。
 
+排查入口不等于链路主键。`sessionId`、`traceId`、`spanId` 和 `eventId` 是事件链路的事实主键；真实排查时，QA 或开发者更常从 `userId + 时间范围`、App 版本、页面、错误、慢请求、卡顿或启动问题进入 Workbench，再反查 session timeline 和完整 envelope。
+
 ## 设计原则
 
 ### 关联优先
@@ -47,6 +49,15 @@ Trace/span 可按生命周期流式上报，也可只上报完成态摘要。流
 - `payload` 放事件特有详情，可为空，可裁剪，不应作为主要索引来源。
 
 同一个语义字段只能有一个规范路径。不要在 `resource`、`context`、`attributes` 和 `payload` 中重复表达同一含义。
+
+### 业务接入面最小化
+
+真实 App 的普通接入不应要求业务方理解 `EventEnvelope`、`FieldPaths`、trace/span、breadcrumb store、attributes/payload 的内部细节。SDK 自动采集是主线，业务侧只保留少量明确职责的入口：
+
+- `FlutterMonitorSDK.track(...)`：业务主动埋点入口，记录关键业务动作。
+- 未来统一上下文入口，例如 `FlutterMonitorSDK.setContext(...)`：补充 `userId` 等通用排查上下文。
+
+`startTrace`、`startSpan`、`addBreadcrumb`、自定义 `attributes` / `payload` 等能力如保留，应定位为 SDK 内部、高级诊断或调试能力，不作为真实 App 的普通接入示例。历史 API 例如 `setUserId`、`setUserInfo`、`setCustomData` 如继续存在，应逐步归并到统一上下文语义，避免在 public API 中形成多套概念。
 
 ### 隐私默认安全
 
@@ -212,8 +223,8 @@ flowchart TB
 | `context.route.name` | string | queryable | 是 | 当前 route 标识 |
 | `context.route.stack` | array | queryable | 是 | 当前 route stack |
 | `context.route.source` | string | queryable | 是 | 页面来源 |
-| `context.module.name` | string | queryable | 是 | 业务模块 |
-| `context.module.scene` | string | queryable | 是 | 业务场景 |
+| `context.module.name` | string | queryable | 是 | 业务模块，可选增强上下文，不作为基础接入前置条件 |
+| `context.module.scene` | string | queryable | 是 | 业务场景，可选增强上下文，不作为基础接入前置条件 |
 | `context.network.type` | string | safe | 是 | wifi/cellular/none/unknown |
 | `context.network.isWeakNetwork` | boolean | safe | 是 | 弱网判断 |
 | `context.release.releaseId` | string | safe | 是 | 可组合 app/package/version/build |
@@ -407,9 +418,9 @@ native 诊断详情使用 `payload.native`。原始 crash dump、寄存器、线
 
 `context.missingReason` 必须使用本文档定义的固定值。native 事件不得使用自由文本 missing reason。
 
-## 业务主动埋点 API 契约
+## 业务主动埋点与上下文 API 契约
 
-自动采集负责启动、页面、HTTP、错误、卡顿、生命周期等基础链路。业务侧只在关键业务点主动埋点，并且只使用一个主入口：
+自动采集负责启动、页面、HTTP、错误、卡顿、生命周期等基础链路。业务侧只在关键业务点主动埋点，并且推荐只使用一个主入口：
 
 ```dart
 FlutterMonitorSDK.track(
@@ -425,6 +436,8 @@ FlutterMonitorSDK.track(
 ```
 
 业务层不得直接依赖 `FieldPaths`、`RawSignal`、`EventEnvelope`、breadcrumb store 或 pipeline 内部结构。`FieldPaths` 是 `flutter_monitor_core` 中的 schema 契约，由 SDK 内部使用；业务 API 参数必须保持稳定、简单，并由 SDK 映射到 canonical fields。
+
+`track` 的职责是记录一次业务动作，不是设置全局上下文。`track.properties` 是这次动作的详情，默认进入 payload，不作为主要聚合索引，也不承担 userId、版本、页面、设备等通用上下文职责。
 
 `track` 参数契约：
 
@@ -451,6 +464,48 @@ FlutterMonitorSDK.track(
 
 `reportEvent(category, data)` 属于 legacy compatibility API，只用于迁移旧接入，不作为新文档和 example 的推荐路径。`startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点示例。
 
+### 通用上下文入口
+
+为了支持 QA 和开发者从人类排查入口找到 session，SDK 应提供一个统一上下文入口。该入口用于补充后续事件都会携带的 context snapshot，而不是记录某一次业务动作。
+
+建议目标形态：
+
+```dart
+FlutterMonitorSDK.setContext(
+  userId: 'user_001',
+  userType: 'qa',
+);
+```
+
+第一阶段只要求通用上下文字段，不设计可声明业务维度或任意自定义索引字段：
+
+| 参数 | 内部映射 | 说明 |
+|---|---|---|
+| `userId` | `context.user.userId` | QA / 用户维度检索的推荐字段；没有提供时不能按 userId 查 |
+| `userType` | `context.user.userType` | 用户类型 |
+| `userTags` | `context.user.userTags` | 用户标签 |
+| `cohort` | `context.user.cohort` | 用户分群 |
+
+route、app、device、runtime、HTTP、错误、卡顿、启动等上下文应优先由 SDK 自动采集。`context.module.name` 和 `context.module.scene` 是可选增强上下文，但目前不作为核心接入要求；不应要求业务方在每个代码模块或页面频繁手动调用上下文 API。
+
+如果 App 不调用统一上下文入口，SDK 仍必须能采集和查询基础链路。Workbench 仍可按时间范围、App 版本、环境、页面、错误、慢请求、卡顿、启动问题、session/trace/event ID 等维度查找数据。只有按用户排查时，才依赖 App 提供 `context.user.userId`。
+
+历史 API 归位：
+
+- `setUserId`、`setUserInfo`：语义上应归并到统一上下文入口。
+- `setCustomData`：不应作为可索引上下文来源；如保留，仅作为迁移期能力，最终应明确映射到标准 context 或 payload-only 详情。
+- `UserInfo.userProperties`、任意 custom map：不得默认提升为 `attributes` 或服务端索引。
+
+### track 与上下文的区别
+
+| 能力 | 职责 | 进入位置 | 是否默认聚合 |
+|---|---|---|---|
+| `setContext(userId: ...)` | 设置后续事件的通用排查上下文 | `context.user.*` | 是 |
+| SDK 自动采集 route/device/app | 提供基础排查上下文 | `context.route.*`、`resource.*` | 是 |
+| `track(action/result/target)` | 记录一次业务动作摘要 | `attributes.business.*`、`attributes.ui.target` | 是，低基数摘要 |
+| `track.properties` | 记录该动作的详情 | `payload.properties` | 否，默认只做详情展示 |
+| 未注册自定义 attributes | 迁移期诊断详情 | `payload.unregistered.attributes` | 否 |
+
 ### Payload 字段
 
 | 字段 | 类型 | 隐私等级 | 说明 |
@@ -463,6 +518,7 @@ FlutterMonitorSDK.track(
 | `payload.truncated.reason` | string | safe | payload 被裁剪的原因 |
 | `payload.trace` | object | mixed | active trace/span 诊断快照 |
 | `payload.native` | object | mixed | 脱敏后的 native crash/ANR/OOM 详情 |
+| `payload.properties` | object | mixed | `track` 的业务详情，不作为默认主要索引 |
 
 ### 禁止字段
 
@@ -713,8 +769,8 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | Route Name | `context.route.name` | 当前 route 标识 |
 | Route Stack | `context.route.stack` | 当前 route stack |
 | Route Source | `context.route.source` | 页面来源 |
-| Module | `context.module.name` | 业务模块 |
-| Scene | `context.module.scene` | 业务场景 |
+| Module | `context.module.name` | 可选业务模块，不作为基础接入前置条件 |
+| Scene | `context.module.scene` | 可选业务场景，不作为基础接入前置条件 |
 | Network Type | `context.network.type` | wifi/cellular/none/unknown |
 | Weak Network | `context.network.isWeakNetwork` | 弱网判断 |
 | Device Tier | `resource.device.deviceTier` | high/medium/low/unknown |
@@ -726,11 +782,13 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 完整字段注册以 `flutter_monitor_core` 的 `FieldRegistry` 为准。本文后续“信号字段规范”中出现的字段，在进入代码实现前必须补充到 `FieldRegistry`，或明确降级为 payload/非索引字段，避免文档字段和代码字段分裂。
 
+基础查询索引不依赖 App 提供 module 或任意自定义字段。最低可用索引应来自 public envelope fields、`resource.app.*`、`resource.device.*`、`context.route.*`、HTTP/error/jank/startup/page 等标准 attributes。`context.user.userId` 是推荐增强索引，用于 QA/用户维度排查；未提供时不得影响 SDK 采集和基础查询。
+
 ### 未注册字段策略
 
 `attributes` 是可检索、可聚合字段层，默认只允许使用 `FieldRegistry` 中已注册的字段路径。未注册字段不得直接作为 canonical/index 字段进入 `attributes`。
 
-确需保留但尚未注册的诊断详情，应放入 `payload`，并经过隐私过滤和大小裁剪。未来如需支持第三方扩展字段，应先定义稳定 namespace、隐私等级、服务端兼容规则和 DevTools 展示规则，再进入 `FieldRegistry` 或明确为 payload-only 字段。
+确需保留但尚未注册的诊断详情，应放入 `payload`，并经过隐私过滤和大小裁剪。当前阶段不设计“可声明业务维度”或任意自定义索引字段；未来如需支持第三方扩展字段，应先定义稳定 namespace、隐私等级、服务端兼容规则和 DevTools 展示规则，再进入 `FieldRegistry` 或明确为 payload-only 字段。
 
 `resource`、`context` 和 public envelope fields 不接受随意扩展。新增稳定资源、动态上下文或公共字段必须先更新本文档、`FieldPaths`、`FieldRegistry`、schema validation 和测试。
 

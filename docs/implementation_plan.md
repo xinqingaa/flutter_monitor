@@ -132,6 +132,9 @@ flowchart TD
 - 完整 JSON 仍由 pipeline 保留，并可通过 node server、file ring buffer 或 session export 获取。
 - compact log 的摘要规则沉淀在 core，作为 `EventEnvelope` 的派生视图。
 - compact log 不得创建第二套事件模型、第二套服务端协议或第二套字段事实源。
+- 业务主动埋点收敛为 `FlutterMonitorSDK.track(...)`，用于记录关键业务动作；普通业务接入不推荐直接使用 `startTrace`、`startSpan`、`addBreadcrumb`、`FieldPaths` 或自定义 `attributes` / `payload`。
+- 用户维度排查依赖统一上下文语义。`setUserId`、`setUserInfo`、`setCustomData` 等历史 API 后续应归并或废弃到 `setContext(...)` 一类的通用上下文入口。
+- `context.module.*` 只作为可选增强上下文，不作为基础接入前置条件；不得要求业务方在每个代码模块或页面频繁手动设置 module。
 
 建议迁移顺序：
 
@@ -203,7 +206,9 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 完整 JSON 获取路径：
 
 - 控制台 compact 行必须包含可回查的 `event`、`session` 和 `trace`，有 span 时包含 `span`。
-- `HttpBatchOutput` 将完整 `EventEnvelope` 批量发送到本地 node server 或正式服务端。
+- `HttpBatchOutput` 将完整 `EventEnvelope` 批量发送到本地 node server / local workbench service 或正式服务端。
+- 只要 SDK 装入真实 App，就不应默认一条事件一个请求。近实时写入 Workbench 可以存在，但必须由初始化配置显式开启，并使用小 batch、短 flush 间隔、关键事件立即 flush 等策略。
+- Workbench Web 的实时刷新来自 service 到 web 的 SSE，不代表 SDK 必须逐条 HTTP 实时请求。
 - node server 在本地调试阶段至少支持：
   - `POST /api/monitor/v1/events`
   - `GET /api/monitor/v1/events/:eventId`
@@ -212,6 +217,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
   - `GET /api/monitor/v1/recent?limit=50`
 - 本地 file ring buffer 或 session export 应能保存最近若干 session 的完整 NDJSON。
 - 线上排查不依赖控制台保留完整 JSON，而应通过 `eventId`、`sessionId`、`traceId` 在服务端查回完整 envelope 和 session timeline。
+- QA 排查不应要求先知道 `sessionId`。Workbench 应支持从 `context.user.userId + time range`、App 版本、环境、页面、错误和性能问题进入 session list；未提供 `userId` 时仍可按通用维度查询。
 
 验收：
 
@@ -231,6 +237,9 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 普通 breadcrumb payload 不应自动携带 `legacy.userProperties` / `legacy.customData`；HTTP/error/jank breadcrumb 快照不得递归携带 breadcrumbs 或长 stacktrace。
 - 业务主动埋点统一使用 `FlutterMonitorSDK.track(...)`；example 和新文档不得使用 `FieldPaths`、`addBreadcrumb` 或 legacy `reportEvent(category, data)` 作为普通业务埋点路径。
 - `track` 由 SDK 内部映射 `business.action`、`business.result`、`ui.target`、`payload.properties` 等 canonical fields，并自动进入 breadcrumb store。
+- `track.properties` 只作为事件详情，默认不作为主要聚合索引。
+- 普通业务接入需要用户维度排查时，应通过统一上下文入口写入 `context.user.userId`；没有 userId 时不得阻塞基础采集、页面/错误/性能查询和 session timeline。
+- `setUserId`、`setUserInfo`、`setCustomData` 等历史 API 不应继续扩散到新文档和 example；目标 API 应收敛到 `setContext(...)` 语义。
 - 完整 JSON 仍符合 `docs/event_model.md`。
 - core 中的摘要规则可被 SDK、node server、未来 CLI/DevTools 复用。
 - compact 摘要不形成第二套事件模型或服务端协议。
@@ -315,6 +324,36 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - DevTools 集成不复制 Workbench 的完整 session timeline、trace detail、event detail 和 breadcrumb detail UI。
 - Workbench 可消费 Phase 5 export/bridge 数据，但两者不共享第二套协议。
 
+## Workbench：本地调试、QA 复现与统一排查入口
+
+Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。它的优先级是本地调试、QA 复现、session timeline 和性能问题排查。
+
+目标：
+
+- 使用同一套 UI 消费本地 service、SSE live、session export 和未来远端查询 datasource。
+- 本地第一版以 `node_server` 演进为 local workbench service 为主，不急于引入重服务端。
+- local service 从第一版开始区分 SDK 写入链路和 Workbench 查询链路。
+- 支持从 `userId + time range`、App 版本、环境、页面、错误、慢请求、卡顿、启动问题查找 session。
+- 支持 session timeline、trace detail、event detail、breadcrumb viewer 和轻量性能概览。
+- 保持所有数据为统一 `EventEnvelope` 或 core 定义的 session export，不定义第二套工作台协议。
+
+建议迁移顺序：
+
+1. 保持现有 `node_server` API 兼容，补充 SSE stream。
+2. 将内存 ring buffer 抽象为 store/index 层。
+3. 增加 `userId`、time range、app version、environment、route、status/name/signalType 查询。
+4. 优先引入 SQLite 或文件 NDJSON 作为本机持久化；MySQL 等重服务端数据库延后。
+5. 将单页 HTML inspector 替换为 React/Vite Workbench Web。
+6. 增加 session list、session timeline、trace detail、event JSON 和 breadcrumb viewer。
+7. 增加页面加载、HTTP、错误、卡顿、启动的本地轻量聚合。
+
+边界：
+
+- Workbench 可以近实时显示，但 SDK 到 service 的写入仍必须遵守 batch 和 flush 策略。
+- 近实时写入必须通过初始化配置显式开启，不能成为真实 App 默认行为。
+- local workbench service 不承担生产鉴权、多租户、长期治理、告警、remote config、SDK 离线缓存和动态采样。
+- Phase 6 Server 后续可以作为 Workbench 的 remote datasource，但 Workbench UI 不因此改变事件模型。
+
 ## Phase 6：服务端协议与稳定性
 
 目标：
@@ -326,13 +365,17 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 支持离线缓存。
 - 支持动态采样和事件优先级。
 - 支持 remote config 预留。
+- 提供写入链路和查询链路的清晰边界：SDK 上报 API 负责可靠接收，Workbench 查询 API 负责 session、trace、event 和聚合回查。
+- 真实 App 上报必须保护 App 体验，不得默认无策略实时逐条上报。
 
 验收：
 
 - 服务端能校验 schema。
 - SDK 能处理 2xx、4xx、413、429、5xx。
 - SDK 能记录 flush 成功、失败、丢弃事件等 self-monitoring 信息。
+- SDK 能通过显式模式切换 `consoleOnly`、`localLive` 和 `production` 三类输出策略。
 - 服务端能按 `sessionId`、`traceId`、`context.route.name`、`context.module.name`、`resource.app.appVersion`、`resource.device.deviceTier`、`context.native.platform` 聚合。
+- 查询服务能按 `context.user.userId + time range` 查找 session；未提供 userId 的 App 仍可按时间、版本、页面、错误和性能问题查询。
 - 服务端能基于统一事件派生启动 P95、页面 P95、API P95、卡顿率、错误率、native crash/ANR/OOM rate、内存趋势和影响用户数。
 - 采样和限流不会破坏错误、native crash、OOM、关键卡顿、关键慢页面的定位链路。
 
