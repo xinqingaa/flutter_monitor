@@ -38,6 +38,30 @@ class MonitorSessionConfig {
   static const MonitorSessionConfig defaultConfig = MonitorSessionConfig();
 }
 
+/// Memory 采样配置。
+class MonitorMemoryConfig {
+  /// 是否启用 Flutter/Dart 层 memory 线索采集。
+  final bool enabled;
+
+  /// 同类采样最小间隔，避免页面/lifecycle 高频变化导致过量事件。
+  final Duration minSampleInterval;
+
+  /// 生成 memory.growth 所需的最小增长量。
+  final num growthThresholdMb;
+
+  /// 生成 memory.leak.suspect 所需的最小增长量。
+  final num suspectLeakThresholdMb;
+
+  const MonitorMemoryConfig({
+    this.enabled = true,
+    this.minSampleInterval = const Duration(seconds: 30),
+    this.growthThresholdMb = 16,
+    this.suspectLeakThresholdMb = 64,
+  });
+
+  static const MonitorMemoryConfig defaultConfig = MonitorMemoryConfig();
+}
+
 /// 应用信息配置
 class AppInfo {
   /// 应用标识（必填）
@@ -144,6 +168,9 @@ class MonitorConfig {
   /// Session 与生命周期配置（可选）
   final MonitorSessionConfig? sessionConfig;
 
+  /// Memory 采样配置（可选）
+  final MonitorMemoryConfig? memoryConfig;
+
   /// 自定义全局附加数据
   final Map<String, dynamic>? customData;
 
@@ -158,6 +185,7 @@ class MonitorConfig {
     this.jankConfig,
     this.queueConfig,
     this.sessionConfig,
+    this.memoryConfig,
     this.customData,
   });
 
@@ -195,5 +223,10 @@ class MonitorConfig {
   /// 获取实际使用的 session 配置
   MonitorSessionConfig get effectiveSessionConfig {
     return sessionConfig ?? MonitorSessionConfig.defaultConfig;
+  }
+
+  /// 获取实际使用的 memory 配置
+  MonitorMemoryConfig get effectiveMemoryConfig {
+    return memoryConfig ?? MonitorMemoryConfig.defaultConfig;
   }
 }

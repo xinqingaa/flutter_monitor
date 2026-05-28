@@ -1424,6 +1424,161 @@ void main() {
     expect((hotStartEnd['payload'] as Map)['session.started_new'], isTrue);
   });
 
+  test('records memory sample growth pressure and suspect leak envelopes', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.recordMemorySample(
+      rssMb: 128,
+      source: MemorySampleSource.system,
+      trigger: 'test.sample',
+    );
+    reporter.recordMemoryGrowth(
+      growthMb: 32,
+      growthDuration: const Duration(minutes: 2),
+      source: MemorySampleSource.system,
+      trigger: 'test.growth',
+      evidence: const <String, Object?>{'sample_count': 2},
+    );
+    reporter.recordMemoryPressure(
+      level: MemoryPressureLevel.critical,
+      source: MemorySampleSource.native,
+      trigger: 'test.pressure',
+    );
+    reporter.recordMemoryLeakSuspect(
+      growthMb: 96,
+      growthDuration: const Duration(minutes: 5),
+      source: MemorySampleSource.system,
+      trigger: 'test.suspect',
+    );
+
+    final sample = output.events.singleWhere(
+      (event) => event['name'] == EventNames.memorySample,
+    );
+    final sampleAttributes = sample['attributes'] as Map;
+    expect(sample['signalType'], 'metric');
+    expect(sampleAttributes[FieldPaths.memoryRssMb], 128);
+    expect(
+      sampleAttributes[FieldPaths.memorySampleSource],
+      MemorySampleSource.system.toJson(),
+    );
+
+    final growth = output.events.singleWhere(
+      (event) => event['name'] == EventNames.memoryGrowth,
+    );
+    final growthAttributes = growth['attributes'] as Map;
+    expect(growth['durationMs'], 120000);
+    expect(growthAttributes[FieldPaths.memoryGrowthMb], 32);
+    expect(growthAttributes[FieldPaths.memoryGrowthDurationMs], 120000);
+
+    final pressure = output.events.singleWhere(
+      (event) => event['name'] == EventNames.memoryPressure,
+    );
+    final pressureAttributes = pressure['attributes'] as Map;
+    expect(pressure['priority'], EventPriority.high.toJson());
+    expect(pressure['status'], EventStatus.error.toJson());
+    expect(
+      pressureAttributes[FieldPaths.memoryPressureLevel],
+      MemoryPressureLevel.critical.toJson(),
+    );
+    expect(
+      pressureAttributes[FieldPaths.memorySampleSource],
+      MemorySampleSource.native.toJson(),
+    );
+
+    final suspect = output.events.singleWhere(
+      (event) => event['name'] == EventNames.memoryLeakSuspect,
+    );
+    expect(suspect['status'], EventStatus.unknown.toJson());
+    expect((suspect['payload'] as Map)['assertion'], 'suspect_only');
+
+    for (final event in output.events) {
+      expect(
+        SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+        isTrue,
+      );
+    }
+  });
+
+  test('memory pressure is available as breadcrumb context', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.recordMemoryPressure(
+      level: MemoryPressureLevel.moderate,
+      trigger: 'test.pressure',
+    );
+    reporter.addEvent('error', {'type': 'dart_error', 'error': 'StateError'});
+
+    final error = output.events.lastWhere(
+      (event) => event['signalType'] == 'error',
+    );
+    final breadcrumbs =
+        (error['payload'] as Map)[FieldPaths.payloadBreadcrumbs] as List;
+
+    expect(
+      breadcrumbs.any((breadcrumb) {
+        final item = breadcrumb as Map;
+        return item['name'] == EventNames.memoryPressure;
+      }),
+      isTrue,
+    );
+  });
+
+  test(
+    'lifecycle records foreground and background duration metrics',
+    () async {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          sessionConfig: const MonitorSessionConfig(
+            backgroundSessionTimeout: Duration(minutes: 30),
+            flushOnBackground: false,
+          ),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+
+      await reporter.handleLifecycleState(
+        'resumed',
+        timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+      );
+      await reporter.handleLifecycleState(
+        'paused',
+        timestamp: DateTime.parse('2026-05-25T12:02:00.000+08:00'),
+      );
+      await reporter.handleLifecycleState(
+        'resumed',
+        timestamp: DateTime.parse('2026-05-25T12:05:00.000+08:00'),
+      );
+
+      final foreground = output.events.singleWhere(
+        (event) => event['name'] == EventNames.appForegroundDuration,
+      );
+      final background = output.events.singleWhere(
+        (event) => event['name'] == EventNames.appBackgroundDuration,
+      );
+
+      expect(foreground['durationMs'], 120000);
+      expect(background['durationMs'], 180000);
+      expect(
+        (background['attributes'] as Map)[FieldPaths.contextLifecycleState],
+        'resumed',
+      );
+    },
+  );
+
   test('unknown trace and span endings emit sdk self-monitoring events', () {
     final output = RecordingOutput();
     final reporter = Reporter(

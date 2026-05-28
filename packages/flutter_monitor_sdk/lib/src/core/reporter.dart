@@ -26,6 +26,7 @@ class Reporter {
   /// 缓存的设备信息，避免每次上报都重新获取。
   Map<String, dynamic>? _deviceInfo;
   var _backgroundFlushPending = false;
+  DateTime? _foregroundStartedAt;
   final Map<String, _PageTraceRecord> _pageTraces =
       <String, _PageTraceRecord>{};
 
@@ -522,7 +523,7 @@ class Reporter {
     num? frameP99Ms,
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
-    return _pipeline.capture(
+    final result = _pipeline.capture(
       RawSignal(
         source: 'sdk.jank',
         name: 'ui.jank.sequence',
@@ -543,6 +544,138 @@ class Reporter {
           if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
         },
         payload: payload,
+      ),
+    );
+    return result;
+  }
+
+  PipelineResult recordMemorySample({
+    num? rssMb,
+    num? heapUsedMb,
+    num? heapCapacityMb,
+    num? externalMb,
+    num? nativeUsedMb,
+    MemorySampleSource source = MemorySampleSource.dart,
+    String trigger = 'manual',
+    DateTime? timestamp,
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.memory',
+        name: EventNames.memorySample,
+        signalType: SignalType.metric,
+        timestamp: timestamp ?? DateTime.now(),
+        level: EventLevel.debug,
+        status: EventStatus.ok,
+        priority: EventPriority.low,
+        includeBreadcrumbs: false,
+        attributes: <String, Object?>{
+          FieldPaths.memorySampleSource: source.toJson(),
+          if (rssMb != null) FieldPaths.memoryRssMb: rssMb,
+          if (heapUsedMb != null) FieldPaths.memoryHeapUsedMb: heapUsedMb,
+          if (heapCapacityMb != null)
+            FieldPaths.memoryHeapCapacityMb: heapCapacityMb,
+          if (externalMb != null) FieldPaths.memoryExternalMb: externalMb,
+          if (nativeUsedMb != null) FieldPaths.memoryNativeUsedMb: nativeUsedMb,
+        },
+        payload: <String, Object?>{'trigger': trigger},
+      ),
+    );
+  }
+
+  PipelineResult recordMemoryGrowth({
+    required num growthMb,
+    required Duration growthDuration,
+    MemorySampleSource source = MemorySampleSource.dart,
+    String trigger = 'manual',
+    int? sampleCount,
+    Map<String, Object?> evidence = const <String, Object?>{},
+    DateTime? timestamp,
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.memory',
+        name: EventNames.memoryGrowth,
+        signalType: SignalType.metric,
+        timestamp: timestamp ?? DateTime.now(),
+        durationMs: growthDuration.inMilliseconds,
+        level: growthMb > 0 ? EventLevel.info : EventLevel.debug,
+        status: EventStatus.ok,
+        priority: EventPriority.normal,
+        includeBreadcrumbs: false,
+        attributes: <String, Object?>{
+          FieldPaths.memorySampleSource: source.toJson(),
+          FieldPaths.memoryGrowthMb: growthMb,
+          FieldPaths.memoryGrowthDurationMs: growthDuration.inMilliseconds,
+        },
+        payload: <String, Object?>{
+          'trigger': trigger,
+          if (sampleCount != null) 'sample_count': sampleCount,
+          if (evidence.isNotEmpty) 'evidence': evidence,
+        },
+      ),
+    );
+  }
+
+  PipelineResult recordMemoryPressure({
+    MemoryPressureLevel level = MemoryPressureLevel.unknown,
+    MemorySampleSource source = MemorySampleSource.dart,
+    String trigger = 'manual',
+    DateTime? timestamp,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.memory',
+        name: EventNames.memoryPressure,
+        signalType: SignalType.metric,
+        timestamp: timestamp ?? DateTime.now(),
+        level: level == MemoryPressureLevel.critical
+            ? EventLevel.error
+            : EventLevel.warning,
+        status: level == MemoryPressureLevel.none
+            ? EventStatus.ok
+            : EventStatus.error,
+        priority: EventPriority.high,
+        breadcrumbLimit: 5,
+        attributes: <String, Object?>{
+          FieldPaths.memorySampleSource: source.toJson(),
+          FieldPaths.memoryPressureLevel: level.toJson(),
+        },
+        payload: <String, Object?>{'trigger': trigger, ...payload},
+      ),
+    );
+  }
+
+  PipelineResult recordMemoryLeakSuspect({
+    required num growthMb,
+    required Duration growthDuration,
+    MemorySampleSource source = MemorySampleSource.dart,
+    String trigger = 'manual',
+    Map<String, Object?> evidence = const <String, Object?>{},
+    DateTime? timestamp,
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: 'sdk.memory',
+        name: EventNames.memoryLeakSuspect,
+        signalType: SignalType.metric,
+        timestamp: timestamp ?? DateTime.now(),
+        durationMs: growthDuration.inMilliseconds,
+        level: EventLevel.warning,
+        status: EventStatus.unknown,
+        priority: EventPriority.high,
+        breadcrumbLimit: 5,
+        attributes: <String, Object?>{
+          FieldPaths.memorySampleSource: source.toJson(),
+          FieldPaths.memoryGrowthMb: growthMb,
+          FieldPaths.memoryGrowthDurationMs: growthDuration.inMilliseconds,
+        },
+        payload: <String, Object?>{
+          'trigger': trigger,
+          'evidence': evidence,
+          'assertion': 'suspect_only',
+        },
       ),
     );
   }
@@ -611,7 +744,22 @@ class Reporter {
     final sessionId = _sessionManager.currentSessionId;
     final isBackgroundState =
         state == 'paused' || state == 'hidden' || state == 'detached';
+    if (previousState == null && state == 'resumed') {
+      _foregroundStartedAt = occurredAt;
+    }
     if (state == 'paused' || state == 'hidden' || state == 'detached') {
+      if (_foregroundStartedAt != null) {
+        _recordLifecycleDuration(
+          name: EventNames.appForegroundDuration,
+          startedAt: _foregroundStartedAt!,
+          endedAt: occurredAt,
+          state: state,
+          previousState: previousState,
+          isForeground: false,
+          sessionId: sessionId,
+        );
+        _foregroundStartedAt = null;
+      }
       if (_sessionManager.backgroundAt == null) {
         _sessionManager.markBackgrounded(occurredAt);
       }
@@ -622,7 +770,7 @@ class Reporter {
         sessionId: sessionId,
         signal: RawSignal(
           source: 'sdk.lifecycle',
-          name: 'app.lifecycle',
+          name: EventNames.appLifecycle,
           signalType: SignalType.breadcrumb,
           timestamp: occurredAt,
           level: EventLevel.info,
@@ -647,6 +795,15 @@ class Reporter {
       );
       if (_config.effectiveSessionConfig.enableHotStartTrace &&
           resume.backgroundDuration != null) {
+        _recordLifecycleDuration(
+          name: EventNames.appBackgroundDuration,
+          startedAt: occurredAt.subtract(resume.backgroundDuration!),
+          endedAt: occurredAt,
+          state: state,
+          previousState: previousState,
+          isForeground: true,
+          sessionId: sessionId,
+        );
         _emitHotStartTrace(
           timestamp: occurredAt,
           duration: resume.backgroundDuration!,
@@ -654,6 +811,7 @@ class Reporter {
           previousState: previousState,
         );
       }
+      _foregroundStartedAt = occurredAt;
     }
 
     if (_config.effectiveSessionConfig.flushOnBackground &&
@@ -663,7 +821,7 @@ class Reporter {
       try {
         await flush(isAppExiting: state == 'detached');
         reportSdkEvent(
-          'sdk.lifecycle.flush',
+          EventNames.sdkLifecycleFlush,
           attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: true},
           payload: <String, Object?>{
             'lifecycle.trigger_state': state,
@@ -672,7 +830,7 @@ class Reporter {
         );
       } catch (error) {
         reportSdkEvent(
-          'sdk.lifecycle.flush',
+          EventNames.sdkLifecycleFlush,
           level: EventLevel.warning,
           status: EventStatus.error,
           attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: false},
@@ -686,6 +844,40 @@ class Reporter {
     }
   }
 
+  void _recordLifecycleDuration({
+    required String name,
+    required DateTime startedAt,
+    required DateTime endedAt,
+    required String state,
+    required String? previousState,
+    required bool isForeground,
+    required String sessionId,
+  }) {
+    final duration = endedAt.difference(startedAt);
+    if (duration.isNegative) return;
+    _pipeline.captureForSession(
+      sessionId: sessionId,
+      signal: RawSignal(
+        source: 'sdk.lifecycle',
+        name: name,
+        signalType: SignalType.metric,
+        timestamp: endedAt,
+        startTime: startedAt,
+        endTime: endedAt,
+        durationMs: duration.inMilliseconds,
+        level: EventLevel.info,
+        status: EventStatus.ok,
+        includeBreadcrumbs: false,
+        attributes: <String, Object?>{
+          FieldPaths.contextLifecycleState: state,
+          if (previousState != null)
+            FieldPaths.contextLifecyclePreviousState: previousState,
+          FieldPaths.contextLifecycleIsForeground: isForeground,
+        },
+      ),
+    );
+  }
+
   void _emitHotStartTrace({
     required DateTime timestamp,
     required Duration duration,
@@ -694,7 +886,7 @@ class Reporter {
   }) {
     final traceId = _traceManager
         .startTrace(
-          name: 'app.hot_start',
+          name: EventNames.appHotStart,
           startTime: timestamp.subtract(duration),
           attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
           payload: <String, Object?>{

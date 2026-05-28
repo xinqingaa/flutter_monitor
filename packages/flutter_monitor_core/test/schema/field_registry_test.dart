@@ -54,8 +54,29 @@ void main() {
       FieldValueType.number,
     );
     expect(
+      registry.lookup(FieldPaths.memoryNativeUsedMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryGrowthDurationMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
       registry.lookup(FieldPaths.memoryPressureLevel)?.valueType,
       FieldValueType.string,
+    );
+    expect(registry.lookup(FieldPaths.memorySampleSource)?.indexed, isTrue);
+    expect(
+      registry.lookup(FieldPaths.appExitFlushSuccess)?.valueType,
+      FieldValueType.boolean,
+    );
+    expect(
+      registry.lookup(FieldPaths.nativeSignal)?.valueType,
+      FieldValueType.string,
+    );
+    expect(
+      registry.lookup(FieldPaths.nativeAnrDurationMs)?.valueType,
+      FieldValueType.durationMs,
     );
     expect(
       registry.lookup(FieldPaths.sdkInitDurationMs)?.valueType,
@@ -128,6 +149,9 @@ void main() {
     expect(paths, isNot(contains('native.platform')));
     expect(paths, isNot(contains('native.memory.used_mb')));
     expect(paths, isNot(contains('native.memory.pressure_level')));
+    expect(paths, isNot(contains('native.memory.sample_source')));
+    expect(paths, isNot(contains('memory.leak.confirmed')));
+    expect(paths, isNot(contains('memory.leak_detected')));
     expect(paths, isNot(contains('error.message')));
     expect(paths, isNot(contains('error.stacktrace')));
   });

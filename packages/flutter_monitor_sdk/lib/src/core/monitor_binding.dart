@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
+import 'package:flutter_monitor_sdk/src/modules/memory_collector.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 import '../modules/jank_monitor.dart';
 import 'monitor_config.dart';
@@ -13,6 +16,7 @@ import '../modules/performance_monitor.dart';
 class MonitorBinding {
   late final JankMonitor jankMonitor; // JankMonitor 实例
   LifecycleManager? _lifecycleManager;
+  MemoryCollector? _memoryCollector;
   StartupTraceController? _startupTraceController;
   String? _currentPage; // 用于给 JankMonitor 提供当前页面信息
 
@@ -87,12 +91,31 @@ class MonitorBinding {
         jankMonitor = JankMonitor(
           reporter,
           getCurrentPage: () => _currentPage ?? 'unknown',
+          onJankSequenceReported: () {
+            unawaited(
+              _memoryCollector?.recordSample(trigger: 'jank.sequence') ??
+                  Future<void>.value(),
+            );
+          },
           config: config.effectiveJankConfig,
         );
         jankMonitor.init();
         debugPrint("✅ JankMonitor 初始化成功");
       } catch (e) {
         debugPrint("错误: JankMonitor 初始化失败: $e");
+      }
+    }
+
+    if (config.effectiveMemoryConfig.enabled) {
+      try {
+        _memoryCollector = MemoryCollector(
+          reporter,
+          config: config.effectiveMemoryConfig,
+        );
+        unawaited(_memoryCollector!.recordSample(trigger: 'session.start'));
+        debugPrint("✅ MemoryCollector 初始化成功");
+      } catch (e) {
+        debugPrint("错误: MemoryCollector 初始化失败: $e");
       }
     }
 
@@ -170,7 +193,21 @@ class MonitorBinding {
   }
 
   Future<void> handleLifecycleState(String state, {DateTime? timestamp}) {
-    return reporter.handleLifecycleState(state, timestamp: timestamp);
+    return reporter.handleLifecycleState(state, timestamp: timestamp).then((_) {
+      if (state == 'resumed' || state == 'paused' || state == 'hidden') {
+        if (state == 'resumed') {
+          unawaited(
+            _memoryCollector?.recordGrowth(trigger: 'lifecycle.resumed') ??
+                Future<void>.value(),
+          );
+        } else {
+          unawaited(
+            _memoryCollector?.recordSample(trigger: 'lifecycle.$state') ??
+                Future<void>.value(),
+          );
+        }
+      }
+    });
   }
 
   Future<void> dispose() async {

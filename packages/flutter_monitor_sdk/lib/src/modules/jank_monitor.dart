@@ -31,6 +31,7 @@ import '../utils/performance_utils.dart';
 class JankMonitor {
   final Reporter _reporter;
   final String Function()? _getCurrentPage;
+  final VoidCallback? _onJankSequenceReported;
   final JankConfig _config;
 
   // 添加回调标记，防止重复移除
@@ -39,8 +40,10 @@ class JankMonitor {
   JankMonitor(
     this._reporter, {
     String Function()? getCurrentPage,
+    VoidCallback? onJankSequenceReported,
     JankConfig? config,
   }) : _getCurrentPage = getCurrentPage,
+       _onJankSequenceReported = onJankSequenceReported,
        _config = config ?? JankConfig.defaultConfig();
 
   // --- 自适应阈值相关 ---
@@ -263,6 +266,7 @@ class JankMonitor {
         'legacy.data': data,
       },
     );
+    _onJankSequenceReported?.call();
     _lastJankTime = DateTime.now();
     _jankSequenceReported = true;
   }
