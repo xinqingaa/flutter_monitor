@@ -231,23 +231,23 @@ class JankMonitor {
     ///
 
     final data = <String, Object?>{
-      PayloadKeys.type: LegacyTypes.jankSequence,
+      PayloadKeys.type: EventNames.uiJankSequence,
       PayloadKeys.page: _getCurrentPage?.call() ?? 'unknown',
       PayloadKeys.jankCount: _consecutiveJankFrames,
       PayloadKeys.maxDurationMs: _maxJankDurationInSequence,
       PayloadKeys.averageDurationMs:
           _totalJankDurationInSequence / _consecutiveJankFrames,
       PayloadKeys.frameBudgetMs: _frameBudgetMs,
-      'jank_threshold_ms': _jankThresholdMs,
+      PayloadKeys.jankThresholdMs: _jankThresholdMs,
       PayloadKeys.devicePerformance: {
-        'average_frame_time_ms': metrics.averageFrameTime,
-        'frame_time_variance': metrics.frameTimeVariance,
+        PayloadKeys.averageFrameTimeMs: metrics.averageFrameTime,
+        PayloadKeys.frameTimeVariance: metrics.frameTimeVariance,
         PayloadKeys.fps: metrics.fps,
         PayloadKeys.stability: metrics.stability,
         PayloadKeys.percentiles: metrics.percentiles,
-        'anomalous_frame_count': metrics.anomalousFrames.length,
-        'device_level': metrics.deviceLevel.name,
-        'recent_frame_count': _recentFrameTimes.length,
+        PayloadKeys.anomalousFrameCount: metrics.anomalousFrames.length,
+        PayloadKeys.deviceLevel: metrics.deviceLevel.name,
+        PayloadKeys.recentFrameCount: _recentFrameTimes.length,
       },
     };
 
@@ -262,10 +262,7 @@ class JankMonitor {
       frameP50Ms: percentiles['p50'],
       frameP90Ms: percentiles['p90'],
       frameP99Ms: percentiles['p99'],
-      payload: <String, Object?>{
-        PayloadKeys.legacyCategory: LegacyCategories.performance,
-        PayloadKeys.legacyData: data,
-      },
+      payload: data,
     );
     _onJankSequenceReported?.call();
     _lastJankTime = DateTime.now();

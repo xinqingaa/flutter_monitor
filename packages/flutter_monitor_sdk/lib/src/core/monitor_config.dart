@@ -153,7 +153,6 @@ class MonitorConfig {
   /// 监控开关配置
   final bool enableErrorMonitor;
   final bool enablePerformanceMonitor;
-  final bool enableBehaviorMonitor;
   final bool enableJankMonitor;
 
   /// 输出配置（可选，默认使用 LogMonitorOutput）
@@ -179,7 +178,6 @@ class MonitorConfig {
     this.userInfo,
     this.enableErrorMonitor = true,
     this.enablePerformanceMonitor = true,
-    this.enableBehaviorMonitor = true,
     this.enableJankMonitor = true,
     this.outputs,
     this.jankConfig,

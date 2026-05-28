@@ -255,50 +255,6 @@ void main() {
     expect(client.requests, hasLength(1));
   });
 
-  test('legacy reporter events are emitted as unified envelopes', () {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(
-          appKey: 'app_key',
-          appVersion: '1.2.3',
-          buildNumber: '100',
-          packageName: 'com.example.demo',
-          environment: 'test',
-        ),
-        outputs: <MonitorOutput>[output],
-      ),
-    );
-
-    final result = reporter.addEvent('behavior', {
-      'type': 'click',
-      'identifier': 'login_button',
-    });
-
-    expect(result.accepted, isTrue);
-    expect(output.initCount, 1);
-    expect(output.events, hasLength(1));
-
-    final event = output.events.single;
-    expect(event['schemaVersion'], '1.0');
-    expect(event['signalType'], 'breadcrumb');
-    expect(event['name'], 'ui.click');
-    expect(event['sessionId'], isNotEmpty);
-    expect(
-      (event['resource'] as Map)['app'],
-      containsPair('appKey', 'app_key'),
-    );
-    expect((event['attributes'] as Map), containsPair('ui.action', 'click'));
-    expect(
-      (event['attributes'] as Map),
-      containsPair('ui.target', 'login_button'),
-    );
-    expect(
-      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
-      isTrue,
-    );
-  });
-
   test('context is captured when the event is reported', () {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -318,9 +274,12 @@ void main() {
         userProperties: <String, Object?>{'plan': 'pro'},
       ),
     );
-    reporter.addEvent('behavior', {'type': 'pv'});
+    reporter.track(action: 'profile.view', result: MonitorTrackResult.started);
     reporter.setUserId('user_b');
-    reporter.addEvent('behavior', {'type': 'pv'});
+    reporter.track(
+      action: 'profile.refresh',
+      result: MonitorTrackResult.started,
+    );
 
     final firstContext = output.events[0]['context'] as Map;
     final secondContext = output.events[1]['context'] as Map;
@@ -342,13 +301,13 @@ void main() {
         userProperties: <String, Object?>{'plan': 'pro'},
       ),
     );
-    reporter.addEvent('manual', {'type': 'custom'});
+    reporter.track(action: 'profile.save', result: MonitorTrackResult.success);
 
-    final manualPayload = output.events.last['payload'] as Map;
-    final manualContext = output.events.last['context'] as Map;
-    expect(manualPayload.containsKey('legacy.customData'), isFalse);
-    expect(manualPayload.containsKey('legacy.userProperties'), isFalse);
-    expect((manualContext['user'] as Map)['userId'], 'user_c');
+    final eventPayload = output.events.last['payload'] as Map;
+    final eventContext = output.events.last['context'] as Map;
+    expect(eventPayload.containsKey('legacy.customData'), isFalse);
+    expect(eventPayload.containsKey('legacy.userProperties'), isFalse);
+    expect((eventContext['user'] as Map)['userId'], 'user_c');
   });
 
   test('breadcrumb payload does not inherit legacy context details', () {
@@ -378,82 +337,6 @@ void main() {
     expect(payload.containsKey('legacy.userProperties'), isFalse);
   });
 
-  test(
-    'legacy performance api maps queryable fields and keeps details in payload',
-    () {
-      final output = RecordingOutput();
-      final reporter = Reporter(
-        MonitorConfig(
-          appInfo: const AppInfo(appKey: 'app_key'),
-          outputs: <MonitorOutput>[output],
-        ),
-      );
-
-      reporter.addEvent('performance', {
-        'type': 'api',
-        'url': 'https://example.com/api/user?id=1',
-        'method': 'GET',
-        'status': 200,
-        'duration_ms': 42,
-        'success': true,
-      });
-
-      final event = output.events.single;
-      final attributes = event['attributes'] as Map;
-      final payload = event['payload'] as Map;
-
-      expect(event['name'], 'http.client');
-      expect(event['durationMs'], 42);
-      expect(attributes['http.method'], 'GET');
-      expect(attributes['http.url.normalized'], '/api/user');
-      expect(attributes['http.status_code'], 200);
-      expect(attributes['http.success'], isTrue);
-      expect(
-        (payload['legacy.data'] as Map)['url'],
-        'https://example.com/api/user?id=1',
-      );
-    },
-  );
-
-  test('legacy jank sequence uses documented event name and frame fields', () {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(appKey: 'app_key'),
-        outputs: <MonitorOutput>[output],
-      ),
-    );
-
-    reporter.addEvent('performance', {
-      'type': 'jank_sequence',
-      'jank_count': 5,
-      'max_duration_ms': 71.396,
-      'average_duration_ms': 57.0778,
-      'frame_budget_ms': 8.33,
-      'device_performance': {
-        'fps': 18.49,
-        'stability': 0.0,
-        'percentiles': {'p50': 4.5, 'p90': 58.3, 'p99': 1032.9},
-      },
-    });
-
-    final event = output.events.single;
-    final attributes = event['attributes'] as Map;
-
-    expect(event['name'], 'ui.jank.sequence');
-    expect(event['signalType'], 'metric');
-    expect(attributes[FieldPaths.jankCount], 5);
-    expect(attributes[FieldPaths.frameMaxMs], 71.396);
-    expect(attributes[FieldPaths.frameAvgMs], 57.0778);
-    expect(attributes[FieldPaths.frameBudgetMs], 8.33);
-    expect(attributes[FieldPaths.frameFps], 18.49);
-    expect(attributes[FieldPaths.frameP99Ms], 1032.9);
-    expect(
-      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
-      isTrue,
-    );
-  });
-
   test('privacy filter removes forbidden fields before output', () {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -463,23 +346,25 @@ void main() {
       ),
     );
 
-    reporter.addEvent('manual', {
-      'type': 'custom',
-      FieldPaths.authToken: 'secret',
-      'nested': {FieldPaths.httpRequestHeadersCookie: 'a=b', 'keep': 'value'},
-    });
+    reporter.track(
+      action: 'profile.save',
+      properties: const <String, Object?>{
+        FieldPaths.authToken: 'secret',
+        'nested': {FieldPaths.httpRequestHeadersCookie: 'a=b', 'keep': 'value'},
+      },
+    );
 
     final payload = output.events.single['payload'] as Map;
-    final legacyData = payload['legacy.data'] as Map;
+    final properties = payload[FieldPaths.payloadProperties] as Map;
 
-    expect(legacyData.containsKey(FieldPaths.authToken), isFalse);
+    expect(properties.containsKey(FieldPaths.authToken), isFalse);
     expect(
-      (legacyData['nested'] as Map).containsKey(
+      (properties['nested'] as Map).containsKey(
         FieldPaths.httpRequestHeadersCookie,
       ),
       isFalse,
     );
-    expect((legacyData['nested'] as Map)['keep'], 'value');
+    expect((properties['nested'] as Map)['keep'], 'value');
   });
 
   test('envelope builder moves unregistered attributes into payload', () {
@@ -609,11 +494,7 @@ void main() {
     );
 
     reporter.addBreadcrumb('ui.tap.checkout');
-    reporter.addEvent('error', {
-      'type': 'dart_error',
-      'error': 'boom',
-      'stack': 'trace',
-    });
+    reporter.recordDartError(StateError('boom'), StackTrace.current);
 
     final errorEvent = output.events.last;
     final payload = errorEvent['payload'] as Map;
@@ -636,16 +517,8 @@ void main() {
       'ui.tap.home',
       payload: const <String, Object?>{'target': 'home'},
     );
-    reporter.addEvent('error', {
-      'type': 'dart_error',
-      'error': 'first boom',
-      'stack': 'trace',
-    });
-    reporter.addEvent('error', {
-      'type': 'dart_error',
-      'error': 'second boom',
-      'stack': 'trace',
-    });
+    reporter.recordDartError(StateError('first boom'), StackTrace.current);
+    reporter.recordDartError(StateError('second boom'), StackTrace.current);
 
     final secondError = output.events.last;
     final breadcrumbs =
@@ -658,10 +531,7 @@ void main() {
           breadcrumb['payload'] as Map? ?? const <Object?, Object?>{};
       expect(payload.containsKey(FieldPaths.payloadBreadcrumbs), isFalse);
       expect(payload.containsKey(FieldPaths.payloadErrorStacktrace), isFalse);
-      final legacyData = payload['legacy.data'];
-      if (legacyData is Map) {
-        expect(legacyData.containsKey('stack'), isFalse);
-      }
+      expect(payload.containsKey('legacy.data'), isFalse);
     }
   });
 
@@ -746,9 +616,10 @@ void main() {
       output.events
           .where((event) => event['name'] == 'app.lifecycle')
           .every(
-            (event) => !(event['payload'] as Map).containsKey(
-              FieldPaths.payloadBreadcrumbs,
-            ),
+            (event) =>
+                !(event['payload'] as Map).containsKey(
+                  FieldPaths.payloadBreadcrumbs,
+                ),
           ),
       isTrue,
     );
@@ -846,8 +717,8 @@ void main() {
         isTrue,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes']
-            as Map)[FieldPaths.pageFirstFrameMs],
+        (pageFirstFrameEvents.last['attributes'] as Map)[FieldPaths
+            .pageFirstFrameMs],
         isA<num>(),
       );
       expect(
@@ -876,12 +747,16 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/': (_) => Builder(
-            builder: (context) => TextButton(
-              onPressed: () => Navigator.of(context).pushNamed('/complex_list'),
-              child: const Text('complex'),
-            ),
-          ),
+          '/':
+              (_) => Builder(
+                builder:
+                    (context) => TextButton(
+                      onPressed:
+                          () =>
+                              Navigator.of(context).pushNamed('/complex_list'),
+                      child: const Text('complex'),
+                    ),
+              ),
           '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
         },
       ),
@@ -948,26 +823,31 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/': (_) => Builder(
-            builder: (context) => TextButton(
-              onPressed: () => Navigator.of(context).pushNamed('/detail'),
-              child: const Text('detail'),
-            ),
-          ),
+          '/':
+              (_) => Builder(
+                builder:
+                    (context) => TextButton(
+                      onPressed:
+                          () => Navigator.of(context).pushNamed('/detail'),
+                      child: const Text('detail'),
+                    ),
+              ),
           '/detail': (_) => const SizedBox(key: Key('detail-page')),
         },
       ),
     );
     await tester.pump();
-    final homeTraceId = output.events.firstWhere(
-      (event) => event['name'] == 'page.visit',
-    )['traceId'];
+    final homeTraceId =
+        output.events.firstWhere(
+          (event) => event['name'] == 'page.visit',
+        )['traceId'];
 
     await tester.tap(find.text('detail'));
     await tester.pumpAndSettle();
-    final detailTraceId = output.events
-        .where((event) => event['name'] == 'page.visit')
-        .last['traceId'];
+    final detailTraceId =
+        output.events
+            .where((event) => event['name'] == 'page.visit')
+            .last['traceId'];
 
     Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
     await tester.pumpAndSettle();
@@ -1075,6 +955,71 @@ void main() {
     expect(payload[FieldPaths.payloadBreadcrumbs], hasLength(3));
   });
 
+  test('failed http raw payload normalizes error type and error summary', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final longError = List<String>.filled(
+      40,
+      'The request connection took longer than expected and timed out.',
+    ).join(' ');
+
+    reporter.recordHttpClient(
+      url: 'https://example.com/timeout',
+      method: 'GET',
+      durationMs: 2000,
+      success: false,
+      errorType: 'connectionTimeout',
+      error: longError,
+    );
+    reporter.recordHttpClient(
+      url: 'https://10.255.255.1/flutter-monitor-timeout',
+      method: 'GET',
+      durationMs: 37,
+      success: false,
+      errorType: HttpErrorTypes.networkError,
+      error:
+          'ClientException with SocketException: Connection refused '
+          '(OS Error: Connection refused, errno = 111), '
+          'address = 10.255.255.1, port = 60176, '
+          'uri=https://10.255.255.1/flutter-monitor-timeout',
+    );
+
+    final timeoutSpan = output.events.firstWhere(
+      (event) =>
+          event['name'] == EventNames.httpClient &&
+          ((event['payload'] as Map)[PayloadKeys.error] as String) == 'timeout',
+    );
+    final timeoutAttributes = timeoutSpan['attributes'] as Map;
+    final timeoutPayload = timeoutSpan['payload'] as Map;
+
+    expect(timeoutAttributes[FieldPaths.httpErrorType], HttpErrorTypes.timeout);
+    expect(timeoutPayload[PayloadKeys.error], 'timeout');
+    expect(timeoutPayload[PayloadKeys.errorTruncated], isTrue);
+    expect(timeoutPayload[PayloadKeys.errorOriginalLength], longError.length);
+
+    final refusedSpan = output.events.lastWhere(
+      (event) => event['name'] == EventNames.httpClient,
+    );
+    final refusedAttributes = refusedSpan['attributes'] as Map;
+    final refusedPayload = refusedSpan['payload'] as Map;
+
+    expect(
+      refusedAttributes[FieldPaths.httpErrorType],
+      HttpErrorTypes.connectionError,
+    );
+    expect(refusedPayload[PayloadKeys.error], 'connection_refused');
+    expect(
+      (refusedPayload[PayloadKeys.error] as String).contains('60176'),
+      isFalse,
+    );
+    expect(refusedPayload.containsKey(PayloadKeys.errorTruncated), isFalse);
+  });
+
   test('critical event breadcrumbs are relevant, limited and compact', () {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -1130,11 +1075,7 @@ void main() {
       contains('/home'),
     );
 
-    reporter.addEvent('error', {
-      'type': 'dart_error',
-      'error': 'boom',
-      'stack': 'trace',
-    });
+    reporter.recordDartError(StateError('boom'), StackTrace.current);
 
     final errorEvent = output.events.last;
     final errorBreadcrumbs =
@@ -1224,11 +1165,10 @@ void main() {
         frameBudgetMs: 16.67,
         frameFps: 40.7,
       );
-      reporter.addEvent('error', {
-        'type': 'dart_error',
-        'error': 'NoSuchMethodError',
-        'stack': 'trace',
-      });
+      reporter.recordDartError(
+        NoSuchMethodError.withInvocation(null, Invocation.method(#missing, [])),
+        StackTrace.current,
+      );
       await reporter.handleLifecycleState(
         'paused',
         timestamp: startedAt.add(const Duration(seconds: 2)),
@@ -1292,7 +1232,6 @@ void main() {
           flushOnBackground: false,
         ),
         enableErrorMonitor: false,
-        enableBehaviorMonitor: false,
         enableJankMonitor: false,
         outputs: <MonitorOutput>[output],
       ),
@@ -1371,7 +1310,10 @@ void main() {
       ),
     );
 
-    reporter.addEvent('behavior', {'type': 'pv'});
+    reporter.track(
+      action: 'session.anchor',
+      result: MonitorTrackResult.started,
+    );
     final originalSessionId = output.events.single['sessionId'];
     await reporter.handleLifecycleState(
       'paused',
@@ -1405,7 +1347,10 @@ void main() {
       ),
     );
 
-    reporter.addEvent('behavior', {'type': 'pv'});
+    reporter.track(
+      action: 'session.anchor',
+      result: MonitorTrackResult.started,
+    );
     final originalSessionId = output.events.single['sessionId'];
     await reporter.handleLifecycleState(
       'hidden',
@@ -1518,7 +1463,7 @@ void main() {
       level: MemoryPressureLevel.moderate,
       trigger: 'test.pressure',
     );
-    reporter.addEvent('error', {'type': 'dart_error', 'error': 'StateError'});
+    reporter.recordDartError(StateError('StateError'), StackTrace.current);
 
     final error = output.events.lastWhere(
       (event) => event['signalType'] == 'error',

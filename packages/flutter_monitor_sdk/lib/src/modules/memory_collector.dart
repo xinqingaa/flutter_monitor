@@ -51,6 +51,7 @@ class MemoryCollector {
     required String trigger,
     DateTime? timestamp,
     bool force = false,
+    bool emitSample = false,
   }) async {
     if (!_config.enabled) return;
     final occurredAt = timestamp ?? DateTime.now();
@@ -59,6 +60,14 @@ class MemoryCollector {
     final previous = _lastSample ?? _baseline;
     _baseline ??= sample;
     _lastSample = sample;
+    if (emitSample) {
+      _reporter.recordMemorySample(
+        rssMb: sample.rssMb,
+        source: sample.source,
+        trigger: trigger,
+        timestamp: occurredAt,
+      );
+    }
     if (previous == null) return;
 
     final growthMb = sample.usedMb - previous.usedMb;

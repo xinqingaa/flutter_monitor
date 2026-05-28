@@ -4,32 +4,24 @@ abstract final class ErrorMechanisms {
   static const manual = 'manual';
 }
 
+abstract final class ErrorTypes {
+  static const dartError = 'dart_error';
+  static const flutterError = 'flutter_error';
+}
+
 abstract final class HttpErrorTypes {
+  static const badCertificate = 'bad_certificate';
+  static const cancelled = 'cancelled';
+  static const connectionError = 'connection_error';
   static const httpStatus = 'http_status';
   static const networkError = 'network_error';
+  static const timeout = 'timeout';
+  static const unknownNetwork = 'unknown_network';
 }
 
 abstract final class HttpPayloadSources {
   static const dio = 'dio';
   static const packageHttp = 'package:http';
-}
-
-abstract final class LegacyCategories {
-  static const behavior = 'behavior';
-  static const error = 'error';
-  static const performance = 'performance';
-}
-
-abstract final class LegacyTypes {
-  static const api = 'api';
-  static const click = 'click';
-  static const dartError = 'dart_error';
-  static const event = 'event';
-  static const flutterError = 'flutter_error';
-  static const jankSequence = 'jank_sequence';
-  static const pageLoad = 'page_load';
-  static const pageStay = 'page_stay';
-  static const pv = 'pv';
 }
 
 abstract final class LifecycleStates {

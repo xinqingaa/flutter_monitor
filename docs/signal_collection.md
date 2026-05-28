@@ -273,7 +273,9 @@ Native 增强来源：
 
 ### 限制与降级
 
+- `http.error_type` 必须由 SDK 归一为 `http_status`、`connection_error`、`timeout`、`cancelled`、`bad_certificate`、`unknown_network` 等 canonical 值，不得透传具体网络库 enum。
 - 原始 URL、query、body 默认禁止上报。
+- 失败请求的原始错误文本必须有界裁剪；payload 可保留短摘要、`error.truncated` 和 `error.original_length`，不能把 Dio/http 的长异常文本完整写入 raw JSON。
 - normalized URL 可能需要业务配置 route template。
 - streaming body 大小可能不可得。
 - retry/cache 信息依赖具体网络库能力。
@@ -342,7 +344,6 @@ Native 增强来源：
 
 ### 采集来源
 
-- `MonitoredGestureDetector`。
 - 页面访问/PV。
 - 业务主动埋点 API：`FlutterMonitorSDK.track(...)`。
 
@@ -356,7 +357,6 @@ Native 增强来源：
 
 ### 生成事件
 
-- `breadcrumb ui.click`
 - `breadcrumb ui.scroll`
 - `breadcrumb business.action`
 
@@ -365,7 +365,7 @@ Native 增强来源：
 - 普通行为进入 breadcrumb store。
 - 行为应关联当前 `context.route.*`，并在可用时携带可选 `context.module.*` / `context.module.scene`。
 - 后续 HTTP、jank、error 可使用 recent breadcrumbs 还原上下文。
-- 普通 breadcrumb 的 payload 不应自动继承 `legacy.userProperties` 或 `legacy.customData`；用户和业务上下文应保留在 `context` 或显式业务字段中。
+- 普通 breadcrumb 的 payload 不应自动继承用户属性或全局自定义上下文；用户和业务上下文应保留在 `context` 或显式业务字段中。
 
 ### 字段映射
 
@@ -495,6 +495,8 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 
 - Flutter 层内存能力有限，不能保证跨平台一致。
 - 内存泄漏只能表达为 suspect。
+- 业务层不得主动上报 `memory.growth`、`memory.pressure` 或 `memory.leak.suspect`；这些事件必须由 SDK collector/native bridge 根据采样、平台 warning 或阈值判断生成。
+- example 只能制造真实内存压力、持有、释放、jank 或 lifecycle 场景来验证自动采集，不应通过 SDK public API 直接写入 memory 事件。
 - 内存采样频率必须克制，避免 SDK 自身增加性能负担。
 - native memory 依赖可选 native plugin，基础 SDK 不强依赖。
 - OOM 前可能无法完整 flush，应依赖离线缓存和 native bridge 尽力保存。
@@ -630,7 +632,6 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 ### 采集来源
 
 - 业务 API：`FlutterMonitorSDK.track(...)`。
-- 旧 `reportEvent(category, data)` 仅作为 legacy compatibility，不作为新接入推荐路径。
 - `startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点。
 
 普通真实 App 接入的业务面应尽量收敛为：

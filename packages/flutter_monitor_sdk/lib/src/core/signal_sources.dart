@@ -2,6 +2,7 @@ abstract final class SignalSources {
   static const sdkApi = 'sdk.api';
   static const sdkHttp = 'sdk.http';
   static const sdkDio = 'sdk.dio';
+  static const sdkError = 'sdk.error';
   static const sdkJank = 'sdk.jank';
   static const sdkLifecycle = 'sdk.lifecycle';
   static const sdkMemory = 'sdk.memory';

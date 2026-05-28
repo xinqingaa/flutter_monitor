@@ -209,14 +209,13 @@ class EventPipeline {
       return payload;
     }
 
-    final legacyData = payload[PayloadKeys.legacyData];
     return <String, Object?>{
       if (payload[FieldPaths.payloadErrorMessage] != null)
         FieldPaths.payloadErrorMessage: payload[FieldPaths.payloadErrorMessage],
       if (payload[FieldPaths.payloadErrorLibrary] != null)
         FieldPaths.payloadErrorLibrary: payload[FieldPaths.payloadErrorLibrary],
-      if (legacyData is Map)
-        PayloadKeys.legacyData: _compactErrorLegacyData(legacyData),
+      if (payload[PayloadKeys.context] != null)
+        PayloadKeys.context: payload[PayloadKeys.context],
     };
   }
 
@@ -238,29 +237,11 @@ class EventPipeline {
     EventEnvelope envelope,
     Map<String, Object?> payload,
   ) {
-    final legacyData = payload[PayloadKeys.legacyData];
-    final route = legacyData is Map ? legacyData['page'] : null;
+    final route = payload[PayloadKeys.page];
     return <String, Object?>{
       if (route != null) PayloadKeys.routeName: route,
       if (envelope.durationMs != null)
         PayloadKeys.durationMs: envelope.durationMs,
-    };
-  }
-
-  Map<String, Object?> _compactErrorLegacyData(Map<Object?, Object?> data) {
-    return <String, Object?>{
-      if (data[PayloadKeys.type] != null)
-        PayloadKeys.type: data[PayloadKeys.type],
-      if (data[PayloadKeys.exception] != null)
-        PayloadKeys.exception: data[PayloadKeys.exception],
-      if (data[PayloadKeys.error] != null)
-        PayloadKeys.error: data[PayloadKeys.error],
-      if (data[PayloadKeys.library] != null)
-        PayloadKeys.library: data[PayloadKeys.library],
-      if (data[PayloadKeys.context] != null)
-        PayloadKeys.context: data[PayloadKeys.context],
-      if (data[PayloadKeys.timestamp] != null)
-        PayloadKeys.timestamp: data[PayloadKeys.timestamp],
     };
   }
 

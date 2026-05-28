@@ -7,7 +7,6 @@ import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/core/signal_sources.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
-import 'package:flutter_monitor_sdk/src/pipeline/legacy_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
@@ -16,13 +15,14 @@ import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
 
 /// Reporter 是 SDK 的数据心脏，负责收集、丰富、缓存和发送所有监控事件。
 class Reporter {
+  static const int _httpErrorPayloadMaxLength = 300;
+
   final MonitorConfig _config;
   late final ContextManager _contextManager;
   late final SessionManager _sessionManager;
   late final TraceManager _traceManager;
   late final BreadcrumbStore _breadcrumbStore;
   late final EventPipeline _pipeline;
-  final LegacySignalMapper _legacySignalMapper = LegacySignalMapper();
 
   /// 缓存的设备信息，避免每次上报都重新获取。
   Map<String, dynamic>? _deviceInfo;
@@ -104,17 +104,6 @@ class Reporter {
     } catch (e) {
       debugPrint("Failed to get device info: $e");
     }
-  }
-
-  /// 核心方法：添加一个事件到队列。
-  /// 这是所有监控器与Reporter交互的入口。
-  PipelineResult addEvent(String eventCategory, Map<String, dynamic> data) {
-    final signal = _legacySignalMapper.map(
-      category: eventCategory,
-      data: data,
-      timestamp: DateTime.now(),
-    );
-    return _pipeline.capture(signal);
   }
 
   String startTrace(
@@ -366,11 +355,8 @@ class Reporter {
     return addBreadcrumb(
       EventNames.pageView,
       payload: <String, Object?>{
-        PayloadKeys.legacyCategory: LegacyCategories.behavior,
-        PayloadKeys.legacyData: <String, Object?>{
-          PayloadKeys.type: LegacyTypes.pv,
-          PayloadKeys.page: routeName,
-        },
+        PayloadKeys.type: EventNames.pageView,
+        PayloadKeys.page: routeName,
       },
     );
   }
@@ -456,12 +442,15 @@ class Reporter {
     final startedAt =
         startTime ??
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
-    final effectiveErrorType = success
-        ? null
-        : errorType ??
-              (statusCode == null
-                  ? HttpErrorTypes.networkError
-                  : HttpErrorTypes.httpStatus);
+    final errorText = error ?? payload[PayloadKeys.error];
+    final effectiveErrorType =
+        success
+            ? null
+            : _canonicalHttpErrorType(
+              errorType: errorType,
+              statusCode: statusCode,
+              error: errorText is String ? errorText : null,
+            );
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -476,14 +465,19 @@ class Reporter {
       if (responseSizeBytes != null)
         FieldPaths.responseSizeBytes: responseSizeBytes,
     };
+    final compactError = _compactHttpError(
+      errorText is String ? errorText : null,
+      maxLength: _httpErrorPayloadMaxLength,
+    );
+    final httpPayload = <String, Object?>{...payload, PayloadKeys.url: url}
+      ..remove(PayloadKeys.error);
     final span = _traceManager.startSpan(
       name: EventNames.httpClient,
       startTime: startedAt,
       attributes: attributes,
       payload: <String, Object?>{
-        ...payload,
-        PayloadKeys.url: url,
-        if (error != null) PayloadKeys.error: error,
+        ...httpPayload,
+        if (compactError != null) ...compactError,
       },
     );
     final finished = _traceManager.endSpan(
@@ -557,6 +551,37 @@ class Reporter {
       ),
     );
     return result;
+  }
+
+  PipelineResult recordFlutterError(
+    FlutterErrorDetails details, {
+    DateTime? timestamp,
+  }) {
+    return _recordRuntimeError(
+      name: EventNames.errorFlutter,
+      type: ErrorTypes.flutterError,
+      mechanism: ErrorMechanisms.flutter,
+      message: details.exceptionAsString(),
+      stackTrace: details.stack,
+      library: details.library,
+      context: details.context?.toString(),
+      timestamp: timestamp,
+    );
+  }
+
+  PipelineResult recordDartError(
+    Object error,
+    StackTrace stackTrace, {
+    DateTime? timestamp,
+  }) {
+    return _recordRuntimeError(
+      name: EventNames.errorDart,
+      type: ErrorTypes.dartError,
+      mechanism: ErrorMechanisms.dart,
+      message: error.toString(),
+      stackTrace: stackTrace,
+      timestamp: timestamp,
+    );
   }
 
   PipelineResult recordMemorySample({
@@ -640,12 +665,14 @@ class Reporter {
         name: EventNames.memoryPressure,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
-        level: level == MemoryPressureLevel.critical
-            ? EventLevel.error
-            : EventLevel.warning,
-        status: level == MemoryPressureLevel.none
-            ? EventStatus.ok
-            : EventStatus.error,
+        level:
+            level == MemoryPressureLevel.critical
+                ? EventLevel.error
+                : EventLevel.warning,
+        status:
+            level == MemoryPressureLevel.none
+                ? EventStatus.ok
+                : EventStatus.error,
         priority: EventPriority.high,
         breadcrumbLimit: 5,
         attributes: <String, Object?>{
@@ -741,6 +768,42 @@ class Reporter {
         priority: priority,
         attributes: attributes,
         payload: payload,
+      ),
+    );
+  }
+
+  PipelineResult _recordRuntimeError({
+    required String name,
+    required String type,
+    required String mechanism,
+    required String message,
+    StackTrace? stackTrace,
+    String? library,
+    String? context,
+    DateTime? timestamp,
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: SignalSources.sdkError,
+        name: name,
+        signalType: SignalType.error,
+        timestamp: timestamp ?? DateTime.now(),
+        level: EventLevel.error,
+        status: EventStatus.error,
+        priority: EventPriority.high,
+        attributes: <String, Object?>{
+          FieldPaths.errorType: type,
+          FieldPaths.errorMechanism: mechanism,
+          FieldPaths.errorHandled: false,
+          FieldPaths.errorFatal: false,
+        },
+        payload: <String, Object?>{
+          FieldPaths.payloadErrorMessage: message,
+          if (stackTrace != null)
+            FieldPaths.payloadErrorStacktrace: stackTrace.toString(),
+          if (library != null) FieldPaths.payloadErrorLibrary: library,
+          if (context != null) PayloadKeys.context: context,
+        },
       ),
     );
   }
@@ -899,20 +962,21 @@ class Reporter {
     required bool startedNewSession,
     String? previousState,
   }) {
-    final traceId = _traceManager
-        .startTrace(
-          name: EventNames.appHotStart,
-          startTime: timestamp.subtract(duration),
-          attributes: <String, Object?>{
-            FieldPaths.appStartType: StartTypes.hot,
-          },
-          payload: <String, Object?>{
-            PayloadKeys.sessionStartedNew: startedNewSession,
-            if (previousState != null)
-              PayloadKeys.lifecyclePreviousState: previousState,
-          },
-        )
-        .traceId;
+    final traceId =
+        _traceManager
+            .startTrace(
+              name: EventNames.appHotStart,
+              startTime: timestamp.subtract(duration),
+              attributes: <String, Object?>{
+                FieldPaths.appStartType: StartTypes.hot,
+              },
+              payload: <String, Object?>{
+                PayloadKeys.sessionStartedNew: startedNewSession,
+                if (previousState != null)
+                  PayloadKeys.lifecyclePreviousState: previousState,
+              },
+            )
+            .traceId;
     endTrace(
       traceId,
       endTime: timestamp,
@@ -1061,12 +1125,9 @@ class Reporter {
             FieldPaths.pageTo: record.nextRouteName,
         },
         payload: <String, Object?>{
-          PayloadKeys.legacyCategory: LegacyCategories.behavior,
-          PayloadKeys.legacyData: <String, Object?>{
-            PayloadKeys.type: LegacyTypes.pageStay,
-            PayloadKeys.page: record.routeName,
-            PayloadKeys.durationMs: stayMs,
-          },
+          PayloadKeys.type: EventNames.pageStay,
+          PayloadKeys.page: record.routeName,
+          PayloadKeys.durationMs: stayMs,
         },
       ),
     );
@@ -1136,6 +1197,80 @@ class Reporter {
       return uri.path.isEmpty ? '/' : uri.path;
     }
     return rawUrl.split('?').first;
+  }
+
+  String _canonicalHttpErrorType({
+    required String? errorType,
+    required int? statusCode,
+    required String? error,
+  }) {
+    if (statusCode != null) return HttpErrorTypes.httpStatus;
+    final rawType = errorType?.trim();
+    final type = rawType?.toLowerCase();
+    final message = error?.toLowerCase() ?? '';
+    if (type == HttpErrorTypes.httpStatus) return HttpErrorTypes.httpStatus;
+    if (type == HttpErrorTypes.connectionError ||
+        type == 'connectionerror' ||
+        type == 'connection_error' ||
+        type == HttpErrorTypes.networkError ||
+        message.contains('socketexception') ||
+        message.contains('connection refused') ||
+        message.contains('network is unreachable') ||
+        message.contains('failed host lookup')) {
+      return HttpErrorTypes.connectionError;
+    }
+    if (type == HttpErrorTypes.timeout ||
+        type == 'connectiontimeout' ||
+        type == 'receivetimeout' ||
+        type == 'sendtimeout' ||
+        type == 'timeout' ||
+        message.contains('timed out') ||
+        message.contains('timeout')) {
+      return HttpErrorTypes.timeout;
+    }
+    if (type == HttpErrorTypes.badCertificate ||
+        type == 'badcertificate' ||
+        type == 'bad_certificate' ||
+        message.contains('certificate')) {
+      return HttpErrorTypes.badCertificate;
+    }
+    if (type == HttpErrorTypes.cancelled ||
+        type == 'cancel' ||
+        type == 'cancelled' ||
+        message.contains('cancel')) {
+      return HttpErrorTypes.cancelled;
+    }
+    return HttpErrorTypes.unknownNetwork;
+  }
+
+  Map<String, Object?>? _compactHttpError(
+    String? value, {
+    required int maxLength,
+  }) {
+    final normalized = value?.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized == null || normalized.isEmpty) return null;
+    final summary = _httpErrorSummary(normalized, maxLength: maxLength);
+    final result = <String, Object?>{PayloadKeys.error: summary};
+    if (normalized.length > maxLength) {
+      result[PayloadKeys.errorTruncated] = true;
+      result[PayloadKeys.errorOriginalLength] = normalized.length;
+    }
+    return result;
+  }
+
+  String _httpErrorSummary(String normalized, {required int maxLength}) {
+    final lower = normalized.toLowerCase();
+    if (lower.contains('connection refused')) return 'connection_refused';
+    if (lower.contains('failed host lookup')) return 'failed_host_lookup';
+    if (lower.contains('network is unreachable')) return 'network_unreachable';
+    if (lower.contains('timed out') || lower.contains('timeout')) {
+      return 'timeout';
+    }
+    if (lower.contains('certificate')) return 'bad_certificate';
+    if (lower.contains('cancel')) return 'cancelled';
+    if (lower.contains('socketexception')) return 'socket_exception';
+    if (normalized.length <= maxLength) return normalized;
+    return '${normalized.substring(0, maxLength)}...';
   }
 
   EventStatus _trackStatus(MonitorTrackResult result) {

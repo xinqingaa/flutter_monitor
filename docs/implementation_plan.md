@@ -95,8 +95,8 @@ flowchart TD
   - event pipeline；
   - envelope builder；
   - outputs。
-- 将 Reporter 从最终事件分发器升级为兼容入口，或用 pipeline 入口替代。
-- 让旧 `Reporter.addEvent(category, data)` 调用可以进入 pipeline，但旧结构不再作为目标协议。
+- 将 Reporter 从最终事件分发器升级为标准 SDK 内部上报入口和 pipeline 入口。
+- 业务主动埋点使用 `FlutterMonitorSDK.track(...)`；错误、页面、HTTP、卡顿等 SDK 内部采集器直接生成标准 raw signal，不再经过 legacy `category + data` mapper。
 - 接入支撑 session 切分和 hot start 的最小 lifecycle 信号。
 
 本阶段不要求：
@@ -105,11 +105,11 @@ flowchart TD
 - 完整实现 HTTP 重试、离线缓存和 remote config；
 - 完整实现 DevTools 面板；
 - 实现 native 深度能力；
-- 移除旧公开 API。
+- 完成所有旧公开 API 移除。
 
 验收：
 
-- legacy/manual event 能生成统一 `EventEnvelope`。
+- SDK 内部采集器和业务 `track` 能生成统一 `EventEnvelope`。
 - 任意业务事件至少能带 `sessionId`。
 - output 消费统一 event envelope 或 envelope JSON。
 - 上下文异步变化时，事件仍使用发生时的 context snapshot。
@@ -224,7 +224,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 现有功能不丢失。
 - 上报结构符合 `docs/event_model.md`。
 - 示例 App 能展示一条完整 session timeline。
-- 启动、热启动、页面加载、API、点击、PV、页面停留、卡顿、错误、最小 lifecycle 均可在 session 中看到。
+- 启动、热启动、页面加载、API、业务 action、PV、页面停留、卡顿、错误、最小 lifecycle 均可在 session 中看到。
 - 根路由和后续 route 的 `page.load` / `page.first_frame` 都能闭合；未拿到首帧时不得把页面停留时长伪装为成功加载耗时。
 - 慢页面能关联页面 trace、相关 API 和最近 breadcrumbs。
 - 卡顿能关联当前 `context.route.*` / `context.module.*`、当前 page trace、最近相关 breadcrumbs 和 `resource.device.*`。
@@ -234,8 +234,8 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - compact 行中的 `event`、`session`、`trace` 能查回完整 JSON。
 - node server 能按 `eventId`、`sessionId`、`traceId` 查询完整 envelope。
 - 成功 HTTP、普通 breadcrumb、`route.push` 不应在默认控制台模式刷屏。
-- 普通 breadcrumb payload 不应自动携带 `legacy.userProperties` / `legacy.customData`；HTTP/error/jank breadcrumb 快照不得递归携带 breadcrumbs 或长 stacktrace。
-- 业务主动埋点统一使用 `FlutterMonitorSDK.track(...)`；example 和新文档不得使用 `FieldPaths`、`addBreadcrumb` 或 legacy `reportEvent(category, data)` 作为普通业务埋点路径。
+- 普通 breadcrumb payload 不应自动携带用户属性或全局自定义上下文；HTTP/error/jank breadcrumb 快照不得递归携带 breadcrumbs 或长 stacktrace。
+- 业务主动埋点统一使用 `FlutterMonitorSDK.track(...)`；example 和新文档不得使用 `FieldPaths`、`addBreadcrumb` 或 `reportEvent(category, data)` 作为普通业务埋点路径。
 - `track` 由 SDK 内部映射 `business.action`、`business.result`、`ui.target`、`payload.properties` 等 canonical fields，并自动进入 breadcrumb store。
 - `track.properties` 只作为事件详情，默认不作为主要聚合索引。
 - 普通业务接入需要用户维度排查时，应通过统一上下文入口写入 `context.user.userId`；没有 userId 时不得阻塞基础采集、页面/错误/性能查询和 session timeline。

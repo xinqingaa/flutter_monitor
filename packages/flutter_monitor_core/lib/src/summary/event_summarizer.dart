@@ -173,10 +173,6 @@ class EventSummarizer {
     final message = envelope.payload[FieldPaths.payloadErrorMessage];
     if (message != null) return message;
 
-    final legacyData = envelope.payload[PayloadKeys.legacyData];
-    if (legacyData is Map) {
-      return legacyData['exception'] ?? legacyData[PayloadKeys.error];
-    }
     return null;
   }
 

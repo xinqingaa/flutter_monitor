@@ -16,6 +16,7 @@ enum _ScenarioAction {
   httpSlow,
   httpTimeout,
   checkoutAction,
+  memoryBackgroundGrowth,
 }
 
 class HomePage extends StatefulWidget {
@@ -27,7 +28,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   static final Uri _githubUserUri = Uri.parse(
     'https://api.github.com/users/flutter',
   );
@@ -43,17 +45,27 @@ class _HomePageState extends State<HomePage> {
   );
 
   late final http.Client _monitoredHttpClient;
+  late final AnimationController _memoryJankController;
   final Set<_ScenarioAction> _loading = <_ScenarioAction>{};
+  final List<Uint8List> _retainedMemoryChunks = <Uint8List>[];
+  int _retainedMemoryBytes = 0;
 
   @override
   void initState() {
     super.initState();
     _monitoredHttpClient = FlutterMonitorSDK.httpClient;
+    _memoryJankController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..addListener(() {
+      setState(() {});
+    });
     FlutterMonitorSDK.setModule(name: 'example', scene: 'home');
   }
 
   @override
   void dispose() {
+    _memoryJankController.dispose();
     _monitoredHttpClient.close();
     super.dispose();
   }
@@ -197,35 +209,80 @@ class _HomePageState extends State<HomePage> {
   void _triggerLayoutOverflow() {
     showDialog(
       context: context,
-      builder: (context) => const AlertDialog(
-        title: Text('Layout Overflow'),
-        content: Row(
-          children: [
-            Text(
-              'This long text intentionally overflows the dialog width and is captured by FlutterError.',
+      builder:
+          (context) => const AlertDialog(
+            title: Text('Layout Overflow'),
+            content: Row(
+              children: [
+                Text(
+                  'This long text intentionally overflows the dialog width and is captured by FlutterError.',
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
-  void _triggerMemoryPressureHint() {
+  void _allocateRetainedMemory({int mb = 32}) {
+    for (var index = 0; index < mb; index++) {
+      final chunk = Uint8List(1024 * 1024);
+      chunk.fillRange(0, chunk.length, index % 256);
+      _retainedMemoryChunks.add(chunk);
+    }
+    _retainedMemoryBytes += mb * 1024 * 1024;
     FlutterMonitorSDK.track(
-      action: 'memory.pressure.test',
-      result: MonitorTrackResult.started,
-      target: 'memory_pressure_button',
-      properties: const <String, Object?>{
-        'scenario': 'memory_pressure_hint',
-        'claim': 'suspect_only',
+      action: 'example.memory.allocate',
+      result: MonitorTrackResult.success,
+      target: 'memory_allocate_button',
+      properties: <String, Object?>{
+        'allocated_mb': mb,
+        'retained_mb': _retainedMemoryMb,
       },
     );
-    final chunks = <List<int>>[];
-    for (var index = 0; index < 64; index++) {
-      chunks.add(List<int>.filled(32 * 1024, index));
+    if (mounted) setState(() {});
+    _show('Allocated and retained $_retainedMemoryMb MB.');
+  }
+
+  int get _retainedMemoryMb => (_retainedMemoryBytes / 1024 / 1024).round();
+
+  void _releaseRetainedMemory() {
+    final releasedMb = _retainedMemoryMb;
+    _retainedMemoryChunks.clear();
+    _retainedMemoryBytes = 0;
+    FlutterMonitorSDK.track(
+      action: 'example.memory.release',
+      result: MonitorTrackResult.success,
+      target: 'memory_release_button',
+      properties: <String, Object?>{'released_mb': releasedMb},
+    );
+    if (mounted) setState(() {});
+    _show('Released retained memory.');
+  }
+
+  void _allocateMemoryAndTriggerJank() {
+    _allocateRetainedMemory();
+    if (!_memoryJankController.isAnimating) {
+      _memoryJankController.forward(from: 0);
     }
-    scheduleMicrotask(chunks.clear);
-    _show('Memory pressure hint recorded as breadcrumb.');
+    _show('Allocated memory and triggered jank for SDK sampling.');
+  }
+
+  Future<void> _simulateBackgroundMemoryGrowth() async {
+    await FlutterMonitorSDK.handleLifecycleState('paused');
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    _allocateRetainedMemory();
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await FlutterMonitorSDK.handleLifecycleState('resumed');
+    _show('Background/resume memory growth scenario finished.');
+  }
+
+  void _blockForMemoryJankFrame() {
+    if (_memoryJankController.isAnimating) {
+      final startTime = DateTime.now();
+      while (DateTime.now().difference(startTime).inMilliseconds < 45) {
+        _retainedMemoryBytes += 0;
+      }
+    }
   }
 
   Future<void> _simulateLifecycle() async {
@@ -237,6 +294,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    _blockForMemoryJankFrame();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Flutter Monitor Example'),
@@ -254,8 +312,8 @@ class _HomePageState extends State<HomePage> {
               ),
               _button(
                 label: 'Push /performance_test',
-                onPressed: () =>
-                    Navigator.pushNamed(context, '/performance_test'),
+                onPressed:
+                    () => Navigator.pushNamed(context, '/performance_test'),
               ),
               _button(
                 label: 'Push /complex_list',
@@ -267,41 +325,45 @@ class _HomePageState extends State<HomePage> {
                 label: 'Dio 200 GitHub user',
                 action: _ScenarioAction.dioSuccess,
                 color: Colors.green,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.dioSuccess,
-                  run: () => _runDio(_githubUserUri),
-                  done: 'Dio success scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.dioSuccess,
+                      run: () => _runDio(_githubUserUri),
+                      done: 'Dio success scenario finished.',
+                    ),
               ),
               _button(
                 label: 'Dio 404 GitHub path',
                 action: _ScenarioAction.dioFailure,
                 color: Colors.green.shade200,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.dioFailure,
-                  run: () => _runDio(_githubFailureUri),
-                  done: 'Dio failure scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.dioFailure,
+                      run: () => _runDio(_githubFailureUri),
+                      done: 'Dio failure scenario finished.',
+                    ),
               ),
               _button(
                 label: 'Dio slow local request',
                 action: _ScenarioAction.dioSlow,
                 color: Colors.lightGreen,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.dioSlow,
-                  run: () => _runDio(_localSlowUri),
-                  done: 'Dio slow scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.dioSlow,
+                      run: () => _runDio(_localSlowUri),
+                      done: 'Dio slow scenario finished.',
+                    ),
               ),
               _button(
                 label: 'Dio timeout',
                 action: _ScenarioAction.dioTimeout,
                 color: Colors.red.shade200,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.dioTimeout,
-                  run: () => _runDio(_timeoutUri),
-                  done: 'Dio timeout scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.dioTimeout,
+                      run: () => _runDio(_timeoutUri),
+                      done: 'Dio timeout scenario finished.',
+                    ),
               ),
             ]),
             _section('HTTP: package:http', [
@@ -309,42 +371,48 @@ class _HomePageState extends State<HomePage> {
                 label: 'http 200 GitHub user',
                 action: _ScenarioAction.httpSuccess,
                 color: Colors.teal,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.httpSuccess,
-                  run: () => _runHttp(_githubUserUri),
-                  done: 'http success scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.httpSuccess,
+                      run: () => _runHttp(_githubUserUri),
+                      done: 'http success scenario finished.',
+                    ),
               ),
               _button(
                 label: 'http 404 GitHub path',
                 action: _ScenarioAction.httpFailure,
                 color: Colors.teal.shade200,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.httpFailure,
-                  run: () => _runHttp(_githubFailureUri),
-                  done: 'http failure scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.httpFailure,
+                      run: () => _runHttp(_githubFailureUri),
+                      done: 'http failure scenario finished.',
+                    ),
               ),
               _button(
                 label: 'http slow local request',
                 action: _ScenarioAction.httpSlow,
                 color: Colors.cyan,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.httpSlow,
-                  run: () => _runHttp(_localSlowUri),
-                  done: 'http slow scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.httpSlow,
+                      run: () => _runHttp(_localSlowUri),
+                      done: 'http slow scenario finished.',
+                    ),
               ),
               _button(
                 label: 'http timeout',
                 action: _ScenarioAction.httpTimeout,
                 color: Colors.red.shade100,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.httpTimeout,
-                  run: () =>
-                      _runHttp(_timeoutUri).timeout(const Duration(seconds: 2)),
-                  done: 'http timeout scenario finished.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.httpTimeout,
+                      run:
+                          () => _runHttp(
+                            _timeoutUri,
+                          ).timeout(const Duration(seconds: 2)),
+                      done: 'http timeout scenario finished.',
+                    ),
               ),
             ]),
             _section('Jank', [const JankTriggerButton()]),
@@ -362,9 +430,33 @@ class _HomePageState extends State<HomePage> {
             ]),
             _section('Memory And Lifecycle', [
               _button(
-                label: 'Memory pressure hint',
+                label: 'Allocate retained memory',
                 color: Colors.indigo.shade200,
-                onPressed: _triggerMemoryPressureHint,
+                onPressed: () => _allocateRetainedMemory(),
+              ),
+              _button(
+                label: 'Allocate memory + trigger jank',
+                color: Colors.indigo.shade100,
+                onPressed: _allocateMemoryAndTriggerJank,
+              ),
+              _button(
+                label: 'Release retained memory ($_retainedMemoryMb MB)',
+                color: Colors.indigo.shade50,
+                onPressed:
+                    _retainedMemoryChunks.isEmpty
+                        ? null
+                        : _releaseRetainedMemory,
+              ),
+              _button(
+                label: 'Allocate during pause/resume',
+                action: _ScenarioAction.memoryBackgroundGrowth,
+                color: Colors.blueGrey.shade100,
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.memoryBackgroundGrowth,
+                      run: _simulateBackgroundMemoryGrowth,
+                      done: 'Memory growth scenario finished.',
+                    ),
               ),
               if (kDebugMode)
                 _button(
@@ -397,11 +489,12 @@ class _HomePageState extends State<HomePage> {
                 label: 'Track checkout action',
                 action: _ScenarioAction.checkoutAction,
                 color: Colors.purple.shade100,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.checkoutAction,
-                  run: _runCheckoutAction,
-                  done: 'Checkout action tracked.',
-                ),
+                onPressed:
+                    () => _runScenario(
+                      _ScenarioAction.checkoutAction,
+                      run: _runCheckoutAction,
+                      done: 'Checkout action tracked.',
+                    ),
               ),
             ]),
           ],
@@ -425,11 +518,12 @@ class _JankTriggerButtonState extends State<JankTriggerButton>
   @override
   void initState() {
     super.initState();
-    _controller =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2))
-          ..addListener(() {
-            setState(() {});
-          });
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..addListener(() {
+      setState(() {});
+    });
   }
 
   @override
@@ -449,16 +543,17 @@ class _JankTriggerButtonState extends State<JankTriggerButton>
       style: ElevatedButton.styleFrom(
         backgroundColor: _controller.isAnimating ? Colors.grey : Colors.red,
       ),
-      onPressed: _controller.isAnimating
-          ? null
-          : () {
-              FlutterMonitorSDK.track(
-                action: 'ui.tap.trigger_jank',
-                result: MonitorTrackResult.started,
-                target: 'trigger_jank_button',
-              );
-              _controller.forward(from: 0);
-            },
+      onPressed:
+          _controller.isAnimating
+              ? null
+              : () {
+                FlutterMonitorSDK.track(
+                  action: 'ui.tap.trigger_jank',
+                  result: MonitorTrackResult.started,
+                  target: 'trigger_jank_button',
+                );
+                _controller.forward(from: 0);
+              },
       child: const Text('Trigger continuous 45ms frame jank'),
     );
   }

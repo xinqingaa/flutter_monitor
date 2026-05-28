@@ -11,7 +11,6 @@ export 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
 export 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 export 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart';
-export 'package:flutter_monitor_sdk/src/utils/monitored_gesture_detector.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
 export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
 export 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
@@ -249,11 +248,6 @@ class FlutterMonitorSDK {
   void clearCustomData() {
     if (!_isInitialized) return;
     MonitorBinding.instance.reporter.clearCustomData();
-  }
-
-  void reportEvent(String eventType, Map<String, dynamic> data) {
-    if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.addEvent(eventType, data);
   }
 }
 

@@ -36,15 +36,18 @@ void main() {
   });
 
   test('exposes stable payload keys and protocol values', () {
-    expect(PayloadKeys.legacyData, 'legacy.data');
     expect(PayloadKeys.routeName, 'route.name');
     expect(PayloadKeys.httpSource, 'http.source');
+    expect(PayloadKeys.errorTruncated, 'error.truncated');
+    expect(PayloadKeys.errorOriginalLength, 'error.original_length');
     expect(PayloadKeys.startupPhase, 'startup.phase');
     expect(PayloadKeys.unregisteredAttributes, 'unregistered.attributes');
 
-    expect(LegacyCategories.performance, 'performance');
-    expect(LegacyTypes.jankSequence, 'jank_sequence');
+    expect(ErrorTypes.dartError, 'dart_error');
     expect(HttpErrorTypes.httpStatus, 'http_status');
+    expect(HttpErrorTypes.connectionError, 'connection_error');
+    expect(HttpErrorTypes.timeout, 'timeout');
+    expect(HttpErrorTypes.badCertificate, 'bad_certificate');
     expect(HttpPayloadSources.packageHttp, 'package:http');
     expect(StartupPhases.firstFrame, 'first_frame');
   });

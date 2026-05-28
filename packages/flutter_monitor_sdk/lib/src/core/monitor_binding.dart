@@ -8,7 +8,6 @@ import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 import '../modules/jank_monitor.dart';
 import 'monitor_config.dart';
 import 'reporter.dart';
-import '../modules/behavior_monitor.dart';
 import '../modules/error_monitor.dart';
 import '../modules/performance_monitor.dart';
 
@@ -74,19 +73,7 @@ class MonitorBinding {
       }
     }
 
-    // 4. enableBehaviorMonitor 初始化
-    if (config.enableBehaviorMonitor) {
-      try {
-        behaviorMonitor = BehaviorMonitor(reporter);
-        // 行为监控器也可能有自己的初始化逻辑，例如监听App生命周期。
-        behaviorMonitor.init();
-        debugPrint("✅ BehaviorMonitor 初始化成功");
-      } catch (e) {
-        debugPrint("错误: BehaviorMonitor 初始化失败: $e");
-      }
-    }
-
-    // 5. enableJankMonitor 初始化UI卡顿
+    // 4. enableJankMonitor 初始化UI卡顿
     if (config.enableJankMonitor) {
       try {
         jankMonitor = JankMonitor(
@@ -94,7 +81,10 @@ class MonitorBinding {
           getCurrentPage: () => _currentPage ?? 'unknown',
           onJankSequenceReported: () {
             unawaited(
-              _memoryCollector?.recordSample(trigger: 'jank.sequence') ??
+              _memoryCollector?.recordGrowth(
+                    trigger: 'jank.sequence',
+                    emitSample: true,
+                  ) ??
                   Future<void>.value(),
             );
           },
@@ -184,9 +174,6 @@ class MonitorBinding {
 
   /// 性能监控服务。
   late final PerformanceMonitor performanceMonitor;
-
-  /// 行为监控服务。
-  late final BehaviorMonitor behaviorMonitor;
 
   /// 在 App 关闭时，用于释放资源的方法。
   Future<void> flush({bool isAppExiting = false}) {

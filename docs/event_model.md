@@ -338,6 +338,8 @@ flowchart TB
 - `resource.device.*` 表达设备、刷新率和设备等级。
 - `payload` 只保存诊断详情，例如采样窗口、样本数量、触发原因、裁剪状态和 suspect leak 依据。
 
+业务层不得主动构造或上报 `memory.growth`、`memory.pressure` 或 `memory.leak.suspect`。这些事件只能由 SDK memory collector、native bridge 或 SDK 内部测试根据真实采样、平台 warning、阈值判断等证据生成。example 若需要验证内存链路，应制造真实内存分配、持有、释放、jank 或 lifecycle 场景，让 SDK 自动捕获，而不是调用公开 API 直接写入 memory 日志。
+
 `memory.sample_source` 取值必须稳定：
 
 | 值 | 说明 |
@@ -462,7 +464,7 @@ FlutterMonitorSDK.track(
 
 `track` 生成 `signalType = breadcrumb` 的完整 `EventEnvelope`，进入 session timeline，并由 pipeline 自动加入 recent breadcrumb store。后续 error、jank、failed HTTP 可携带它作为 `payload.breadcrumbs` 上下文。业务层不需要也不应该主动调用 `addBreadcrumb` 来实现常规埋点。
 
-`reportEvent(category, data)` 属于 legacy compatibility API，只用于迁移旧接入，不作为新文档和 example 的推荐路径。`startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点示例。
+`reportEvent(category, data)` 和组件式点击埋点不再作为 SDK 业务接入 API。`startTrace` / `startSpan` / `addBreadcrumb` 如保留，应定位为高级诊断 API，不用于普通业务埋点示例。
 
 ### 通用上下文入口
 
@@ -655,7 +657,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | `attributes` | object | 精简后的关键 attributes |
 | `payload` | object | 精简后的 payload |
 
-为避免递归和 payload 过载，breadcrumb 快照中的 `payload` 不应携带嵌套 `payload.breadcrumbs` 或 `payload.error.stacktrace`。失败 HTTP 进入 breadcrumb 时只保留 source、url、duration 等精简信息；普通 breadcrumb 不应自动继承 `legacy.userProperties` 或 `legacy.customData`。
+为避免递归和 payload 过载，breadcrumb 快照中的 `payload` 不应携带嵌套 `payload.breadcrumbs` 或 `payload.error.stacktrace`。失败 HTTP 进入 breadcrumb 时只保留 source、url、duration 等精简信息；普通 breadcrumb 不应自动继承用户属性或全局自定义上下文。
 
 ## Resource
 
@@ -922,7 +924,18 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | `request.size_bytes` | 请求大小 |
 | `response.size_bytes` | 响应大小 |
 
-完整 URL、query、body 默认不应直接上报。
+`http.error_type` 必须使用 SDK canonical 取值，不能直接透传 Dio、package:http 或平台异常名：
+
+| 值 | 说明 |
+|---|---|
+| `http_status` | HTTP 非成功状态码 |
+| `connection_error` | 连接失败、拒绝、DNS/host lookup 失败、网络不可达 |
+| `timeout` | connect/send/receive timeout |
+| `cancelled` | 请求取消 |
+| `bad_certificate` | 证书错误 |
+| `unknown_network` | 无法归类的网络错误 |
+
+完整 URL、query、body 默认不应直接上报。失败请求的原始错误文本只允许作为 `payload.error` 的短摘要存在；长错误文本必须裁剪，并通过 `payload.error.truncated = true`、`payload.error.original_length` 表达裁剪状态。稳定检索和聚合必须依赖 `attributes.http.error_type`，不能依赖 `payload.error` 原文。`payload.error` 不应保留随机端口、长异常描述或库私有错误文本，优先归一为 `connection_refused`、`timeout`、`failed_host_lookup` 等短摘要。
 
 ### 行为
 

@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 
 class ErrorMonitor {
@@ -23,24 +22,10 @@ class ErrorMonitor {
   }
 
   void _reportFlutterError(FlutterErrorDetails details) {
-    final data = {
-      PayloadKeys.type: LegacyTypes.flutterError,
-      PayloadKeys.exception: details.exceptionAsString(),
-      if (details.stack != null) PayloadKeys.stack: details.stack.toString(),
-      PayloadKeys.library: details.library,
-      PayloadKeys.context: details.context?.toString(),
-      PayloadKeys.timestamp: DateTime.now().toIso8601String(),
-    };
-    _reporter.addEvent(LegacyCategories.error, data);
+    _reporter.recordFlutterError(details);
   }
 
   void _reportDartError(Object error, StackTrace stack) {
-    final data = {
-      PayloadKeys.type: LegacyTypes.dartError,
-      PayloadKeys.error: error.toString(),
-      PayloadKeys.stack: stack.toString(),
-      PayloadKeys.timestamp: DateTime.now().toIso8601String(),
-    };
-    _reporter.addEvent(LegacyCategories.error, data);
+    _reporter.recordDartError(error, stack);
   }
 }

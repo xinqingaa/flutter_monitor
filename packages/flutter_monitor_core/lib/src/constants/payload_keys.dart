@@ -4,12 +4,11 @@ abstract final class PayloadKeys {
   static const routeName = 'route.name';
   static const routePrevious = 'route.previous';
 
-  static const legacyCategory = 'legacy.category';
-  static const legacyData = 'legacy.data';
-
   static const httpSource = 'http.source';
   static const url = 'url';
   static const error = 'error';
+  static const errorTruncated = 'error.truncated';
+  static const errorOriginalLength = 'error.original_length';
   static const output = 'output';
   static const issues = 'issues';
   static const stack = 'stack';
@@ -21,6 +20,7 @@ abstract final class PayloadKeys {
 
   static const type = 'type';
   static const page = 'page';
+  static const category = 'category';
   static const method = 'method';
   static const status = 'status';
   static const success = 'success';
@@ -50,6 +50,12 @@ abstract final class PayloadKeys {
   static const averageDurationMs = 'average_duration_ms';
   static const frameBudgetMs = 'frame_budget_ms';
   static const devicePerformance = 'device_performance';
+  static const jankThresholdMs = 'jank_threshold_ms';
+  static const averageFrameTimeMs = 'average_frame_time_ms';
+  static const frameTimeVariance = 'frame_time_variance';
+  static const anomalousFrameCount = 'anomalous_frame_count';
+  static const deviceLevel = 'device_level';
+  static const recentFrameCount = 'recent_frame_count';
   static const percentiles = 'percentiles';
   static const fps = 'fps';
   static const stability = 'stability';
