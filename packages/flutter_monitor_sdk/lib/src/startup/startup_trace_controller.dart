@@ -22,11 +22,15 @@ class StartupTraceController {
     final startedAt = DateTime.now();
     _sdkInitSpanStartTime = startedAt;
     _sdkInitSpanId = _reporter.startSpan(
-      'sdk.init',
+      EventNames.sdkInit,
       traceId: _coldStartTraceId,
       startTime: startedAt,
-      attributes: const <String, Object?>{FieldPaths.appStartType: 'cold'},
-      payload: const <String, Object?>{'startup.phase': 'sdk_init'},
+      attributes: const <String, Object?>{
+        FieldPaths.appStartType: StartTypes.cold,
+      },
+      payload: const <String, Object?>{
+        PayloadKeys.startupPhase: StartupPhases.sdkInit,
+      },
     );
   }
 
@@ -40,13 +44,15 @@ class StartupTraceController {
       endTime: finishedAt,
       status: EventStatus.ok,
       attributes: <String, Object?>{
-        FieldPaths.appStartType: 'cold',
+        FieldPaths.appStartType: StartTypes.cold,
         if (startedAt != null)
           FieldPaths.sdkInitDurationMs: finishedAt
               .difference(startedAt)
               .inMilliseconds,
       },
-      payload: const <String, Object?>{'startup.phase': 'sdk_init'},
+      payload: const <String, Object?>{
+        PayloadKeys.startupPhase: StartupPhases.sdkInit,
+      },
     );
     _sdkInitSpanId = null;
     _sdkInitSpanStartTime = null;
@@ -58,21 +64,25 @@ class StartupTraceController {
     final durationMs = endTime.difference(_appStartTime).inMilliseconds;
 
     final firstFrameSpanId = _reporter.startSpan(
-      'app.first_frame',
+      EventNames.appFirstFrame,
       traceId: traceId,
       startTime: _appStartTime,
-      attributes: <String, Object?>{FieldPaths.appStartType: 'cold'},
-      payload: const <String, Object?>{'startup.phase': 'first_frame'},
+      attributes: <String, Object?>{FieldPaths.appStartType: StartTypes.cold},
+      payload: const <String, Object?>{
+        PayloadKeys.startupPhase: StartupPhases.firstFrame,
+      },
     );
     _reporter.endSpan(
       firstFrameSpanId,
       endTime: endTime,
       status: EventStatus.ok,
       attributes: <String, Object?>{
-        FieldPaths.appStartType: 'cold',
+        FieldPaths.appStartType: StartTypes.cold,
         FieldPaths.appFirstFrameMs: durationMs,
       },
-      payload: const <String, Object?>{'startup.phase': 'first_frame'},
+      payload: const <String, Object?>{
+        PayloadKeys.startupPhase: StartupPhases.firstFrame,
+      },
     );
 
     _reporter.endTrace(
@@ -80,10 +90,12 @@ class StartupTraceController {
       endTime: endTime,
       status: EventStatus.ok,
       attributes: <String, Object?>{
-        FieldPaths.appStartType: 'cold',
+        FieldPaths.appStartType: StartTypes.cold,
         FieldPaths.appFirstFrameMs: durationMs,
       },
-      payload: const <String, Object?>{'startup.phase': 'cold_start'},
+      payload: const <String, Object?>{
+        PayloadKeys.startupPhase: StartupPhases.coldStart,
+      },
     );
     _isColdStartFinished = true;
   }
@@ -92,10 +104,14 @@ class StartupTraceController {
     final existing = _coldStartTraceId;
     if (existing != null) return existing;
     _coldStartTraceId = _reporter.startTrace(
-      'app.cold_start',
+      EventNames.appColdStart,
       startTime: _appStartTime,
-      attributes: const <String, Object?>{FieldPaths.appStartType: 'cold'},
-      payload: const <String, Object?>{'startup.phase': 'cold_start'},
+      attributes: const <String, Object?>{
+        FieldPaths.appStartType: StartTypes.cold,
+      },
+      payload: const <String, Object?>{
+        PayloadKeys.startupPhase: StartupPhases.coldStart,
+      },
     );
     return _coldStartTraceId!;
   }

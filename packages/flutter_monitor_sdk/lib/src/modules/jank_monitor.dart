@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import '../utils/performance_utils.dart';
 
@@ -230,20 +231,20 @@ class JankMonitor {
     ///
 
     final data = <String, Object?>{
-      'type': 'jank_sequence',
-      'page': _getCurrentPage?.call() ?? 'unknown',
-      'jank_count': _consecutiveJankFrames,
-      'max_duration_ms': _maxJankDurationInSequence,
-      'average_duration_ms':
+      PayloadKeys.type: LegacyTypes.jankSequence,
+      PayloadKeys.page: _getCurrentPage?.call() ?? 'unknown',
+      PayloadKeys.jankCount: _consecutiveJankFrames,
+      PayloadKeys.maxDurationMs: _maxJankDurationInSequence,
+      PayloadKeys.averageDurationMs:
           _totalJankDurationInSequence / _consecutiveJankFrames,
-      'frame_budget_ms': _frameBudgetMs,
+      PayloadKeys.frameBudgetMs: _frameBudgetMs,
       'jank_threshold_ms': _jankThresholdMs,
-      'device_performance': {
+      PayloadKeys.devicePerformance: {
         'average_frame_time_ms': metrics.averageFrameTime,
         'frame_time_variance': metrics.frameTimeVariance,
-        'fps': metrics.fps,
-        'stability': metrics.stability,
-        'percentiles': metrics.percentiles,
+        PayloadKeys.fps: metrics.fps,
+        PayloadKeys.stability: metrics.stability,
+        PayloadKeys.percentiles: metrics.percentiles,
         'anomalous_frame_count': metrics.anomalousFrames.length,
         'device_level': metrics.deviceLevel.name,
         'recent_frame_count': _recentFrameTimes.length,
@@ -262,8 +263,8 @@ class JankMonitor {
       frameP90Ms: percentiles['p90'],
       frameP99Ms: percentiles['p99'],
       payload: <String, Object?>{
-        'legacy.category': 'performance',
-        'legacy.data': data,
+        PayloadKeys.legacyCategory: LegacyCategories.performance,
+        PayloadKeys.legacyData: data,
       },
     );
     _onJankSequenceReported?.call();

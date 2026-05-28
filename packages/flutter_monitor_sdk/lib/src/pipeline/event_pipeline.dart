@@ -85,11 +85,11 @@ class EventPipeline {
       final validation = _schemaValidator.validate(built);
       if (!validation.isValid) {
         _emitSelfMonitoring(
-          name: 'sdk.pipeline.validation_failed',
+          name: EventNames.sdkPipelineValidationFailed,
           payload: <String, Object?>{
-            'source': signal.source,
-            'signal.name': signal.name,
-            'issues': validation.errors
+            PayloadKeys.source: signal.source,
+            PayloadKeys.signalName: signal.name,
+            PayloadKeys.issues: validation.errors
                 .map((issue) => issue.toJson())
                 .toList(growable: false),
           },
@@ -103,12 +103,12 @@ class EventPipeline {
       return PipelineResult.accepted(filtered);
     } catch (error, stackTrace) {
       _emitSelfMonitoring(
-        name: 'sdk.pipeline.envelope_build_failed',
+        name: EventNames.sdkPipelineEnvelopeBuildFailed,
         payload: <String, Object?>{
-          'source': signal.source,
-          'signal.name': signal.name,
-          'error': error.toString(),
-          'stack': stackTrace.toString(),
+          PayloadKeys.source: signal.source,
+          PayloadKeys.signalName: signal.name,
+          PayloadKeys.error: error.toString(),
+          PayloadKeys.stack: stackTrace.toString(),
         },
       );
       return PipelineResult.rejected([
@@ -131,10 +131,10 @@ class EventPipeline {
           'Error while dispatching event to ${output.runtimeType}: $error',
         );
         _emitSelfMonitoring(
-          name: 'sdk.output.dispatch_failed',
+          name: EventNames.sdkOutputDispatchFailed,
           payload: <String, Object?>{
-            'output': output.runtimeType.toString(),
-            'error': error.toString(),
+            PayloadKeys.output: output.runtimeType.toString(),
+            PayloadKeys.error: error.toString(),
           },
           dispatch: false,
         );
@@ -149,11 +149,11 @@ class EventPipeline {
       } catch (error) {
         debugPrint('Error while flushing ${output.runtimeType}: $error');
         _emitSelfMonitoring(
-          name: 'sdk.output.flush_failed',
+          name: EventNames.sdkOutputFlushFailed,
           payload: <String, Object?>{
-            'output': output.runtimeType.toString(),
-            'error': error.toString(),
-            'isAppExiting': isAppExiting,
+            PayloadKeys.output: output.runtimeType.toString(),
+            PayloadKeys.error: error.toString(),
+            PayloadKeys.isAppExiting: isAppExiting,
           },
         );
       }
@@ -184,10 +184,10 @@ class EventPipeline {
     if (envelope.signalType == SignalType.sdk) return false;
     if (envelope.signalType == SignalType.breadcrumb) return true;
     if (envelope.signalType == SignalType.error) return true;
-    if (envelope.name == 'ui.jank.sequence') return true;
+    if (envelope.name == EventNames.uiJankSequence) return true;
     if (envelope.name == EventNames.memoryPressure) return true;
     if (envelope.name == EventNames.memoryLeakSuspect) return true;
-    if (envelope.name == 'http.client' &&
+    if (envelope.name == EventNames.httpClient &&
         envelope.status == EventStatus.error) {
       return true;
     }
@@ -199,23 +199,24 @@ class EventPipeline {
     payload.remove(FieldPaths.payloadBreadcrumbs);
     payload.remove(FieldPaths.payloadErrorStacktrace);
 
-    if (envelope.name == 'http.client') {
+    if (envelope.name == EventNames.httpClient) {
       return _compactHttpPayload(envelope, payload);
     }
-    if (envelope.name == 'ui.jank.sequence') {
+    if (envelope.name == EventNames.uiJankSequence) {
       return _compactJankPayload(envelope, payload);
     }
     if (envelope.signalType != SignalType.error) {
       return payload;
     }
 
-    final legacyData = payload['legacy.data'];
+    final legacyData = payload[PayloadKeys.legacyData];
     return <String, Object?>{
       if (payload[FieldPaths.payloadErrorMessage] != null)
         FieldPaths.payloadErrorMessage: payload[FieldPaths.payloadErrorMessage],
       if (payload[FieldPaths.payloadErrorLibrary] != null)
         FieldPaths.payloadErrorLibrary: payload[FieldPaths.payloadErrorLibrary],
-      if (legacyData is Map) 'legacy.data': _compactErrorLegacyData(legacyData),
+      if (legacyData is Map)
+        PayloadKeys.legacyData: _compactErrorLegacyData(legacyData),
     };
   }
 
@@ -224,9 +225,12 @@ class EventPipeline {
     Map<String, Object?> payload,
   ) {
     return <String, Object?>{
-      if (payload['http.source'] != null) 'http.source': payload['http.source'],
-      if (payload['url'] != null) 'url': payload['url'],
-      if (envelope.durationMs != null) 'duration_ms': envelope.durationMs,
+      if (payload[PayloadKeys.httpSource] != null)
+        PayloadKeys.httpSource: payload[PayloadKeys.httpSource],
+      if (payload[PayloadKeys.url] != null)
+        PayloadKeys.url: payload[PayloadKeys.url],
+      if (envelope.durationMs != null)
+        PayloadKeys.durationMs: envelope.durationMs,
     };
   }
 
@@ -234,22 +238,29 @@ class EventPipeline {
     EventEnvelope envelope,
     Map<String, Object?> payload,
   ) {
-    final legacyData = payload['legacy.data'];
+    final legacyData = payload[PayloadKeys.legacyData];
     final route = legacyData is Map ? legacyData['page'] : null;
     return <String, Object?>{
-      if (route != null) 'route.name': route,
-      if (envelope.durationMs != null) 'duration_ms': envelope.durationMs,
+      if (route != null) PayloadKeys.routeName: route,
+      if (envelope.durationMs != null)
+        PayloadKeys.durationMs: envelope.durationMs,
     };
   }
 
   Map<String, Object?> _compactErrorLegacyData(Map<Object?, Object?> data) {
     return <String, Object?>{
-      if (data['type'] != null) 'type': data['type'],
-      if (data['exception'] != null) 'exception': data['exception'],
-      if (data['error'] != null) 'error': data['error'],
-      if (data['library'] != null) 'library': data['library'],
-      if (data['context'] != null) 'context': data['context'],
-      if (data['timestamp'] != null) 'timestamp': data['timestamp'],
+      if (data[PayloadKeys.type] != null)
+        PayloadKeys.type: data[PayloadKeys.type],
+      if (data[PayloadKeys.exception] != null)
+        PayloadKeys.exception: data[PayloadKeys.exception],
+      if (data[PayloadKeys.error] != null)
+        PayloadKeys.error: data[PayloadKeys.error],
+      if (data[PayloadKeys.library] != null)
+        PayloadKeys.library: data[PayloadKeys.library],
+      if (data[PayloadKeys.context] != null)
+        PayloadKeys.context: data[PayloadKeys.context],
+      if (data[PayloadKeys.timestamp] != null)
+        PayloadKeys.timestamp: data[PayloadKeys.timestamp],
     };
   }
 

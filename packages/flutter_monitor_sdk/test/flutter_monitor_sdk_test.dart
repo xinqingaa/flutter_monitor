@@ -1058,7 +1058,7 @@ void main() {
       statusCode: 404,
       durationMs: 18,
       success: false,
-      errorType: 'http_status',
+      errorType: HttpErrorTypes.httpStatus,
       error: 'very long dio error text',
       responseSizeBytes: 128,
     );
@@ -1069,7 +1069,7 @@ void main() {
 
     expect(httpSpan['status'], 'error');
     expect(attributes[FieldPaths.httpSuccess], isFalse);
-    expect(attributes[FieldPaths.httpErrorType], 'http_status');
+    expect(attributes[FieldPaths.httpErrorType], HttpErrorTypes.httpStatus);
     expect(attributes[FieldPaths.responseSizeBytes], 128);
     expect(payload[FieldPaths.payloadBreadcrumbs], isA<List>());
     expect(payload[FieldPaths.payloadBreadcrumbs], hasLength(3));
@@ -1184,7 +1184,7 @@ void main() {
 
     expect(httpSpan['status'], 'error');
     expect(attributes[FieldPaths.httpSuccess], isFalse);
-    expect(attributes[FieldPaths.httpErrorType], 'http_status');
+    expect(attributes[FieldPaths.httpErrorType], HttpErrorTypes.httpStatus);
     expect(attributes[FieldPaths.responseSizeBytes], 256);
   });
 
@@ -1614,7 +1614,7 @@ void main() {
 
     expect(
       output.events.any(
-        (event) => event['name'] == 'sdk.output.dispose_failed',
+        (event) => event['name'] == EventNames.sdkOutputDisposeFailed,
       ),
       isTrue,
     );

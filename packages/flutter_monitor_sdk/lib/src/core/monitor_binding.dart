@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
 import 'package:flutter_monitor_sdk/src/modules/memory_collector.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
@@ -194,8 +195,10 @@ class MonitorBinding {
 
   Future<void> handleLifecycleState(String state, {DateTime? timestamp}) {
     return reporter.handleLifecycleState(state, timestamp: timestamp).then((_) {
-      if (state == 'resumed' || state == 'paused' || state == 'hidden') {
-        if (state == 'resumed') {
+      if (state == LifecycleStates.resumed ||
+          state == LifecycleStates.paused ||
+          state == LifecycleStates.hidden) {
+        if (state == LifecycleStates.resumed) {
           unawaited(
             _memoryCollector?.recordGrowth(trigger: 'lifecycle.resumed') ??
                 Future<void>.value(),

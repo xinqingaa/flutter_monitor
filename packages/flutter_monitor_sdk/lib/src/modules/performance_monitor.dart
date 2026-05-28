@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
+import 'package:flutter_monitor_sdk/src/core/signal_sources.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 
 // 用于页面路由监听  可以适当修改泛型 <Route<dynamic>>
@@ -95,13 +97,15 @@ class MonitorDioInterceptor extends Interceptor {
       success: _isSuccessfulStatusCode(response.statusCode),
       errorType: _isSuccessfulStatusCode(response.statusCode)
           ? null
-          : 'http_status',
+          : HttpErrorTypes.httpStatus,
       requestSizeBytes: _dioRequestSize(response.requestOptions),
       responseSizeBytes: _dioResponseSize(response),
-      source: 'sdk.dio',
+      source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
-      payload: <String, Object?>{'http.source': 'dio'},
+      payload: <String, Object?>{
+        PayloadKeys.httpSource: HttpPayloadSources.dio,
+      },
     );
     super.onResponse(response, handler);
   }
@@ -124,10 +128,12 @@ class MonitorDioInterceptor extends Interceptor {
       responseSizeBytes: err.response == null
           ? null
           : _dioResponseSize(err.response!),
-      source: 'sdk.dio',
+      source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
-      payload: <String, Object?>{'http.source': 'dio'},
+      payload: <String, Object?>{
+        PayloadKeys.httpSource: HttpPayloadSources.dio,
+      },
     );
     super.onError(err, handler);
   }

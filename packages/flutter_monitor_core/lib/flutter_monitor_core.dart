@@ -6,6 +6,8 @@ export 'src/constants/context_missing_reasons.dart';
 export 'src/constants/default_limits.dart';
 export 'src/constants/event_names.dart';
 export 'src/constants/field_paths.dart';
+export 'src/constants/payload_keys.dart';
+export 'src/constants/protocol_values.dart';
 export 'src/constants/schema_constants.dart';
 export 'src/export/session_export.dart';
 export 'src/model/breadcrumb.dart';

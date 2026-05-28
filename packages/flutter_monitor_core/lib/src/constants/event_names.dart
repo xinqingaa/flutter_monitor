@@ -1,4 +1,39 @@
 abstract final class EventNames {
+  static const appColdStart = 'app.cold_start';
+  static const appFirstFrame = 'app.first_frame';
+  static const appInteractive = 'app.interactive';
+  static const appLifecycle = 'app.lifecycle';
+  static const appForegroundDuration = 'app.foreground_duration';
+  static const appBackgroundDuration = 'app.background_duration';
+  static const appHotStart = 'app.hot_start';
+
+  static const sdkInit = 'sdk.init';
+  static const sdkLifecycleFlush = 'sdk.lifecycle.flush';
+  static const sdkMemorySampleUnavailable = 'sdk.memory.sample_unavailable';
+  static const sdkOutputDispatchFailed = 'sdk.output.dispatch_failed';
+  static const sdkOutputFlushFailed = 'sdk.output.flush_failed';
+  static const sdkOutputDisposeFailed = 'sdk.output.dispose_failed';
+  static const sdkPipelineValidationFailed = 'sdk.pipeline.validation_failed';
+  static const sdkPipelineEnvelopeBuildFailed =
+      'sdk.pipeline.envelope_build_failed';
+  static const sdkTraceEndUnknown = 'sdk.trace.end_unknown';
+  static const sdkSpanEndUnknown = 'sdk.span.end_unknown';
+  static const sdkHttpSpanEndFailed = 'sdk.http.span_end_failed';
+
+  static const pageVisit = 'page.visit';
+  static const pageView = 'page.view';
+  static const pageLoad = 'page.load';
+  static const pageFirstFrame = 'page.first_frame';
+  static const pageStay = 'page.stay';
+
+  static const routePush = 'route.push';
+  static const routePop = 'route.pop';
+
+  static const httpClient = 'http.client';
+
+  static const uiClick = 'ui.click';
+  static const uiJankSequence = 'ui.jank.sequence';
+
   static const memorySample = 'memory.sample';
   static const memoryGrowth = 'memory.growth';
   static const memoryPressure = 'memory.pressure';
@@ -12,9 +47,7 @@ abstract final class EventNames {
   static const nativeOom = 'native.oom';
   static const nativeAnr = 'native.anr';
 
-  static const appLifecycle = 'app.lifecycle';
-  static const appForegroundDuration = 'app.foreground_duration';
-  static const appBackgroundDuration = 'app.background_duration';
-  static const appHotStart = 'app.hot_start';
-  static const sdkLifecycleFlush = 'sdk.lifecycle.flush';
+  static const errorFlutter = 'error.flutter';
+  static const errorDart = 'error.dart';
+  static const errorManual = 'error.manual';
 }

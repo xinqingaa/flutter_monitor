@@ -26,7 +26,7 @@ class EnvelopeBuilder {
     final payload = <String, Object?>{
       ...signal.payload,
       if (unregisteredAttributes.isNotEmpty)
-        'unregistered.attributes': unregisteredAttributes,
+        PayloadKeys.unregisteredAttributes: unregisteredAttributes,
       if (breadcrumbLimit != null &&
           breadcrumbLimit > 0 &&
           traceSnapshot.breadcrumbs.isNotEmpty)
@@ -70,9 +70,9 @@ class EnvelopeBuilder {
     if (signal.breadcrumbLimit != null) return signal.breadcrumbLimit;
     final defaultLimit = switch (signal.signalType) {
       SignalType.error => 8,
-      SignalType.metric when signal.name == 'ui.jank.sequence' => 5,
+      SignalType.metric when signal.name == EventNames.uiJankSequence => 5,
       SignalType.span
-          when signal.name == 'http.client' &&
+          when signal.name == EventNames.httpClient &&
               signal.status == EventStatus.error =>
         3,
       SignalType.metric when signal.status == EventStatus.error => 3,

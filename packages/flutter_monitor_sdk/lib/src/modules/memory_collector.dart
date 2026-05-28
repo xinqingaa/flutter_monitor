@@ -29,10 +29,10 @@ class MemoryCollector {
     final sample = await _captureSample(occurredAt);
     if (sample == null) {
       _reporter.reportSdkEvent(
-        'sdk.memory.sample_unavailable',
+        EventNames.sdkMemorySampleUnavailable,
         level: EventLevel.debug,
         status: EventStatus.unknown,
-        payload: <String, Object?>{'trigger': trigger},
+        payload: <String, Object?>{PayloadKeys.trigger: trigger},
       );
       return;
     }
@@ -94,7 +94,7 @@ class MemoryCollector {
 
   void recordPressure({
     MemoryPressureLevel level = MemoryPressureLevel.unknown,
-    String trigger = 'manual',
+    String trigger = TriggerValues.manual,
     DateTime? timestamp,
   }) {
     if (!_config.enabled) return;

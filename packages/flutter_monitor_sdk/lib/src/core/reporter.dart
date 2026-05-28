@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/core/signal_sources.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/legacy_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
@@ -130,7 +131,7 @@ class Reporter {
     );
     _pipeline.capture(
       RawSignal(
-        source: 'sdk.api',
+        source: SignalSources.sdkApi,
         name: name,
         signalType: SignalType.trace,
         timestamp: record.startTime,
@@ -164,14 +165,14 @@ class Reporter {
     );
     if (record == null) {
       return reportSdkEvent(
-        'sdk.trace.end_unknown',
+        EventNames.sdkTraceEndUnknown,
         level: EventLevel.warning,
-        payload: <String, Object?>{'traceId': traceId},
+        payload: <String, Object?>{PayloadKeys.traceId: traceId},
       );
     }
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.api',
+        source: SignalSources.sdkApi,
         name: record.name,
         signalType: SignalType.trace,
         timestamp: record.endTime ?? DateTime.now(),
@@ -206,7 +207,7 @@ class Reporter {
     );
     _pipeline.capture(
       RawSignal(
-        source: 'sdk.api',
+        source: SignalSources.sdkApi,
         name: name,
         signalType: SignalType.span,
         timestamp: record.startTime,
@@ -242,14 +243,14 @@ class Reporter {
     );
     if (record == null) {
       return reportSdkEvent(
-        'sdk.span.end_unknown',
+        EventNames.sdkSpanEndUnknown,
         level: EventLevel.warning,
-        payload: <String, Object?>{'spanId': spanId},
+        payload: <String, Object?>{PayloadKeys.spanId: spanId},
       );
     }
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.api',
+        source: SignalSources.sdkApi,
         name: record.name,
         signalType: SignalType.span,
         timestamp: record.endTime ?? DateTime.now(),
@@ -276,7 +277,7 @@ class Reporter {
   }) {
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.api',
+        source: SignalSources.sdkApi,
         name: name,
         signalType: SignalType.breadcrumb,
         timestamp: DateTime.now(),
@@ -300,7 +301,7 @@ class Reporter {
         existing,
         endTime: startTime ?? DateTime.now(),
         status: EventStatus.unknown,
-        payload: const <String, Object?>{'page.replaced': true},
+        payload: const <String, Object?>{PayloadKeys.pageReplaced: true},
       );
     }
 
@@ -308,19 +309,20 @@ class Reporter {
     final pageInstanceId = '${routeName}_${startedAt.microsecondsSinceEpoch}';
     setCurrentRoute(routeName);
     final traceId = startTrace(
-      'page.visit',
+      EventNames.pageVisit,
       startTime: startedAt,
       attributes: <String, Object?>{
         FieldPaths.pageInstanceId: pageInstanceId,
         if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
       },
       payload: <String, Object?>{
-        'route.name': routeName,
-        if (previousRouteName != null) 'route.previous': previousRouteName,
+        PayloadKeys.routeName: routeName,
+        if (previousRouteName != null)
+          PayloadKeys.routePrevious: previousRouteName,
       },
     );
     _recordCompletedSpan(
-      name: 'route.push',
+      name: EventNames.routePush,
       traceId: traceId,
       startTime: startedAt,
       endTime: startedAt,
@@ -330,12 +332,13 @@ class Reporter {
         if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
       },
       payload: <String, Object?>{
-        'route.name': routeName,
-        if (previousRouteName != null) 'route.previous': previousRouteName,
+        PayloadKeys.routeName: routeName,
+        if (previousRouteName != null)
+          PayloadKeys.routePrevious: previousRouteName,
       },
     );
     final loadSpanId = startSpan(
-      'page.load',
+      EventNames.pageLoad,
       traceId: traceId,
       startTime: startedAt,
       attributes: <String, Object?>{
@@ -343,8 +346,9 @@ class Reporter {
         if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
       },
       payload: <String, Object?>{
-        'route.name': routeName,
-        if (previousRouteName != null) 'route.previous': previousRouteName,
+        PayloadKeys.routeName: routeName,
+        if (previousRouteName != null)
+          PayloadKeys.routePrevious: previousRouteName,
       },
     );
     _pageTraces[routeName] = _PageTraceRecord(
@@ -360,10 +364,13 @@ class Reporter {
 
   PipelineResult recordPageView(String routeName) {
     return addBreadcrumb(
-      'page.view',
+      EventNames.pageView,
       payload: <String, Object?>{
-        'legacy.category': 'behavior',
-        'legacy.data': <String, Object?>{'type': 'pv', 'page': routeName},
+        PayloadKeys.legacyCategory: LegacyCategories.behavior,
+        PayloadKeys.legacyData: <String, Object?>{
+          PayloadKeys.type: LegacyTypes.pv,
+          PayloadKeys.page: routeName,
+        },
       },
     );
   }
@@ -376,18 +383,18 @@ class Reporter {
     final finishedAt = endTime ?? DateTime.now();
     final durationMs = finishedAt.difference(record.startedAt).inMilliseconds;
     final spanId = startSpan(
-      'page.first_frame',
+      EventNames.pageFirstFrame,
       traceId: record.traceId,
       startTime: record.startedAt,
       attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
-      payload: <String, Object?>{'route.name': routeName},
+      payload: <String, Object?>{PayloadKeys.routeName: routeName},
     );
     endSpan(
       spanId,
       endTime: finishedAt,
       includeBreadcrumbs: false,
       attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
-      payload: <String, Object?>{'route.name': routeName},
+      payload: <String, Object?>{PayloadKeys.routeName: routeName},
     );
     if (!record.loadTraceFinished) {
       endSpan(
@@ -401,7 +408,7 @@ class Reporter {
           if (record.previousRouteName != null)
             FieldPaths.pageFrom: record.previousRouteName,
         },
-        payload: <String, Object?>{'route.name': routeName},
+        payload: <String, Object?>{PayloadKeys.routeName: routeName},
       );
     }
     _pageTraces[routeName] = record.copyWith(
@@ -440,7 +447,7 @@ class Reporter {
     num? responseSizeBytes,
     num? retryCount,
     String? cacheStatus,
-    String source = 'sdk.http',
+    String source = SignalSources.sdkHttp,
     DateTime? startTime,
     DateTime? endTime,
     Map<String, Object?> payload = const <String, Object?>{},
@@ -451,7 +458,10 @@ class Reporter {
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
     final effectiveErrorType = success
         ? null
-        : errorType ?? (statusCode == null ? 'network_error' : 'http_status');
+        : errorType ??
+              (statusCode == null
+                  ? HttpErrorTypes.networkError
+                  : HttpErrorTypes.httpStatus);
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -467,13 +477,13 @@ class Reporter {
         FieldPaths.responseSizeBytes: responseSizeBytes,
     };
     final span = _traceManager.startSpan(
-      name: 'http.client',
+      name: EventNames.httpClient,
       startTime: startedAt,
       attributes: attributes,
       payload: <String, Object?>{
         ...payload,
-        'url': url,
-        if (error != null) 'error': error,
+        PayloadKeys.url: url,
+        if (error != null) PayloadKeys.error: error,
       },
     );
     final finished = _traceManager.endSpan(
@@ -484,10 +494,10 @@ class Reporter {
     );
     if (finished == null) {
       return reportSdkEvent(
-        'sdk.http.span_end_failed',
+        EventNames.sdkHttpSpanEndFailed,
         level: EventLevel.warning,
         status: EventStatus.error,
-        payload: <String, Object?>{'spanId': span.spanId},
+        payload: <String, Object?>{PayloadKeys.spanId: span.spanId},
       );
     }
     return _pipeline.capture(
@@ -525,8 +535,8 @@ class Reporter {
   }) {
     final result = _pipeline.capture(
       RawSignal(
-        source: 'sdk.jank',
-        name: 'ui.jank.sequence',
+        source: SignalSources.sdkJank,
+        name: EventNames.uiJankSequence,
         signalType: SignalType.metric,
         timestamp: DateTime.now(),
         level: EventLevel.info,
@@ -556,12 +566,12 @@ class Reporter {
     num? externalMb,
     num? nativeUsedMb,
     MemorySampleSource source = MemorySampleSource.dart,
-    String trigger = 'manual',
+    String trigger = TriggerValues.manual,
     DateTime? timestamp,
   }) {
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.memory',
+        source: SignalSources.sdkMemory,
         name: EventNames.memorySample,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
@@ -578,7 +588,7 @@ class Reporter {
           if (externalMb != null) FieldPaths.memoryExternalMb: externalMb,
           if (nativeUsedMb != null) FieldPaths.memoryNativeUsedMb: nativeUsedMb,
         },
-        payload: <String, Object?>{'trigger': trigger},
+        payload: <String, Object?>{PayloadKeys.trigger: trigger},
       ),
     );
   }
@@ -587,14 +597,14 @@ class Reporter {
     required num growthMb,
     required Duration growthDuration,
     MemorySampleSource source = MemorySampleSource.dart,
-    String trigger = 'manual',
+    String trigger = TriggerValues.manual,
     int? sampleCount,
     Map<String, Object?> evidence = const <String, Object?>{},
     DateTime? timestamp,
   }) {
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.memory',
+        source: SignalSources.sdkMemory,
         name: EventNames.memoryGrowth,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
@@ -609,9 +619,9 @@ class Reporter {
           FieldPaths.memoryGrowthDurationMs: growthDuration.inMilliseconds,
         },
         payload: <String, Object?>{
-          'trigger': trigger,
-          if (sampleCount != null) 'sample_count': sampleCount,
-          if (evidence.isNotEmpty) 'evidence': evidence,
+          PayloadKeys.trigger: trigger,
+          if (sampleCount != null) PayloadKeys.sampleCount: sampleCount,
+          if (evidence.isNotEmpty) PayloadKeys.evidence: evidence,
         },
       ),
     );
@@ -620,13 +630,13 @@ class Reporter {
   PipelineResult recordMemoryPressure({
     MemoryPressureLevel level = MemoryPressureLevel.unknown,
     MemorySampleSource source = MemorySampleSource.dart,
-    String trigger = 'manual',
+    String trigger = TriggerValues.manual,
     DateTime? timestamp,
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.memory',
+        source: SignalSources.sdkMemory,
         name: EventNames.memoryPressure,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
@@ -642,7 +652,7 @@ class Reporter {
           FieldPaths.memorySampleSource: source.toJson(),
           FieldPaths.memoryPressureLevel: level.toJson(),
         },
-        payload: <String, Object?>{'trigger': trigger, ...payload},
+        payload: <String, Object?>{PayloadKeys.trigger: trigger, ...payload},
       ),
     );
   }
@@ -651,13 +661,13 @@ class Reporter {
     required num growthMb,
     required Duration growthDuration,
     MemorySampleSource source = MemorySampleSource.dart,
-    String trigger = 'manual',
+    String trigger = TriggerValues.manual,
     Map<String, Object?> evidence = const <String, Object?>{},
     DateTime? timestamp,
   }) {
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.memory',
+        source: SignalSources.sdkMemory,
         name: EventNames.memoryLeakSuspect,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
@@ -672,9 +682,9 @@ class Reporter {
           FieldPaths.memoryGrowthDurationMs: growthDuration.inMilliseconds,
         },
         payload: <String, Object?>{
-          'trigger': trigger,
-          'evidence': evidence,
-          'assertion': 'suspect_only',
+          PayloadKeys.trigger: trigger,
+          PayloadKeys.evidence: evidence,
+          PayloadKeys.assertion: PayloadAssertions.suspectOnly,
         },
       ),
     );
@@ -692,7 +702,7 @@ class Reporter {
     final effectiveLevel = level ?? _trackLevel(result);
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.track',
+        source: SignalSources.sdkTrack,
         name: action,
         signalType: SignalType.breadcrumb,
         timestamp: DateTime.now(),
@@ -722,7 +732,7 @@ class Reporter {
   }) {
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.runtime',
+        source: SignalSources.sdkRuntime,
         name: name,
         signalType: SignalType.sdk,
         timestamp: DateTime.now(),
@@ -743,11 +753,13 @@ class Reporter {
 
     final sessionId = _sessionManager.currentSessionId;
     final isBackgroundState =
-        state == 'paused' || state == 'hidden' || state == 'detached';
-    if (previousState == null && state == 'resumed') {
+        state == LifecycleStates.paused ||
+        state == LifecycleStates.hidden ||
+        state == LifecycleStates.detached;
+    if (previousState == null && state == LifecycleStates.resumed) {
       _foregroundStartedAt = occurredAt;
     }
-    if (state == 'paused' || state == 'hidden' || state == 'detached') {
+    if (isBackgroundState) {
       if (_foregroundStartedAt != null) {
         _recordLifecycleDuration(
           name: EventNames.appForegroundDuration,
@@ -769,7 +781,7 @@ class Reporter {
       _pipeline.captureForSession(
         sessionId: sessionId,
         signal: RawSignal(
-          source: 'sdk.lifecycle',
+          source: SignalSources.sdkLifecycle,
           name: EventNames.appLifecycle,
           signalType: SignalType.breadcrumb,
           timestamp: occurredAt,
@@ -780,13 +792,14 @@ class Reporter {
             FieldPaths.contextLifecycleState: state,
             if (previousState != null)
               FieldPaths.contextLifecyclePreviousState: previousState,
-            FieldPaths.contextLifecycleIsForeground: state == 'resumed',
+            FieldPaths.contextLifecycleIsForeground:
+                state == LifecycleStates.resumed,
           },
         ),
       );
     }
 
-    if (state == 'resumed') {
+    if (state == LifecycleStates.resumed) {
       _backgroundFlushPending = false;
       final resume = _sessionManager.handleResumed(
         timestamp: occurredAt,
@@ -819,13 +832,14 @@ class Reporter {
         !_backgroundFlushPending) {
       _backgroundFlushPending = true;
       try {
-        await flush(isAppExiting: state == 'detached');
+        await flush(isAppExiting: state == LifecycleStates.detached);
         reportSdkEvent(
           EventNames.sdkLifecycleFlush,
           attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: true},
           payload: <String, Object?>{
-            'lifecycle.trigger_state': state,
-            if (contextState != null) 'lifecycle.context_state': contextState,
+            PayloadKeys.lifecycleTriggerState: state,
+            if (contextState != null)
+              PayloadKeys.lifecycleContextState: contextState,
           },
         );
       } catch (error) {
@@ -835,9 +849,10 @@ class Reporter {
           status: EventStatus.error,
           attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: false},
           payload: <String, Object?>{
-            'lifecycle.trigger_state': state,
-            if (contextState != null) 'lifecycle.context_state': contextState,
-            'error': error.toString(),
+            PayloadKeys.lifecycleTriggerState: state,
+            if (contextState != null)
+              PayloadKeys.lifecycleContextState: contextState,
+            PayloadKeys.error: error.toString(),
           },
         );
       }
@@ -858,7 +873,7 @@ class Reporter {
     _pipeline.captureForSession(
       sessionId: sessionId,
       signal: RawSignal(
-        source: 'sdk.lifecycle',
+        source: SignalSources.sdkLifecycle,
         name: name,
         signalType: SignalType.metric,
         timestamp: endedAt,
@@ -888,11 +903,13 @@ class Reporter {
         .startTrace(
           name: EventNames.appHotStart,
           startTime: timestamp.subtract(duration),
-          attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
+          attributes: <String, Object?>{
+            FieldPaths.appStartType: StartTypes.hot,
+          },
           payload: <String, Object?>{
-            'session.started_new': startedNewSession,
+            PayloadKeys.sessionStartedNew: startedNewSession,
             if (previousState != null)
-              'lifecycle.previous_state': previousState,
+              PayloadKeys.lifecyclePreviousState: previousState,
           },
         )
         .traceId;
@@ -901,10 +918,11 @@ class Reporter {
       endTime: timestamp,
       status: EventStatus.ok,
       includeBreadcrumbs: false,
-      attributes: <String, Object?>{FieldPaths.appStartType: 'hot'},
+      attributes: <String, Object?>{FieldPaths.appStartType: StartTypes.hot},
       payload: <String, Object?>{
-        'session.started_new': startedNewSession,
-        if (previousState != null) 'lifecycle.previous_state': previousState,
+        PayloadKeys.sessionStartedNew: startedNewSession,
+        if (previousState != null)
+          PayloadKeys.lifecyclePreviousState: previousState,
       },
     );
   }
@@ -964,12 +982,12 @@ class Reporter {
         output.dispose();
       } catch (error) {
         reportSdkEvent(
-          'sdk.output.dispose_failed',
+          EventNames.sdkOutputDisposeFailed,
           level: EventLevel.warning,
           status: EventStatus.error,
           payload: <String, Object?>{
-            'output': output.runtimeType.toString(),
-            'error': error.toString(),
+            PayloadKeys.output: output.runtimeType.toString(),
+            PayloadKeys.error: error.toString(),
           },
         );
       }
@@ -998,9 +1016,9 @@ class Reporter {
             FieldPaths.pageTo: record.nextRouteName,
         },
         payload: <String, Object?>{
-          'route.name': record.routeName,
+          PayloadKeys.routeName: record.routeName,
           if (record.previousRouteName != null)
-            'route.previous': record.previousRouteName,
+            PayloadKeys.routePrevious: record.previousRouteName,
           ...payload,
         },
       );
@@ -1018,16 +1036,16 @@ class Reporter {
           FieldPaths.pageTo: record.nextRouteName,
       },
       payload: <String, Object?>{
-        'route.name': record.routeName,
+        PayloadKeys.routeName: record.routeName,
         if (record.previousRouteName != null)
-          'route.previous': record.previousRouteName,
+          PayloadKeys.routePrevious: record.previousRouteName,
         ...payload,
       },
     );
     _pipeline.capture(
       RawSignal(
-        source: 'sdk.page',
-        name: 'page.stay',
+        source: SignalSources.sdkPage,
+        name: EventNames.pageStay,
         signalType: SignalType.metric,
         timestamp: finishedAt,
         durationMs: stayMs,
@@ -1043,11 +1061,11 @@ class Reporter {
             FieldPaths.pageTo: record.nextRouteName,
         },
         payload: <String, Object?>{
-          'legacy.category': 'behavior',
-          'legacy.data': <String, Object?>{
-            'type': 'page_stay',
-            'page': record.routeName,
-            'duration_ms': stayMs,
+          PayloadKeys.legacyCategory: LegacyCategories.behavior,
+          PayloadKeys.legacyData: <String, Object?>{
+            PayloadKeys.type: LegacyTypes.pageStay,
+            PayloadKeys.page: record.routeName,
+            PayloadKeys.durationMs: stayMs,
           },
         },
       ),
@@ -1080,14 +1098,14 @@ class Reporter {
     );
     if (finished == null) {
       return reportSdkEvent(
-        'sdk.span.end_unknown',
+        EventNames.sdkSpanEndUnknown,
         level: EventLevel.warning,
-        payload: <String, Object?>{'spanId': span.spanId},
+        payload: <String, Object?>{PayloadKeys.spanId: span.spanId},
       );
     }
     return _pipeline.capture(
       RawSignal(
-        source: 'sdk.api',
+        source: SignalSources.sdkApi,
         name: finished.name,
         signalType: SignalType.span,
         timestamp: endTime,

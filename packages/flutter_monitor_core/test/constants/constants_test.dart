@@ -18,12 +18,35 @@ void main() {
   });
 
   test('exposes canonical event names for memory lifecycle and native', () {
+    expect(EventNames.appColdStart, 'app.cold_start');
+    expect(EventNames.pageVisit, 'page.visit');
+    expect(EventNames.pageLoad, 'page.load');
+    expect(EventNames.httpClient, 'http.client');
+    expect(EventNames.uiJankSequence, 'ui.jank.sequence');
     expect(EventNames.memorySample, 'memory.sample');
     expect(EventNames.memoryLeakSuspect, 'memory.leak.suspect');
     expect(EventNames.nativeMemorySample, 'native.memory.sample');
     expect(EventNames.nativeCrash, 'native.crash');
     expect(EventNames.appForegroundDuration, 'app.foreground_duration');
     expect(EventNames.sdkLifecycleFlush, 'sdk.lifecycle.flush');
+    expect(
+      EventNames.sdkPipelineValidationFailed,
+      'sdk.pipeline.validation_failed',
+    );
+  });
+
+  test('exposes stable payload keys and protocol values', () {
+    expect(PayloadKeys.legacyData, 'legacy.data');
+    expect(PayloadKeys.routeName, 'route.name');
+    expect(PayloadKeys.httpSource, 'http.source');
+    expect(PayloadKeys.startupPhase, 'startup.phase');
+    expect(PayloadKeys.unregisteredAttributes, 'unregistered.attributes');
+
+    expect(LegacyCategories.performance, 'performance');
+    expect(LegacyTypes.jankSequence, 'jank_sequence');
+    expect(HttpErrorTypes.httpStatus, 'http_status');
+    expect(HttpPayloadSources.packageHttp, 'package:http');
+    expect(StartupPhases.firstFrame, 'first_frame');
   });
 
   test('exposes stable wire values for memory and native protocol enums', () {

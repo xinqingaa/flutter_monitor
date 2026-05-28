@@ -1,4 +1,6 @@
+import '../constants/event_names.dart';
 import '../constants/field_paths.dart';
+import '../constants/payload_keys.dart';
 import '../model/event_envelope.dart';
 import '../model/event_level.dart';
 import '../model/event_status.dart';
@@ -35,18 +37,18 @@ class EventSummarizer {
         envelope.name.startsWith('sdk.')) {
       return EventSummaryKind.sdk;
     }
-    if (envelope.name == 'http.client' ||
+    if (envelope.name == EventNames.httpClient ||
         envelope.attributes.containsKey(FieldPaths.httpMethod) ||
         envelope.attributes.containsKey(FieldPaths.httpStatusCode)) {
       return EventSummaryKind.http;
     }
-    if (envelope.name == 'ui.jank.sequence' ||
+    if (envelope.name == EventNames.uiJankSequence ||
         envelope.name == 'jank.sequence' ||
         envelope.attributes.containsKey(FieldPaths.jankCount)) {
       return EventSummaryKind.jank;
     }
-    if (envelope.name == 'app.cold_start' ||
-        envelope.name == 'app.hot_start' ||
+    if (envelope.name == EventNames.appColdStart ||
+        envelope.name == EventNames.appHotStart ||
         envelope.attributes.containsKey(FieldPaths.appStartType)) {
       return EventSummaryKind.startup;
     }
@@ -81,7 +83,7 @@ class EventSummarizer {
   Map<String, Object?> _startupFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
       'start_type': _stringValue(envelope.attributes[FieldPaths.appStartType]),
-      'duration_ms': envelope.durationMs,
+      PayloadKeys.durationMs: envelope.durationMs,
       'first_frame_ms': envelope.attributes[FieldPaths.appFirstFrameMs],
       'route': envelope.context.route?.name,
     });
@@ -89,21 +91,23 @@ class EventSummarizer {
 
   Map<String, Object?> _pageFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
-      'route': envelope.context.route?.name ?? envelope.payload['route.name'],
-      'from': envelope.payload['route.previous'],
-      'duration_ms': envelope.durationMs,
+      'route':
+          envelope.context.route?.name ??
+          envelope.payload[PayloadKeys.routeName],
+      'from': envelope.payload[PayloadKeys.routePrevious],
+      PayloadKeys.durationMs: envelope.durationMs,
     });
   }
 
   Map<String, Object?> _httpFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
       'method': envelope.attributes[FieldPaths.httpMethod],
-      'url':
+      PayloadKeys.url:
           envelope.attributes[FieldPaths.httpUrlNormalized] ??
-          envelope.payload['url'],
+          envelope.payload[PayloadKeys.url],
       'code': envelope.attributes[FieldPaths.httpStatusCode],
       'success': envelope.attributes[FieldPaths.httpSuccess],
-      'duration_ms': envelope.durationMs,
+      PayloadKeys.durationMs: envelope.durationMs,
       'route': envelope.context.route?.name,
       'breadcrumbs': _breadcrumbCount(envelope),
     });
@@ -155,7 +159,7 @@ class EventSummarizer {
   Map<String, Object?> _eventFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
       'route': envelope.context.route?.name,
-      'duration_ms': envelope.durationMs,
+      PayloadKeys.durationMs: envelope.durationMs,
     });
   }
 
@@ -169,9 +173,9 @@ class EventSummarizer {
     final message = envelope.payload[FieldPaths.payloadErrorMessage];
     if (message != null) return message;
 
-    final legacyData = envelope.payload['legacy.data'];
+    final legacyData = envelope.payload[PayloadKeys.legacyData];
     if (legacyData is Map) {
-      return legacyData['exception'] ?? legacyData['error'];
+      return legacyData['exception'] ?? legacyData[PayloadKeys.error];
     }
     return null;
   }
@@ -225,16 +229,17 @@ class CompactLogVisibilityPolicy {
   }
 
   bool _shouldDisplayPage(EventSummary summary) {
-    if (summary.name == 'route.push' || summary.name == 'route.pop') {
+    if (summary.name == EventNames.routePush ||
+        summary.name == EventNames.routePop) {
       return false;
     }
-    if (summary.name == 'page.view') {
+    if (summary.name == EventNames.pageView) {
       return includePageViews;
     }
-    if (summary.name == 'page.stay') {
+    if (summary.name == EventNames.pageStay) {
       return true;
     }
-    if (summary.name == 'page.load') {
+    if (summary.name == EventNames.pageLoad) {
       return summary.phase != 'start';
     }
     return false;

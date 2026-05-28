@@ -55,7 +55,7 @@ class ContextManager {
             : RouteContext(
                 name: _currentRouteName,
                 stack: <String>[_currentRouteName!],
-                source: 'flutter',
+                source: PlatformSignalSources.flutter,
               ),
         module: _currentModuleName == null && _currentScene == null
             ? null
@@ -65,12 +65,12 @@ class ContextManager {
             : LifecycleContext(
                 state: _lifecycleState,
                 previousState: _previousLifecycleState,
-                isForeground: _lifecycleState == 'resumed',
+                isForeground: _lifecycleState == LifecycleStates.resumed,
               ),
         native: NativeRuntimeContext(
           available: false,
           platform: _platform,
-          signalSource: 'flutter',
+          signalSource: PlatformSignalSources.flutter,
         ),
         missing: !hasContext,
         missingReason: hasContext

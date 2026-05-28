@@ -1,4 +1,5 @@
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/core/signal_sources.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 
 class LegacySignalMapper {
@@ -7,13 +8,17 @@ class LegacySignalMapper {
     required Map<String, dynamic> data,
     required DateTime timestamp,
   }) {
-    final type = data['type']?.toString();
+    final type = data[PayloadKeys.type]?.toString();
     final normalized = _normalizeData(data);
 
     return switch (category) {
-      'error' => _errorSignal(type, normalized, timestamp),
-      'performance' => _performanceSignal(type, normalized, timestamp),
-      'behavior' => _behaviorSignal(type, normalized, timestamp),
+      LegacyCategories.error => _errorSignal(type, normalized, timestamp),
+      LegacyCategories.performance => _performanceSignal(
+        type,
+        normalized,
+        timestamp,
+      ),
+      LegacyCategories.behavior => _behaviorSignal(type, normalized, timestamp),
       _ => _manualSignal(category, type, normalized, timestamp),
     };
   }
@@ -24,22 +29,25 @@ class LegacySignalMapper {
     DateTime timestamp,
   ) {
     final mechanism = switch (type) {
-      'flutter_error' => 'flutter',
-      'dart_error' => 'dart',
-      _ => 'manual',
+      LegacyTypes.flutterError => ErrorMechanisms.flutter,
+      LegacyTypes.dartError => ErrorMechanisms.dart,
+      _ => ErrorMechanisms.manual,
     };
-    final message = data['exception'] ?? data['error'] ?? data['message'];
-    final isManual = mechanism == 'manual';
+    final message =
+        data[PayloadKeys.exception] ??
+        data[PayloadKeys.error] ??
+        data[PayloadKeys.message];
+    final isManual = mechanism == ErrorMechanisms.manual;
 
     final legacyData = Map<String, Object?>.from(data);
-    legacyData.remove('stack');
+    legacyData.remove(PayloadKeys.stack);
 
     return RawSignal(
-      source: 'legacy.reporter',
+      source: SignalSources.legacyReporter,
       name: switch (mechanism) {
-        'flutter' => 'error.flutter',
-        'dart' => 'error.dart',
-        _ => 'error.manual',
+        ErrorMechanisms.flutter => EventNames.errorFlutter,
+        ErrorMechanisms.dart => EventNames.errorDart,
+        _ => EventNames.errorManual,
       },
       signalType: SignalType.error,
       timestamp: timestamp,
@@ -47,7 +55,7 @@ class LegacySignalMapper {
       status: EventStatus.error,
       priority: EventPriority.high,
       attributes: <String, Object?>{
-        FieldPaths.errorType: type ?? 'manual',
+        FieldPaths.errorType: type ?? ErrorMechanisms.manual,
         FieldPaths.errorMechanism: mechanism,
         FieldPaths.errorHandled: data['handled'] is bool
             ? data['handled']
@@ -56,12 +64,12 @@ class LegacySignalMapper {
       },
       payload: <String, Object?>{
         if (message != null) FieldPaths.payloadErrorMessage: message.toString(),
-        if (data['stack'] != null)
-          FieldPaths.payloadErrorStacktrace: data['stack'].toString(),
-        if (data['library'] != null)
-          FieldPaths.payloadErrorLibrary: data['library'].toString(),
-        'legacy.category': 'error',
-        'legacy.data': legacyData,
+        if (data[PayloadKeys.stack] != null)
+          FieldPaths.payloadErrorStacktrace: data[PayloadKeys.stack].toString(),
+        if (data[PayloadKeys.library] != null)
+          FieldPaths.payloadErrorLibrary: data[PayloadKeys.library].toString(),
+        PayloadKeys.legacyCategory: LegacyCategories.error,
+        PayloadKeys.legacyData: legacyData,
       },
     );
   }
@@ -71,44 +79,49 @@ class LegacySignalMapper {
     Map<String, Object?> data,
     DateTime timestamp,
   ) {
-    final durationMs = _numValue(data['duration_ms']);
+    final durationMs = _numValue(data[PayloadKeys.durationMs]);
     final attributes = <String, Object?>{};
-    var name = 'performance.${type ?? 'event'}';
+    var name = 'performance.${type ?? LegacyTypes.event}';
 
-    if (type == 'api') {
-      name = 'http.client';
+    if (type == LegacyTypes.api) {
+      name = EventNames.httpClient;
       attributes.addAll({
-        if (data['method'] != null) FieldPaths.httpMethod: data['method'],
-        if (data['url'] != null)
-          FieldPaths.httpUrlNormalized: _normalizedUrl(data['url'].toString()),
-        if (_numValue(data['status']) != null)
-          FieldPaths.httpStatusCode: _numValue(data['status']),
-        if (data['success'] is bool) FieldPaths.httpSuccess: data['success'],
-        if (data['error'] != null) FieldPaths.httpErrorType: 'network_error',
+        if (data[PayloadKeys.method] != null)
+          FieldPaths.httpMethod: data[PayloadKeys.method],
+        if (data[PayloadKeys.url] != null)
+          FieldPaths.httpUrlNormalized: _normalizedUrl(
+            data[PayloadKeys.url].toString(),
+          ),
+        if (_numValue(data[PayloadKeys.status]) != null)
+          FieldPaths.httpStatusCode: _numValue(data[PayloadKeys.status]),
+        if (data[PayloadKeys.success] is bool)
+          FieldPaths.httpSuccess: data[PayloadKeys.success],
+        if (data[PayloadKeys.error] != null)
+          FieldPaths.httpErrorType: HttpErrorTypes.networkError,
       });
-    } else if (type == 'page_load') {
-      name = 'page.load';
+    } else if (type == LegacyTypes.pageLoad) {
+      name = EventNames.pageLoad;
       if (durationMs != null) {
         attributes[FieldPaths.pageFirstFrameMs] = durationMs;
       }
-    } else if (type == 'jank_sequence') {
-      name = 'ui.jank.sequence';
+    } else if (type == LegacyTypes.jankSequence) {
+      name = EventNames.uiJankSequence;
       attributes.addAll({
-        if (_numValue(data['jank_count']) != null)
-          FieldPaths.jankCount: _numValue(data['jank_count']),
-        if (_numValue(data['max_duration_ms']) != null)
-          FieldPaths.frameMaxMs: _numValue(data['max_duration_ms']),
-        if (_numValue(data['average_duration_ms']) != null)
-          FieldPaths.frameAvgMs: _numValue(data['average_duration_ms']),
-        if (_numValue(data['frame_budget_ms']) != null)
-          FieldPaths.frameBudgetMs: _numValue(data['frame_budget_ms']),
-        ..._devicePerformanceAttributes(data['device_performance']),
+        if (_numValue(data[PayloadKeys.jankCount]) != null)
+          FieldPaths.jankCount: _numValue(data[PayloadKeys.jankCount]),
+        if (_numValue(data[PayloadKeys.maxDurationMs]) != null)
+          FieldPaths.frameMaxMs: _numValue(data[PayloadKeys.maxDurationMs]),
+        if (_numValue(data[PayloadKeys.averageDurationMs]) != null)
+          FieldPaths.frameAvgMs: _numValue(data[PayloadKeys.averageDurationMs]),
+        if (_numValue(data[PayloadKeys.frameBudgetMs]) != null)
+          FieldPaths.frameBudgetMs: _numValue(data[PayloadKeys.frameBudgetMs]),
+        ..._devicePerformanceAttributes(data[PayloadKeys.devicePerformance]),
       });
     }
 
-    final success = data['success'];
+    final success = data[PayloadKeys.success];
     return RawSignal(
-      source: 'legacy.reporter',
+      source: SignalSources.legacyReporter,
       name: name,
       signalType: SignalType.metric,
       timestamp: timestamp,
@@ -119,8 +132,8 @@ class LegacySignalMapper {
           : EventStatus.ok,
       attributes: attributes,
       payload: <String, Object?>{
-        'legacy.category': 'performance',
-        'legacy.data': data,
+        PayloadKeys.legacyCategory: LegacyCategories.performance,
+        PayloadKeys.legacyData: data,
       },
     );
   }
@@ -130,52 +143,54 @@ class LegacySignalMapper {
     Map<String, Object?> data,
     DateTime timestamp,
   ) {
-    if (type == 'click') {
+    if (type == LegacyTypes.click) {
       return RawSignal(
-        source: 'legacy.reporter',
-        name: 'ui.click',
+        source: SignalSources.legacyReporter,
+        name: EventNames.uiClick,
         signalType: SignalType.breadcrumb,
         timestamp: timestamp,
         level: EventLevel.info,
         status: EventStatus.ok,
         attributes: <String, Object?>{
-          FieldPaths.uiAction: 'click',
-          if (data['identifier'] != null)
-            FieldPaths.uiTarget: data['identifier'],
+          FieldPaths.uiAction: LegacyTypes.click,
+          if (data[PayloadKeys.identifier] != null)
+            FieldPaths.uiTarget: data[PayloadKeys.identifier],
         },
         payload: <String, Object?>{
-          'legacy.category': 'behavior',
-          'legacy.data': data,
+          PayloadKeys.legacyCategory: LegacyCategories.behavior,
+          PayloadKeys.legacyData: data,
         },
       );
     }
 
-    if (type == 'page_stay') {
+    if (type == LegacyTypes.pageStay) {
       return RawSignal(
-        source: 'legacy.reporter',
-        name: 'page.stay',
+        source: SignalSources.legacyReporter,
+        name: EventNames.pageStay,
         signalType: SignalType.metric,
         timestamp: timestamp,
-        durationMs: _numValue(data['duration_ms']),
+        durationMs: _numValue(data[PayloadKeys.durationMs]),
         level: EventLevel.info,
         status: EventStatus.ok,
         payload: <String, Object?>{
-          'legacy.category': 'behavior',
-          'legacy.data': data,
+          PayloadKeys.legacyCategory: LegacyCategories.behavior,
+          PayloadKeys.legacyData: data,
         },
       );
     }
 
     return RawSignal(
-      source: 'legacy.reporter',
-      name: type == 'pv' ? 'page.view' : 'behavior.${type ?? 'event'}',
+      source: SignalSources.legacyReporter,
+      name: type == LegacyTypes.pv
+          ? EventNames.pageView
+          : '${LegacyCategories.behavior}.${type ?? LegacyTypes.event}',
       signalType: SignalType.breadcrumb,
       timestamp: timestamp,
       level: EventLevel.info,
       status: EventStatus.ok,
       payload: <String, Object?>{
-        'legacy.category': 'behavior',
-        'legacy.data': data,
+        PayloadKeys.legacyCategory: LegacyCategories.behavior,
+        PayloadKeys.legacyData: data,
       },
     );
   }
@@ -187,15 +202,15 @@ class LegacySignalMapper {
     DateTime timestamp,
   ) {
     return RawSignal(
-      source: 'legacy.reporter',
+      source: SignalSources.legacyReporter,
       name: 'legacy.$category${type == null ? '' : '.$type'}',
       signalType: SignalType.log,
       timestamp: timestamp,
       level: EventLevel.info,
       status: EventStatus.ok,
       payload: <String, Object?>{
-        'legacy.category': category,
-        'legacy.data': data,
+        PayloadKeys.legacyCategory: category,
+        PayloadKeys.legacyData: data,
       },
     );
   }
@@ -219,22 +234,22 @@ class LegacySignalMapper {
   Map<String, Object?> _devicePerformanceAttributes(Object? value) {
     if (value is! Map) return const <String, Object?>{};
     final data = value.map((key, value) => MapEntry('$key', value));
-    final percentiles = data['percentiles'] is Map
-        ? (data['percentiles'] as Map).map(
+    final percentiles = data[PayloadKeys.percentiles] is Map
+        ? (data[PayloadKeys.percentiles] as Map).map(
             (key, value) => MapEntry('$key', value),
           )
         : const <String, Object?>{};
     return <String, Object?>{
-      if (_numValue(data['fps']) != null)
-        FieldPaths.frameFps: _numValue(data['fps']),
-      if (_numValue(data['stability']) != null)
-        FieldPaths.frameStability: _numValue(data['stability']),
-      if (_numValue(percentiles['p50']) != null)
-        FieldPaths.frameP50Ms: _numValue(percentiles['p50']),
-      if (_numValue(percentiles['p90']) != null)
-        FieldPaths.frameP90Ms: _numValue(percentiles['p90']),
-      if (_numValue(percentiles['p99']) != null)
-        FieldPaths.frameP99Ms: _numValue(percentiles['p99']),
+      if (_numValue(data[PayloadKeys.fps]) != null)
+        FieldPaths.frameFps: _numValue(data[PayloadKeys.fps]),
+      if (_numValue(data[PayloadKeys.stability]) != null)
+        FieldPaths.frameStability: _numValue(data[PayloadKeys.stability]),
+      if (_numValue(percentiles[PayloadKeys.p50]) != null)
+        FieldPaths.frameP50Ms: _numValue(percentiles[PayloadKeys.p50]),
+      if (_numValue(percentiles[PayloadKeys.p90]) != null)
+        FieldPaths.frameP90Ms: _numValue(percentiles[PayloadKeys.p90]),
+      if (_numValue(percentiles[PayloadKeys.p99]) != null)
+        FieldPaths.frameP99Ms: _numValue(percentiles[PayloadKeys.p99]),
     };
   }
 
