@@ -590,6 +590,8 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 - native bridge 应尽量获取或缓存最近 `sessionId`、`traceId`、`context.route.*` / `context.module.*` 和 `payload.breadcrumbs`。
 - 异常生命周期拿不到上下文时，必须标记 missing reason。
 - native signal 不得绕过 pipeline 直接 HTTP 上报。
+- SDK 接收 native signal 后先映射为 SDK `RawSignal`，再由现有 pipeline 补齐 `sessionId`、`traceId`、`resource`、`context`、breadcrumb 和隐私过滤。
+- `native.memory.pressure` 和 `native.warning` 应进入 breadcrumb store，作为后续错误、卡顿、OOM/ANR/crash 的前置上下文。
 
 ### 字段映射
 
@@ -614,6 +616,7 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 - 未接入 `flutter_monitor_native` 时，SDK 应继续保留 Flutter-only 能力，并将 `context.native.available` 设为 `false` 或在需要时标记 `context.missingReason = native_bridge_unavailable`。
 - 用户忘记添加 native 包、没有注册 bridge、平台未实现、channel 注册失败、Web/desktop 不支持 native 能力等情况，都应走同一降级路径。
 - 如果 bridge 显式启用但不可用，应产生 SDK self-monitoring 事件，不能让业务 App 因 native 监控缺失而崩溃。
+- no-op/fake bridge 只用于 SDK 内部降级和测试，不是业务层主动上报 memory/native 事件的 API。
 - native memory、pressure、OOM、ANR 和 crash 线索可能不完整。事件必须表达证据来源和 missing reason，不能暗示 SDK 已经拿到完整原始 dump 或确定性根因。
 
 #### 常见场景有这些：

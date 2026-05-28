@@ -18,6 +18,9 @@ class RawSignal {
     this.includeBreadcrumbs,
     this.breadcrumbLimit,
     this.eventPhase,
+    this.nativeContext,
+    this.contextMissing,
+    this.contextMissingReason,
     this.attributes = const <String, Object?>{},
     this.payload = const <String, Object?>{},
   });
@@ -38,6 +41,9 @@ class RawSignal {
   final bool? includeBreadcrumbs;
   final int? breadcrumbLimit;
   final String? eventPhase;
+  final NativeResourceSnapshot? nativeContext;
+  final bool? contextMissing;
+  final String? contextMissingReason;
   final Map<String, Object?> attributes;
   final Map<String, Object?> payload;
 }

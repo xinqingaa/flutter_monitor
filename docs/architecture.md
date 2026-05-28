@@ -492,18 +492,20 @@ abstract interface class MonitorNativeBridge {
   Stream<NativeSignal> get signals;
   Future<NativeResourceSnapshot> getResourceSnapshot();
   Future<NativeMemorySnapshot?> getMemorySnapshot();
-  Future<void> flush();
+  Future<void> dispose();
 }
 ```
 
 接入要求：
 
 - `flutter_monitor_sdk` 只依赖 bridge 抽象，不强依赖 native plugin。
+- 未配置 bridge 时，SDK 使用 no-op 降级路径，`context.native.available = false`，启动、页面、HTTP、错误、卡顿、基础 memory、基础 lifecycle 和 `track` 不受影响。
 - `flutter_monitor_native` 提供 bridge 实现。
 - `flutter_monitor_core` 承载最终 event envelope、字段注册、隐私规则和可共享的 native raw payload contract。
 - `flutter_monitor_sdk` 持有 runtime bridge 抽象、上下文补全和 pipeline 接入。
 - `flutter_monitor_native` 只实现 bridge 并提供 native raw signal，不构建最终 envelope，不定义独立上报协议。
 - native signal 进入 SDK pipeline 后再构建 envelope。
+- `native.memory.pressure` 和 `native.warning` 属于高价值诊断足迹，应进入 breadcrumb store，帮助解释后续 error、jank、OOM/ANR/crash 线索。
 - native 异常生命周期下无法完整进入 pipeline 时，应先持久化 native raw signal 或可补全 payload，并在下次启动后由 SDK pipeline 补全为统一 envelope。
 
 推荐数据流：

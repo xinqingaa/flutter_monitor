@@ -11,6 +11,7 @@ export 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
 export 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 export 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart';
+export 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
 export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
 export 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';

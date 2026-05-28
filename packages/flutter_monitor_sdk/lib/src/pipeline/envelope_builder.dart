@@ -51,9 +51,41 @@ class EnvelopeBuilder {
       spanId: traceSnapshot.spanId,
       parentSpanId: traceSnapshot.parentSpanId,
       resource: contextSnapshot.resource,
-      context: contextSnapshot.context,
+      context: _mergeContext(contextSnapshot.context, signal),
       attributes: _registeredAttributes(attributes),
       payload: payload,
+    );
+  }
+
+  MonitorContext _mergeContext(MonitorContext context, RawSignal signal) {
+    if (signal.nativeContext == null &&
+        signal.contextMissing == null &&
+        signal.contextMissingReason == null) {
+      return context;
+    }
+    final nativeSnapshot = signal.nativeContext;
+    return MonitorContext(
+      user: context.user,
+      route: context.route,
+      module: context.module,
+      network: context.network,
+      release: context.release,
+      lifecycle: context.lifecycle,
+      native:
+          nativeSnapshot == null
+              ? context.native
+              : NativeRuntimeContext(
+                available: nativeSnapshot.available,
+                platform: nativeSnapshot.platform ?? context.native?.platform,
+                processId: nativeSnapshot.processId,
+                bridgeVersion: nativeSnapshot.bridgeVersion,
+                signalSource:
+                    nativeSnapshot.signalSource ??
+                    context.native?.signalSource ??
+                    PlatformSignalSources.native,
+              ),
+      missing: signal.contextMissing ?? context.missing,
+      missingReason: signal.contextMissingReason ?? context.missingReason,
     );
   }
 

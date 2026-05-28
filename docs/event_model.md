@@ -418,6 +418,8 @@ native runtime 上下文使用 `context.native.*`：
 
 native 诊断详情使用 `payload.native`。原始 crash dump、寄存器、线程堆栈、系统日志等内容默认不应上传；确需上传时必须先经过隐私过滤、大小裁剪和显式配置。
 
+SDK 内部 mapper 必须把 `NativeSignal` 映射为 `RawSignal` 后进入统一 pipeline。未接入 bridge 的普通 Flutter 事件仍应保留 `context.native.available = false`；接入 bridge 后，SDK 可用 `NativeResourceSnapshot` 更新 `context.native.*` 和 `resource.sdk.nativeVersion`。`native.memory.pressure` 与 `native.warning` 是高价值 breadcrumb，后续 error、jank、OOM/ANR/crash 可携带它们作为上下文。
+
 异常生命周期中拿不到完整上下文时，事件仍可进入 pipeline，但必须保留可用的 `sessionId` / `traceId` / `context.route.*` / `context.module.*` / breadcrumbs，并设置：
 
 ```json

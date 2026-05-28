@@ -11,6 +11,7 @@ class ContextManager {
   final MonitorConfig _config;
 
   Map<String, Object?>? _deviceInfo;
+  NativeResourceSnapshot? _nativeSnapshot;
   UserInfo? _runtimeUserInfo;
   Map<String, Object?>? _runtimeCustomData;
   String? _currentRouteName;
@@ -24,6 +25,10 @@ class ContextManager {
 
   set deviceInfo(Map<String, Object?>? value) {
     _deviceInfo = value;
+  }
+
+  void setNativeSnapshot(NativeResourceSnapshot? snapshot) {
+    _nativeSnapshot = snapshot;
   }
 
   Map<String, Object?>? get customData =>
@@ -43,39 +48,38 @@ class ContextManager {
     return ContextSnapshot(
       resource: _buildResource(),
       context: MonitorContext(
-        user: userInfo == null
-            ? null
-            : UserContext(
-                userId: userInfo.userId,
-                userType: userInfo.userType,
-                userTags: userInfo.userTags,
-              ),
-        route: _currentRouteName == null
-            ? null
-            : RouteContext(
-                name: _currentRouteName,
-                stack: <String>[_currentRouteName!],
-                source: PlatformSignalSources.flutter,
-              ),
-        module: _currentModuleName == null && _currentScene == null
-            ? null
-            : ModuleContext(name: _currentModuleName, scene: _currentScene),
-        lifecycle: _lifecycleState == null
-            ? null
-            : LifecycleContext(
-                state: _lifecycleState,
-                previousState: _previousLifecycleState,
-                isForeground: _lifecycleState == LifecycleStates.resumed,
-              ),
-        native: NativeRuntimeContext(
-          available: false,
-          platform: _platform,
-          signalSource: PlatformSignalSources.flutter,
-        ),
+        user:
+            userInfo == null
+                ? null
+                : UserContext(
+                  userId: userInfo.userId,
+                  userType: userInfo.userType,
+                  userTags: userInfo.userTags,
+                ),
+        route:
+            _currentRouteName == null
+                ? null
+                : RouteContext(
+                  name: _currentRouteName,
+                  stack: <String>[_currentRouteName!],
+                  source: PlatformSignalSources.flutter,
+                ),
+        module:
+            _currentModuleName == null && _currentScene == null
+                ? null
+                : ModuleContext(name: _currentModuleName, scene: _currentScene),
+        lifecycle:
+            _lifecycleState == null
+                ? null
+                : LifecycleContext(
+                  state: _lifecycleState,
+                  previousState: _previousLifecycleState,
+                  isForeground: _lifecycleState == LifecycleStates.resumed,
+                ),
+        native: _buildNativeContext(),
         missing: !hasContext,
-        missingReason: hasContext
-            ? null
-            : ContextMissingReasons.sdkBootstrapIncomplete,
+        missingReason:
+            hasContext ? null : ContextMissingReasons.sdkBootstrapIncomplete,
       ),
       customData: effectiveCustomData,
       userProperties: userInfo?.userProperties?.cast<String, Object?>(),
@@ -119,7 +123,11 @@ class ContextManager {
 
   MonitorResource _buildResource() {
     return MonitorResource(
-      sdk: const SdkResource(name: 'flutter_monitor_sdk', coreVersion: '0.1.0'),
+      sdk: SdkResource(
+        name: 'flutter_monitor_sdk',
+        coreVersion: '0.1.0',
+        nativeVersion: _nativeSnapshot?.bridgeVersion,
+      ),
       app: AppResource(
         appKey: _config.appInfo.appKey,
         appName: _config.appInfo.appName,
@@ -170,4 +178,22 @@ class ContextManager {
   }
 
   String get _platform => kIsWeb ? 'web' : Platform.operatingSystem;
+
+  NativeRuntimeContext _buildNativeContext() {
+    final snapshot = _nativeSnapshot;
+    if (snapshot == null) {
+      return NativeRuntimeContext(
+        available: false,
+        platform: _platform,
+        signalSource: PlatformSignalSources.flutter,
+      );
+    }
+    return NativeRuntimeContext(
+      available: snapshot.available,
+      platform: snapshot.platform ?? _platform,
+      processId: snapshot.processId,
+      bridgeVersion: snapshot.bridgeVersion,
+      signalSource: snapshot.signalSource ?? PlatformSignalSources.native,
+    );
+  }
 }

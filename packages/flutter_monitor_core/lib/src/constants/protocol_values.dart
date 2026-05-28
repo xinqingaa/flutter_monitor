@@ -38,6 +38,10 @@ abstract final class PayloadAssertions {
 
 abstract final class PlatformSignalSources {
   static const flutter = 'flutter';
+  static const android = 'android';
+  static const ios = 'ios';
+  static const native = 'native';
+  static const unknown = 'unknown';
 }
 
 abstract final class SignalSources {
@@ -48,6 +52,7 @@ abstract final class SignalSources {
   static const sdkJank = 'sdk.jank';
   static const sdkLifecycle = 'sdk.lifecycle';
   static const sdkMemory = 'sdk.memory';
+  static const sdkNative = 'sdk.native';
   static const sdkPage = 'sdk.page';
   static const sdkRuntime = 'sdk.runtime';
   static const sdkTrack = 'sdk.track';
@@ -70,6 +75,7 @@ abstract final class TriggerValues {
   static const lifecyclePaused = 'lifecycle.paused';
   static const lifecycleHidden = 'lifecycle.hidden';
   static const lifecycleResumed = 'lifecycle.resumed';
+  static const nativeBridge = 'native.bridge';
   static const sessionStart = 'session.start';
 
   static String lifecycleState(String state) {

@@ -186,7 +186,9 @@ class EventPipeline {
     if (envelope.signalType == SignalType.error) return true;
     if (envelope.name == EventNames.uiJankSequence) return true;
     if (envelope.name == EventNames.memoryPressure) return true;
+    if (envelope.name == EventNames.nativeMemoryPressure) return true;
     if (envelope.name == EventNames.memoryLeakSuspect) return true;
+    if (envelope.name == EventNames.nativeWarning) return true;
     if (envelope.name == EventNames.httpClient &&
         envelope.status == EventStatus.error) {
       return true;

@@ -73,6 +73,38 @@ class _RecordingHttpClient extends http.BaseClient {
   }
 }
 
+class _FakeNativeBridge implements MonitorNativeBridge {
+  _FakeNativeBridge({
+    required NativeResourceSnapshot resource,
+    NativeMemorySnapshot? memory,
+  }) : _resource = resource,
+       _memory = memory;
+
+  final NativeResourceSnapshot _resource;
+  final NativeMemorySnapshot? _memory;
+  final _controller = StreamController<NativeSignal>();
+  var disposed = false;
+
+  @override
+  Stream<NativeSignal> get signals => _controller.stream;
+
+  @override
+  Future<NativeResourceSnapshot> getResourceSnapshot() async => _resource;
+
+  @override
+  Future<NativeMemorySnapshot?> getMemorySnapshot() async => _memory;
+
+  void emit(NativeSignal signal) {
+    _controller.add(signal);
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+    await _controller.close();
+  }
+}
+
 void main() {
   test('log output prints compact summaries for important events', () {
     final messages = <String>[];
@@ -1478,6 +1510,207 @@ void main() {
       }),
       isTrue,
     );
+  });
+
+  test('native memory pressure enters unified envelope and breadcrumbs', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final timestamp = DateTime.parse('2026-05-28T14:00:00.000+08:00');
+
+    reporter.recordNativeSignal(
+      NativeSignal(
+        type: NativeSignalType.memory,
+        name: EventNames.nativeMemoryPressure,
+        timestamp: timestamp,
+        resource: const NativeResourceSnapshot(
+          available: true,
+          platform: 'android',
+          processId: 12345,
+          bridgeVersion: '0.1.0',
+          signalSource: PlatformSignalSources.android,
+        ),
+        memory: const NativeMemorySnapshot(
+          nativeUsedMb: 256,
+          pressureLevel: MemoryPressureLevel.critical,
+        ),
+        payload: const <String, Object?>{'warning': 'trim_memory_running_low'},
+      ),
+    );
+    reporter.recordDartError(StateError('StateError'), StackTrace.current);
+
+    final pressure = output.events.singleWhere(
+      (event) => event['name'] == EventNames.nativeMemoryPressure,
+    );
+    final attributes = pressure['attributes'] as Map;
+    final context = pressure['context'] as Map;
+    final native = context['native'] as Map;
+
+    expect(pressure['signalType'], SignalType.metric.toJson());
+    expect(pressure['status'], EventStatus.error.toJson());
+    expect(pressure['priority'], EventPriority.high.toJson());
+    expect(
+      attributes[FieldPaths.nativeSignal],
+      NativeSignalType.memory.toJson(),
+    );
+    expect(attributes[FieldPaths.memoryNativeUsedMb], 256);
+    expect(
+      attributes[FieldPaths.memoryPressureLevel],
+      MemoryPressureLevel.critical.toJson(),
+    );
+    expect(
+      attributes[FieldPaths.memorySampleSource],
+      MemorySampleSource.native.toJson(),
+    );
+    expect(native['available'], isTrue);
+    expect(native['platform'], 'android');
+    expect(native['processId'], 12345);
+    expect(native['bridgeVersion'], '0.1.0');
+    expect(native['signalSource'], PlatformSignalSources.android);
+    expect((pressure['payload'] as Map)[FieldPaths.payloadNative], isA<Map>());
+
+    final error = output.events.lastWhere(
+      (event) => event['signalType'] == SignalType.error.toJson(),
+    );
+    final breadcrumbs =
+        (error['payload'] as Map)[FieldPaths.payloadBreadcrumbs] as List;
+
+    expect(
+      breadcrumbs.any((breadcrumb) {
+        final item = breadcrumb as Map;
+        return item['name'] == EventNames.nativeMemoryPressure;
+      }),
+      isTrue,
+    );
+  });
+
+  test(
+    'native lifecycle signal enters timeline without replacing flutter lifecycle',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+
+      reporter.recordNativeSignal(
+        NativeSignal(
+          type: NativeSignalType.lifecycle,
+          name: EventNames.nativeLifecycle,
+          timestamp: DateTime.parse('2026-05-28T14:05:00.000+08:00'),
+          resource: const NativeResourceSnapshot(
+            available: true,
+            platform: 'ios',
+            bridgeVersion: '0.1.0',
+            signalSource: PlatformSignalSources.ios,
+          ),
+          attributes: const <String, Object?>{
+            FieldPaths.contextLifecycleState: LifecycleStates.inactive,
+          },
+        ),
+      );
+
+      final event = output.events.singleWhere(
+        (item) => item['name'] == EventNames.nativeLifecycle,
+      );
+      final attributes = event['attributes'] as Map;
+      final context = event['context'] as Map;
+
+      expect(event['signalType'], SignalType.breadcrumb.toJson());
+      expect(
+        attributes[FieldPaths.nativeSignal],
+        NativeSignalType.lifecycle.toJson(),
+      );
+      expect(
+        attributes[FieldPaths.contextLifecycleState],
+        LifecycleStates.inactive,
+      );
+      expect(
+        (context['native'] as Map)['signalSource'],
+        PlatformSignalSources.ios,
+      );
+    },
+  );
+
+  test('native missing context reason is preserved for exceptional signal', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.recordNativeSignal(
+      NativeSignal(
+        type: NativeSignalType.anr,
+        name: EventNames.nativeAnr,
+        timestamp: DateTime.parse('2026-05-28T14:10:00.000+08:00'),
+        anrDurationMs: 5000,
+        contextMissing: true,
+        contextMissingReason: ContextMissingReasons.nativeBridgeUnavailable,
+      ),
+    );
+
+    final event = output.events.singleWhere(
+      (item) => item['name'] == EventNames.nativeAnr,
+    );
+    final attributes = event['attributes'] as Map;
+    final context = event['context'] as Map;
+
+    expect(event['signalType'], SignalType.error.toJson());
+    expect(event['level'], EventLevel.fatal.toJson());
+    expect(attributes[FieldPaths.nativeSignal], NativeSignalType.anr.toJson());
+    expect(attributes[FieldPaths.nativeAnrDurationMs], 5000);
+    expect(attributes[FieldPaths.errorMechanism], 'native');
+    expect(context['missing'], isTrue);
+    expect(
+      context['missingReason'],
+      ContextMissingReasons.nativeBridgeUnavailable,
+    );
+  });
+
+  test('native bridge resource snapshot updates SDK context', () async {
+    final output = RecordingOutput();
+    final bridge = _FakeNativeBridge(
+      resource: const NativeResourceSnapshot(
+        available: true,
+        platform: 'android',
+        processId: 23456,
+        bridgeVersion: '0.2.0',
+        signalSource: PlatformSignalSources.android,
+      ),
+    );
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+        nativeBridge: bridge,
+      ),
+    );
+
+    await reporter.initAsync();
+    reporter.recordMemorySample(rssMb: 64, trigger: 'test.sample');
+
+    final event = output.events.singleWhere(
+      (item) => item['name'] == EventNames.memorySample,
+    );
+    final resource = event['resource'] as Map;
+    final sdk = resource['sdk'] as Map;
+    final context = event['context'] as Map;
+    final native = context['native'] as Map;
+
+    expect(sdk['nativeVersion'], '0.2.0');
+    expect(native['available'], isTrue);
+    expect(native['platform'], 'android');
+    expect(native['processId'], 23456);
+    expect(native['signalSource'], PlatformSignalSources.android);
   });
 
   test(

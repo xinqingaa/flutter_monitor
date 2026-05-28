@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
+import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
@@ -22,6 +24,7 @@ class Reporter {
   late final TraceManager _traceManager;
   late final BreadcrumbStore _breadcrumbStore;
   late final EventPipeline _pipeline;
+  final NativeSignalMapper _nativeSignalMapper = const NativeSignalMapper();
 
   /// 缓存的设备信息，避免每次上报都重新获取。
   Map<String, dynamic>? _deviceInfo;
@@ -62,6 +65,41 @@ class Reporter {
   Future<void> initAsync() async {
     // 异步获取设备信息，确保在第一次上报前完成
     await _fetchDeviceInfo();
+    await updateNativeResource(_config.nativeBridge);
+  }
+
+  Future<void> updateNativeResource(MonitorNativeBridge? bridge) async {
+    if (bridge == null) {
+      _contextManager.setNativeSnapshot(null);
+      return;
+    }
+    try {
+      final snapshot = await bridge.getResourceSnapshot();
+      _contextManager.setNativeSnapshot(snapshot);
+    } catch (error) {
+      _contextManager.setNativeSnapshot(
+        const NativeResourceSnapshot(
+          available: false,
+          signalSource: PlatformSignalSources.flutter,
+        ),
+      );
+      debugPrint('Native monitor bridge unavailable: $error');
+    }
+  }
+
+  PipelineResult recordNativeSignal(NativeSignal signal) {
+    try {
+      return _pipeline.capture(_nativeSignalMapper.map(signal));
+    } catch (error) {
+      debugPrint('Native monitor signal failed: ${signal.name}: $error');
+      return PipelineResult.rejected([
+        SchemaValidationIssue(
+          path: FieldPaths.payloadNative,
+          code: 'native_signal_failed',
+          message: error.toString(),
+        ),
+      ]);
+    }
   }
 
   /// 使用 'device_info_plus' 插件异步获取设备信息。

@@ -1,5 +1,6 @@
 import '../outputs/monitor_output.dart';
 import '../modules/jank_monitor.dart';
+import '../native/monitor_native_bridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -170,6 +171,9 @@ class MonitorConfig {
   /// Memory 采样配置（可选）
   final MonitorMemoryConfig? memoryConfig;
 
+  /// 可选 native bridge。未提供时 SDK 只保留 Flutter/Dart 层能力。
+  final MonitorNativeBridge? nativeBridge;
+
   /// 自定义全局附加数据
   final Map<String, dynamic>? customData;
 
@@ -184,6 +188,7 @@ class MonitorConfig {
     this.queueConfig,
     this.sessionConfig,
     this.memoryConfig,
+    this.nativeBridge,
     this.customData,
   });
 
