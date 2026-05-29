@@ -283,8 +283,8 @@ SDK 应支持：
 | 优先级 | 事件 |
 |---|---|
 | critical | fatal error、native crash、OOM、ANR、SDK self-monitoring critical |
-| high | error、关键卡顿、关键慢启动、关键慢页面 |
-| normal | page trace、http span、memory pressure、custom trace |
+| high | error、关键卡顿、关键慢启动、关键慢页面、memory pressure、native memory pressure、失败的 SDK lifecycle flush |
+| normal | page trace、http span、custom trace、成功的 SDK lifecycle flush |
 | low | 普通 breadcrumb、普通 log、普通 memory sample |
 
 采样和限流不应破坏 critical/high 事件的问题定位链路。

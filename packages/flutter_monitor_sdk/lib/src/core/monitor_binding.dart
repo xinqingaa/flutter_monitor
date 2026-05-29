@@ -32,15 +32,18 @@ class MonitorBinding {
     // 1. 首先初始化上报器（Reporter），因为其他模块都依赖它。
     try {
       reporter = Reporter(config);
-      if (config.enablePerformanceMonitor) {
-        _startupTraceController = StartupTraceController(
-          reporter: reporter,
-          appStartTime: appStartTime,
-        )..startSdkInit();
-      }
     } catch (e) {
       debugPrint("错误: Reporter 初始化失败: $e");
       rethrow;
+    }
+  }
+
+  Future<void> _start({required DateTime appStartTime}) async {
+    if (config.enablePerformanceMonitor) {
+      _startupTraceController = StartupTraceController(
+        reporter: reporter,
+        appStartTime: appStartTime,
+      )..startSdkInit();
     }
 
     // 2. 根据配置，决定是否初始化各个监控模块。
@@ -137,7 +140,7 @@ class MonitorBinding {
           bridge: nativeBridge,
           reporter: reporter,
         );
-        unawaited(_nativeBridgeController!.init());
+        await _nativeBridgeController!.init();
         debugPrint("✅ NativeBridgeController 初始化成功");
       } catch (e) {
         debugPrint("错误: NativeBridgeController 初始化失败: $e");
@@ -176,13 +179,14 @@ class MonitorBinding {
     // 正确调用私有构造函数并赋值给私有实例
     _instance = MonitorBinding._(config, appStartTime: appStartTime);
 
-    // 异步初始化Reporter，确保设备信息获取完成
+    // Resolve bootstrap resources before modules emit the first envelope.
     try {
-      await _instance!.reporter.initAsync();
+      await _instance!.reporter.resolveBootstrapResources();
     } catch (e) {
-      debugPrint("警告: Reporter 异步初始化失败: $e");
+      debugPrint("警告: Reporter bootstrap resource 初始化失败: $e");
       // 即使初始化失败，也不影响其他功能，继续运行
     }
+    await _instance!._start(appStartTime: appStartTime);
   }
 
   // --- 可供内部访问的服务 ---

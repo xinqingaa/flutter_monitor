@@ -7,6 +7,7 @@ import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
+import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/utils/monitored_http_client.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
@@ -1330,6 +1331,85 @@ void main() {
     );
   });
 
+  test('native resource is available for bootstrap events', () async {
+    final output = RecordingOutput();
+    final bridge = _FakeNativeBridge(
+      resource: const NativeResourceSnapshot(
+        available: true,
+        platform: 'android',
+        processId: 23456,
+        bridgeVersion: '0.2.0',
+        signalSource: PlatformSignalSources.android,
+      ),
+    );
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        nativeBridge: bridge,
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    await reporter.resolveBootstrapResources();
+
+    final startup = StartupTraceController(
+      reporter: reporter,
+      appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
+    );
+    startup.startSdkInit();
+    startup.finishSdkInit();
+
+    final bootstrapEvents = output.events
+        .where(
+          (event) =>
+              event['name'] == EventNames.appColdStart ||
+              event['name'] == EventNames.sdkInit,
+        )
+        .toList(growable: false);
+
+    expect(bootstrapEvents, isNotEmpty);
+    for (final event in bootstrapEvents) {
+      final resource = event['resource'] as Map;
+      final sdk = resource['sdk'] as Map;
+      final context = event['context'] as Map;
+      final native = context['native'] as Map;
+
+      expect(sdk['nativeVersion'], '0.2.0');
+      expect(native['available'], isTrue);
+      expect(native['platform'], 'android');
+      expect(native['processId'], 23456);
+      expect(native['signalSource'], PlatformSignalSources.android);
+    }
+  });
+
+  test('bootstrap resources keep flutter-only context without bridge', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    await reporter.resolveBootstrapResources();
+
+    final startup = StartupTraceController(
+      reporter: reporter,
+      appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
+    );
+    startup.startSdkInit();
+
+    final event = output.events.singleWhere(
+      (item) => item['name'] == EventNames.appColdStart,
+    );
+    final resource = event['resource'] as Map;
+    final sdk = resource['sdk'] as Map;
+    final context = event['context'] as Map;
+    final native = context['native'] as Map;
+
+    expect(sdk['nativeVersion'], isNull);
+    expect(native['available'], isFalse);
+    expect(native['signalSource'], PlatformSignalSources.flutter);
+  });
+
   test('resume within timeout keeps session and emits hot start', () async {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -1693,7 +1773,12 @@ void main() {
         bridgeVersion: '0.2.0',
         signalSource: PlatformSignalSources.android,
       ),
-      memory: const NativeMemorySnapshot(nativeUsedMb: 42),
+      memory: const NativeMemorySnapshot(
+        rssMb: 128,
+        heapUsedMb: 21,
+        heapCapacityMb: 64,
+        nativeUsedMb: 42,
+      ),
     );
     final reporter = Reporter(
       MonitorConfig(
@@ -1703,7 +1788,7 @@ void main() {
       ),
     );
 
-    await reporter.initAsync();
+    await reporter.resolveBootstrapResources();
     final controller = NativeBridgeController(
       bridge: bridge,
       reporter: reporter,
@@ -1736,15 +1821,26 @@ void main() {
       nativeSampleAttributes[FieldPaths.nativeSignal],
       NativeSignalType.memory.toJson(),
     );
+    expect(nativeSampleAttributes[FieldPaths.memoryRssMb], 128);
+    expect(nativeSampleAttributes[FieldPaths.memoryHeapUsedMb], 21);
+    expect(nativeSampleAttributes[FieldPaths.memoryHeapCapacityMb], 64);
     expect(nativeSampleAttributes[FieldPaths.memoryNativeUsedMb], 42);
     expect(
       nativeSampleAttributes[FieldPaths.memorySampleSource],
       MemorySampleSource.native.toJson(),
     );
+    final nativeSamplePayload = nativeSample['payload'] as Map;
     expect(
-      (nativeSample['payload'] as Map)[PayloadKeys.trigger],
+      nativeSamplePayload[PayloadKeys.trigger],
       TriggerValues.sessionStart,
     );
+    final payloadNative = nativeSamplePayload[FieldPaths.payloadNative] as Map;
+    expect(payloadNative[PayloadKeys.trigger], isNull);
+    expect(payloadNative['rssMb'], 128);
+    expect(payloadNative['heapUsedMb'], 21);
+    expect(payloadNative['heapCapacityMb'], 64);
+    expect(payloadNative['nativeUsedMb'], 42);
+    expect(payloadNative['sampleSource'], MemorySampleSource.native.toJson());
   });
 
   test(

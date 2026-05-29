@@ -382,7 +382,7 @@ Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中
 | `app.foreground_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.state` | 一段前台 activity window 的持续时间 |
 | `app.background_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.previousState` | 一段后台停留时间，可辅助 hot start 和 session 切分 |
 | `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot` | 后台恢复到前台的恢复链路 |
-| `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `high` | `app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果 |
+| `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果；成功为 normal，失败为 high |
 
 `sdk.lifecycle.flush` 是 SDK self-monitoring 事件，不是业务事件。触发状态、flush 错误摘要等诊断信息可放在 `payload`，但 `app.exit_flush.success` 必须放在 attributes，方便 DevTools 和服务端判断 flush 是否成功。
 
@@ -421,11 +421,15 @@ Native 信号使用两层表达：
 - 标准层：`context.native.*`、`context.lifecycle.*`、`attributes.native.signal`、`attributes.memory.*` 等 canonical fields。标准层只保存语义确定、可检索、可聚合的状态和指标。
 - 原始证据层：`payload.native`。原始证据层保存平台回调、系统原始状态、等级、通知名、线程线索、平台错误码和采集时间等排查证据。Android/iOS 差异优先放在这里，不新增平行 public fields。
 
+在 raw JSON 中，payload 内部使用 canonical field path 作为 key，因此实际形态是 `payload["payload.native"]`、`payload["payload.breadcrumbs"]`、`payload["payload.properties"]`。文档中提到的 `payload.native` 指 canonical field path，不表示 JSON 内一定是嵌套的 `{ "payload": { "native": ... } }`。
+
 Native lifecycle 不得为了“看起来完整”强行写入 `context.lifecycle.state`。只有 native callback 能明确映射到标准 lifecycle 状态时，才允许写入 `context.lifecycle.*`；不能确定时，只写 `native.signal = lifecycle`，并把完整平台原始信息放入 `payload.native`。Flutter lifecycle 仍负责维护主链路里的当前标准 lifecycle 上下文，native lifecycle 是补充证据，不应覆盖 Flutter 当前状态。
 
 native 诊断详情使用 `payload.native`。原始 crash dump、寄存器、线程堆栈、系统日志等内容默认不应上传；确需上传时必须先经过隐私过滤、大小裁剪和显式配置。
 
-SDK 内部 mapper 必须把 `NativeSignal` 映射为 `RawSignal` 后进入统一 pipeline。未接入 bridge 的普通 Flutter 事件仍应保留 `context.native.available = false`；接入 bridge 后，SDK 可用 `NativeResourceSnapshot` 更新 `context.native.*` 和 `resource.sdk.nativeVersion`。`native.memory.pressure` 与 `native.warning` 是高价值 breadcrumb，后续 error、jank、OOM/ANR/crash 可携带它们作为上下文。
+SDK 内部 mapper 必须把 `NativeSignal` 映射为 `RawSignal` 后进入统一 pipeline。未接入 bridge 的普通 Flutter 事件仍应保留 `context.native.available = false`；接入 bridge 后，SDK 应在 bootstrap resource resolve 阶段用短 deadline 解析一次 `NativeResourceSnapshot`，用于在首批事件前更新 `context.native.*` 和 `resource.sdk.nativeVersion`。`native.memory.pressure` 与 `native.warning` 是高价值 breadcrumb，后续 error、jank、OOM/ANR/crash 可携带它们作为上下文。
+
+`context.native.available` 是事件捕获时的 context snapshot，不是 session 级最终状态。配置了 `flutter_monitor_native` 时，正常情况下 bootstrap 事件应携带 `context.native.available = true`、`context.native.bridgeVersion`、`context.native.processId` 和 `resource.sdk.nativeVersion`；只有 bridge 未配置、不可用、超时或平台不支持时，才降级为 `context.native.available = false`。
 
 异常生命周期中拿不到完整上下文时，事件仍可进入 pipeline，但必须保留可用的 `sessionId` / `traceId` / `context.route.*` / `context.module.*` / breadcrumbs，并设置：
 
@@ -558,6 +562,21 @@ route、app、device、runtime、HTTP、错误、卡顿、启动等上下文应�
 | `payload.trace` | object | mixed | active trace/span 诊断快照 |
 | `payload.native` | object | mixed | 脱敏后的 native crash/ANR/OOM 详情 |
 | `payload.properties` | object | mixed | `track` 的业务详情，不作为默认主要索引 |
+
+在 raw JSON 中，payload 详情字段使用上表的完整 canonical path 作为 key，例如：
+
+```json
+{
+  "payload": {
+    "trigger": "native.bridge",
+    "payload.native": {
+      "platform": "ios",
+      "notification": "UIApplication.didBecomeActiveNotification",
+      "rawState": "active"
+    }
+  }
+}
+```
 
 ### 禁止字段
 
@@ -874,6 +893,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 - `memory.pressure`
 - `native.memory.sample`
 - `native.memory.pressure`
+- `native.lifecycle`
 - `native.oom`
 - `native.anr`
 - `native.crash`
@@ -883,83 +903,21 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 不要把用户 ID、订单 ID、商品 ID、URL 原始 ID 等动态值放入 `name`。动态值应进入 `attributes` 或脱敏后的 `payload`。
 
-## 信号字段规范
+## 信号字段规范索引
 
-### 启动
+本节只做索引，避免在同一文档内维护第二套信号契约。各信号的完整字段归属以前文“唯一字段契约”“内存、Lifecycle 与 Native 事件契约”“业务主动埋点与上下文 API 契约”为准；采集时机和降级策略见 `docs/signal_collection.md`。
 
-冷启动和热启动必须作为核心 trace，不属于未来增强。
-
-推荐事件：
-
-- `signalType = trace`、`name = app.cold_start`
-- `signalType = trace`、`name = app.hot_start`
-- `signalType = span`、`name = sdk.init`
-- `signalType = span`、`name = app.first_frame`
-- `signalType = span`、`name = app.interactive`
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `event.phase` | `start`、`end`、`instant` |
-| `app.start.type` | `cold`、`hot`、`warm` |
-| `app.first_frame_ms` | 首帧耗时 |
-| `app.interactive_ms` | 可交互耗时 |
-| `context.lifecycle.previousState` | 热启动前状态 |
-| `sdk.init.duration_ms` | SDK 初始化耗时 |
-| `native.start.elapsed_ms` | native 启动起点到 Flutter 可观测点的耗时，可为空 |
-
-启动总耗时使用 envelope 公共字段 `durationMs`，不要再写入 `attributes`。
-
-### 页面
-
-页面相关信号应挂在页面 trace 下。
-
-推荐事件：
-
-- `trace page.visit`
-- `span route.push`
-- `span page.load`
-- `span page.first_frame`
-- `span page.interactive`
-- `metric page.stay`
-- `breadcrumb page.view`
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `context.route.name` | 当前 route |
-| `context.route.source` | 来源 route |
-| `context.module.name` | 业务模块 |
-| `context.module.scene` | 业务场景 |
-| `page.instance_id` | 单次页面实例 ID |
-| `page.from` | 来源 route |
-| `page.to` | 离开后进入的 route |
-| `page.load_ms` | 页面加载耗时 |
-| `page.first_frame_ms` | 页面首帧 |
-| `page.interactive_ms` | 页面可交互 |
-
-页面停留时长使用 `metric page.stay` 事件的 envelope 公共字段 `durationMs`，不要再写入 `attributes`。
-`page.load` 是页面 trace 内的 span，不应再作为页面整体 trace 使用；页面整体生命周期使用 `page.visit` trace 表达。
-
-### 网络
-
-网络请求使用 `signalType = span`、`name = http.client`。
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `http.method` | GET/POST 等 |
-| `http.url.normalized` | 归一化 URL，例如 `/api/product/{id}` |
-| `http.status_code` | HTTP 状态码 |
-| `http.success` | 是否成功 |
-| `http.error_type` | 错误类型 |
-| `http.retry_count` | 重试次数 |
-| `http.cache_status` | hit/miss/bypass/unknown |
-| `request.size_bytes` | 请求大小 |
-| `response.size_bytes` | 响应大小 |
+| 信号 | 推荐事件 | 关键字段 |
+|---|---|---|
+| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、`span app.interactive` | `event.phase`、`app.start.type`、`app.first_frame_ms`、`app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
+| 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs` |
+| 网络 | `span http.client` | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes` |
+| 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
+| 卡顿 | `metric ui.jank.sequence` | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
+| 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect` | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
+| 生命周期 | `breadcrumb app.lifecycle`、`metric app.foreground_duration`、`metric app.background_duration`、`trace app.hot_start`、`sdk.lifecycle.flush` | `context.lifecycle.*`、`durationMs`、`app.start.type`、`app.exit_flush.success` |
+| Native | `metric native.memory.sample`、`metric native.memory.pressure`、`breadcrumb native.lifecycle`、`breadcrumb native.warning`、`error native.oom`、`error native.anr`、`error native.crash` | `context.native.*`、`native.signal`、`memory.native_used_mb`、`memory.pressure_level`、`payload.native` |
+| 错误 | `error error.flutter`、`error error.dart`、`error native.crash`、`error native.oom`、`error native.anr` | `error.type`、`error.mechanism`、`error.handled`、`error.fatal`、`error.thread`、`payload.error.*`、`payload.breadcrumbs` |
 
 `http.error_type` 必须使用 SDK canonical 取值，不能直接透传 Dio、package:http 或平台异常名：
 
@@ -972,162 +930,9 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | `bad_certificate` | 证书错误 |
 | `unknown_network` | 无法归类的网络错误 |
 
-完整 URL、query、body 默认不应直接上报。失败请求的原始错误文本只允许作为 `payload.error` 的短摘要存在；长错误文本必须裁剪，并通过 `payload.error.truncated = true`、`payload.error.original_length` 表达裁剪状态。稳定检索和聚合必须依赖 `attributes.http.error_type`，不能依赖 `payload.error` 原文。`payload.error` 不应保留随机端口、长异常描述或库私有错误文本，优先归一为 `connection_refused`、`timeout`、`failed_host_lookup` 等短摘要。
+完整 URL、query、body 默认不应直接上报。失败请求的原始错误文本只允许作为短摘要存在；长错误文本必须裁剪，并通过 `error.truncated`、`error.original_length` 表达裁剪状态。稳定检索和聚合必须依赖 `attributes.http.error_type`，不能依赖错误原文。
 
-### 行为
-
-行为信号默认作为 breadcrumb。关键业务操作可以创建 trace。
-
-推荐事件：
-
-- `breadcrumb ui.click`
-- `breadcrumb ui.scroll`
-- `breadcrumb business.action`
-- `trace action.submit_order`
-- `trace action.login`
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `ui.target` | 控件标识 |
-| `ui.action` | tap/scroll/input 等 |
-| `business.action` | 业务动作 |
-| `business.result` | success/failure/cancelled |
-
-普通点击不应制造过多 trace。只有能代表业务流程起点的行为才应创建 trace。
-
-### 卡顿
-
-卡顿事件使用 `signalType = metric`、`name = ui.jank.sequence`。
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `jank.count` | 连续慢帧数量 |
-| `frame.max_ms` | 最大帧耗时 |
-| `frame.avg_ms` | 平均帧耗时 |
-| `frame.budget_ms` | 帧预算 |
-| `frame.fps` | 最近窗口 FPS |
-| `frame.stability` | 稳定性 |
-| `frame.p50_ms` | 帧耗时 P50 |
-| `frame.p90_ms` | 帧耗时 P90 |
-| `frame.p99_ms` | 帧耗时 P99 |
-| `resource.device.deviceTier` | 设备等级 |
-
-卡顿应关联当前 session、页面 trace 和最近 breadcrumbs。
-
-### 内存
-
-内存是核心信号，不是附属指标。
-
-推荐事件：
-
-- `metric memory.sample`
-- `metric memory.growth`
-- `metric memory.pressure`
-- `metric memory.leak.suspect`
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `memory.rss_mb` | 进程常驻内存 |
-| `memory.heap_used_mb` | Dart/Flutter heap 使用 |
-| `memory.heap_capacity_mb` | heap 容量 |
-| `memory.external_mb` | external memory |
-| `memory.native_used_mb` | native memory，可由 native plugin 提供 |
-| `memory.growth_mb` | 增长量 |
-| `memory.growth_duration_ms` | 观察窗口 |
-| `memory.pressure_level` | none/moderate/critical/unknown |
-| `memory.sample_source` | dart/native/system/unknown |
-
-内存泄漏判断应谨慎表达为线索。SDK 可以上报 `memory.leak.suspect`，但不应在缺少证据时宣称确定泄漏。
-
-Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pressure_level`，并通过 `memory.sample_source = native`、`name = native.memory.sample` / `native.memory.pressure` 或 `context.native.*` 表明来源。不要再新增 `native.memory.*` 平行字段表达同一内存语义。
-
-### 生命周期
-
-推荐事件：
-
-- `breadcrumb app.lifecycle`
-- `metric app.foreground_duration`
-- `span app.resume`
-- `span app.exit_flush`
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `context.lifecycle.state` | resumed/inactive/paused/detached/hidden |
-| `context.lifecycle.previousState` | 上一个状态 |
-| `durationMs` | 前台或后台持续时间 |
-| `app.exit_flush.success` | 退出前 flush 是否成功 |
-
-### 原生信号
-
-Native 信号由 `flutter_monitor_native` 可选提供，但必须进入统一事件模型。
-
-推荐事件：
-
-- `metric native.memory.sample`
-- `metric native.memory.pressure`
-- `error native.oom`
-- `error native.anr`
-- `error native.crash`
-- `breadcrumb native.warning`
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `context.native.platform` | android/ios |
-| `native.signal` | memory/crash/anr/oom/lifecycle |
-| `native.thread` | 线程名 |
-| `native.thread_id` | 线程 ID |
-| `native.crash.type` | crash 类型 |
-| `native.anr.duration_ms` | ANR 持续时间 |
-| `native.oom.reason` | OOM 线索 |
-| `memory.native_used_mb` | native 侧内存 |
-| `memory.pressure_level` | native 内存压力 |
-
-第一阶段可以先定义 schema 和 bridge，不要求完整实现 native crash、ANR、OOM。
-
-### 错误
-
-错误事件使用 `signalType = error`。
-
-推荐字段：
-
-| 字段 | 说明 |
-|---|---|
-| `error.type` | exception/error 类型 |
-| `error.mechanism` | flutter/dart/native/manual |
-| `error.handled` | 是否已处理 |
-| `error.fatal` | 是否致命 |
-| `error.thread` | 线程/isolate/native thread |
-
-推荐 payload：
-
-- `payload.error.message`；
-- `payload.error.stacktrace`；
-- `payload.error.library`；
-- `payload.breadcrumbs`；
-- `payload.trace`；
-- `payload.native`，脱敏后可选。
-
-### 自定义 Trace/Span
-
-业务自定义 trace/span 必须使用稳定 name，并将动态业务值放入 `attributes` 或脱敏后的 `payload`。
-
-推荐事件：
-
-- `trace custom.trace`
-- `span custom.step`
-- `breadcrumb custom.event`
-- `metric custom.metric`
-- `error custom.error`
+业务侧普通接入只推荐 `FlutterMonitorSDK.track(...)`。`startTrace`、`startSpan`、`addBreadcrumb`、任意自定义 attributes/payload 不作为当前公开业务 API；未来只有出现明确业务场景时才重新设计高级诊断入口。
 
 ## 完整 Session Batch 示例
 

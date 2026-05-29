@@ -521,9 +521,10 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 ### 生成事件
 
 - `breadcrumb app.lifecycle`
-- `span app.resume`
-- `span app.exit_flush`
 - `metric app.foreground_duration`
+- `metric app.background_duration`
+- `trace app.hot_start`
+- `sdk.lifecycle.flush`
 
 ### 链路关联
 
@@ -531,6 +532,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - resumed 可创建 hot start trace。
 - paused/detached 应触发尽力 flush。
 - lifecycle breadcrumb 应帮助解释请求中断、错误、卡顿和 native 信号。
+- 前台/后台持续时间使用 `app.foreground_duration` 和 `app.background_duration` 的 envelope `durationMs` 表达。
 
 ### 字段映射
 
@@ -539,6 +541,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - `context.lifecycle.state`
 - `context.lifecycle.previousState`
 - `durationMs`
+- `app.start.type`
 - `app.exit_flush.success`
 
 ### 限制与降级
@@ -632,6 +635,7 @@ Native memory pressure 映射规则：
 - 异常生命周期中无法保证完整 envelope，可先持久化 native raw signal，再由下次启动补全和上报。
 - native plugin 是可选增强，不应增加主 SDK 基础接入成本。
 - 未接入 `flutter_monitor_native` 时，SDK 应继续保留 Flutter-only 能力，并将 `context.native.available` 设为 `false` 或在需要时标记 `context.missingReason = native_bridge_unavailable`。
+- 配置 native bridge 时，SDK 应在 bootstrap resource resolve 阶段用短 deadline 解析一次 native resource snapshot；不可用或超时时再降级为 `context.native.available = false`。
 - 用户忘记添加 native 包、没有注册 bridge、平台未实现、channel 注册失败、Web/desktop 不支持 native 能力等情况，都应走同一降级路径。
 - 如果 bridge 显式启用但不可用，应产生 SDK self-monitoring 事件，不能让业务 App 因 native 监控缺失而崩溃。
 - no-op/fake bridge 只用于 SDK 内部降级和测试，不是业务层主动上报 memory/native 事件的 API。

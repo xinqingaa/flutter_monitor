@@ -21,7 +21,6 @@ class NativeBridgeController {
   DateTime? _lastSampleAt;
 
   Future<void> init() async {
-    await _reporter.updateNativeResource(_bridge);
     _subscription = _bridge.signals.listen(
       _reporter.recordNativeSignal,
       onError: (Object error, StackTrace stackTrace) {
@@ -58,14 +57,19 @@ class NativeBridgeController {
         resource: await _safeResourceSnapshot(),
         memory: memory,
         priority: EventPriority.normal,
-        payload: <String, Object?>{PayloadKeys.trigger: trigger},
+        payload: <String, Object?>{
+          PayloadKeys.trigger: trigger,
+          ...memory.toJson(),
+        },
       ),
     );
   }
 
   Future<void> dispose() async {
-    await _subscription?.cancel();
-    await _bridge.dispose();
+    await Future.wait(<Future<void>>[
+      _subscription?.cancel() ?? Future<void>.value(),
+      _bridge.dispose(),
+    ]);
   }
 
   Future<NativeResourceSnapshot?> _safeResourceSnapshot() async {

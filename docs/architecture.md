@@ -500,6 +500,7 @@ abstract interface class MonitorNativeBridge {
 
 - `flutter_monitor_sdk` 只依赖 bridge 抽象，不强依赖 native plugin。
 - 未配置 bridge 时，SDK 使用 no-op 降级路径，`context.native.available = false`，启动、页面、HTTP、错误、卡顿、基础 memory、基础 lifecycle 和 `track` 不受影响。
+- 配置 bridge 时，SDK 在 bootstrap resource resolve 阶段解析一次 native resource snapshot；该阶段有短 deadline，成功后首批 bootstrap 事件携带 native context，不可用或超时时降级为 `context.native.available = false`。
 - `flutter_monitor_native` 提供 bridge 实现。
 - `flutter_monitor_core` 承载最终 event envelope、字段注册、隐私规则和可共享的 native raw payload contract。
 - `flutter_monitor_sdk` 持有 runtime bridge 抽象、上下文补全和 pipeline 接入。
@@ -525,12 +526,14 @@ Android / iOS native callbacks
 `flutter_monitor_native` 应主要包含：
 
 - Dart bridge 实现，例如 `FlutterMonitorNativeBridge`。
-- native signal DTO 和 mapper，字段必须映射到 core 中的 canonical fields。
+- Android/iOS native raw signal 采集，并通过 core 定义的 `NativeSignal` / `NativeMemorySnapshot` / `NativeResourceSnapshot` 交给 SDK。
 - Android/iOS memory collector，例如 RSS、native heap 或平台可获得的内存线索。
 - Android/iOS memory pressure / low memory warning listener。
 - Android/iOS native lifecycle 补充信号。
 - OOM、ANR、native crash 的 schema 入口、bridge 入口和异常生命周期下的 raw signal 暂存能力。
-- no-op/fake bridge，保证没有平台实现时也能测试 SDK 降级路径。
+- 用于平台不可用或测试环境的降级路径。no-op/fake bridge 只服务 SDK 内部测试，不是业务层主动写入 native 事件的 API。
+
+Native signal 的最终字段映射发生在 SDK pipeline 入口：`flutter_monitor_native` 负责提供平台事实，`flutter_monitor_sdk` 负责把它映射为 `RawSignal`，再由 `EventPipeline` 构建统一 `EventEnvelope`。平台原始证据进入 canonical `payload.native`；raw JSON 中表现为 payload 内的 `payload.native` key。
 
 `flutter_monitor_native` 不得包含：
 

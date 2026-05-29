@@ -17,6 +17,9 @@ import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
 /// Reporter 是 SDK 的数据心脏，负责收集、丰富、缓存和发送所有监控事件。
 class Reporter {
   static const int _httpErrorPayloadMaxLength = 300;
+  static const Duration _nativeBootstrapResourceTimeout = Duration(
+    milliseconds: 120,
+  );
 
   final MonitorConfig _config;
   late final ContextManager _contextManager;
@@ -61,20 +64,25 @@ class Reporter {
     }
   }
 
-  /// 异步初始化，确保设备信息获取完成
-  Future<void> initAsync() async {
-    // 异步获取设备信息，确保在第一次上报前完成
+  /// Resolve resources that should be present before the first envelope.
+  Future<void> resolveBootstrapResources() async {
     await _fetchDeviceInfo();
-    await updateNativeResource(_config.nativeBridge);
+    await resolveNativeBootstrapResource(_config.nativeBridge);
   }
 
-  Future<void> updateNativeResource(MonitorNativeBridge? bridge) async {
+  Future<void> initAsync() => resolveBootstrapResources();
+
+  Future<void> resolveNativeBootstrapResource(
+    MonitorNativeBridge? bridge,
+  ) async {
     if (bridge == null) {
       _contextManager.setNativeSnapshot(null);
       return;
     }
     try {
-      final snapshot = await bridge.getResourceSnapshot();
+      final snapshot = await bridge
+          .getResourceSnapshot()
+          .timeout(_nativeBootstrapResourceTimeout);
       _contextManager.setNativeSnapshot(snapshot);
     } catch (error) {
       _contextManager.setNativeSnapshot(
