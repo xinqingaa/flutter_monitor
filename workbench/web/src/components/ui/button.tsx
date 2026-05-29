@@ -4,7 +4,7 @@ import type * as React from 'react';
 import { cn } from '../../shared/formatting/cn';
 
 const buttonVariants = cva(
-  'inline-flex h-8 items-center justify-center gap-2 rounded-md border px-3 text-[12px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4',
+  'inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4',
   {
     variants: {
       variant: {
@@ -15,8 +15,8 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-8 px-3',
-        sm: 'h-7 px-2 text-[11px]',
-        icon: 'h-8 w-8 px-0',
+        sm: 'h-8 px-2 text-xs',
+        icon: 'h-9 w-9 px-0',
       },
     },
     defaultVariants: {

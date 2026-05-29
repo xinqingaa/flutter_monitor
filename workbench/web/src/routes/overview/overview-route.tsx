@@ -27,11 +27,12 @@ export function OverviewRoute() {
   );
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[320px_minmax(720px,1fr)_390px] gap-3 p-3">
-      <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-cols-[minmax(760px,1fr)_360px] xl:grid-rows-[auto_minmax(0,1fr)] xl:overflow-hidden">
+      <section className="grid min-h-0 gap-2 xl:col-span-2">
         <Card>
           <CardHeader>
-            <CardTitle>Session Search</CardTitle>
+            <CardTitle>查找会话</CardTitle>
+            <p className="mt-1 text-xs text-zinc-500">按用户、版本、环境、页面或状态定位一次 App 使用过程。</p>
           </CardHeader>
           <CardContent>
             <SessionFilterForm filters={draftFilters} onChange={setDraftFilters} onSubmit={() => setFilters(draftFilters)} />
@@ -42,19 +43,27 @@ export function OverviewRoute() {
             ) : null}
           </CardContent>
         </Card>
-        <SessionList sessions={sessions} />
-      </aside>
-
-      <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3">
         <ServiceStatusStrip health={healthQuery.data} live={live} />
-        <OverviewMetrics overview={performanceQuery.data} />
+      </section>
+
+      <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>性能概览</CardTitle>
+            <p className="mt-1 text-xs text-zinc-500">优先查看启动、页面、网络、卡顿和错误。每个摘要后续都应能回查原始事件。</p>
+          </CardHeader>
+          <CardContent>
+            <OverviewMetrics overview={performanceQuery.data} />
+          </CardContent>
+        </Card>
         <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
           <CardHeader>
-            <CardTitle>Recent Problem Sessions</CardTitle>
+            <CardTitle>最近问题会话</CardTitle>
+            <p className="mt-1 text-xs text-zinc-500">只展示包含错误、卡顿、失败请求或异常状态的会话。</p>
           </CardHeader>
           <CardContent className="min-h-0 overflow-auto p-3">
             {problemSessions.length === 0 ? (
-              <EmptyState title="暂无问题 session" description="error、jank、failed HTTP 或慢启动出现后会进入这里。" />
+              <EmptyState title="暂无问题会话" description="错误、卡顿、失败请求或慢启动出现后会进入这里。" />
             ) : (
               <div className="-m-3"><ProblemSessionList sessions={problemSessions.slice(0, 12)} /></div>
             )}
@@ -62,7 +71,12 @@ export function OverviewRoute() {
         </Card>
       </section>
 
-      <aside className="min-h-0">
+      <aside className="grid min-h-[520px] gap-2 xl:min-h-0 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+        <SessionList
+          sessions={sessions}
+          title="全部会话"
+          description="所有已落库的 App 使用过程，可切换查看不同链路。"
+        />
         <RecentEvents events={recentQuery.data ?? []} />
       </aside>
     </div>

@@ -12,20 +12,20 @@ export function WorkbenchShell() {
 
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] bg-zinc-100 text-zinc-950">
-      <header className="flex items-center justify-between gap-4 border-b border-zinc-200 bg-white px-4 py-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link to="/" className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-zinc-950 text-white">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-white px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Link to="/" className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-zinc-950 text-white">
             <Home className="size-4" />
           </Link>
           <div className="min-w-0">
-            <h1 className="truncate text-[15px] font-semibold leading-tight">Flutter Monitor Workbench</h1>
-            <p className="truncate text-[11px] text-zinc-500">LocalLive · EventEnvelope diagnostics · SQLite backed</p>
+            <h1 className="truncate text-base font-semibold leading-tight">Flutter Monitor 工作台</h1>
+            <p className="truncate text-xs text-zinc-500">本地实时数据 · 会话链路排查 · SQLite 持久化</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant={live ? 'default' : 'secondary'} onClick={() => setLive((value) => !value)}>
             {live ? <Pause className="size-4" /> : <Play className="size-4" />}
-            {live ? 'Live' : 'Paused'}
+            {live ? '实时中' : '已暂停'}
           </Button>
           <Button variant="secondary" onClick={() => void router.invalidate()}>
             <RefreshCw className="size-4" />

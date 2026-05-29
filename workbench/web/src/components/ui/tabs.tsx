@@ -17,7 +17,7 @@ export function TabsTrigger({ className, ...props }: React.ComponentPropsWithout
   return (
     <TabsPrimitive.Trigger
       className={cn(
-        'inline-flex h-7 items-center justify-center rounded px-2.5 text-[12px] font-medium text-zinc-600 data-[state=active]:bg-white data-[state=active]:text-zinc-950 data-[state=active]:shadow-sm',
+        'inline-flex h-7 items-center justify-center rounded px-2.5 text-xs font-medium text-zinc-600 data-[state=active]:bg-white data-[state=active]:text-zinc-950 data-[state=active]:shadow-sm',
         className,
       )}
       {...props}

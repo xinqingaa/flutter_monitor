@@ -76,15 +76,35 @@ export function eventKind(event?: MonitorEvent): string {
 export function issueLabels(event: MonitorEvent): string[] {
   const labels: string[] = [];
   const kind = eventKind(event);
-  if (event.status === 'error' || event.signalType === 'error') labels.push('error');
+  if (event.status === 'error' || event.signalType === 'error') labels.push('错误');
   if (kind === 'http' && (event.status === 'error' || readPath(event, ['attributes', 'http.success']) === false)) {
-    labels.push('failed HTTP');
+    labels.push('请求失败');
   }
-  if (kind === 'jank') labels.push('jank');
-  if (kind === 'startup' && (event.durationMs ?? 0) >= 1000) labels.push('slow startup');
-  if (kind === 'page' && (event.durationMs ?? 0) >= 1000) labels.push('slow page');
-  if (kind === 'memory' && String(event.level ?? event.status ?? '').includes('warn')) labels.push('memory pressure');
+  if (kind === 'jank') labels.push('卡顿');
+  if (kind === 'startup' && (event.durationMs ?? 0) >= 1000) labels.push('启动慢');
+  if (kind === 'page' && (event.durationMs ?? 0) >= 1000) labels.push('页面慢');
+  if (kind === 'memory' && String(event.level ?? event.status ?? '').includes('warn')) labels.push('内存压力');
   return labels;
+}
+
+export function eventKindLabel(event?: MonitorEvent): string {
+  const kind = eventKind(event);
+  const labels: Record<string, string> = {
+    error: '错误',
+    http: '网络请求',
+    jank: '卡顿',
+    page: '页面',
+    startup: '启动',
+    memory: '内存',
+    lifecycle: '生命周期',
+    business: '业务',
+    event: '事件',
+    trace: '链路',
+    span: '阶段',
+    metric: '指标',
+    breadcrumb: '足迹',
+  };
+  return labels[kind] ?? kind;
 }
 
 export function sortEvents(events: MonitorEvent[]): MonitorEvent[] {

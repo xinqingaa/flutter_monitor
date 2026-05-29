@@ -20,7 +20,7 @@ export const fieldDefinitions: FieldDefinition[] = [
   },
   {
     path: 'sessionId',
-    label: 'Session',
+    label: '会话',
     description: '一次用户使用过程或可分析活动窗口。',
     source: 'SDK session context',
     privacy: 'internal',
@@ -29,7 +29,7 @@ export const fieldDefinitions: FieldDefinition[] = [
   },
   {
     path: 'traceId',
-    label: 'Trace',
+    label: '链路',
     description: '一次可追踪流程，例如冷启动、页面打开、接口调用链或业务流程。',
     source: 'SDK tracing',
     privacy: 'internal',
@@ -38,7 +38,7 @@ export const fieldDefinitions: FieldDefinition[] = [
   },
   {
     path: 'spanId',
-    label: 'Span',
+    label: '阶段',
     description: 'trace 中的一个阶段，例如 SDK 初始化、首帧、HTTP 请求或业务步骤。',
     source: 'SDK tracing',
     privacy: 'internal',
@@ -101,7 +101,7 @@ export const fieldDefinitions: FieldDefinition[] = [
   },
   {
     path: 'payload.breadcrumbs',
-    label: 'Breadcrumbs',
+    label: '上下文足迹',
     description: '问题发生前后的关键上下文足迹。',
     source: 'SDK payload',
     privacy: 'mixed',

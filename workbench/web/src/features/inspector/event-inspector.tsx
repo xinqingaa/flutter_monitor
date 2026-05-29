@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Braces, GitBranch, Info, ListTree } from 'lucide-react';
+import { AlertTriangle, Braces, Clipboard, ExternalLink, GitBranch, Info, ListTree } from 'lucide-react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { Button } from '../../components/ui/button';
 import type { JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import {
   appVersionOf,
@@ -12,6 +13,7 @@ import {
   deviceOf,
   environmentOf,
   eventKind,
+  eventKindLabel,
   httpStatusOf,
   issueLabels,
   moduleOf,
@@ -25,6 +27,8 @@ import { formatDuration, formatTime } from '../../shared/formatting/format';
 import { EventKindBadge } from '../timeline/status-badge';
 import { FieldExplanation } from './field-explanation';
 import { JsonViewer } from './json-viewer';
+import { copyJson } from '../../shared/formatting/download';
+import { statusLabel } from '../../shared/event-model/status';
 
 export function EventInspector({
   event,
@@ -37,7 +41,7 @@ export function EventInspector({
     return (
       <Card className="h-full min-h-0">
         <CardContent className="p-3">
-          <EmptyState title="未选择事件" description="从 timeline 或 recent 列表中选择事件后查看解释。" />
+          <EmptyState title="未选择链路节点" description="从会话链路中选择启动、页面、请求、错误或行为节点。" />
         </CardContent>
       </Card>
     );
@@ -50,21 +54,35 @@ export function EventInspector({
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <div>
-          <CardTitle>Event Inspector</CardTitle>
+          <CardTitle>节点诊断</CardTitle>
           <div className="mt-1 flex items-center gap-1">
             <EventKindBadge event={event} />
             {labels.map((label) => <Badge key={label} tone="warn">{label}</Badge>)}
           </div>
         </div>
-        <CopyableId value={event.eventId} />
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="secondary" onClick={() => void copyJson(event)}>
+            <Clipboard className="size-4" />
+            复制原始数据
+          </Button>
+          {event.eventId ? (
+            <Button asChild type="button" variant="ghost">
+              <Link to="/events/$eventId" params={{ eventId: event.eventId }}>
+                <ExternalLink className="size-4" />
+                完整事件
+              </Link>
+            </Button>
+          ) : null}
+          <CopyableId value={event.eventId} />
+        </div>
       </CardHeader>
       <CardContent className="min-h-0 overflow-hidden p-3">
         <Tabs defaultValue="summary" className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-3">
           <TabsList>
-            <TabsTrigger value="summary"><Info className="mr-1 size-3.5" />Summary</TabsTrigger>
-            <TabsTrigger value="trace"><GitBranch className="mr-1 size-3.5" />Trace</TabsTrigger>
-            <TabsTrigger value="fields"><ListTree className="mr-1 size-3.5" />Fields</TabsTrigger>
-            <TabsTrigger value="raw"><Braces className="mr-1 size-3.5" />Raw</TabsTrigger>
+            <TabsTrigger value="summary"><Info className="mr-1 size-3.5" />诊断摘要</TabsTrigger>
+            <TabsTrigger value="trace"><GitBranch className="mr-1 size-3.5" />关联链路</TabsTrigger>
+            <TabsTrigger value="fields"><ListTree className="mr-1 size-3.5" />字段说明</TabsTrigger>
+            <TabsTrigger value="raw"><Braces className="mr-1 size-3.5" />原始数据</TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary" className="min-h-0 overflow-auto">
@@ -77,7 +95,15 @@ export function EventInspector({
             <FieldExplanation event={event} />
           </TabsContent>
           <TabsContent value="raw" className="min-h-0 overflow-hidden">
-            <JsonViewer value={event} />
+            <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
+              <div className="flex justify-end">
+                <Button type="button" variant="secondary" onClick={() => void copyJson(event)}>
+                  <Clipboard className="size-4" />
+                  复制完整 JSON
+                </Button>
+              </div>
+              <JsonViewer value={event} />
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -86,32 +112,36 @@ export function EventInspector({
 }
 
 function Summary({ event }: { event: MonitorEvent }) {
+  const labels = issueLabels(event);
   return (
-    <div className="grid gap-3">
-      <Section title="事件语义">
-        <Fact label="类型" value={eventKind(event)} />
-        <Fact label="名称" value={event.name ?? '-'} />
-        <Fact label="时间" value={formatTime(event.timestamp)} />
+    <div className="grid gap-2">
+      <section className="rounded-md border border-teal-200 bg-teal-50 p-3">
+        <div className="text-xs text-teal-700">当前节点</div>
+        <div className="mt-1 text-lg font-semibold text-zinc-950">{eventKindLabel(event)} · {event.name ?? '-'}</div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {labels.length > 0 ? labels.map((label) => <Badge key={label} tone="warn">{label}</Badge>) : <Badge tone="good">暂无明显问题</Badge>}
+        </div>
+      </section>
+      <Section title="一眼看懂">
+        <Fact label="发生时间" value={formatTime(event.timestamp)} />
+        <Fact label="页面" value={routeOf(event)} />
         <Fact label="耗时" value={formatDuration(event.durationMs)} />
-        <Fact label="状态" value={event.status ?? '-'} />
-        <Fact label="级别" value={event.level ?? '-'} />
-        <Fact label="优先级" value={event.priority ?? '-'} />
+        <Fact label="状态" value={statusLabel(event.status)} />
         <Fact label="HTTP 状态码" value={httpStatusOf(event)} />
       </Section>
-      <Section title="发生位置">
-        <Fact label="Session" value={<CopyableId value={event.sessionId} />} />
-        <Fact label="Trace" value={event.traceId ? <Link className="text-teal-700 hover:underline" to="/traces/$traceId" params={{ traceId: event.traceId }}>{event.traceId}</Link> : '-'} />
-        <Fact label="Span" value={<CopyableId value={event.spanId} />} />
-        <Fact label="Route" value={routeOf(event)} />
-        <Fact label="Module" value={moduleOf(event)} />
-        <Fact label="Scene" value={sceneOf(event)} />
+      <Section title="链路位置">
+        <Fact label="会话" value={<CopyableId value={event.sessionId} />} />
+        <Fact label="链路" value={event.traceId ? <Link className="text-teal-700 hover:underline" to="/traces/$traceId" params={{ traceId: event.traceId }}>{event.traceId}</Link> : '-'} />
+        <Fact label="阶段" value={<CopyableId value={event.spanId} />} />
+        <Fact label="模块" value={moduleOf(event)} />
+        <Fact label="场景" value={sceneOf(event)} />
       </Section>
       <Section title="影响上下文">
-        <Fact label="User" value={userIdOf(event)} />
+        <Fact label="用户" value={userIdOf(event)} />
         <Fact label="App" value={`${appVersionOf(event)} · ${environmentOf(event)}`} />
-        <Fact label="Device" value={deviceOf(event)} />
-        <Fact label="Network" value={networkOf(event)} />
-        <Fact label="Release" value={releaseOf(event)} />
+        <Fact label="设备" value={deviceOf(event)} />
+        <Fact label="网络" value={networkOf(event)} />
+        <Fact label="发布" value={releaseOf(event)} />
       </Section>
     </div>
   );
@@ -128,9 +158,9 @@ function TracePanel({
 }) {
   return (
     <div className="grid gap-3">
-      <Section title="同 Trace 事件">
+      <Section title="同一链路内的节点">
         {event.traceId && traceEvents.length === 0 ? (
-          <EmptyState title="没有 trace 事件" />
+          <EmptyState title="没有关联节点" />
         ) : (
           <div className="divide-y divide-zinc-100 rounded-md border border-zinc-200">
             {traceEvents.map((item) => (
@@ -138,7 +168,7 @@ function TracePanel({
                 key={item.eventId}
                 to="/events/$eventId"
                 params={{ eventId: item.eventId ?? '-' }}
-                className="grid grid-cols-[76px_1fr_70px] gap-2 px-2 py-1.5 text-[12px] hover:bg-teal-50"
+                className="grid grid-cols-[82px_1fr_78px] gap-2 px-2 py-1.5 text-sm hover:bg-teal-50"
               >
                 <span className="text-zinc-500">{formatTime(item.timestamp)}</span>
                 <span className="truncate text-zinc-900">{item.name ?? '-'}</span>
@@ -148,16 +178,16 @@ function TracePanel({
           </div>
         )}
       </Section>
-      <Section title="Breadcrumbs">
+      <Section title="上下文足迹">
         {breadcrumbs.length === 0 ? (
-          <EmptyState title="无 breadcrumb 快照" />
+          <EmptyState title="无上下文足迹" />
         ) : (
           <div className="grid gap-2">
             {breadcrumbs.map((breadcrumb, index) => (
               <div key={index} className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                <div className="mb-1 flex items-center gap-2 text-[11px] font-medium text-zinc-600">
+                <div className="mb-1 flex items-center gap-2 text-xs font-medium text-zinc-600">
                   <AlertTriangle className="size-3.5" />
-                  Breadcrumb #{index + 1}
+                  足迹 #{index + 1}
                 </div>
                 <JsonViewer value={breadcrumb} />
               </div>
@@ -172,7 +202,7 @@ function TracePanel({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-zinc-200">
-      <div className="border-b border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[12px] font-semibold text-zinc-700">{title}</div>
+      <div className="border-b border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm font-semibold text-zinc-700">{title}</div>
       <div className="grid gap-1.5 p-2">{children}</div>
     </section>
   );
@@ -180,7 +210,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2 text-[12px]">
+    <div className="grid grid-cols-[86px_minmax(0,1fr)] gap-2 text-sm">
       <span className="text-zinc-500">{label}</span>
       <span className="min-w-0 text-zinc-900">{value}</span>
     </div>
