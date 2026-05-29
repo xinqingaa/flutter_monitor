@@ -21,7 +21,7 @@ Flutter Monitor 的排查体验分为三层，三层共享统一 `EventEnvelope`
    - Workbench 是统一 UI，不因数据来自本地、导入文件或未来远端服务端而创建多套工作台。
 
 3. 写入/查询服务
-   - 本地阶段可以是轻量 `node_server` / workbench service，使用内存、文件或 SQLite。
+   - 本地阶段可以是轻量 workbench service，使用 SQLite 作为本地持久化。
    - 未来生产阶段是 Phase 6 Server，负责鉴权、可靠写入、采样限流、离线重试、聚合和长期治理。
    - 即使只服务本地 Workbench，也应区分 SDK 写入链路和 Workbench 查询链路，避免把调试实时性和生产上报策略混为一谈。
 
@@ -51,7 +51,7 @@ localLive
     -> EventEnvelope
     -> HttpOutput small batch / short flush
     -> local workbench service
-    -> memory / SQLite / NDJSON store + query index
+    -> SQLite store + query index
     -> SSE
     -> Workbench Web live timeline
 ```
@@ -93,7 +93,7 @@ Workbench 与其他模块的边界：
 
 ## 架构
 
-Workbench 使用前后端分离结构。根目录仍是 Dart pub workspace root，`workbench/` 是独立 JS/TS workspace root。第一阶段从当前 `node_server` 迁移到 `workbench/service`，不继续扩展单文件 HTML inspector。
+Workbench 使用前后端分离结构。根目录仍是 Dart pub workspace root，`workbench/` 是独立 JS/TS workspace root。当前本地服务已收敛到 `workbench/service`，不保留旧本地 server 入口。
 
 ```text
 flutter_monitor/
@@ -184,13 +184,13 @@ Workbench 采用 JS/TS 技术栈：
 |---|---|---|
 | workspace | pnpm | `workbench/` 内独立 JS/TS workspace，不污染 Dart pub workspace |
 | language | TypeScript | service、web、shared 共用类型约束 |
-| service | Express + TypeScript | 复用现有 `node_server` 经验，优先降低迁移成本 |
+| service | Express + TypeScript | 优先保持本地 collector/query service 简单可维护 |
 | web | React + Vite + TypeScript | 支撑高交互 timeline、detail、JSON viewer 和 datasource adapter |
 | routing | TanStack Router 或 React Router | URL 中表达 session、trace、event 和筛选条件 |
 | query/cache | TanStack Query | 管理 service query、live refresh 和状态缓存 |
 | realtime | SSE | 本地和 QA 复现足够简单稳定，浏览器原生支持 `EventSource` |
-| MVP storage | memory ring buffer | 保持现有 node server 能力，先跑通链路 |
-| next storage | SQLite 或 NDJSON | 支撑重启后回查、QA 复现和本地轻量聚合 |
+| MVP storage | SQLite | 支撑重启后回查、QA 复现和本地轻量聚合 |
+| import/export | session export / NDJSON | 作为导入导出格式，不作为主查询存储 |
 
 暂不引入 Nest、MySQL、Postgres、账号系统、权限系统和长期部署能力。Workbench 的第一阶段复杂度主要在诊断 UI 和 datasource 适配，不在重服务端框架。
 
@@ -283,8 +283,8 @@ ingest
   preserve raw envelope
 
 store
-  memory store for MVP
-  SQLite / NDJSON adapter later
+  SQLite store for local persistence
+  memory store for tests or explicit fallback
 
 index
   eventId
@@ -331,11 +331,12 @@ MVP 存储策略：
 - 支持最近数据、会话数据和 trace 数据回查。
 - 可重启丢失数据。
 
-如果要从“临时 inspector”推进到可用 Workbench MVP，优先选择 SQLite 或文件 NDJSON，而不是直接引入 MySQL：
+Workbench 本地存储使用 SQLite，而不是直接引入 MySQL：
 
 - SQLite 足够支撑本机调试、QA 复现、按 userId/time/session/trace 查询和轻量聚合。
 - 浏览器 IndexedDB 可用于 web 侧缓存、导入文件和 UI 状态，但不宜作为 SDK collector 主存储。
 - MySQL 等服务端数据库等到需要多人、跨机器、长期保存或生产部署时再引入。
+- NDJSON 可以作为导入导出或调试转储格式，不作为 Workbench 主查询存储。
 
 service 不承担：
 
@@ -399,8 +400,8 @@ bash scripts/workbench.sh stop
 端口约定：
 
 ```text
-workbench service: http://localhost:3000
-workbench web:     http://localhost:5173
+workbench service: http://localhost:3700
+workbench web:     http://localhost:4700
 API:               /api/monitor/v1/*
 SSE:               /api/monitor/v1/stream
 ```
@@ -421,48 +422,20 @@ workbench/web/dist
   -> workbench/service static assets
 ```
 
-`scripts/run_example.sh` 后续增加 `--local-workbench`：
+`scripts/run_example.sh` 默认启动 Workbench：
 
 ```text
-scripts/run_example.sh --local-workbench
+scripts/run_example.sh
   -> check or start workbench service
+  -> check or start workbench web
   -> print Workbench web URL
-  -> inject FM_SERVER_URL=http://<host>:3000/api/monitor/v1/events
+  -> inject FM_SERVER_URL=http://<host>:3700/api/monitor/v1/events
   -> inject test API base URL when needed
   -> run Flutter example
+  -> stop workbench when Flutter example exits
 ```
 
-`--local-server` 可以短期保留为兼容别名，但新文档和示例应逐步收敛到 `--local-workbench`。
-
-## 当前 node_server 定位
-
-`node_server` 当前是本地调试 service 与完整 JSON 回查服务雏形。它接收 SDK pipeline 输出的完整 `EventEnvelope`，并提供按 `eventId`、`sessionId`、`traceId` 查询的最小能力。
-
-`node_server` 不是 Phase 6 生产服务端，也不代表最终服务端架构。它服务本地调试、QA 复现和 Workbench MVP，用于快速验证完整链路能否被采集、查询和还原。
-
-当前能力：
-
-- 启动脚本：
-  - `bash scripts/node_server.sh install`
-  - `bash scripts/node_server.sh start`
-  - `bash scripts/node_server.sh dev`
-- `POST /api/monitor/v1/events`：接收单条或批量完整 envelope。
-- `GET /api/monitor/v1/events/:eventId`：查询单个完整事件。
-- `GET /api/monitor/v1/sessions/:sessionId`：查询 session timeline。
-- `GET /api/monitor/v1/traces/:traceId`：查询 trace 组。
-- `GET /api/monitor/v1/recent?limit=50`：查询最近事件。
-- `GET /api/monitor/v1/groups?by=session|trace|route|name`：查看简单分组。
-- `/`：本地 HTML inspector，用于快速查看最近事件和完整 JSON。
-
-后续 `node_server` 可以演进为 local workbench service，但必须遵守：
-
-- 只消费统一 `EventEnvelope`。
-- 保持 `/api/monitor/v1/*` 兼容。
-- 增加 batch 写入状态、service health 和 SSE stream。
-- 增加 userId/time/session 查询索引。
-- 将内存 store 替换为文件 NDJSON 或 SQLite。
-- summary endpoint 的规则必须来自 core，不靠 UI 或 Node 侧猜字段。
-- remote config、采样、限流和鉴权只能作为本地模拟能力，不能代表生产实现。
+`--server-url` 用于连接外部上报地址；`--no-workbench` 用于只跑 Flutter example。
 
 ## 与 DevTools 的边界
 
@@ -507,7 +480,7 @@ Workbench service 不代表最终生产服务端，不承担生产可靠性和�
 
 边界结论：
 
-- `node_server` / local workbench service 是本地数据源和调试服务，不是 Phase 6 Server。
+- local workbench service 是本地数据源和调试服务，不是 Phase 6 Server。
 - Workbench web 可以同时接 local datasource 和 future remote datasource，但不因此定义第二套 event model。
 - Phase 6 Server 的写入 API 负责可靠接收，查询 API 负责给 Workbench 提供 session、trace、event 和聚合数据。
 - 本地 Workbench 可以近实时，生产上报必须遵守 batch、优先级、大小限制、重试、离线缓存和采样限流。
@@ -557,7 +530,7 @@ Phase 6 Server 承担：
 - 支持 breadcrumb viewer。
 - 支持基础过滤和搜索。
 - 支持按 `context.user.userId` 和时间范围查询 session；没有 userId 时仍可按时间、版本、页面、错误和性能问题查询。
-- 保持 `scripts/run_example.sh --local-workbench` 可启动或连接 workbench service。
+- 保持 `scripts/run_example.sh` 可启动或连接 workbench service/web，并在 Flutter example 退出时停止本轮启动的 Workbench。
 
 ## 实施顺序
 
@@ -566,12 +539,12 @@ Phase 6 Server 承担：
 - 将 Workbench 的定位、目录、技术栈、datasource、脚本和验收标准集中在本文档。
 - `docs/implementation_plan.md` 只保留 SDK 总计划里的 Workbench 插入点和本文档引用。
 
-### Phase W1：迁移 node_server
+### Phase W1：迁移本地调试服务
 
 - 新建 `workbench/` JS/TS workspace。
-- 将当前 `node_server` 迁移为 `workbench/service`。
+- 将本地 collector/query service 收敛为 `workbench/service`。
 - 保持现有 `/api/monitor/v1/*` API 兼容。
-- 保留 `node_server` 或旧脚本的短期兼容入口。
+- 删除旧本地 server 入口，避免产生两套本地服务认知。
 
 ### Phase W2：Service 结构化
 
@@ -603,7 +576,7 @@ Phase 6 Server 承担：
 
 ### Phase W6：本地持久化
 
-- 在 memory store 之外增加 SQLite 或 NDJSON adapter。
+- 使用 SQLite 作为本地持久化。
 - 支持重启后回查最近 session。
 - 支持 session export/import 或 NDJSON import 的 UI 入口。
 
@@ -622,7 +595,7 @@ Phase 6 Server 承担：
 
 Workbench MVP 完成时应满足：
 
-- example 使用 `--local-workbench` 后，SDK 事件能进入 `workbench/service`。
+- example 使用默认 `scripts/run_example.sh` 后，SDK 事件能进入 `workbench/service`。
 - web 能实时看到新事件，无需手动刷新接口。
 - web 能打开一个 session 并查看完整 timeline。
 - web 能通过 `userId + time range` 查到 session list；App 未提供 userId 时，应明确提示该条件不可用。

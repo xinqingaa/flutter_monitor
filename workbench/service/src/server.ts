@@ -1,28 +1,35 @@
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
 import { dirname, join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { registerRoutes } from './api/routes.js';
 import { MemoryMonitorStore } from './store/memory-monitor-store.js';
-import { NdjsonMonitorStore } from './store/ndjson-monitor-store.js';
+import { SqliteMonitorStore } from './store/sqlite-monitor-store.js';
 import { SseHub } from './stream/sse-hub.js';
 
 const app = express();
-const port = Number.parseInt(process.env.PORT || '3000', 10);
+const port = Number.parseInt(process.env.PORT || '3700', 10);
 const maxEvents = Number.parseInt(process.env.FM_WORKBENCH_MAX_EVENTS || '5000', 10);
 const sseHub = new SseHub();
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(currentDir, '..', 'public');
 const webDistDir = resolve(currentDir, '..', '..', 'web', 'dist');
-const dataFile = process.env.FM_WORKBENCH_NDJSON_PATH;
-const store = dataFile
-  ? new NdjsonMonitorStore(dataFile, { maxEvents })
+const sqlitePath = process.env.FM_WORKBENCH_SQLITE_PATH;
+const store = sqlitePath
+  ? await SqliteMonitorStore.open(sqlitePath, { maxEvents })
   : new MemoryMonitorStore({ maxEvents });
 
 app.use(cors());
 app.use(bodyParser.json({ limit: process.env.FM_WORKBENCH_BODY_LIMIT || '10mb' }));
+app.use(((error, _req, res, next) => {
+  if (error instanceof SyntaxError) {
+    res.status(400).send({ error: 'invalid_json' });
+    return;
+  }
+  next(error);
+}) satisfies ErrorRequestHandler);
 app.use(express.static(existsSync(webDistDir) ? webDistDir : publicDir));
 
 registerRoutes(app, store, sseHub);

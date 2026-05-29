@@ -54,7 +54,7 @@ void main() async {
 
   final List<MonitorOutput> monitorOutputs = [];
 
-  // 自测阶段默认使用 compact 控制台预览；完整 JSON 通过 HttpOutput / node_server 查询。
+  // 自测阶段默认使用 compact 控制台预览；完整 JSON 通过 HttpOutput / Workbench 查询。
   if (kDebugMode) {
     monitorOutputs.add(LogMonitorOutput());
   }
@@ -67,7 +67,7 @@ void main() async {
   // }
 
   // 配置服务端上报。启动时传入：
-  // --dart-define=FM_SERVER_URL=http://<your-host-ip>:3000/api/monitor/v1/events
+  // --dart-define=FM_SERVER_URL=http://<your-host-ip>:3700/api/monitor/v1/events
   if (monitorServerUrl.isNotEmpty) {
     monitorOutputs.add(
       HttpOutput(

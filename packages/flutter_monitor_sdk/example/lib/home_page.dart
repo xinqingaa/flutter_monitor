@@ -38,7 +38,7 @@ class _HomePageState extends State<HomePage>
   );
   static const String _testApiBaseUrl = String.fromEnvironment(
     'FM_TEST_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:3000',
+    defaultValue: 'http://127.0.0.1:3700',
   );
   static final Uri _timeoutUri = Uri.parse(
     'https://10.255.255.1/flutter-monitor-timeout',

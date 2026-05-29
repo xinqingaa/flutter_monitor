@@ -332,7 +332,7 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 目标：
 
 - 使用同一套 UI 消费本地 service、SSE live、session export、LocalStore 和未来远端查询 datasource。
-- 将当前 `node_server` 收敛迁移为 `workbench/service`，并新增 `workbench/web` 与 `workbench/shared`。
+- 将本地 collector/query service 收敛为 `workbench/service`，并新增 `workbench/web` 与 `workbench/shared`。
 - 保持所有数据为统一 `EventEnvelope` 或 core 定义的 session export，不定义第二套工作台协议。
 - 支持 session list、session timeline、trace detail、event detail、breadcrumb viewer、raw JSON 和轻量性能概览。
 

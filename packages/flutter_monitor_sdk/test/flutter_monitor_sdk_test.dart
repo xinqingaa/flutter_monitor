@@ -248,7 +248,7 @@ void main() {
         return http.Response('down', 500);
       });
       final output = HttpOutput(
-        serverUrl: 'http://localhost:3000/api/monitor/v1/events',
+        serverUrl: 'http://localhost:3700/api/monitor/v1/events',
         client: client,
         batchReportSize: 1,
         failureCooldown: const Duration(minutes: 1),
@@ -271,7 +271,7 @@ void main() {
     final completer = Completer<http.Response>();
     final client = _RecordingHttpClient((request) => completer.future);
     final output = HttpOutput(
-      serverUrl: 'http://localhost:3000/api/monitor/v1/events',
+      serverUrl: 'http://localhost:3700/api/monitor/v1/events',
       client: client,
       batchReportSize: 10,
     );

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 const port = Number.parseInt(process.env.FM_WORKBENCH_SMOKE_PORT || '3199', 10);
 const baseUrl = `http://127.0.0.1:${port}`;
 const dataDir = mkdtempSync(join(tmpdir(), 'fm-workbench-'));
-const ndjsonPath = join(dataDir, 'events.ndjson');
+const sqlitePath = join(dataDir, 'events.sqlite');
 
 let child = spawnService();
 
@@ -56,9 +56,9 @@ try {
 
 function spawnService() {
   return spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
-  cwd: new URL('..', import.meta.url),
-  env: { ...process.env, PORT: String(port), FM_WORKBENCH_NDJSON_PATH: ndjsonPath },
-  stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: new URL('..', import.meta.url),
+    env: { ...process.env, PORT: String(port), FM_WORKBENCH_SQLITE_PATH: sqlitePath },
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
