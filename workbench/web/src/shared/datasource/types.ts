@@ -38,6 +38,17 @@ export interface SessionSummary {
   failedHttpCount: number;
 }
 
+export interface PerformanceMetricEvent {
+  eventId?: string;
+  sessionId?: string;
+  traceId?: string;
+  name?: string;
+  route?: string;
+  durationMs?: number;
+  status?: string;
+  timestamp?: string;
+}
+
 export interface PerformanceMetricSummary {
   count: number;
   errorCount: number;
@@ -45,7 +56,7 @@ export interface PerformanceMetricSummary {
   p95Ms?: number;
   maxMs?: number;
   slowCount: number;
-  events: MonitorEvent[];
+  events: PerformanceMetricEvent[];
 }
 
 export interface PerformanceOverview {
@@ -54,4 +65,35 @@ export interface PerformanceOverview {
   http: PerformanceMetricSummary;
   jank: PerformanceMetricSummary;
   errors: PerformanceMetricSummary;
+}
+
+export interface SessionFilters {
+  userId?: string;
+  from?: string;
+  to?: string;
+  appVersion?: string;
+  environment?: string;
+  route?: string;
+  status?: string;
+  name?: string;
+  signalType?: string;
+  limit?: number;
+}
+
+export interface SessionListResult {
+  sessions: SessionSummary[];
+  userIdAvailable: boolean;
+  userIdQueryAvailable?: boolean;
+}
+
+export interface WorkbenchDatasource {
+  health(): Promise<Record<string, unknown>>;
+  recent(limit?: number): Promise<MonitorEvent[]>;
+  listSessions(filters: SessionFilters): Promise<SessionListResult>;
+  getSession(sessionId: string): Promise<MonitorEvent[]>;
+  getTrace(traceId: string): Promise<MonitorEvent[]>;
+  getEvent(eventId: string): Promise<MonitorEvent | undefined>;
+  performanceOverview(filters: SessionFilters): Promise<PerformanceOverview>;
+  searchEvents(query: string, filters: SessionFilters): Promise<MonitorEvent[]>;
+  subscribeEvents(onEvent: (event: MonitorEvent) => void): () => void;
 }

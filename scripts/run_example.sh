@@ -68,7 +68,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$START_WORKBENCH" -eq 1 ]; then
-  bash "$ROOT_DIR/scripts/workbench.sh" dev
+  bash "$ROOT_DIR/scripts/workbench.sh" background
   HOST_IP="$(detect_host_ip)"
   if [ -z "$HOST_IP" ]; then
     echo "Could not detect host IP. Use --server-url explicitly." >&2

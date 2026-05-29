@@ -353,6 +353,131 @@ service 不承担：
 
 Workbench web 是完整链路排查 UI。
 
+### 前端产品架构
+
+Workbench Web 不应只是事件列表和 raw JSON viewer。前端需要形成稳定的信息架构、状态管理、组件边界和二级页面，负责把高密度 `EventEnvelope` 翻译成人类可排查的诊断语言。
+
+页面分工：
+
+- `/`：首页 Overview，回答“当前有没有数据、哪里最值得排查、最近有哪些问题 session”。
+- `/sessions/:sessionId`：Session 详情，展示一次用户链路的 timeline、关键指标、trace/event 联动和上下文。
+- `/traces/:traceId`：Trace 详情，聚焦一次启动、页面打开、接口链路或业务流程的 span/event 顺序。
+- `/events/:eventId`：Event 详情，展示字段释义、诊断摘要、关联上下文和完整 raw envelope。
+- 后续 `/performance`：性能分析页，聚合启动、页面、HTTP、卡顿、内存等指标。
+
+前端目录原则：
+
+```text
+workbench/web/src/
+  app/
+    router/
+    providers/
+    query-client/
+
+  routes/
+    overview/
+    session-detail/
+    trace-detail/
+    event-detail/
+
+  features/
+    overview/
+    session/
+    timeline/
+    inspector/
+    performance/
+
+  shared/
+    datasource/
+    event-model/
+    field-dictionary/
+    formatting/
+
+  components/
+    ui/
+    common/
+```
+
+状态管理分层：
+
+- server state 使用 TanStack Query，负责 service query、缓存、刷新、loading/error 状态和 SSE 后的失效刷新。
+- route state 使用 URL 表达 `sessionId`、`traceId`、`eventId` 和过滤条件，确保排查入口可分享和可回放。
+- UI state 优先使用 React local state。只有当筛选、选择状态或 datasource 配置需要跨页面共享时，才引入轻量 client store。
+
+组件设计原则：
+
+- `components/ui` 承载基础 UI primitives 和 shadcn 风格组件，允许项目内定制，不把视觉和业务诊断逻辑耦合。
+- `features/*` 承载领域组件，例如 session explorer、timeline row、event inspector、metric panel。
+- 所有领域组件只消费 datasource 返回的规范 envelope 或只读 view model。
+- view model 只服务 web 展示，不能写回 SDK、service API 或 server protocol。
+
+### 首页信息架构
+
+首页第一屏负责发现问题，不负责展示全部详情。必须突出以下信息：
+
+- 数据源状态：LocalLive / SQLite / Import / Remote、live 状态、事件数、session 数、最近上报时间。
+- Startup Overview：冷启动、热启动的 count、p50、p95、max、最近慢启动。
+- Page Performance：各页面打开、首帧、可交互或停留耗时的 Top N 和慢页面数量。
+- HTTP Overview：请求数、失败率、p95、慢请求和失败请求入口。
+- Stability Overview：错误、卡顿、内存压力、native 异常的数量和受影响 session。
+- Recent Problem Sessions：最近有 error、jank、failed HTTP、slow startup、slow page 的 session。
+
+首页卡片或表格中的每个摘要都必须能跳转到 session、trace 或 event 原始数据。
+
+### 字段释义与 Inspector
+
+Raw JSON 信息最全，但信息密度过高。Event Inspector 必须同时提供“解释后的诊断视图”和“原始字段视图”。
+
+解释后的诊断视图至少回答：
+
+- 这是什么事件：错误、启动、页面、网络、行为、卡顿、内存、生命周期、native 或 business。
+- 发生在哪里：session、trace、span、route、module、scene。
+- 影响谁：user、device、app version、environment、release、network。
+- 状态如何：level、status、duration、priority、error type、HTTP status、frame duration、memory pressure 等。
+- 为什么值得关注：slow startup、slow page、failed HTTP、jank burst、error、memory pressure 等问题标签。
+- 前后发生了什么：breadcrumbs、同 trace 事件、前后 timeline 事件。
+
+原始字段视图必须保留：
+
+- envelope 公共字段。
+- `resource`
+- `context`
+- `attributes`
+- `payload`
+- full raw envelope。
+
+Workbench Web 可以维护一份短期 field dictionary，用于字段释义和空值说明：
+
+| 字段 | 展示名 | 含义 | 来源 | 隐私 | 检索 |
+|---|---|---|---|---|---|
+| `context.route.name` | 当前页面 | 事件发生时所在 route | SDK context | internal | 是 |
+| `context.user.userId` | 用户 ID | 接入方提供的用户标识 | SDK context | user | 是 |
+| `resource.app.appVersion` | App 版本 | 事件发生时的应用版本 | SDK resource | internal | 是 |
+| `resource.app.environment` | 环境 | dev/test/staging/production | SDK resource | internal | 是 |
+| `attributes.http.statusCode` | HTTP 状态码 | 网络请求响应码 | network collector | internal | 是 |
+| `payload.breadcrumbs` | Breadcrumbs | 问题前后的上下文足迹 | SDK payload | mixed | 否 |
+
+长期应由 `flutter_monitor_core` 导出 schema、field registry 或 summary artifact 供 Workbench 消费。短期 web 内的 field dictionary 必须标记为 UI 释义层，不得反向成为事件模型来源。
+
+### 技术基座
+
+Workbench Web 采用：
+
+- React + Vite + TypeScript。
+- Tailwind CSS + 项目内 shadcn 风格组件。
+- Radix Primitives 用于 Tabs、Dialog、Select、Tooltip 等可访问交互。
+- TanStack Query 管理 service query 和缓存。
+- TanStack Router 或 React Router 管理二级页面与 URL 状态。
+- lucide-react 继续作为图标库。
+- 后续按需引入 TanStack Table、TanStack Virtual 和 Recharts。
+
+选型理由：
+
+- Workbench 是诊断工具，需要高密度、强定制 UI，不适合被传统后台组件库的视觉和交互模式锁死。
+- shadcn 风格组件的代码归项目所有，便于围绕 timeline、inspector 和 field explanation 深度定制。
+- TanStack Query 能把服务端状态、刷新、错误和 SSE 后的缓存失效从组件中剥离。
+- 二级页面必须通过 URL 表达当前 session/trace/event，便于 QA 和开发共享排查入口。
+
 ### MVP 视图
 
 - Session list：最近 session、事件数、起止时间、关键状态、错误/卡顿/HTTP 失败计数。

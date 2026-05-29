@@ -37,6 +37,13 @@ is_workbench_pid() {
   [[ "$command" == *"flutter_monitor/workbench"* ]] || [[ "$command" == *"@flutter-monitor/workbench"* ]]
 }
 
+workbench_process_pids() {
+  ps -ax -o pid= -o command= |
+    awk -v root="$WORKBENCH_DIR" '
+      index($0, root) && $0 ~ /(node|pnpm|tsx|vite|esbuild)/ { print $1 }
+    '
+}
+
 ensure_port_available() {
   local port="$1"
   local label="$2"
@@ -54,6 +61,13 @@ ensure_port_available() {
   echo "Use another port, for example:" >&2
   echo "  FM_SERVER_PORT=3710 FM_WORKBENCH_WEB_PORT=4710 bash scripts/workbench.sh dev" >&2
   return 1
+}
+
+is_port_used_by_workbench() {
+  local port="$1"
+  local pid
+  pid="$(listener_pid "$port" || true)"
+  [ -n "$pid" ] && is_workbench_pid "$pid"
 }
 
 wait_for_url() {
@@ -84,11 +98,9 @@ start_service_background() {
   nohup env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
     pnpm --dir "$WORKBENCH_DIR" --filter @flutter-monitor/workbench-service dev \
     >>"$LOG_FILE" 2>&1 </dev/null &
+  echo "$!" >"$SERVICE_PID_FILE"
   wait_for_url "http://127.0.0.1:$SERVER_PORT/api/monitor/v1/health" "workbench service"
   current_pid="$(listener_pid "$SERVER_PORT" || true)"
-  if [ -n "$current_pid" ]; then
-    echo "$current_pid" >"$SERVICE_PID_FILE"
-  fi
   echo "Workbench service: http://localhost:$SERVER_PORT"
 }
 
@@ -107,11 +119,9 @@ start_web_background() {
   nohup env FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" \
     pnpm --dir "$WORKBENCH_DIR" --filter @flutter-monitor/workbench-web dev \
     >>"$LOG_FILE" 2>&1 </dev/null &
+  echo "$!" >"$WEB_PID_FILE"
   wait_for_url "http://127.0.0.1:$WEB_PORT/" "workbench web"
   current_pid="$(listener_pid "$WEB_PORT" || true)"
-  if [ -n "$current_pid" ]; then
-    echo "$current_pid" >"$WEB_PID_FILE"
-  fi
   echo "Workbench web: http://localhost:$WEB_PORT"
 }
 
@@ -122,6 +132,68 @@ start_workbench_background() {
   start_web_background
 }
 
+start_workbench_foreground() {
+  install_dependencies
+  mkdir -p "$DATA_DIR"
+  if is_port_used_by_workbench "$SERVER_PORT" && is_port_used_by_workbench "$WEB_PORT"; then
+    echo "Flutter Monitor workbench is already running."
+    echo "Workbench service: http://localhost:$SERVER_PORT"
+    echo "Workbench web: http://localhost:$WEB_PORT"
+    return 0
+  fi
+  ensure_port_available "$SERVER_PORT" "service"
+  ensure_port_available "$WEB_PORT" "web"
+  echo "Workbench service: http://localhost:$SERVER_PORT"
+  echo "Workbench web: http://localhost:$WEB_PORT"
+  exec env PORT="$SERVER_PORT" FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
+    pnpm --dir "$WORKBENCH_DIR" dev
+}
+
+descendant_pids() {
+  local pid
+  pid="$1"
+  local child
+  while IFS= read -r child; do
+    [ -z "$child" ] && continue
+    echo "$child"
+    descendant_pids "$child"
+  done < <(pgrep -P "$pid" 2>/dev/null || true)
+}
+
+terminate_pid_tree() {
+  local pid="$1"
+  local label="$2"
+  if [ -z "$pid" ] || ! kill -0 "$pid" >/dev/null 2>&1 || ! is_workbench_pid "$pid"; then
+    return 0
+  fi
+
+  local pids
+  pids="$(descendant_pids "$pid"; echo "$pid")"
+  echo "Stopping Flutter Monitor workbench $label pid=$pid..."
+  while IFS= read -r pid; do
+    [ -z "$pid" ] && continue
+    kill "$pid" >/dev/null 2>&1 || true
+  done <<<"$pids"
+
+  for _ in $(seq 1 30); do
+    local any_alive=0
+    while IFS= read -r pid; do
+      [ -z "$pid" ] && continue
+      if kill -0 "$pid" >/dev/null 2>&1; then
+        any_alive=1
+        break
+      fi
+    done <<<"$pids"
+    [ "$any_alive" -eq 0 ] && return 0
+    sleep 0.1
+  done
+
+  while IFS= read -r pid; do
+    [ -z "$pid" ] && continue
+    kill -9 "$pid" >/dev/null 2>&1 || true
+  done <<<"$pids"
+}
+
 stop_pid_file() {
   local pid_file="$1"
   local label="$2"
@@ -130,21 +202,7 @@ stop_pid_file() {
   fi
   local pid
   pid="$(cat "$pid_file")"
-  if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
-    if is_workbench_pid "$pid"; then
-      echo "Stopping Flutter Monitor workbench $label pid=$pid..."
-      kill "$pid" >/dev/null 2>&1 || true
-      for _ in $(seq 1 30); do
-        if ! kill -0 "$pid" >/dev/null 2>&1; then
-          break
-        fi
-        sleep 0.1
-      done
-      if kill -0 "$pid" >/dev/null 2>&1; then
-        kill -9 "$pid" >/dev/null 2>&1 || true
-      fi
-    fi
-  fi
+  terminate_pid_tree "$pid" "$label"
   rm -f "$pid_file"
 }
 
@@ -154,9 +212,20 @@ stop_by_port_if_workbench() {
   local pid
   pid="$(listener_pid "$port" || true)"
   if [ -n "$pid" ] && is_workbench_pid "$pid"; then
-    echo "Stopping Flutter Monitor workbench $label on port $port pid=$pid..."
-    kill "$pid" >/dev/null 2>&1 || true
+    terminate_pid_tree "$pid" "$label on port $port"
   fi
+}
+
+stop_remaining_workbench_processes() {
+  local pids
+  pids="$(workbench_process_pids | sort -rn | tr '\n' ' ')"
+  if [ -z "$pids" ]; then
+    return 0
+  fi
+  echo "Stopping remaining Flutter Monitor workbench processes: $pids"
+  kill $pids >/dev/null 2>&1 || true
+  sleep 0.3
+  kill -9 $pids >/dev/null 2>&1 || true
 }
 
 stop_workbench() {
@@ -164,6 +233,7 @@ stop_workbench() {
   stop_pid_file "$SERVICE_PID_FILE" "service"
   stop_by_port_if_workbench "$WEB_PORT" "web"
   stop_by_port_if_workbench "$SERVER_PORT" "service"
+  stop_remaining_workbench_processes
 }
 
 status_workbench() {
@@ -188,6 +258,9 @@ case "$COMMAND" in
     install_dependencies
     ;;
   dev|start|web)
+    start_workbench_foreground
+    ;;
+  background)
     start_workbench_background
     ;;
   service)
@@ -213,10 +286,10 @@ case "$COMMAND" in
     ;;
   restart)
     stop_workbench
-    start_workbench_background
+    start_workbench_foreground
     ;;
   *)
-    echo "Usage: bash scripts/workbench.sh [install|dev|web|service|build|typecheck|status|stop|restart]" >&2
+    echo "Usage: bash scripts/workbench.sh [install|dev|web|background|service|build|typecheck|status|stop|restart]" >&2
     exit 64
     ;;
 esac
