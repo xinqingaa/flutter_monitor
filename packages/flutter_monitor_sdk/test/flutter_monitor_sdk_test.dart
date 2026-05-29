@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
+import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_snapshot.dart';
@@ -1547,10 +1548,12 @@ void main() {
       (event) => event['name'] == EventNames.nativeMemoryPressure,
     );
     final attributes = pressure['attributes'] as Map;
+    final payload = pressure['payload'] as Map;
     final context = pressure['context'] as Map;
     final native = context['native'] as Map;
 
     expect(pressure['signalType'], SignalType.metric.toJson());
+    expect(pressure['timestamp'], '2026-05-28T14:00:00.000');
     expect(pressure['status'], EventStatus.error.toJson());
     expect(pressure['priority'], EventPriority.high.toJson());
     expect(
@@ -1571,7 +1574,11 @@ void main() {
     expect(native['processId'], 12345);
     expect(native['bridgeVersion'], '0.1.0');
     expect(native['signalSource'], PlatformSignalSources.android);
-    expect((pressure['payload'] as Map)[FieldPaths.payloadNative], isA<Map>());
+    expect(payload[FieldPaths.payloadNative], isA<Map>());
+    expect(
+      (payload[FieldPaths.payloadNative] as Map)['warning'],
+      'trim_memory_running_low',
+    );
 
     final error = output.events.lastWhere(
       (event) => event['signalType'] == SignalType.error.toJson(),
@@ -1686,6 +1693,7 @@ void main() {
         bridgeVersion: '0.2.0',
         signalSource: PlatformSignalSources.android,
       ),
+      memory: const NativeMemorySnapshot(nativeUsedMb: 42),
     );
     final reporter = Reporter(
       MonitorConfig(
@@ -1696,6 +1704,13 @@ void main() {
     );
 
     await reporter.initAsync();
+    final controller = NativeBridgeController(
+      bridge: bridge,
+      reporter: reporter,
+      minSampleInterval: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+    await controller.init();
     reporter.recordMemorySample(rssMb: 64, trigger: 'test.sample');
 
     final event = output.events.singleWhere(
@@ -1711,6 +1726,25 @@ void main() {
     expect(native['platform'], 'android');
     expect(native['processId'], 23456);
     expect(native['signalSource'], PlatformSignalSources.android);
+
+    final nativeSample = output.events.singleWhere(
+      (item) => item['name'] == EventNames.nativeMemorySample,
+    );
+    final nativeSampleAttributes = nativeSample['attributes'] as Map;
+    expect(nativeSample['signalType'], SignalType.metric.toJson());
+    expect(
+      nativeSampleAttributes[FieldPaths.nativeSignal],
+      NativeSignalType.memory.toJson(),
+    );
+    expect(nativeSampleAttributes[FieldPaths.memoryNativeUsedMb], 42);
+    expect(
+      nativeSampleAttributes[FieldPaths.memorySampleSource],
+      MemorySampleSource.native.toJson(),
+    );
+    expect(
+      (nativeSample['payload'] as Map)[PayloadKeys.trigger],
+      TriggerValues.sessionStart,
+    );
   });
 
   test(

@@ -89,6 +89,12 @@ class MonitorBinding {
                   ) ??
                   Future<void>.value(),
             );
+            unawaited(
+              _nativeBridgeController?.recordMemorySample(
+                    trigger: TriggerValues.jankSequence,
+                  ) ??
+                  Future<void>.value(),
+            );
           },
           config: config.effectiveJankConfig,
         );
@@ -210,9 +216,21 @@ class MonitorBinding {
                 ) ??
                 Future<void>.value(),
           );
+          unawaited(
+            _nativeBridgeController?.recordMemorySample(
+                  trigger: TriggerValues.lifecycleResumed,
+                ) ??
+                Future<void>.value(),
+          );
         } else {
           unawaited(
             _memoryCollector?.recordSample(
+                  trigger: TriggerValues.lifecycleState(state),
+                ) ??
+                Future<void>.value(),
+          );
+          unawaited(
+            _nativeBridgeController?.recordMemorySample(
                   trigger: TriggerValues.lifecycleState(state),
                 ) ??
                 Future<void>.value(),

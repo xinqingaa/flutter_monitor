@@ -1,25 +1,37 @@
 package com.fluttermonitor.nativebridge
 
+import android.app.Activity
 import android.app.ActivityManager
+import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import android.os.Bundle
 import android.os.Process
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler, ComponentCallbacks2 {
+class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler, ComponentCallbacks2, ActivityAware, Application.ActivityLifecycleCallbacks {
   private var context: Context? = null
+  private var application: Application? = null
   private var methodChannel: MethodChannel? = null
   private var eventChannel: EventChannel? = null
   private var eventSink: EventChannel.EventSink? = null
+  private var activityName: String? = null
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     context = binding.applicationContext
+    application = binding.applicationContext as? Application
+    application?.registerActivityLifecycleCallbacks(this)
     methodChannel = MethodChannel(binding.binaryMessenger, "flutter_monitor_native/methods").also {
       it.setMethodCallHandler(this)
     }
@@ -30,12 +42,14 @@ class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandle
   }
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+    application?.unregisterActivityLifecycleCallbacks(this)
     binding.applicationContext.unregisterComponentCallbacks(this)
     methodChannel?.setMethodCallHandler(null)
     eventChannel?.setStreamHandler(null)
     methodChannel = null
     eventChannel = null
     eventSink = null
+    application = null
     context = null
   }
 
@@ -55,21 +69,131 @@ class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandle
     eventSink = null
   }
 
+  override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+    activityName = binding.activity::class.java.name
+    emitLifecycle(
+      callback = "onAttachedToActivity",
+      standardState = null,
+      rawState = "attached",
+    )
+  }
+
+  override fun onDetachedFromActivityForConfigChanges() {
+    emitLifecycle(
+      callback = "onDetachedFromActivityForConfigChanges",
+      standardState = null,
+      rawState = "detached_for_config_changes",
+    )
+    activityName = null
+  }
+
+  override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+    activityName = binding.activity::class.java.name
+    emitLifecycle(
+      callback = "onReattachedToActivityForConfigChanges",
+      standardState = null,
+      rawState = "reattached_for_config_changes",
+    )
+  }
+
+  override fun onDetachedFromActivity() {
+    emitLifecycle(
+      callback = "onDetachedFromActivity",
+      standardState = null,
+      rawState = "detached",
+    )
+    activityName = null
+  }
+
+  override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+    activityName = activity::class.java.name
+    emitLifecycle(
+      callback = "onActivityCreated",
+      standardState = null,
+      rawState = "created",
+    )
+  }
+
+  override fun onActivityStarted(activity: Activity) {
+    activityName = activity::class.java.name
+    emitLifecycle(
+      callback = "onActivityStarted",
+      standardState = null,
+      rawState = "started",
+    )
+  }
+
+  override fun onActivityResumed(activity: Activity) {
+    activityName = activity::class.java.name
+    emitLifecycle(
+      callback = "onActivityResumed",
+      standardState = "resumed",
+      rawState = "resumed",
+    )
+  }
+
+  override fun onActivityPaused(activity: Activity) {
+    activityName = activity::class.java.name
+    emitLifecycle(
+      callback = "onActivityPaused",
+      standardState = null,
+      rawState = "paused",
+    )
+  }
+
+  override fun onActivityStopped(activity: Activity) {
+    activityName = activity::class.java.name
+    emitLifecycle(
+      callback = "onActivityStopped",
+      standardState = null,
+      rawState = "stopped",
+    )
+  }
+
+  override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+
+  override fun onActivityDestroyed(activity: Activity) {
+    activityName = activity::class.java.name
+    emitLifecycle(
+      callback = "onActivityDestroyed",
+      standardState = null,
+      rawState = "destroyed",
+    )
+  }
+
   override fun onConfigurationChanged(newConfig: Configuration) {}
 
   override fun onLowMemory() {
-    emitMemoryPressure("critical")
+    emitMemoryPressure(
+      pressureLevel = "critical",
+      callback = "onLowMemory",
+      trimLevel = null,
+    )
   }
 
   override fun onTrimMemory(level: Int) {
-    val pressureLevel = when {
-      level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "critical"
-      level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "moderate"
-      level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> "moderate"
+    val pressureLevel = when (level) {
+      ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "critical"
+      ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
+      ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "moderate"
       else -> "none"
     }
     if (pressureLevel != "none") {
-      emitMemoryPressure(pressureLevel, trimLevel = level)
+      emitMemoryPressure(
+        pressureLevel = pressureLevel,
+        callback = "onTrimMemory",
+        trimLevel = level,
+      )
+    } else if (level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+      emitLifecycle(
+        callback = "onTrimMemory",
+        standardState = null,
+        rawState = "ui_hidden",
+        extra = mapOf(
+          "trimLevel" to level,
+          "trimLevelName" to trimLevelName(level),
+        ),
+      )
     }
   }
 
@@ -108,7 +232,7 @@ class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandle
     return info.nativePrivateDirty / 1024.0
   }
 
-  private fun emitMemoryPressure(pressureLevel: String, trimLevel: Int? = null) {
+  private fun emitMemoryPressure(pressureLevel: String, callback: String, trimLevel: Int? = null) {
     val memory = memorySnapshot().toMutableMap()
     memory["pressureLevel"] = pressureLevel
     memory["sampleSource"] = "native"
@@ -122,18 +246,57 @@ class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandle
         "resource" to resourceSnapshot(),
         "memory" to memory,
         "payload" to mapOf(
-          "android.trim_level" to trimLevel,
+          "platform" to "android",
+          "callback" to callback,
+          "trimLevel" to trimLevel,
+          "trimLevelName" to trimLevel?.let { trimLevelName(it) },
+          "rawState" to pressureLevel,
         ).filterValues { it != null },
       )
     )
   }
 
+  private fun emitLifecycle(
+    callback: String,
+    standardState: String?,
+    rawState: String,
+    extra: Map<String, Any?> = emptyMap(),
+  ) {
+    eventSink?.success(
+      mapOf(
+        "type" to "lifecycle",
+        "name" to "native.lifecycle",
+        "timestamp" to isoNow(),
+        "resource" to resourceSnapshot(),
+        "standardLifecycleState" to standardState,
+        "payload" to (mapOf(
+          "platform" to "android",
+          "callback" to callback,
+          "activity" to activityName,
+          "rawState" to rawState,
+        ) + extra).filterValues { it != null },
+      )
+    )
+  }
+
+  private fun trimLevelName(level: Int): String {
+    return when (level) {
+      ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> "TRIM_MEMORY_COMPLETE"
+      ComponentCallbacks2.TRIM_MEMORY_MODERATE -> "TRIM_MEMORY_MODERATE"
+      ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> "TRIM_MEMORY_BACKGROUND"
+      ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> "TRIM_MEMORY_UI_HIDDEN"
+      ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "TRIM_MEMORY_RUNNING_CRITICAL"
+      ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "TRIM_MEMORY_RUNNING_LOW"
+      ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "TRIM_MEMORY_RUNNING_MODERATE"
+      else -> "UNKNOWN"
+    }
+  }
+
   private fun bytesToMb(value: Long): Double = value / 1024.0 / 1024.0
 
   private fun isoNow(): String {
-    val millis = System.currentTimeMillis()
-    val seconds = millis / 1000
-    val ms = millis % 1000
-    return String.format(Locale.US, "%tFT%<tT.%03d%<tz", seconds * 1000, ms)
+    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
+    formatter.timeZone = TimeZone.getDefault()
+    return formatter.format(Date())
   }
 }

@@ -48,7 +48,7 @@ class FlutterMonitorNativeBridge implements MonitorNativeBridge {
     return _signals ??= _eventChannel
         .receiveBroadcastStream()
         .where((event) => event is Map)
-        .map((event) => NativeSignal.fromJson(_objectMap(event)));
+        .map((event) => NativeSignal.fromJson(_normalizeNativeEvent(event)));
   }
 
   @override
@@ -79,6 +79,19 @@ class FlutterMonitorNativeBridge implements MonitorNativeBridge {
 }
 
 Map<String, Object?> _objectMap(Object? value) {
-  if (value is! Map) return const <String, Object?>{};
-  return value.map((key, value) => MapEntry(key.toString(), value));
+  if (value is! Map) return <String, Object?>{};
+  return Map<String, Object?>.fromEntries(
+    value.entries.map((entry) => MapEntry(entry.key.toString(), entry.value)),
+  );
+}
+
+Map<String, Object?> _normalizeNativeEvent(Object? event) {
+  final json = _objectMap(event);
+  final standardLifecycleState = json.remove('standardLifecycleState');
+  if (standardLifecycleState == null) return json;
+
+  final attributes = _objectMap(json['attributes']);
+  attributes[FieldPaths.contextLifecycleState] = standardLifecycleState;
+  json['attributes'] = attributes;
+  return json;
 }

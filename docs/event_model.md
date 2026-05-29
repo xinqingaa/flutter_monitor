@@ -416,6 +416,13 @@ native runtime 上下文使用 `context.native.*`：
 - `context.native.platform` 表示 android/ios 等 native platform。
 - `context.native.processId`、`context.native.bridgeVersion`、`context.native.signalSource` 保存可安全公开的 bridge 元信息。
 
+Native 信号使用两层表达：
+
+- 标准层：`context.native.*`、`context.lifecycle.*`、`attributes.native.signal`、`attributes.memory.*` 等 canonical fields。标准层只保存语义确定、可检索、可聚合的状态和指标。
+- 原始证据层：`payload.native`。原始证据层保存平台回调、系统原始状态、等级、通知名、线程线索、平台错误码和采集时间等排查证据。Android/iOS 差异优先放在这里，不新增平行 public fields。
+
+Native lifecycle 不得为了“看起来完整”强行写入 `context.lifecycle.state`。只有 native callback 能明确映射到标准 lifecycle 状态时，才允许写入 `context.lifecycle.*`；不能确定时，只写 `native.signal = lifecycle`，并把完整平台原始信息放入 `payload.native`。Flutter lifecycle 仍负责维护主链路里的当前标准 lifecycle 上下文，native lifecycle 是补充证据，不应覆盖 Flutter 当前状态。
+
 native 诊断详情使用 `payload.native`。原始 crash dump、寄存器、线程堆栈、系统日志等内容默认不应上传；确需上传时必须先经过隐私过滤、大小裁剪和显式配置。
 
 SDK 内部 mapper 必须把 `NativeSignal` 映射为 `RawSignal` 后进入统一 pipeline。未接入 bridge 的普通 Flutter 事件仍应保留 `context.native.available = false`；接入 bridge 后，SDK 可用 `NativeResourceSnapshot` 更新 `context.native.*` 和 `resource.sdk.nativeVersion`。`native.memory.pressure` 与 `native.warning` 是高价值 breadcrumb，后续 error、jank、OOM/ANR/crash 可携带它们作为上下文。

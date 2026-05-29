@@ -18,6 +18,8 @@ dependencies:
   # 使用 path 依赖本地的 SDK
   flutter_monitor_sdk:
     path: ..
+  flutter_monitor_native:
+    path: ../../flutter_monitor_native
 
   cupertino_icons: ^1.0.6
 

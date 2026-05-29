@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_native/flutter_monitor_native.dart';
@@ -67,4 +69,55 @@ void main() {
       expect(memory?.sampleSource, MemorySampleSource.native);
     },
   );
+
+  test('maps native event channel payloads into NativeSignal', () async {
+    final binaryMessenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final events = StreamController<Object?>();
+    binaryMessenger.setMockStreamHandler(
+      eventChannel,
+      MockStreamHandler.inline(
+        onListen: (arguments, sink) {
+          events.stream.listen(sink.success);
+        },
+      ),
+    );
+    addTearDown(() async {
+      binaryMessenger.setMockStreamHandler(eventChannel, null);
+      await events.close();
+    });
+
+    final bridge = FlutterMonitorNativeBridge(
+      methodChannel: methodChannel,
+      eventChannel: eventChannel,
+    );
+    final firstSignal = bridge.signals.first;
+
+    events.add(<String, Object?>{
+      'type': 'lifecycle',
+      'name': EventNames.nativeLifecycle,
+      'timestamp': '2026-05-28T19:30:00.000',
+      'standardLifecycleState': LifecycleStates.resumed,
+      'payload': <String, Object?>{
+        'platform': 'ios',
+        'notification': 'UIApplication.didBecomeActiveNotification',
+        'applicationState': 'active',
+        'rawState': 'active',
+      },
+    });
+
+    final signal = await firstSignal;
+
+    expect(signal.type, NativeSignalType.lifecycle);
+    expect(signal.name, EventNames.nativeLifecycle);
+    expect(
+      signal.attributes[FieldPaths.contextLifecycleState],
+      LifecycleStates.resumed,
+    );
+    expect(
+      signal.payload['notification'],
+      'UIApplication.didBecomeActiveNotification',
+    );
+    expect(signal.payload['rawState'], 'active');
+  });
 }

@@ -595,7 +595,7 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 
 ### 字段映射
 
-推荐字段：
+标准层推荐字段：
 
 - `context.native.platform`
 - `native.signal`
@@ -606,6 +606,24 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 - `native.oom.reason`
 - `memory.native_used_mb`
 - `memory.pressure_level`
+
+平台原始证据使用 `payload.native`。Android/iOS 原生回调、通知名、原始状态、系统等级、线程线索和平台错误码不得散落为新的 public fields；只有能稳定检索和聚合的语义才进入标准层。
+
+Native lifecycle 映射规则：
+
+- Flutter lifecycle 继续维护主链路 `context.lifecycle.*`。
+- native lifecycle 是补充证据，不默认覆盖 Flutter 当前 lifecycle。
+- 能确定映射时，native event 可以写标准 `context.lifecycle.*`。
+- 不能确定映射时，只写 `native.signal = lifecycle`，完整原始信息放入 `payload.native`。
+- Android 第一阶段只把 `onActivityResumed` 明确映射为 `resumed`；其他 activity callback 先保留原始证据，避免误把 stopped/paused/hidden 等状态强行归一。
+- iOS 第一阶段只把 `UIApplication.didBecomeActiveNotification` 映射为 `resumed`，把 `UIApplication.willResignActiveNotification` 映射为 `inactive`；`didEnterBackground`、`willEnterForeground`、`willTerminate` 等先保留原始证据。
+
+Native memory pressure 映射规则：
+
+- Android `TRIM_MEMORY_RUNNING_LOW` / `TRIM_MEMORY_RUNNING_MODERATE` 映射为 `memory.pressure_level = moderate`。
+- Android `TRIM_MEMORY_RUNNING_CRITICAL` 和 `onLowMemory` 映射为 `memory.pressure_level = critical`。
+- Android `TRIM_MEMORY_UI_HIDDEN` 不直接表达 memory pressure，可作为 lifecycle/raw evidence。
+- iOS `UIApplication.didReceiveMemoryWarningNotification` 映射为 `memory.pressure_level = critical`，但必须在 `payload.native` 保留原始通知名，不能暗示已经发生 OOM。
 
 ### 限制与降级
 

@@ -40,6 +40,18 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
     )
     NotificationCenter.default.addObserver(
       self,
+      selector: #selector(didBecomeActive),
+      name: UIApplication.didBecomeActiveNotification,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(willResignActive),
+      name: UIApplication.willResignActiveNotification,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
       selector: #selector(didEnterBackground),
       name: UIApplication.didEnterBackgroundNotification,
       object: nil
@@ -48,6 +60,12 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
       self,
       selector: #selector(willEnterForeground),
       name: UIApplication.willEnterForegroundNotification,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(willTerminate),
+      name: UIApplication.willTerminateNotification,
       object: nil
     )
     return nil
@@ -60,15 +78,47 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
   }
 
   @objc private func didReceiveMemoryWarning() {
-    emitMemoryPressure(level: "critical")
+    emitMemoryPressure(level: "critical", notification: "UIApplication.didReceiveMemoryWarningNotification")
+  }
+
+  @objc private func didBecomeActive() {
+    emitLifecycle(
+      notification: "UIApplication.didBecomeActiveNotification",
+      standardState: "resumed",
+      rawState: "active"
+    )
+  }
+
+  @objc private func willResignActive() {
+    emitLifecycle(
+      notification: "UIApplication.willResignActiveNotification",
+      standardState: "inactive",
+      rawState: "inactive"
+    )
   }
 
   @objc private func didEnterBackground() {
-    emitLifecycle(state: "background")
+    emitLifecycle(
+      notification: "UIApplication.didEnterBackgroundNotification",
+      standardState: nil,
+      rawState: "background"
+    )
   }
 
   @objc private func willEnterForeground() {
-    emitLifecycle(state: "foreground")
+    emitLifecycle(
+      notification: "UIApplication.willEnterForegroundNotification",
+      standardState: nil,
+      rawState: "foreground"
+    )
+  }
+
+  @objc private func willTerminate() {
+    emitLifecycle(
+      notification: "UIApplication.willTerminateNotification",
+      standardState: nil,
+      rawState: "terminated"
+    )
   }
 
   private func resourceSnapshot() -> [String: Any] {
@@ -92,7 +142,7 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
     return result
   }
 
-  private func emitMemoryPressure(level: String) {
+  private func emitMemoryPressure(level: String, notification: String) {
     var memory = memorySnapshot()
     memory["pressureLevel"] = level
     memory["sampleSource"] = "native"
@@ -104,21 +154,31 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
       "resource": resourceSnapshot(),
       "memory": memory,
       "payload": [
-        "ios.notification": "UIApplication.didReceiveMemoryWarningNotification",
+        "platform": "ios",
+        "notification": notification,
+        "applicationState": applicationStateName(),
+        "rawState": level,
       ],
     ])
   }
 
-  private func emitLifecycle(state: String) {
-    eventSink?([
+  private func emitLifecycle(notification: String, standardState: String?, rawState: String) {
+    var event: [String: Any] = [
       "type": "lifecycle",
       "name": "native.lifecycle",
       "timestamp": isoNow(),
       "resource": resourceSnapshot(),
-      "attributes": [
-        "context.lifecycle.state": state,
+      "payload": [
+        "platform": "ios",
+        "notification": notification,
+        "applicationState": applicationStateName(),
+        "rawState": rawState,
       ],
-    ])
+    ]
+    if let standardState = standardState {
+      event["standardLifecycleState"] = standardState
+    }
+    eventSink?(event)
   }
 
   private func residentMemoryMb() -> Double? {
@@ -139,5 +199,18 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: Date())
+  }
+
+  private func applicationStateName() -> String {
+    switch UIApplication.shared.applicationState {
+    case .active:
+      return "active"
+    case .inactive:
+      return "inactive"
+    case .background:
+      return "background"
+    @unknown default:
+      return "unknown"
+    }
   }
 }

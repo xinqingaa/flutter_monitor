@@ -2,10 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:example/home_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_monitor_native/flutter_monitor_native.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 import 'complex_list_page.dart';
 import 'detail_page.dart';
 import 'performance_test_page.dart';
+
+// 开启 native bridge 测试时取消注释下面 import 和 MonitorConfig.nativeBridge。
+// import 'package:flutter_monitor_native/flutter_monitor_native.dart';
 
 // 模拟用户自己的日志系统
 // final myAppLogger = Logger(
@@ -89,6 +93,7 @@ void main() async {
     appInfo: appInfo,
     jankConfig: JankConfig.lenient(),
     outputs: monitorOutputs,
+    nativeBridge: FlutterMonitorNative().createBridge(),
   );
 
   // 或者使用完整配置（可选）

@@ -5,11 +5,13 @@ class NativeSignalMapper {
   const NativeSignalMapper();
 
   RawSignal map(NativeSignal signal) {
+    final nativePayload = Map<String, Object?>.from(signal.payload)
+      ..remove(PayloadKeys.trigger);
     return RawSignal(
       source: SignalSources.sdkNative,
       name: signal.name,
       signalType: _signalType(signal),
-      timestamp: signal.timestamp,
+      timestamp: signal.timestamp.toLocal(),
       level: signal.level ?? _level(signal),
       status: signal.status ?? _status(signal),
       priority: _priority(signal),
@@ -34,8 +36,9 @@ class NativeSignalMapper {
         ...signal.attributes,
       },
       payload: <String, Object?>{
-        PayloadKeys.trigger: TriggerValues.nativeBridge,
-        if (signal.payload.isNotEmpty) FieldPaths.payloadNative: signal.payload,
+        PayloadKeys.trigger:
+            signal.payload[PayloadKeys.trigger] ?? TriggerValues.nativeBridge,
+        if (nativePayload.isNotEmpty) FieldPaths.payloadNative: nativePayload,
       },
     );
   }
