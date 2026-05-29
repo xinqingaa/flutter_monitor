@@ -327,26 +327,14 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 
 ## Workbench：本地调试、QA 复现与统一排查入口
 
-Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。它的优先级是本地调试、QA 复现、session timeline 和性能问题排查。
+Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。当前决策是先暂停继续推进 Phase 5 的完整 DevTools 体验，优先把 Workbench 作为独立 JS/TS 工作台落地，用于本地调试、QA 复现、session timeline 和性能问题排查。
 
 目标：
 
-- 使用同一套 UI 消费本地 service、SSE live、session export 和未来远端查询 datasource。
-- 本地第一版以 `node_server` 演进为 local workbench service 为主，不急于引入重服务端。
-- local service 从第一版开始区分 SDK 写入链路和 Workbench 查询链路。
-- 支持从 `userId + time range`、App 版本、环境、页面、错误、慢请求、卡顿、启动问题查找 session。
-- 支持 session timeline、trace detail、event detail、breadcrumb viewer 和轻量性能概览。
+- 使用同一套 UI 消费本地 service、SSE live、session export、LocalStore 和未来远端查询 datasource。
+- 将当前 `node_server` 收敛迁移为 `workbench/service`，并新增 `workbench/web` 与 `workbench/shared`。
 - 保持所有数据为统一 `EventEnvelope` 或 core 定义的 session export，不定义第二套工作台协议。
-
-建议迁移顺序：
-
-1. 保持现有 `node_server` API 兼容，补充 SSE stream。
-2. 将内存 ring buffer 抽象为 store/index 层。
-3. 增加 `userId`、time range、app version、environment、route、status/name/signalType 查询。
-4. 优先引入 SQLite 或文件 NDJSON 作为本机持久化；MySQL 等重服务端数据库延后。
-5. 将单页 HTML inspector 替换为 React/Vite Workbench Web。
-6. 增加 session list、session timeline、trace detail、event JSON 和 breadcrumb viewer。
-7. 增加页面加载、HTTP、错误、卡顿、启动的本地轻量聚合。
+- 支持 session list、session timeline、trace detail、event detail、breadcrumb viewer、raw JSON 和轻量性能概览。
 
 边界：
 
@@ -354,6 +342,8 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 - 近实时写入必须通过初始化配置显式开启，不能成为真实 App 默认行为。
 - local workbench service 不承担生产鉴权、多租户、长期治理、告警、remote config、SDK 离线缓存和动态采样。
 - Phase 6 Server 后续可以作为 Workbench 的 remote datasource，但 Workbench UI 不因此改变事件模型。
+
+完整目录规划、技术选型、脚本编排、Service/Web MVP、实施顺序和验收标准以 `docs/workbench_plan.md` 为准。本文只保留 SDK 总计划中的 Workbench 插入点。
 
 ## Phase 6：服务端协议与稳定性
 

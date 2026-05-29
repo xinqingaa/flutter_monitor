@@ -35,6 +35,41 @@ Flutter Monitor 的排查体验分为三层，三层共享统一 `EventEnvelope`
 
 `localLive` 是显式调试模式。真实 App 可以开启它连接本地或测试 Workbench，但仍应走批量写入和关键时机 flush，不应退化成一条事件一个 HTTP 请求。
 
+三种输出模式的链路流转：
+
+```text
+consoleOnly
+  SDK collectors
+    -> EventEnvelope
+    -> EventSummary
+    -> compact log
+```
+
+```text
+localLive
+  SDK collectors
+    -> EventEnvelope
+    -> HttpOutput small batch / short flush
+    -> local workbench service
+    -> memory / SQLite / NDJSON store + query index
+    -> SSE
+    -> Workbench Web live timeline
+```
+
+```text
+production
+  SDK collectors
+    -> EventEnvelope
+    -> production output policy
+       batch / request size / offline / retry / priority / sampling
+    -> Phase 6 ingest API
+    -> production validation / storage / index / aggregation
+    -> Phase 6 query API
+    -> Workbench Web RemoteServer datasource
+```
+
+Workbench 的实时体验来自 service 到 web 的 SSE，不要求 SDK 逐条 HTTP 上报。SDK 写入链路始终应保持批量语义，只是在 `localLive` 中采用更短 flush 间隔和关键事件立即 flush。
+
 ## 定位
 
 Workbench 负责完整链路排查 UI：
@@ -58,24 +93,67 @@ Workbench 与其他模块的边界：
 
 ## 架构
 
-Workbench 使用前后端分离结构。第一阶段可以继续从 `node_server` 演进，未来再迁移到 `workbench/service` 与 `workbench/web`：
+Workbench 使用前后端分离结构。根目录仍是 Dart pub workspace root，`workbench/` 是独立 JS/TS workspace root。第一阶段从当前 `node_server` 迁移到 `workbench/service`，不继续扩展单文件 HTML inspector。
 
 ```text
+flutter_monitor/
+  pubspec.yaml
+  packages/
+    flutter_monitor_core/
+    flutter_monitor_sdk/
+    flutter_monitor_native/
+
 workbench/
+  package.json
+  pnpm-workspace.yaml
+  tsconfig.base.json
+
   service/
-    # local collector + query API + index + SSE
+    package.json
+    src/
+      api/
+      ingest/
+      store/
+      index/
+      query/
+      stream/
+      health/
+      server.ts
+
   web/
-    # React/Vite diagnostic UI
+    package.json
+    src/
+      app/
+      datasource/
+      pages/
+      components/
+      timeline/
+      detail/
+      performance/
+
+  shared/
+    package.json
+    src/
+      wire/
+      api-client/
+      datasource/
+      summary/
+
+scripts/
+  workbench.sh
+  run_example.sh
 ```
 
 架构原则：
 
+- Dart pub workspace 与 JS/TS workspace 并列管理，避免把 Node monorepo 混入 `packages/` 发布包边界。
 - service 管数据接收、落库/暂存、索引、查询和实时推送。
 - web 管诊断展示和交互。
 - web 只消费 service 返回的 `EventEnvelope` 和派生摘要。
 - 派生摘要不得成为第二套协议，必须能回查完整 envelope。
 - Workbench 的数据结构必须保持与 SDK HTTP 上报和 session export 兼容。
 - Workbench web 应按 datasource adapter 设计：本地 service、SSE live、session export、未来远端查询服务都应映射成同一组查询和展示模型。
+- `workbench/shared` 只能承载 TypeScript 侧 wire shape mirror、API client、datasource interface 和 UI helper，不能成为新的模型事实源。
 
 推荐 datasource：
 
@@ -83,6 +161,40 @@ workbench/
 - `LocalStore`：读取本地 SQLite/文件/内存索引，用于 QA 复现和历史 session 查询。
 - `SessionExport`：导入 DevTools/session export 或 NDJSON。
 - `RemoteServer`：未来连接 Phase 6 查询 API。该 datasource 不改变 Workbench UI，也不要求 SDK 使用另一套 envelope。
+
+Workbench Web 面向 datasource 的稳定接口：
+
+```text
+listSessions(filters)
+getSession(sessionId)
+getTrace(traceId)
+getEvent(eventId)
+searchEvents(query)
+getPerformanceOverview(filters)
+subscribeEvents(filters)
+```
+
+这些接口返回的是规范 envelope、session export 或从 envelope 派生的只读摘要。UI 可以构建内部 view model，但 view model 不反向写入 SDK、service API 或 server protocol。
+
+## 技术选型
+
+Workbench 采用 JS/TS 技术栈：
+
+| 层级 | 选择 | 说明 |
+|---|---|---|
+| workspace | pnpm | `workbench/` 内独立 JS/TS workspace，不污染 Dart pub workspace |
+| language | TypeScript | service、web、shared 共用类型约束 |
+| service | Express + TypeScript | 复用现有 `node_server` 经验，优先降低迁移成本 |
+| web | React + Vite + TypeScript | 支撑高交互 timeline、detail、JSON viewer 和 datasource adapter |
+| routing | TanStack Router 或 React Router | URL 中表达 session、trace、event 和筛选条件 |
+| query/cache | TanStack Query | 管理 service query、live refresh 和状态缓存 |
+| realtime | SSE | 本地和 QA 复现足够简单稳定，浏览器原生支持 `EventSource` |
+| MVP storage | memory ring buffer | 保持现有 node server 能力，先跑通链路 |
+| next storage | SQLite 或 NDJSON | 支撑重启后回查、QA 复现和本地轻量聚合 |
+
+暂不引入 Nest、MySQL、Postgres、账号系统、权限系统和长期部署能力。Workbench 的第一阶段复杂度主要在诊断 UI 和 datasource 适配，不在重服务端框架。
+
+长期应由 `flutter_monitor_core` 导出 JSON schema、field registry 或 summary artifact 供 Workbench 消费。短期 `workbench/shared` 可以定义最小 `EventEnvelopeJson` mirror，但必须标记为 wire shape mirror，不得反向成为 core 的来源。
 
 ## 数据契约
 
@@ -149,6 +261,7 @@ service 保持与 SDK `HttpOutput` 兼容：
 - `GET /api/monitor/v1/sessions/:sessionId`
 - `GET /api/monitor/v1/traces/:traceId`
 - `GET /api/monitor/v1/groups?by=...`
+- `GET /api/monitor/v1/health`
 
 建议补充查询 API：
 
@@ -160,6 +273,44 @@ service 保持与 SDK `HttpOutput` 兼容：
 service 提供实时流：
 
 - `GET /api/monitor/v1/stream`
+
+service 内部模块：
+
+```text
+ingest
+  normalize batch / single event
+  validate basic envelope shape
+  preserve raw envelope
+
+store
+  memory store for MVP
+  SQLite / NDJSON adapter later
+
+index
+  eventId
+  sessionId
+  traceId
+  userId + time
+  route / environment / appVersion / status / signalType / name
+
+query
+  session list
+  session timeline
+  trace detail
+  event detail
+  full JSON debug search
+
+stream
+  SSE clients
+  heartbeat
+  live event push
+
+health
+  event count
+  session count
+  last ingest time
+  storage mode
+```
 
 ### SSE
 
@@ -230,6 +381,58 @@ web 不承担：
 - 告警配置。
 - 多用户协作。
 - 权限系统。
+
+## 脚本编排
+
+根目录提供统一脚本入口，隐藏 pnpm 与多进程细节：
+
+```text
+bash scripts/workbench.sh install
+bash scripts/workbench.sh service
+bash scripts/workbench.sh web
+bash scripts/workbench.sh dev
+bash scripts/workbench.sh build
+bash scripts/workbench.sh status
+bash scripts/workbench.sh stop
+```
+
+端口约定：
+
+```text
+workbench service: http://localhost:3000
+workbench web:     http://localhost:5173
+API:               /api/monitor/v1/*
+SSE:               /api/monitor/v1/stream
+```
+
+开发态：
+
+```text
+scripts/workbench.sh dev
+  -> pnpm --dir workbench install when needed
+  -> start workbench/service
+  -> start workbench/web
+```
+
+发布或演示态可以由 service 托管 web build：
+
+```text
+workbench/web/dist
+  -> workbench/service static assets
+```
+
+`scripts/run_example.sh` 后续增加 `--local-workbench`：
+
+```text
+scripts/run_example.sh --local-workbench
+  -> check or start workbench service
+  -> print Workbench web URL
+  -> inject FM_SERVER_URL=http://<host>:3000/api/monitor/v1/events
+  -> inject test API base URL when needed
+  -> run Flutter example
+```
+
+`--local-server` 可以短期保留为兼容别名，但新文档和示例应逐步收敛到 `--local-workbench`。
 
 ## 当前 node_server 定位
 
@@ -309,11 +512,42 @@ Workbench service 不代表最终生产服务端，不承担生产可靠性和�
 - Phase 6 Server 的写入 API 负责可靠接收，查询 API 负责给 Workbench 提供 session、trace、event 和聚合数据。
 - 本地 Workbench 可以近实时，生产上报必须遵守 batch、优先级、大小限制、重试、离线缓存和采样限流。
 
+未来线上编排：
+
+```text
+SDK production output
+  -> Phase 6 ingest API
+  -> schema validation
+  -> privacy / sampling / rate limit
+  -> queue / storage / index
+  -> query API / aggregation API
+  -> Workbench RemoteServer datasource
+```
+
+Workbench Web 不因线上化改变产品形态。线上阶段只是把 datasource 从 `LocalLive` / `LocalStore` 切到 `RemoteServer`，查询结果仍必须能回查完整 `EventEnvelope`。
+
+Phase 6 Server 承担：
+
+- 鉴权。
+- 多环境。
+- 长期存储。
+- 重试与错误码。
+- 请求大小限制。
+- 采样限流。
+- 离线缓存协同。
+- 聚合。
+- 趋势。
+- 告警。
+- 多用户和多租户。
+
+这些能力不进入 local workbench service 的 MVP。
+
 ## MVP 范围
 
 第一版 Workbench 只交付本地诊断闭环：
 
 - 迁移 collector/query service 到 `workbench/service`。
+- 建立 `workbench/` JS/TS workspace。
 - 新增 SSE stream。
 - 新建 React/Vite web。
 - 支持 session list。
@@ -323,13 +557,72 @@ Workbench service 不代表最终生产服务端，不承担生产可靠性和�
 - 支持 breadcrumb viewer。
 - 支持基础过滤和搜索。
 - 支持按 `context.user.userId` 和时间范围查询 session；没有 userId 时仍可按时间、版本、页面、错误和性能问题查询。
-- 保持 `scripts/run_example.sh --local-server` 可启动或连接 workbench service。
+- 保持 `scripts/run_example.sh --local-workbench` 可启动或连接 workbench service。
+
+## 实施顺序
+
+### Phase W0：文档收口
+
+- 将 Workbench 的定位、目录、技术栈、datasource、脚本和验收标准集中在本文档。
+- `docs/implementation_plan.md` 只保留 SDK 总计划里的 Workbench 插入点和本文档引用。
+
+### Phase W1：迁移 node_server
+
+- 新建 `workbench/` JS/TS workspace。
+- 将当前 `node_server` 迁移为 `workbench/service`。
+- 保持现有 `/api/monitor/v1/*` API 兼容。
+- 保留 `node_server` 或旧脚本的短期兼容入口。
+
+### Phase W2：Service 结构化
+
+- 拆分 ingest、store、index、query、stream、health。
+- 补充 `GET /api/monitor/v1/stream`。
+- 补充 `GET /api/monitor/v1/health`。
+- 确保 SSE 不改写 envelope。
+
+### Phase W3：查询能力
+
+- 增加 session list 查询。
+- 增加 `userId`、time range、app version、environment、route、status、name、signalType 查询。
+- 没有 `context.user.userId` 时返回明确的不可用提示，不阻塞通用维度查询。
+
+### Phase W4：Web 骨架
+
+- 新建 React/Vite Workbench Web。
+- 建立 datasource adapter。
+- 实现 recent、live、session list 的最小 UI。
+- 支持 event raw JSON 打开。
+
+### Phase W5：排查视图
+
+- 实现 session timeline。
+- 实现 trace detail。
+- 实现 event detail。
+- 实现 breadcrumb viewer。
+- 支持 error、jank、failed HTTP 的上下文联动。
+
+### Phase W6：本地持久化
+
+- 在 memory store 之外增加 SQLite 或 NDJSON adapter。
+- 支持重启后回查最近 session。
+- 支持 session export/import 或 NDJSON import 的 UI 入口。
+
+### Phase W7：性能概览
+
+- 增加启动、页面、HTTP、错误、卡顿的本地轻量聚合。
+- 聚合结果必须能回查原始 session、trace 或 event。
+
+### Phase W8：Remote datasource 预留
+
+- 固化 datasource interface。
+- 为 Phase 6 Server query API 预留 `RemoteServer`。
+- Workbench Web 不因 remote datasource 改变事件模型。
 
 ## 验收标准
 
 Workbench MVP 完成时应满足：
 
-- example 使用 `--local-server` 后，SDK 事件能进入 `workbench/service`。
+- example 使用 `--local-workbench` 后，SDK 事件能进入 `workbench/service`。
 - web 能实时看到新事件，无需手动刷新接口。
 - web 能打开一个 session 并查看完整 timeline。
 - web 能通过 `userId + time range` 查到 session list；App 未提供 userId 时，应明确提示该条件不可用。
