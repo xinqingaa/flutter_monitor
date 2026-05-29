@@ -1,0 +1,4 @@
+packages:
+  - "service"
+  - "shared"
+  - "web"

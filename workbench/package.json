@@ -1,0 +1,13 @@
+{
+  "name": "flutter-monitor-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "pnpm --recursive --if-present build",
+    "dev": "pnpm --parallel --filter @flutter-monitor/workbench-service --filter @flutter-monitor/workbench-web dev",
+    "service": "pnpm --filter @flutter-monitor/workbench-service dev",
+    "start": "pnpm --filter @flutter-monitor/workbench-service start",
+    "typecheck": "pnpm --recursive --if-present typecheck"
+  },
+  "packageManager": "pnpm@10.33.2"
+}

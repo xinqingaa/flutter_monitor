@@ -33,6 +33,11 @@ migrate_working_dir/
 build/
 
 node_modules
+workbench/**/dist/
+workbench/.data/
+*.sqlite
+*.sqlite3
+*.db
 
 # FVM Version Cache
 .fvm/

@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flutter Monitor Local Inspector</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fb;
+        --panel: #ffffff;
+        --line: #d9dee8;
+        --text: #1f2937;
+        --muted: #667085;
+        --accent: #0f766e;
+        --danger: #b42318;
+        --code: #101828;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 360px minmax(0, 1fr);
+        gap: 16px;
+        padding: 16px;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      section,
+      aside {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      aside {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        padding: 14px;
+        overflow: hidden;
+      }
+
+      section {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        overflow: hidden;
+      }
+
+      .toolbar,
+      .aside-head,
+      .query-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .aside-head {
+        justify-content: space-between;
+      }
+
+      .aside-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .sort-control {
+        width: 94px;
+      }
+
+      .query-row {
+        margin-top: 10px;
+      }
+
+      input,
+      select,
+      button {
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      input,
+      select {
+        min-width: 0;
+        padding: 0 10px;
+      }
+
+      input {
+        flex: 1;
+      }
+
+      button {
+        padding: 0 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      .detail-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .detail-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .detail-title {
+        color: var(--muted);
+        font-size: 12px;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .list {
+        min-height: 0;
+        margin-top: 12px;
+        overflow: auto;
+        border-top: 1px solid var(--line);
+      }
+
+      .event {
+        display: grid;
+        gap: 5px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer;
+      }
+
+      .event:hover,
+      .event.active {
+        background: #eef6f5;
+      }
+
+      .event-title {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+      }
+
+      .event-time,
+      .event-state {
+        white-space: nowrap;
+      }
+
+      .event-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .event-meta,
+      .event-ids {
+        color: var(--muted);
+        font-size: 12px;
+        word-break: break-all;
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      pre {
+        margin: 0;
+        padding: 14px;
+        min-height: 0;
+        overflow: auto;
+        color: var(--code);
+        background: #fbfcfe;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        }
+
+        .list,
+        pre {
+          min-height: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Flutter Monitor Local Inspector</h1>
+      <div class="toolbar">
+        <button id="refresh" class="primary">刷新最近事件</button>
+        <span id="status" class="status">未加载</span>
+      </div>
+    </header>
+
+    <main>
+      <aside>
+        <div class="aside-head">
+          <h2 class="aside-title">事件列表</h2>
+          <select id="sortOrder" class="sort-control" aria-label="排序">
+            <option value="desc">新到旧</option>
+            <option value="asc">旧到新</option>
+          </select>
+        </div>
+        <div class="query-row">
+          <select id="queryType" aria-label="查询类型">
+            <option value="event">event</option>
+            <option value="session">session</option>
+            <option value="trace">trace</option>
+          </select>
+          <input id="queryId" placeholder="输入 eventId / sessionId / traceId" />
+          <button id="query">查询</button>
+        </div>
+        <div id="list" class="list"></div>
+      </aside>
+      <section>
+        <div class="detail-actions">
+          <span id="detailTitle" class="detail-title">未选择事件</span>
+          <div class="detail-buttons">
+            <button id="viewEvent" disabled>查看 event</button>
+            <button id="viewTrace" disabled>查看 trace</button>
+            <button id="viewSession" disabled>查看 session</button>
+          </div>
+        </div>
+        <pre id="detail">{}</pre>
+      </section>
+    </main>
+
+    <script>
+      const listEl = document.querySelector("#list");
+      const detailEl = document.querySelector("#detail");
+      const statusEl = document.querySelector("#status");
+      const refreshButton = document.querySelector("#refresh");
+      const queryButton = document.querySelector("#query");
+      const queryTypeEl = document.querySelector("#queryType");
+      const queryIdEl = document.querySelector("#queryId");
+      const sortOrderEl = document.querySelector("#sortOrder");
+      const detailTitleEl = document.querySelector("#detailTitle");
+      const viewEventButton = document.querySelector("#viewEvent");
+      const viewTraceButton = document.querySelector("#viewTrace");
+      const viewSessionButton = document.querySelector("#viewSession");
+      let currentEvents = [];
+      let selectedEvent = null;
+
+      refreshButton.addEventListener("click", loadRecent);
+      queryButton.addEventListener("click", runQuery);
+      sortOrderEl.addEventListener("change", () => {
+        renderEvents(currentEvents);
+      });
+      queryIdEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") runQuery();
+      });
+      viewEventButton.addEventListener("click", () => {
+        if (selectedEvent?.eventId) queryById("event", selectedEvent.eventId);
+      });
+      viewTraceButton.addEventListener("click", () => {
+        if (selectedEvent?.traceId) queryById("trace", selectedEvent.traceId);
+      });
+      viewSessionButton.addEventListener("click", () => {
+        if (selectedEvent?.sessionId) queryById("session", selectedEvent.sessionId);
+      });
+
+      loadRecent();
+
+      async function loadRecent() {
+        setStatus("加载最近事件...");
+        const data = await requestJson("/api/monitor/v1/recent?limit=100");
+        currentEvents = data.events || [];
+        selectEvent(getSortedEvents(currentEvents)[0] || null);
+        renderEvents(currentEvents);
+        setStatus(`最近事件 ${data.count || 0} 条`);
+      }
+
+      async function runQuery() {
+        const type = queryTypeEl.value;
+        const id = queryIdEl.value.trim();
+        if (!id) return;
+
+        await queryById(type, id);
+      }
+
+      async function queryById(type, id) {
+        const path =
+          type === "event"
+            ? `/api/monitor/v1/events/${encodeURIComponent(id)}`
+            : type === "session"
+              ? `/api/monitor/v1/sessions/${encodeURIComponent(id)}`
+              : `/api/monitor/v1/traces/${encodeURIComponent(id)}`;
+
+        setStatus(`查询 ${type}...`);
+        const data = await requestJson(path);
+        currentEvents = data.events || (data.event ? [data.event] : []);
+        const firstEvent = data.event || getSortedEvents(currentEvents)[0] || null;
+        selectEvent(firstEvent, { showDetail: false });
+        renderEvents(currentEvents);
+        showJson(data);
+        setStatus(`${type} 查询完成`);
+      }
+
+      async function requestJson(path) {
+        try {
+          const response = await fetch(path);
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || response.statusText);
+          }
+          return data;
+        } catch (error) {
+          setStatus(error.message, true);
+          showJson({ error: error.message });
+          return {};
+        }
+      }
+
+      function renderEvents(events) {
+        listEl.textContent = "";
+        if (events.length === 0) {
+          listEl.innerHTML = '<div class="event"><div class="event-meta">暂无事件</div></div>';
+          return;
+        }
+
+        const sortedEvents = getSortedEvents(events);
+
+        for (const event of sortedEvents) {
+          const item = document.createElement("div");
+          item.className =
+            selectedEvent?.eventId && selectedEvent.eventId === event.eventId
+              ? "event active"
+              : "event";
+          item.dataset.eventId = event.eventId || "";
+          item.innerHTML = `
+            <div class="event-title">
+              <span class="event-time">${escapeHtml(formatTime(event.timestamp))}</span>
+              <span class="event-name">${escapeHtml(event.name || "(unknown)")}</span>
+              <span class="event-state">${escapeHtml(event.status || event.signalType || "")}</span>
+            </div>
+            <div class="event-meta">
+              route=${escapeHtml(event.context?.route?.name || "-")}
+              duration=${escapeHtml(String(event.durationMs ?? "-"))}
+            </div>
+            <div class="event-ids">
+              event=${escapeHtml(event.eventId || "-")}
+              session=${escapeHtml(event.sessionId || "-")}
+              trace=${escapeHtml(event.traceId || "-")}
+            </div>
+          `;
+          item.addEventListener("click", () => {
+            selectEvent(event);
+          });
+          listEl.appendChild(item);
+        }
+      }
+
+      function getSortedEvents(events) {
+        return [...events].sort(compareEventsByTime);
+      }
+
+      function compareEventsByTime(a, b) {
+        const left = timestampValue(a.timestamp);
+        const right = timestampValue(b.timestamp);
+        if (left === right) return 0;
+        return sortOrderEl.value === "asc" ? left - right : right - left;
+      }
+
+      function timestampValue(timestamp) {
+        const value = Date.parse(timestamp || "");
+        return Number.isNaN(value) ? 0 : value;
+      }
+
+      function formatTime(timestamp) {
+        if (!timestamp) return "--:--:--";
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return timestamp;
+        const pad = (value, length = 2) => String(value).padStart(length, "0");
+        return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+      }
+
+      function showJson(value) {
+        detailEl.textContent = JSON.stringify(value, null, 2);
+      }
+
+      function selectEvent(event, options = {}) {
+        const { showDetail: shouldShowDetail = true } = options;
+        selectedEvent = event;
+        updateDetailActions();
+        updateActiveEvent();
+        if (shouldShowDetail) showJson(event || {});
+      }
+
+      function updateDetailActions() {
+        viewEventButton.disabled = !selectedEvent?.eventId;
+        viewTraceButton.disabled = !selectedEvent?.traceId;
+        viewSessionButton.disabled = !selectedEvent?.sessionId;
+        detailTitleEl.textContent = selectedEvent
+          ? `${selectedEvent.name || "(unknown)"} · ${selectedEvent.eventId || "-"}`
+          : "未选择事件";
+      }
+
+      function updateActiveEvent() {
+        document.querySelectorAll(".event.active").forEach((el) => {
+          el.classList.remove("active");
+        });
+        if (!selectedEvent?.eventId) return;
+        const activeItem = listEl.querySelector(
+          `.event[data-event-id="${cssEscape(selectedEvent.eventId)}"]`
+        );
+        activeItem?.classList.add("active");
+      }
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle("error", isError);
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>"']/g, (char) => {
+          return {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;",
+          }[char];
+        });
+      }
+
+      function cssEscape(value) {
+        if (window.CSS?.escape) return CSS.escape(value);
+        return String(value).replace(/["\\]/g, "\\$&");
+      }
+    </script>
+  </body>
+</html>
