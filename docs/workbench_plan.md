@@ -21,7 +21,7 @@ Flutter Monitor 的排查体验分为三层，三层共享统一 `EventEnvelope`
    - Workbench 是统一 UI，不因数据来自本地、导入文件或未来远端服务端而创建多套工作台。
 
 3. 写入/查询服务
-   - 本地阶段可以是轻量 workbench service，使用 SQLite 作为本地持久化。
+   - 本地阶段是轻量 workbench service，使用 SQLite 作为唯一存储和查询引擎。
    - 未来生产阶段是 Phase 6 Server，负责鉴权、可靠写入、采样限流、离线重试、聚合和长期治理。
    - 即使只服务本地 Workbench，也应区分 SDK 写入链路和 Workbench 查询链路，避免把调试实时性和生产上报策略混为一谈。
 
@@ -51,7 +51,7 @@ localLive
     -> EventEnvelope
     -> HttpOutput small batch / short flush
     -> local workbench service
-    -> SQLite store + query index
+    -> SQLite store + SQL query index
     -> SSE
     -> Workbench Web live timeline
 ```
@@ -158,7 +158,7 @@ scripts/
 推荐 datasource：
 
 - `LocalLive`：连接本地 service，使用批量写入接口和 SSE 做近实时调试。
-- `LocalStore`：读取本地 SQLite/文件/内存索引，用于 QA 复现和历史 session 查询。
+- `LocalStore`：读取本地 SQLite 索引，用于 QA 复现和历史 session 查询。
 - `SessionExport`：导入 DevTools/session export 或 NDJSON。
 - `RemoteServer`：未来连接 Phase 6 查询 API。该 datasource 不改变 Workbench UI，也不要求 SDK 使用另一套 envelope。
 
@@ -189,7 +189,7 @@ Workbench 采用 JS/TS 技术栈：
 | routing | TanStack Router 或 React Router | URL 中表达 session、trace、event 和筛选条件 |
 | query/cache | TanStack Query | 管理 service query、live refresh 和状态缓存 |
 | realtime | SSE | 本地和 QA 复现足够简单稳定，浏览器原生支持 `EventSource` |
-| MVP storage | SQLite | 支撑重启后回查、QA 复现和本地轻量聚合 |
+| MVP storage | SQLite | 作为唯一本地存储和查询引擎，支撑重启后回查、QA 复现和本地轻量聚合 |
 | import/export | session export / NDJSON | 作为导入导出格式，不作为主查询存储 |
 
 暂不引入 Nest、MySQL、Postgres、账号系统、权限系统和长期部署能力。Workbench 的第一阶段复杂度主要在诊断 UI 和 datasource 适配，不在重服务端框架。
@@ -283,8 +283,7 @@ ingest
   preserve raw envelope
 
 store
-  SQLite store for local persistence
-  memory store for tests or explicit fallback
+  SQLite store for local persistence and SQL query
 
 index
   eventId
@@ -326,15 +325,17 @@ SSE 规则：
 
 MVP 存储策略：
 
-- 使用内存 ring buffer。
-- 按 event、session、trace 建立查询索引。
-- 支持最近数据、会话数据和 trace 数据回查。
-- 可重启丢失数据。
+- SQLite 是 Workbench service 的唯一存储。
+- SQLite 同时承担持久化和查询引擎职责，不再使用内存 ring buffer 作为主存储或查询来源。
+- service 启动时必须打开 SQLite 数据库；未显式配置路径时使用 `workbench/.data/events.sqlite`。
+- 按 event、session、trace、userId + time、route、environment、appVersion、status、signalType 和 name 建立 SQLite 索引。
+- 支持最近数据、会话数据、trace 数据、用户时间范围和性能概览回查。
+- 通过保留策略限制本地数据库规模，避免长期本地调试导致 SQLite 文件无限增长。
 
 Workbench 本地存储使用 SQLite，而不是直接引入 MySQL：
 
 - SQLite 足够支撑本机调试、QA 复现、按 userId/time/session/trace 查询和轻量聚合。
-- 浏览器 IndexedDB 可用于 web 侧缓存、导入文件和 UI 状态，但不宜作为 SDK collector 主存储。
+- 浏览器 IndexedDB 可用于 web 侧缓存、导入文件和 UI 状态，但不得作为 Workbench service 的主存储。
 - MySQL 等服务端数据库等到需要多人、跨机器、长期保存或生产部署时再引入。
 - NDJSON 可以作为导入导出或调试转储格式，不作为 Workbench 主查询存储。
 
@@ -701,7 +702,7 @@ Phase 6 Server 承担：
 
 ### Phase W6：本地持久化
 
-- 使用 SQLite 作为本地持久化。
+- 使用 SQLite 作为本地唯一存储和查询引擎。
 - 支持重启后回查最近 session。
 - 支持 session export/import 或 NDJSON import 的 UI 入口。
 

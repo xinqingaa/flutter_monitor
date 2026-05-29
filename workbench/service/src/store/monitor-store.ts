@@ -27,4 +27,5 @@ export interface MonitorStore {
   searchEvents(query: string, filters: EventFilters): MonitorEvent[];
   performanceOverview(filters: EventFilters): PerformanceOverview;
   health(): MonitorStoreHealth;
+  close?(): void;
 }

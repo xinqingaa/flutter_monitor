@@ -129,7 +129,7 @@ flowchart TD
 - jank 接入当前 page trace 和裁剪后的相关 breadcrumbs。
 - 最小 lifecycle 事件参与 session 切分、hot start 和 exit flush。
 - 控制台默认输出 compact 摘要，而不是完整 JSON。
-- 完整 JSON 仍由 pipeline 保留，并可通过 node server、file ring buffer 或 session export 获取。
+- 完整 JSON 仍由 pipeline 保留，并可通过 local workbench service 的 SQLite 查询或 session export 获取。
 - compact log 的摘要规则沉淀在 core，作为 `EventEnvelope` 的派生视图。
 - compact log 不得创建第二套事件模型、第二套服务端协议或第二套字段事实源。
 - 业务主动埋点收敛为 `FlutterMonitorSDK.track(...)`，用于记录关键业务动作；普通业务接入不推荐直接使用 `startTrace`、`startSpan`、`addBreadcrumb`、`FieldPaths` 或自定义 `attributes` / `payload`。
@@ -145,8 +145,8 @@ flowchart TD
 5. Dio / `http`；
 6. jank；
 7. compact log / `EventSummary`；
-8. node server 本地完整 JSON 查询；
-9. file ring buffer 或 session export。
+8. local workbench service 本地完整 JSON 查询；
+9. SQLite 本地保留策略和 session export。
 
 Phase 3 当前页面事件语义：
 
@@ -167,7 +167,7 @@ Phase 3 的完成标准不只是不丢信号，还包括“开发者能在不被
 - `EventSummary` 是从 `EventEnvelope` 派生的人类可读摘要。
 - `CompactLog` 是 `EventSummary` 的文本渲染。
 - compact 行中的 `kind` 是 core 从 `EventEnvelope.signalType`、`name` 和标准字段推导出的摘要分类，不是 `EventEnvelope` 标准协议字段，采集侧不需要上报或维护该字段。
-- compact log 字段不得反向成为第二套协议；SDK、node server、DevTools、CLI/MCP 后续都应复用 core 中的摘要规则。
+- compact log 字段不得反向成为第二套协议；SDK、Workbench、DevTools、CLI/MCP 后续都应复用 core 中的摘要规则。
 
 compact log 固定为 key-value 格式，字段顺序应尽量稳定：
 
@@ -206,16 +206,16 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 完整 JSON 获取路径：
 
 - 控制台 compact 行必须包含可回查的 `event`、`session` 和 `trace`，有 span 时包含 `span`。
-- `HttpBatchOutput` 将完整 `EventEnvelope` 批量发送到本地 node server / local workbench service 或正式服务端。
+- `HttpBatchOutput` 将完整 `EventEnvelope` 批量发送到 local workbench service 或正式服务端。
 - 只要 SDK 装入真实 App，就不应默认一条事件一个请求。近实时写入 Workbench 可以存在，但必须由初始化配置显式开启，并使用小 batch、短 flush 间隔、关键事件立即 flush 等策略。
 - Workbench Web 的实时刷新来自 service 到 web 的 SSE，不代表 SDK 必须逐条 HTTP 实时请求。
-- node server 在本地调试阶段至少支持：
+- local workbench service 在本地调试阶段至少支持：
   - `POST /api/monitor/v1/events`
   - `GET /api/monitor/v1/events/:eventId`
   - `GET /api/monitor/v1/sessions/:sessionId`
   - `GET /api/monitor/v1/traces/:traceId`
   - `GET /api/monitor/v1/recent?limit=50`
-- 本地 file ring buffer 或 session export 应能保存最近若干 session 的完整 NDJSON。
+- local workbench service 使用 SQLite 保存最近若干 session 的完整 envelope；session export 可用于交接和离线排查。
 - 线上排查不依赖控制台保留完整 JSON，而应通过 `eventId`、`sessionId`、`traceId` 在服务端查回完整 envelope 和 session timeline。
 - QA 排查不应要求先知道 `sessionId`。Workbench 应支持从 `context.user.userId + time range`、App 版本、环境、页面、错误和性能问题进入 session list；未提供 `userId` 时仍可按通用维度查询。
 
@@ -232,7 +232,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 控制台默认不刷完整 JSON。
 - compact 行能看出启动耗时、页面耗时、HTTP 耗时和状态码、卡顿指标、错误摘要。
 - compact 行中的 `event`、`session`、`trace` 能查回完整 JSON。
-- node server 能按 `eventId`、`sessionId`、`traceId` 查询完整 envelope。
+- local workbench service 能按 `eventId`、`sessionId`、`traceId` 查询完整 envelope。
 - 成功 HTTP、普通 breadcrumb、`route.push` 不应在默认控制台模式刷屏。
 - 普通 breadcrumb payload 不应自动携带用户属性或全局自定义上下文；HTTP/error/jank breadcrumb 快照不得递归携带 breadcrumbs 或长 stacktrace。
 - 业务主动埋点统一使用 `FlutterMonitorSDK.track(...)`；example 和新文档不得使用 `FieldPaths`、`addBreadcrumb` 或 `reportEvent(category, data)` 作为普通业务埋点路径。
@@ -241,7 +241,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 普通业务接入需要用户维度排查时，应通过统一上下文入口写入 `context.user.userId`；没有 userId 时不得阻塞基础采集、页面/错误/性能查询和 session timeline。
 - `setUserId`、`setUserInfo`、`setCustomData` 等历史 API 不应继续扩散到新文档和 example；目标 API 应收敛到 `setContext(...)` 语义。
 - 完整 JSON 仍符合 `docs/event_model.md`。
-- core 中的摘要规则可被 SDK、node server、未来 CLI/DevTools 复用。
+- core 中的摘要规则可被 SDK、Workbench、未来 CLI/DevTools 复用。
 - compact 摘要不形成第二套事件模型或服务端协议。
 
 ## Phase 4：内存、Native Bridge 与增强 Lifecycle

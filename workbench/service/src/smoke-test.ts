@@ -50,6 +50,14 @@ try {
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
     assert.equal(data.count, 2);
   });
+  await postRetentionEvents();
+  await assertJson('/api/monitor/v1/health', (data) => {
+    assert.equal(data.eventCount, 4);
+  });
+  await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
+    assert.equal(data.count, 4);
+  });
+  await assertStatus('/api/monitor/v1/events/evt_smoke_start', 404);
 } finally {
   child.kill('SIGTERM');
 }
@@ -57,7 +65,12 @@ try {
 function spawnService() {
   return spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, PORT: String(port), FM_WORKBENCH_SQLITE_PATH: sqlitePath },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      FM_WORKBENCH_SQLITE_PATH: sqlitePath,
+      FM_WORKBENCH_MAX_EVENTS: '4',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
@@ -128,10 +141,38 @@ async function postEvents(): Promise<void> {
   assert.equal(response.status, 202);
 }
 
+async function postRetentionEvents(): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/monitor/v1/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      events: Array.from({ length: 5 }, (_, index) => ({
+        eventId: `evt_retention_${index}`,
+        timestamp: `2026-05-29T10:01:0${index}.000Z`,
+        signalType: 'breadcrumb',
+        name: 'retention.test',
+        status: 'ok',
+        sessionId: 'ses_retention',
+        traceId: 'trace_retention',
+        resource: { app: { appVersion: '1.0.0', environment: 'dev' } },
+        context: { user: { userId: 'user_smoke' }, route: { name: '/retention' } },
+        attributes: {},
+        payload: {},
+      })),
+    }),
+  });
+  assert.equal(response.status, 202);
+}
+
 async function assertJson(path: string, assertion: (data: any) => void): Promise<void> {
   const response = await fetch(`${baseUrl}${path}`);
   assert.equal(response.status, 200);
   assertion(await response.json());
+}
+
+async function assertStatus(path: string, status: number): Promise<void> {
+  const response = await fetch(`${baseUrl}${path}`);
+  assert.equal(response.status, status);
 }
 
 function delay(ms: number): Promise<void> {
