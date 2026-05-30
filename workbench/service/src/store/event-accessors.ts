@@ -39,9 +39,8 @@ export function isErrorEvent(event: MonitorEvent): boolean {
 }
 
 export function isJankEvent(event: MonitorEvent): boolean {
-  const signalType = signalTypeOf(event);
   const name = nameOf(event);
-  return signalType === 'jank' || name === 'ui.jank.sequence';
+  return name === 'ui.jank.sequence';
 }
 
 export function isFailedHttpEvent(event: MonitorEvent): boolean {

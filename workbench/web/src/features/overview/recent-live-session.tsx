@@ -51,8 +51,8 @@ export function RecentLiveSession({ session, live, compact = false }: { session?
                 <span className="inline-flex items-center gap-1"><Globe2 className="size-3" />失败请求 {session.failedHttpCount}</span>
               </div>
             </div>
-            <Button asChild variant="default" className={compact ? 'justify-self-start' : 'justify-self-start md:justify-self-end'}>
-              <Link to="/sessions/$sessionId" params={{ sessionId: session.sessionId }}>
+            <Button asChild variant="secondary" className={compact ? 'w-full justify-self-stretch' : 'w-full justify-self-stretch md:w-auto md:justify-self-end'}>
+              <Link to="/sessions/$sessionId" params={{ sessionId: session.sessionId }} className="justify-center">
                 进入排查
                 <ArrowRight className="size-4" />
               </Link>

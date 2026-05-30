@@ -42,22 +42,29 @@ export interface PerformanceMetricEvent {
   eventId?: string;
   sessionId?: string;
   traceId?: string;
+  signalType?: string;
   name?: string;
   route?: string;
   durationMs?: number;
+  level?: string;
   status?: string;
   timestamp?: string;
+  attributes?: JsonObject;
 }
 
 export interface PerformanceMetricSummary {
   count: number;
   errorCount: number;
-  avgMs?: number;
-  p50Ms?: number;
-  p95Ms?: number;
-  maxMs?: number;
-  slowCount: number;
+  durationSummary?: DurationSummary;
   events: PerformanceMetricEvent[];
+}
+
+export interface DurationSummary {
+  sourceFields: string[];
+  sampleCount: number;
+  averageMs?: number;
+  maxMs?: number;
+  latestMs?: number;
 }
 
 export interface PerformanceOverview {

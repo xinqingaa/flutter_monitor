@@ -18,9 +18,10 @@ export function MetricCard({
   emphasis?: string;
   to?: string;
 }) {
+  const errorCount = summary?.errorCount ?? 0;
   const body = (
     <Card className="min-w-0">
-      <CardContent className="grid gap-2 p-3.5">
+      <CardContent className="grid gap-3 p-3.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-zinc-700">
             <Icon className="size-5 shrink-0" />
@@ -28,19 +29,29 @@ export function MetricCard({
           </div>
           {emphasis ? <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">{emphasis}</span> : null}
         </div>
-        <div className="flex items-end justify-between gap-3">
-          <MetricNumber field="count" label="次数" hint="当前筛选范围内的样本数量" value={summary?.count ?? 0} />
-          <div className="grid gap-1 text-right text-xs">
-            <MetricStat label="平均耗时" field="avgMs" hint="当前范围内全部样本耗时的算术平均值" value={summary?.avgMs} />
-            <MetricStat label="中位耗时" field="p50Ms" hint="一半记录低于该耗时，用于观察常见体验" value={summary?.p50Ms} />
-            <MetricStat label="慢端耗时" field="p95Ms" hint="较慢体验侧的耗时，用于发现长尾问题" value={summary?.p95Ms} />
-            <MetricStat label="最慢一次" field="maxMs" hint="当前范围内耗时最长的一次记录" value={summary?.maxMs} />
+        <div className="grid grid-cols-2 gap-2">
+          <MetricNumber label="事件数" field="events.length" hint="来源：当前筛选范围内匹配该类 signal 的 SDK envelope 数量" value={summary?.count ?? 0} />
+          <MetricNumber label="问题数" field="status / signalType" hint="来源：status=error 或 signalType=error 的 SDK envelope 数量" value={errorCount} tone={errorCount > 0 ? 'danger' : 'normal'} />
+        </div>
+        {summary?.durationSummary ? (
+          <div className="grid gap-1 text-xs">
+            <MetricDuration
+              label="平均耗时"
+              value={summary.durationSummary.averageMs}
+              hint={`Workbench 基于 ${summary.durationSummary.sourceFields.join('、')} 聚合`}
+            />
+            <MetricDuration
+              label="最慢记录"
+              value={summary.durationSummary.maxMs}
+              hint={`Workbench 基于 ${summary.durationSummary.sourceFields.join('、')} 排序`}
+            />
+            <MetricDuration
+              label="最近记录"
+              value={summary.durationSummary.latestMs}
+              hint={`Workbench 基于 ${summary.durationSummary.sourceFields.join('、')} 按时间取最近`}
+            />
           </div>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-zinc-500">
-          <MetricFootStat label="慢次数" field="slowCount" hint="超过慢阈值的次数" value={summary?.slowCount ?? 0} />
-          <MetricFootStat label="错误" field="errorCount" hint="当前范围内的错误事件数量" value={summary?.errorCount ?? 0} />
-        </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -54,41 +65,43 @@ export function MetricCard({
   );
 }
 
-function MetricNumber({ label, field, hint, value }: { label: string; field: string; hint: string; value: number }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <strong className="cursor-help text-[30px] leading-none text-zinc-950 tabular-nums">{compactNumber(value)}</strong>
-      </TooltipTrigger>
-      <TooltipContent>
-        <FieldHint label={label} field={field} hint={hint} />
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function MetricStat({ label, field, hint, value }: { label: string; field: string; hint: string; value?: number }) {
+function MetricDuration({ label, hint, value }: { label: string; hint: string; value?: number }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="grid cursor-help grid-cols-[4.5rem_auto] items-baseline gap-1">
           <span className="text-zinc-400">{label}</span>
-          <span className="text-zinc-600 tabular-nums">{formatDuration(value)}</span>
+          <span className="text-right text-zinc-600 tabular-nums">{formatDuration(value)}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        <FieldHint label={label} field={field} hint={hint} />
+        <FieldHint label={label} field="durationSummary" hint={hint} />
       </TooltipContent>
     </Tooltip>
   );
 }
 
-function MetricFootStat({ label, field, hint, value }: { label: string; field: string; hint: string; value: number }) {
+function MetricNumber({
+  label,
+  field,
+  hint,
+  value,
+  tone = 'normal',
+}: {
+  label: string;
+  field: string;
+  hint: string;
+  value: number;
+  tone?: 'normal' | 'danger';
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="cursor-help">
-          {label} {value}
+        <span className="grid cursor-help gap-1 rounded border border-zinc-100 bg-zinc-50 px-2.5 py-2">
+          <span className="text-xs text-zinc-500">{label}</span>
+          <strong className={`text-2xl leading-none tabular-nums ${tone === 'danger' ? 'text-red-600' : 'text-zinc-950'}`}>
+            {compactNumber(value)}
+          </strong>
         </span>
       </TooltipTrigger>
       <TooltipContent>

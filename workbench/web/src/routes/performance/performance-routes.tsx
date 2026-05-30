@@ -6,8 +6,9 @@ export function StartupRoute() {
   const query = usePerformanceQuery({ limit: 200 });
   return (
     <PerformanceDetailPage
+      kind="startup"
       title="启动耗时"
-      description="冷启动和热启动后续会拆成独立曲线，支持慢启动阈值和点位回查。"
+      description="启动页只读取 app.cold_start、app.hot_start、app.first_frame 和 sdk.init 已提供字段。"
       icon={Rocket}
       metric={query.data?.startup}
       emphasis="冷启 / 热启"
@@ -19,8 +20,9 @@ export function PagesRoute() {
   const query = usePerformanceQuery({ limit: 200 });
   return (
     <PerformanceDetailPage
+      kind="pages"
       title="页面性能"
-      description="页面进入、页面停留和页面稳定性后续会按 route 聚合，定位慢页面和问题页面。"
+      description="页面页只读取 page.load、page.first_frame 和 page.stay，不把 route.push 计入性能耗时。"
       icon={Gauge}
       metric={query.data?.pages}
       emphasis="页面打开"
@@ -32,8 +34,9 @@ export function NetworkRoute() {
   const query = usePerformanceQuery({ limit: 200 });
   return (
     <PerformanceDetailPage
+      kind="network"
       title="网络请求"
-      description="请求耗时、失败请求和慢请求后续会按接口、页面和 session 聚合。"
+      description="网络页读取 http.client span 及 http.* 注册 attributes。"
       icon={Globe2}
       metric={query.data?.http}
       emphasis="HTTP"
@@ -45,8 +48,9 @@ export function JankRoute() {
   const query = usePerformanceQuery({ limit: 200 });
   return (
     <PerformanceDetailPage
+      kind="jank"
       title="卡顿"
-      description="卡顿记录后续会关联页面、设备等级、帧耗时和 session timeline。"
+      description="卡顿页读取 ui.jank.sequence 携带的 frame.* 与 jank.count 字段。"
       icon={Activity}
       metric={query.data?.jank}
       emphasis="帧耗时"
@@ -58,8 +62,9 @@ export function ErrorsRoute() {
   const query = usePerformanceQuery({ limit: 200 });
   return (
     <PerformanceDetailPage
+      kind="errors"
       title="错误"
-      description="错误入口后续会统一承接异常、失败请求、内存压力和 native 问题。"
+      description="错误页读取 error signal 与 status=error 记录，不展示无 SDK 字段支撑的耗时统计。"
       icon={AlertTriangle}
       metric={query.data?.errors}
       emphasis="稳定性"

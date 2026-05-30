@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Braces, ListFilter } from 'lucide-react';
+import { ArrowRight, Braces, ListFilter, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { OverviewMetrics } from '../../features/overview/overview-metrics';
@@ -30,7 +30,7 @@ export function OverviewRoute() {
               <CardTitle>性能概览</CardTitle>
               <CardDescription>启动、页面、网络、卡顿和错误是首页主视图；点击卡片进入对应明细页。</CardDescription>
             </div>
-            <Button asChild variant="secondary">
+            <Button asChild variant="secondary" className="w-full sm:w-auto">
               <Link to="/sessions">
                 <ListFilter className="size-4" />
                 检索会话
@@ -48,37 +48,27 @@ export function OverviewRoute() {
 
         <Card>
           <CardHeader>
-            <CardTitle>全部 Session</CardTitle>
-            <CardDescription>进入总列表后再按用户、时间、版本、页面和状态检索。</CardDescription>
+            <CardTitle>排查入口</CardTitle>
+            <CardDescription>Session 是主要排查入口；Events 用于开发态查看原始信号。</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-2">
-            <Button asChild variant="default">
-              <Link to="/sessions">
-                打开 Session 列表
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Events</CardTitle>
-            <CardDescription>偏开发态的原始事件列表入口。</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="secondary" className="w-full justify-between">
-              <Link to="/events">
-                <span className="inline-flex items-center gap-2">
-                  <Braces className="size-4" />
-                  打开 Event 列表
-                </span>
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
+            <WorkbenchEntryButton to="/sessions" icon={ListFilter} label="打开 Session 列表" />
+            <WorkbenchEntryButton to="/events" icon={Braces} label="打开 Event 列表" />
           </CardContent>
         </Card>
       </aside>
     </div>
+  );
+}
+
+function WorkbenchEntryButton({ to, icon: Icon, label }: { to: '/sessions' | '/events'; icon: LucideIcon; label: string }) {
+  return (
+    <Button asChild variant="secondary" className="w-full">
+      <Link to={to} className="justify-center">
+        <Icon className="size-4" />
+        <span>{label}</span>
+        <ArrowRight className="size-4" />
+      </Link>
+    </Button>
   );
 }

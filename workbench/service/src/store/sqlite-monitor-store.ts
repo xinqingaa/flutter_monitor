@@ -10,7 +10,6 @@ import {
   isFailedHttpEvent,
   isJankEvent,
   nameOf,
-  numericPayload,
   routeOf,
   signalTypeOf,
   statusOf,
@@ -185,12 +184,13 @@ export class SqliteMonitorStore implements MonitorStore {
 
   performanceOverview(filters: EventFilters): PerformanceOverview {
     const events = this.selectFilteredEvents(filters);
+    const limit = clampLimit(filters.limit, 80);
     return {
-      startup: summarizeMetric(events.filter(isStartupEvent), 1000),
-      pages: summarizeMetric(events.filter(isPageEvent), 1000),
-      http: summarizeMetric(events.filter(isHttpEvent), 800),
-      jank: summarizeMetric(events.filter(isJankEvent), 0),
-      errors: summarizeMetric(events.filter(isErrorEvent), 0),
+      startup: summarizeMetric(events.filter(isStartupEvent), limit),
+      pages: summarizeMetric(events.filter(isPageEvent), limit),
+      http: summarizeMetric(events.filter(isHttpEvent), limit),
+      jank: summarizeMetric(events.filter(isJankEvent), limit),
+      errors: summarizeMetric(events.filter(isErrorEvent), limit),
     };
   }
 
@@ -487,60 +487,81 @@ function groupKeyName(by: string): string {
 
 function isStartupEvent(event: MonitorEvent): boolean {
   const name = nameOf(event) ?? '';
-  return name === 'app.cold_start' || name === 'app.hot_start' || name.includes('startup');
+  return statusOf(event) !== 'unknown' && (
+    name === 'app.cold_start' ||
+    name === 'app.hot_start' ||
+    name === 'app.first_frame' ||
+    name === 'sdk.init' ||
+    name.includes('startup')
+  );
 }
 
 function isPageEvent(event: MonitorEvent): boolean {
   const name = nameOf(event) ?? '';
-  return name.startsWith('page.') || name === 'route.push';
+  return statusOf(event) !== 'unknown' && (
+    name === 'page.load' ||
+    name === 'page.first_frame' ||
+    name === 'page.stay'
+  );
 }
 
 function isHttpEvent(event: MonitorEvent): boolean {
   return nameOf(event) === 'http.client';
 }
 
-function summarizeMetric(events: MonitorEvent[], slowThresholdMs: number): PerformanceMetricSummary {
-  const durations = events
-    .map((event) => durationOf(event))
-    .filter((value): value is number => typeof value === 'number')
-    .sort((a, b) => a - b);
+function summarizeMetric(events: MonitorEvent[], limit: number): PerformanceMetricSummary {
+  const sourceFields = durationSourceFields(events);
+  const durationEvents = events
+    .map((event) => ({ event, durationMs: durationOf(event) }))
+    .filter((entry): entry is { event: MonitorEvent; durationMs: number } => (
+      typeof entry.durationMs === 'number' && Number.isFinite(entry.durationMs)
+    ));
+  const latestDuration = [...durationEvents].sort((a, b) => eventTimeValue(b.event) - eventTimeValue(a.event))[0];
+  const maxDuration = [...durationEvents].sort((a, b) => b.durationMs - a.durationMs)[0];
   const recent = [...events]
     .sort((a, b) => eventTimeValue(b) - eventTimeValue(a))
-    .slice(0, 20)
+    .slice(0, limit)
     .map((event) => ({
       eventId: event.eventId,
       sessionId: event.sessionId,
       traceId: event.traceId,
+      signalType: signalTypeOf(event),
       name: nameOf(event),
       route: routeOf(event),
       durationMs: durationOf(event),
+      level: typeof event.level === 'string' ? event.level : undefined,
       status: statusOf(event),
       timestamp: event.timestamp,
+      attributes: event.attributes,
     }));
 
   return {
     count: events.length,
     errorCount: events.filter(isErrorEvent).length,
-    avgMs: average(durations),
-    p50Ms: percentile(durations, 0.5),
-    p95Ms: percentile(durations, 0.95),
-    maxMs: durations.length > 0 ? durations[durations.length - 1] : undefined,
-    slowCount: slowThresholdMs > 0
-      ? durations.filter((duration) => duration >= slowThresholdMs).length
-      : 0,
+    durationSummary: durationEvents.length > 0
+      ? {
+          sourceFields,
+          sampleCount: durationEvents.length,
+          averageMs: average(durationEvents.map((entry) => entry.durationMs)),
+          maxMs: maxDuration?.durationMs,
+          latestMs: latestDuration?.durationMs,
+        }
+      : undefined,
     events: recent,
   };
 }
 
 function durationOf(event: MonitorEvent): number | undefined {
   if (typeof event.durationMs === 'number') return event.durationMs;
-  return numericPayload(event, 'durationMs');
+  return undefined;
 }
 
-function percentile(values: number[], ratio: number): number | undefined {
-  if (values.length === 0) return undefined;
-  const index = Math.ceil(values.length * ratio) - 1;
-  return values[Math.min(Math.max(index, 0), values.length - 1)];
+function durationSourceFields(events: MonitorEvent[]): string[] {
+  const fields = new Set<string>();
+  if ([...events].some((event) => typeof event.durationMs === 'number')) {
+    fields.add('durationMs');
+  }
+  return [...fields];
 }
 
 function average(values: number[]): number | undefined {
