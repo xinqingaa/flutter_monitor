@@ -521,6 +521,7 @@ function summarizeMetric(events: MonitorEvent[], slowThresholdMs: number): Perfo
   return {
     count: events.length,
     errorCount: events.filter(isErrorEvent).length,
+    avgMs: average(durations),
     p50Ms: percentile(durations, 0.5),
     p95Ms: percentile(durations, 0.95),
     maxMs: durations.length > 0 ? durations[durations.length - 1] : undefined,
@@ -540,6 +541,11 @@ function percentile(values: number[], ratio: number): number | undefined {
   if (values.length === 0) return undefined;
   const index = Math.ceil(values.length * ratio) - 1;
   return values[Math.min(Math.max(index, 0), values.length - 1)];
+}
+
+function average(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function buildSessionSummary(sessionId: string, events: MonitorEvent[]): SessionSummary | undefined {

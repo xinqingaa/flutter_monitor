@@ -2,6 +2,7 @@ import type { FormEvent } from 'react';
 import { Search } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { isoToLocalInput, localInputToIso } from '../../shared/formatting/format';
 import type { SessionFilters } from '../../shared/datasource/types';
 
 export function SessionFilterForm({
@@ -21,6 +22,24 @@ export function SessionFilterForm({
   return (
     <form className="grid gap-2" onSubmit={submit}>
       <Input placeholder="用户 ID" value={filters.userId ?? ''} onChange={(e) => onChange({ ...filters, userId: e.target.value })} />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="grid gap-1 text-xs text-zinc-500">
+          起始时间
+          <Input
+            type="datetime-local"
+            value={isoToLocalInput(filters.from)}
+            onChange={(e) => onChange({ ...filters, from: localInputToIso(e.target.value) })}
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-500">
+          结束时间
+          <Input
+            type="datetime-local"
+            value={isoToLocalInput(filters.to)}
+            onChange={(e) => onChange({ ...filters, to: localInputToIso(e.target.value) })}
+          />
+        </label>
+      </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <Input placeholder="环境" value={filters.environment ?? ''} onChange={(e) => onChange({ ...filters, environment: e.target.value })} />
         <Input placeholder="App 版本" value={filters.appVersion ?? ''} onChange={(e) => onChange({ ...filters, appVersion: e.target.value })} />

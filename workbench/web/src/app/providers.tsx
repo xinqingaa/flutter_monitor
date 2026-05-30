@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { useState } from 'react';
+import { TooltipProvider } from '../components/ui/tooltip';
 import { router } from './router';
 
 export function AppProviders() {
@@ -15,7 +16,9 @@ export function AppProviders() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <TooltipProvider delayDuration={150} skipDelayDuration={300}>
+        <RouterProvider router={router} />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

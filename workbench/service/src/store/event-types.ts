@@ -52,6 +52,7 @@ export interface SessionSummary {
 export interface PerformanceMetricSummary {
   count: number;
   errorCount: number;
+  avgMs?: number;
   p50Ms?: number;
   p95Ms?: number;
   maxMs?: number;
