@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter } from '@tanstack/react-router';
-import { Home, Pause, Play, RefreshCw } from 'lucide-react';
+import { Home, ListTree, Pause, Play, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../components/ui/button';
 import { useLiveInvalidation } from '../shared/datasource/queries';
@@ -23,6 +23,12 @@ export function WorkbenchShell() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button asChild variant="ghost" className="hidden sm:inline-flex">
+            <Link to="/sessions">
+              <ListTree className="size-4" />
+              Sessions
+            </Link>
+          </Button>
           <Button variant={live ? 'default' : 'secondary'} onClick={() => setLive((value) => !value)}>
             {live ? <Pause className="size-4" /> : <Play className="size-4" />}
             {live ? '实时中' : '已暂停'}

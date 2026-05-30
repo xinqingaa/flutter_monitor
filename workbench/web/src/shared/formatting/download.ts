@@ -11,5 +11,6 @@ export function downloadJson(filename: string, value: unknown): void {
 }
 
 export async function copyJson(value: unknown): Promise<void> {
-  await navigator.clipboard?.writeText(JSON.stringify(value, null, 2));
+  if (!navigator.clipboard) throw new Error('clipboard_unavailable');
+  await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
 }

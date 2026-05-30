@@ -1,11 +1,13 @@
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Braces, Clipboard, ExternalLink, GitBranch, Info, ListTree } from 'lucide-react';
+import { AlertTriangle, Braces, Clipboard, GitBranch, Info, ListTree } from 'lucide-react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Button } from '../../components/ui/button';
+import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { useToast } from '../../components/ui/toast';
 import type { JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import {
   appVersionOf,
@@ -49,6 +51,16 @@ export function EventInspector({
 
   const breadcrumbs = breadcrumbsOf(event);
   const labels = issueLabels(event);
+  const { showToast } = useToast();
+
+  async function copyEventJson() {
+    try {
+      await copyJson(event);
+      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 EventEnvelope 已写入剪贴板。' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
+    }
+  }
 
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
@@ -61,18 +73,7 @@ export function EventInspector({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="secondary" onClick={() => void copyJson(event)}>
-            <Clipboard className="size-4" />
-            复制原始数据
-          </Button>
-          {event.eventId ? (
-            <Button asChild type="button" variant="ghost">
-              <Link to="/events/$eventId" params={{ eventId: event.eventId }}>
-                <ExternalLink className="size-4" />
-                完整事件
-              </Link>
-            </Button>
-          ) : null}
+          <IconTooltipButton type="button" variant="secondary" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
           <CopyableId value={event.eventId} />
         </div>
       </CardHeader>
@@ -97,7 +98,7 @@ export function EventInspector({
           <TabsContent value="raw" className="min-h-0 overflow-hidden">
             <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
               <div className="flex justify-end">
-                <Button type="button" variant="secondary" onClick={() => void copyJson(event)}>
+                <Button type="button" variant="secondary" onClick={() => void copyEventJson()}>
                   <Clipboard className="size-4" />
                   复制完整 JSON
                 </Button>

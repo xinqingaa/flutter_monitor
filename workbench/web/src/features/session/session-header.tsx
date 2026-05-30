@@ -1,7 +1,7 @@
 import { AlertTriangle, Clock, Download, Gauge, Globe2, User } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
+import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
 import type { MonitorEvent, SessionSummary } from '../../shared/datasource/types';
 import { appVersionOf, environmentOf, routeOf, userIdOf } from '../../shared/event-model/accessors';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
@@ -38,10 +38,7 @@ export function SessionHeader({
           <div className="flex shrink-0 items-center gap-2">
             <Badge tone={summary?.status === 'error' ? 'danger' : 'neutral'}>{statusLabel(summary?.status)}</Badge>
             {onExport ? (
-              <Button type="button" variant="secondary" onClick={onExport}>
-                <Download className="size-4" />
-                导出原始 JSON
-              </Button>
+              <IconTooltipButton type="button" variant="secondary" size="icon" label="导出原始 JSON" icon={Download} onClick={onExport} />
             ) : null}
           </div>
         </div>

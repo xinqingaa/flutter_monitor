@@ -9,13 +9,13 @@ import type { SessionSummary } from '../../shared/datasource/types';
 import { formatDateTime } from '../../shared/formatting/format';
 import { statusLabel } from '../../shared/event-model/status';
 
-export function RecentLiveSession({ session, live }: { session?: SessionSummary; live: boolean }) {
+export function RecentLiveSession({ session, live, compact = false }: { session?: SessionSummary; live: boolean; compact?: boolean }) {
   return (
     <Card className="overflow-hidden">
       <CardHeader className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <CardTitle>最近 / 实时 Session</CardTitle>
-          <p className="mt-1 text-xs text-zinc-500">刚复现的链路自动浮在这里，便于本地实时自调试。</p>
+          <p className="mt-1 text-xs text-zinc-500">{compact ? '刚复现的链路会自动浮出。' : '刚复现的链路自动浮在这里，便于本地实时自调试。'}</p>
         </div>
         {live ? (
           <Badge tone="teal" className="shrink-0">
@@ -28,7 +28,7 @@ export function RecentLiveSession({ session, live }: { session?: SessionSummary;
         {!session ? (
           <EmptyState title="暂无会话" description="运行 example 后，最新一次 App 使用过程会出现在这里。" />
         ) : (
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className={compact ? 'grid gap-3' : 'grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end'}>
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <CopyableId value={session.sessionId} />
@@ -51,7 +51,7 @@ export function RecentLiveSession({ session, live }: { session?: SessionSummary;
                 <span className="inline-flex items-center gap-1"><Globe2 className="size-3" />失败请求 {session.failedHttpCount}</span>
               </div>
             </div>
-            <Button asChild variant="default" className="justify-self-start md:justify-self-end">
+            <Button asChild variant="default" className={compact ? 'justify-self-start' : 'justify-self-start md:justify-self-end'}>
               <Link to="/sessions/$sessionId" params={{ sessionId: session.sessionId }}>
                 进入排查
                 <ArrowRight className="size-4" />

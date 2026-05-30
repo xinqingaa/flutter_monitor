@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, AppWindow, ChevronDown, ChevronRight, GanttChartSquare, Rocket } from 'lucide-react';
+import { AlertTriangle, AppWindow, ChevronDown, ChevronRight, Rocket } from 'lucide-react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import type { MonitorEvent } from '../../shared/datasource/types';
-import { eventKind, httpStatusOf, issueLabels, stringPath } from '../../shared/event-model/accessors';
+import { eventKind, eventKindLabel, httpStatusOf, issueLabels, stringPath } from '../../shared/event-model/accessors';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
 import { cn } from '../../shared/formatting/cn';
 import { EventKindBadge } from './status-badge';
 import { buildTimelineSegments, type TimelineSegment } from './session-segments';
-import { SpanWaterfall } from './span-waterfall';
 
 export function SessionTimeline({
   events,
@@ -23,7 +21,6 @@ export function SessionTimeline({
 }) {
   const segments = useMemo(() => buildTimelineSegments(events), [events]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [waterfalls, setWaterfalls] = useState<Set<string>>(() => new Set());
 
   function toggle(set: Set<string>, id: string): Set<string> {
     const next = new Set(set);
@@ -36,7 +33,7 @@ export function SessionTimeline({
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <CardHeader>
         <CardTitle>会话链路</CardTitle>
-        <CardDescription>时间自上而下，启动和页面形成区段；请求、错误、卡顿挂在所属区段下，瀑布用于钻取 span 时间关系。</CardDescription>
+        <CardDescription>时间自上而下，启动和页面形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
       </CardHeader>
       <CardContent className="min-h-0 overflow-auto p-0">
         {segments.length === 0 ? (
@@ -50,9 +47,7 @@ export function SessionTimeline({
                 key={segment.id}
                 segment={segment}
                 collapsed={collapsed.has(segment.id)}
-                waterfallOpen={waterfalls.has(segment.id)}
                 onToggleCollapse={() => setCollapsed((prev) => toggle(prev, segment.id))}
-                onToggleWaterfall={() => setWaterfalls((prev) => toggle(prev, segment.id))}
                 selectedEventId={selectedEventId}
                 onSelectEvent={onSelectEvent}
               />
@@ -67,17 +62,13 @@ export function SessionTimeline({
 function SegmentView({
   segment,
   collapsed,
-  waterfallOpen,
   onToggleCollapse,
-  onToggleWaterfall,
   selectedEventId,
   onSelectEvent,
 }: {
   segment: TimelineSegment;
   collapsed: boolean;
-  waterfallOpen: boolean;
   onToggleCollapse: () => void;
-  onToggleWaterfall: () => void;
   selectedEventId?: string;
   onSelectEvent?: (event: MonitorEvent) => void;
 }) {
@@ -86,8 +77,8 @@ function SegmentView({
 
   return (
     <div className="border-b border-zinc-100 last:border-b-0">
-      <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-zinc-100 bg-zinc-50/95 px-3 py-2 backdrop-blur">
-        <button type="button" onClick={onToggleCollapse} className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 text-left">
+      <div className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-50/95 px-3 py-2 backdrop-blur">
+        <button type="button" onClick={onToggleCollapse} className="grid w-full min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 text-left">
           {collapsed ? <ChevronRight className="size-4 shrink-0 text-zinc-400" /> : <ChevronDown className="size-4 shrink-0 text-zinc-400" />}
           <span className={cn(
             'inline-flex size-7 items-center justify-center rounded-md border bg-white',
@@ -114,27 +105,9 @@ function SegmentView({
             </span>
           </span>
         </button>
-        {!collapsed && segment.spans.length > 0 ? (
-          <Button
-            type="button"
-            onClick={onToggleWaterfall}
-            size="sm"
-            variant="secondary"
-            className={cn(
-              'h-7 shrink-0 px-2 text-[11px]',
-              waterfallOpen ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50',
-            )}
-          >
-            <GanttChartSquare className="size-3.5" />
-            {waterfallOpen ? '收起瀑布' : '展开瀑布'}
-          </Button>
-        ) : null}
       </div>
       {collapsed ? null : (
         <div className="py-1">
-          {waterfallOpen ? (
-            <SpanWaterfall spans={segment.spans} selectedEventId={selectedEventId} onSelectEvent={onSelectEvent} />
-          ) : null}
           {segment.nodes.length === 0 ? (
             <div className="px-3 py-2 pl-9 text-xs text-zinc-400">无更多节点</div>
           ) : (
@@ -173,15 +146,18 @@ function TimelineNode({
         type="button"
         onClick={onSelect}
         className={cn(
-          'grid w-full grid-cols-[64px_auto_minmax(0,1fr)] items-center gap-2 px-3 py-1 text-left text-xs text-zinc-500 hover:bg-teal-50',
+          'grid w-full grid-cols-[88px_minmax(0,1fr)] gap-2 px-3 py-1.5 text-left hover:bg-teal-50',
           selected && 'bg-teal-50 text-zinc-700',
         )}
       >
-        <span className="text-right tabular-nums text-zinc-400">{formatTime(event.timestamp ?? event.startTime)}</span>
-        <span className="size-1.5 shrink-0 rounded-full bg-zinc-300" />
-        <span className="min-w-0 truncate">
-          {event.name ?? '-'}
-          {meta ? <span className="text-zinc-400"> · {meta}</span> : null}
+        <span className="pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatTime(event.timestamp ?? event.startTime)}</span>
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="size-1.5 shrink-0 rounded-full bg-zinc-300" />
+            <span className="shrink-0 text-[11px] text-zinc-400">{eventKindLabel(event)}</span>
+            <span className="min-w-0 truncate text-xs font-medium text-zinc-600">{event.name ?? '-'}</span>
+          </span>
+          {meta ? <span className="mt-0.5 block truncate text-xs text-zinc-400">{meta}</span> : null}
         </span>
       </button>
     );
@@ -192,7 +168,7 @@ function TimelineNode({
       type="button"
       onClick={onSelect}
       className={cn(
-        'grid w-full grid-cols-[64px_minmax(0,1fr)] items-start gap-2 px-3 py-1.5 text-left hover:bg-teal-50',
+        'grid w-full grid-cols-[88px_minmax(0,1fr)] items-start gap-2 px-3 py-1.5 text-left hover:bg-teal-50',
         selected && 'bg-teal-50',
         isError && 'bg-red-50/60 hover:bg-red-50',
       )}

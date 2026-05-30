@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { Card, CardContent } from '../../components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import { compactNumber, formatDuration } from '../../shared/formatting/format';
@@ -9,13 +10,15 @@ export function MetricCard({
   icon: Icon,
   summary,
   emphasis,
+  to,
 }: {
   title: string;
   icon: LucideIcon;
   summary?: PerformanceMetricSummary;
   emphasis?: string;
+  to?: string;
 }) {
-  return (
+  const body = (
     <Card className="min-w-0">
       <CardContent className="grid gap-2 p-3.5">
         <div className="flex items-center justify-between gap-2">
@@ -27,7 +30,7 @@ export function MetricCard({
         </div>
         <div className="flex items-end justify-between gap-3">
           <MetricNumber field="count" label="次数" hint="当前筛选范围内的样本数量" value={summary?.count ?? 0} />
-          <div className="grid gap-0.5 text-right text-xs">
+          <div className="grid gap-1 text-right text-xs">
             <MetricStat label="平均耗时" field="avgMs" hint="当前范围内全部样本耗时的算术平均值" value={summary?.avgMs} />
             <MetricStat label="中位耗时" field="p50Ms" hint="一半记录低于该耗时，用于观察常见体验" value={summary?.p50Ms} />
             <MetricStat label="慢端耗时" field="p95Ms" hint="较慢体验侧的耗时，用于发现长尾问题" value={summary?.p95Ms} />
@@ -40,6 +43,14 @@ export function MetricCard({
         </div>
       </CardContent>
     </Card>
+  );
+
+  if (!to) return body;
+
+  return (
+    <Link to={to} className="block min-w-0 transition-transform hover:-translate-y-0.5">
+      {body}
+    </Link>
   );
 }
 
