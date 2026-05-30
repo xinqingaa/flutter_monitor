@@ -328,7 +328,6 @@ function lineOption(
   thresholds: Array<{ label: string; value: number }>,
 ): WorkbenchChartOption | undefined {
   if (points.length === 0) return undefined;
-  const crossDay = hasCrossDay(points.map((point) => point.timestamp));
   return {
     color: ['#0f766e'],
     grid: { left: 56, right: 24, top: 28, bottom: points.length > 8 ? 62 : 42 },
@@ -351,7 +350,7 @@ function lineOption(
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: points.map((point) => axisTimeLabel(point.timestamp, crossDay)),
+      data: points.map((point) => axisTimeLabel(point.timestamp)),
       axisLabel: { color: '#71717a', hideOverlap: true },
       axisLine: { lineStyle: { color: '#d4d4d8' } },
       axisTick: { alignWithLabel: true },
@@ -420,25 +419,12 @@ function barOption(data: BarDatum[]): WorkbenchChartOption | undefined {
   };
 }
 
-function axisTimeLabel(timestamp: string | undefined, crossDay: boolean): string {
+function axisTimeLabel(timestamp: string | undefined): string {
   if (!timestamp) return '-';
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
   const pad = (value: number) => String(value).padStart(2, '0');
-  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  if (!crossDay) return time;
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function hasCrossDay(values: Array<string | undefined>): boolean {
-  const days = new Set<string>();
-  for (const value of values) {
-    const date = new Date(value ?? '');
-    if (!Number.isNaN(date.getTime())) {
-      days.add(`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`);
-    }
-  }
-  return days.size > 1;
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function formatFullDateTime(timestamp?: string): string {

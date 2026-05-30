@@ -1,7 +1,11 @@
+import { Link } from '@tanstack/react-router';
 import type { LucideIcon } from 'lucide-react';
+import { ArrowRight, ListTree } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { EmptyState } from '../../components/common/empty-state';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type { PerformanceMetricEvent, PerformanceMetricSummary } from '../../shared/datasource/types';
-import { formatDuration } from '../../shared/formatting/format';
+import { formatDateTime, formatDuration } from '../../shared/formatting/format';
 import { MetricCard } from './metric-card';
 import {
   attrBool,
@@ -18,6 +22,8 @@ import {
   SignalSummary,
   type BarDatum,
 } from './performance-charts';
+import type { WorkbenchChartOption } from './echarts-panel';
+import { PerformanceTabs } from './performance-tabs';
 
 export type PerformanceKind = 'startup' | 'pages' | 'network' | 'jank' | 'errors';
 
@@ -39,16 +45,19 @@ export function PerformanceDetailPage({
   const events = metric?.events ?? [];
 
   return (
-    <div className="grid min-h-full grid-cols-1 gap-2 overflow-auto p-2 xl:h-full xl:min-h-0 xl:grid-cols-[340px_minmax(760px,1fr)] xl:overflow-hidden">
-      <aside className="grid content-start gap-2 xl:min-h-0 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
-        <MetricCard title={title} icon={icon} summary={metric} emphasis={emphasis} />
-        <SignalSummary title="字段口径" description={description} events={events} issueCount={metric?.errorCount ?? 0} />
-        <PrinciplesCard />
-      </aside>
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+      <PerformanceTabs />
+      <div className="grid min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-cols-[340px_minmax(760px,1fr)] xl:overflow-hidden">
+        <aside className="grid content-start gap-2 xl:min-h-0 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
+          <MetricCard title={title} icon={icon} summary={metric} emphasis={emphasis} />
+          <SignalSummary title="字段口径" description={description} events={events} issueCount={metric?.errorCount ?? 0} />
+          <PrinciplesCard />
+        </aside>
 
-      <section className="min-h-[620px] overflow-visible xl:overflow-auto">
-        <KindContent kind={kind} events={events} />
-      </section>
+        <section className="min-h-[620px] overflow-visible xl:overflow-auto">
+          <KindContent kind={kind} events={events} />
+        </section>
+      </div>
     </div>
   );
 }
@@ -115,53 +124,168 @@ function StartupContent({ events }: { events: PerformanceMetricEvent[] }) {
 }
 
 function PagesContent({ events }: { events: PerformanceMetricEvent[] }) {
-  const pageLoad = chronological(events.filter((event) => event.name === 'page.load' && hasDuration(event)));
-  const pageFirstFrame = chronological(events.filter((event) => event.name === 'page.first_frame'));
-  const pageStay = chronological(events.filter((event) => event.name === 'page.stay' && hasDuration(event)));
-  const routeRows = groupByRoute([...pageLoad, ...pageFirstFrame, ...pageStay]);
+  const pageRecords = buildPageRecords(events);
+  const routeRows = summarizePageRoutes(pageRecords);
 
   return (
     <div className="grid gap-2">
-      <div className="grid gap-2 2xl:grid-cols-2">
-        <LineChartPanel
-          title="页面加载耗时"
-          description="只读取 page.load 的 durationMs，不把 route.push 或 page.view 纳入页面性能。"
-          source="name=page.load · value=durationMs"
-          points={pageLoad.map((event) => durationPoint(event, routePointLabel(event)))}
-        />
-        <LineChartPanel
-          title="页面首帧耗时"
-          description="只在 page.first_frame 事件携带 page.first_frame_ms 时展示。"
-          source={'name=page.first_frame · value=attributes["page.first_frame_ms"]'}
-          points={pageFirstFrame.map((event) => attributePoint(event, 'page.first_frame_ms', routePointLabel(event)))}
-        />
-      </div>
-      <div className="grid gap-2 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <LineChartPanel
-          title="页面停留时长"
-          description="page.stay 的 durationMs 用于观察真实停留窗口。"
-          source="name=page.stay · value=durationMs"
-          points={pageStay.map((event) => durationPoint(event, routePointLabel(event)))}
-        />
-        <BarChartPanel
-          title="页面事件分布"
-          description="按 context.route.name 分组。"
-          source="context.route.name"
-          data={routeRows}
-        />
-      </div>
-      <EventTablePanel
+      <PagePerformanceMatrix records={pageRecords} routeRows={routeRows} />
+      <PageTrendChart records={pageRecords} />
+      <PageRecordTable
         title="页面记录"
-        description="页面加载、首帧、停留记录，点击回到对应 session。"
-        source={'name / durationMs / context.route.name / attributes["page.from"] / attributes["page.to"]'}
-        events={chronological([...pageLoad, ...pageFirstFrame, ...pageStay]).reverse()}
-        columns={[
-          { key: 'route', label: '页面', render: (event) => event.route ?? '-' },
-          { key: 'from', label: '来源', render: (event) => attrString(event, 'page.from') ?? '-' },
-          { key: 'to', label: '去向', render: (event) => attrString(event, 'page.to') ?? '-' },
-          { key: 'duration', label: '耗时', align: 'right', render: (event) => formatDuration(event.durationMs ?? attrNumber(event, 'page.load_ms') ?? attrNumber(event, 'page.first_frame_ms')) },
-        ]}
+        description="按 traceId、page.instance_id 和 route 合并页面加载、首帧、停留记录。"
+        source={'context.route.name / name / traceId / attributes["page.instance_id"] / durationMs / attributes["page.load_ms"] / attributes["page.first_frame_ms"]'}
+        records={pageRecords}
       />
+    </div>
+  );
+}
+
+type PageRecord = {
+  key: string;
+  route: string;
+  timestamp?: string;
+  sessionId?: string;
+  traceId?: string;
+  pageInstanceId?: string;
+  loadEventId?: string;
+  firstFrameEventId?: string;
+  stayEventId?: string;
+  loadMs?: number;
+  firstFrameMs?: number;
+  stayMs?: number;
+  from?: string;
+  to?: string;
+};
+
+type PageRouteSummary = {
+  route: string;
+  visits: number;
+  loadSampleCount: number;
+  firstFrameSampleCount: number;
+  staySampleCount: number;
+  averageLoadMs?: number;
+  averageFirstFrameMs?: number;
+  averageStayMs?: number;
+  maxLoadMs?: number;
+  maxFirstFrameMs?: number;
+  maxStayMs?: number;
+};
+
+function PagePerformanceMatrix({ records, routeRows }: { records: PageRecord[]; routeRows: PageRouteSummary[] }) {
+  const option = pageMatrixOption(routeRows);
+  return (
+    <EchartsPanel
+      title="页面性能矩阵"
+      description="按页面汇总加载耗时、首帧耗时和停留时长，先看哪个页面慢。"
+      source={'context.route.name / durationMs / attributes["page.load_ms"] / attributes["page.first_frame_ms"]'}
+      option={option}
+      empty={records.length === 0 || routeRows.length === 0}
+      height={320}
+    />
+  );
+}
+
+function PageTrendChart({ records }: { records: PageRecord[] }) {
+  const option = pageTrendOption(records);
+  return (
+    <EchartsPanel
+      title="页面复现趋势"
+      description="每个点都是一次页面记录，tooltip 会显示页面、加载、首帧、停留和 session。"
+      source={'timestamp / context.route.name / durationMs / attributes["page.load_ms"] / attributes["page.first_frame_ms"]'}
+      option={option}
+      empty={!records.some((record) => hasAnyDuration(record))}
+      height={320}
+    />
+  );
+}
+
+function PageRecordTable({
+  title,
+  description,
+  source,
+  records,
+}: {
+  title: string;
+  description: string;
+  source: string;
+  records: PageRecord[];
+}) {
+  const sorted = [...records].sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp));
+  return (
+    <Card className="grid min-h-[360px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+      <CardHeader className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <CardTitle className="inline-flex items-center gap-2"><ListTree className="size-4" />{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex cursor-help items-center rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">来源字段</span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="max-w-[360px] text-zinc-300">{source}</div>
+          </TooltipContent>
+        </Tooltip>
+      </CardHeader>
+      <CardContent className="min-h-0 overflow-auto p-0">
+        {sorted.length === 0 ? (
+          <div className="p-3">
+            <EmptyState title="暂无记录" description="当前筛选范围内还没有页面性能记录。" />
+          </div>
+        ) : (
+          <div className="min-w-[980px]">
+            <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
+              <span>页面</span>
+              <span>时间</span>
+              <span className="text-right">加载</span>
+              <span className="text-right">首帧</span>
+              <span className="text-right">停留</span>
+              <span>来源</span>
+              <span>去向</span>
+              <span className="text-right">回查</span>
+            </div>
+            <div className="divide-y divide-zinc-100">
+              {sorted.map((record) => (
+                <PageRecordRow key={record.key} record={record} />
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PageRecordRow({ record }: { record: PageRecord }) {
+  const eventId = record.loadEventId ?? record.firstFrameEventId ?? record.stayEventId;
+  return (
+    <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
+      <div className="min-w-0">
+        <strong className="block truncate text-zinc-950">{record.route}</strong>
+        <div className="mt-0.5 truncate text-zinc-500">
+          {record.pageInstanceId ?? '-'} · {record.traceId ?? '-'}
+        </div>
+      </div>
+      <span className="text-zinc-500 tabular-nums">{formatDateTime(record.timestamp)}</span>
+      <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.loadMs)}</span>
+      <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.firstFrameMs)}</span>
+      <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.stayMs)}</span>
+      <span className="min-w-0 truncate text-zinc-600">{record.from ?? '-'}</span>
+      <span className="min-w-0 truncate text-zinc-600">{record.to ?? '-'}</span>
+      <span className="text-right">
+        {record.sessionId ? (
+          <Link to="/sessions/$sessionId" params={{ sessionId: record.sessionId }} className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-900">
+            Session <ArrowRight className="size-3" />
+          </Link>
+        ) : eventId ? (
+          <Link to="/events/$eventId" params={{ eventId }} className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-900">
+            Event <ArrowRight className="size-3" />
+          </Link>
+        ) : (
+          <span className="text-zinc-400">-</span>
+        )}
+      </span>
     </div>
   );
 }
@@ -336,6 +460,283 @@ function PrinciplesCard() {
 
 function chronological(events: PerformanceMetricEvent[]): PerformanceMetricEvent[] {
   return [...events].sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
+}
+
+function buildPageRecords(events: PerformanceMetricEvent[]): PageRecord[] {
+  const records = new Map<string, PageRecord>();
+  const standaloneCounters = new Map<string, number>();
+  const pageEvents = chronological(events.filter((event) => (
+    event.name === 'page.load' ||
+    event.name === 'page.first_frame' ||
+    event.name === 'page.stay'
+  )));
+
+  for (const event of pageEvents) {
+    const route = event.route ?? '未知页面';
+    const instanceId = attrString(event, 'page.instance_id');
+    const key = pageRecordKey(event, route, instanceId, standaloneCounters);
+    const record = records.get(key) ?? {
+      key,
+      route,
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+      traceId: event.traceId,
+      pageInstanceId: instanceId,
+      from: attrString(event, 'page.from'),
+      to: attrString(event, 'page.to'),
+    };
+
+    record.timestamp = earliestTimestamp(record.timestamp, event.timestamp);
+    record.sessionId = record.sessionId ?? event.sessionId;
+    record.traceId = record.traceId ?? event.traceId;
+    record.pageInstanceId = record.pageInstanceId ?? instanceId;
+    record.from = record.from ?? attrString(event, 'page.from');
+    record.to = record.to ?? attrString(event, 'page.to');
+
+    if (event.name === 'page.load') {
+      record.loadEventId = event.eventId;
+      record.loadMs = event.durationMs ?? attrNumber(event, 'page.load_ms');
+    }
+    if (event.name === 'page.first_frame') {
+      record.firstFrameEventId = event.eventId;
+      record.firstFrameMs = attrNumber(event, 'page.first_frame_ms') ?? event.durationMs;
+    }
+    if (event.name === 'page.stay') {
+      record.stayEventId = event.eventId;
+      record.stayMs = event.durationMs;
+    }
+
+    records.set(key, record);
+  }
+
+  return [...records.values()].sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
+}
+
+function pageRecordKey(
+  event: PerformanceMetricEvent,
+  route: string,
+  instanceId: string | undefined,
+  standaloneCounters: Map<string, number>,
+): string {
+  if (event.traceId) return `trace:${event.traceId}`;
+  if (instanceId) return `instance:${instanceId}`;
+  const base = `event:${event.name ?? 'page'}:${route}:${event.eventId ?? event.timestamp ?? 'unknown'}`;
+  const count = standaloneCounters.get(base) ?? 0;
+  standaloneCounters.set(base, count + 1);
+  return count === 0 ? base : `${base}:${count}`;
+}
+
+function earliestTimestamp(current: string | undefined, next: string | undefined): string | undefined {
+  if (!current) return next;
+  if (!next) return current;
+  return timeValue(next) < timeValue(current) ? next : current;
+}
+
+function summarizePageRoutes(records: PageRecord[]): PageRouteSummary[] {
+  const groups = new Map<string, PageRecord[]>();
+  for (const record of records) {
+    const list = groups.get(record.route) ?? [];
+    list.push(record);
+    groups.set(record.route, list);
+  }
+
+  return [...groups.entries()]
+    .map(([route, routeRecords]) => {
+      const loadValues = numbers(routeRecords.map((record) => record.loadMs));
+      const firstFrameValues = numbers(routeRecords.map((record) => record.firstFrameMs));
+      const stayValues = numbers(routeRecords.map((record) => record.stayMs));
+      return {
+        route,
+        visits: routeRecords.length,
+        loadSampleCount: loadValues.length,
+        firstFrameSampleCount: firstFrameValues.length,
+        staySampleCount: stayValues.length,
+        averageLoadMs: average(loadValues),
+        averageFirstFrameMs: average(firstFrameValues),
+        averageStayMs: average(stayValues),
+        maxLoadMs: max(loadValues),
+        maxFirstFrameMs: max(firstFrameValues),
+        maxStayMs: max(stayValues),
+      };
+    })
+    .sort((a, b) => (
+      (b.averageLoadMs ?? 0) +
+      (b.averageFirstFrameMs ?? 0) -
+      ((a.averageLoadMs ?? 0) + (a.averageFirstFrameMs ?? 0))
+    ))
+    .slice(0, 12);
+}
+
+function pageMatrixOption(rows: PageRouteSummary[]): WorkbenchChartOption | undefined {
+  if (rows.length === 0) return undefined;
+  return {
+    color: ['#0f766e', '#2563eb', '#d97706'],
+    legend: {
+      top: 0,
+      textStyle: { color: '#52525b' },
+    },
+    grid: { left: 64, right: 28, top: 42, bottom: 72 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const items = Array.isArray(params) ? params : [params];
+        const index = typeof items[0]?.dataIndex === 'number' ? items[0].dataIndex : 0;
+        const row = rows[index];
+        if (!row) return '';
+        return [
+          row.route,
+          `访问记录：${row.visits}`,
+          `加载平均：${formatDuration(row.averageLoadMs)} · 样本 ${row.loadSampleCount} · 最慢 ${formatDuration(row.maxLoadMs)}`,
+          `首帧平均：${formatDuration(row.averageFirstFrameMs)} · 样本 ${row.firstFrameSampleCount} · 最慢 ${formatDuration(row.maxFirstFrameMs)}`,
+          `停留平均：${formatDuration(row.averageStayMs)} · 样本 ${row.staySampleCount} · 最长 ${formatDuration(row.maxStayMs)}`,
+          '来源：context.route.name / durationMs / page.load_ms / page.first_frame_ms',
+        ].join('<br />');
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: rows.map((row) => row.route),
+      axisLabel: { color: '#71717a', hideOverlap: true, rotate: rows.length > 4 ? 28 : 0 },
+      axisLine: { lineStyle: { color: '#d4d4d8' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#71717a', formatter: (value: number) => formatDuration(value) },
+      splitLine: { lineStyle: { color: '#f4f4f5' } },
+    },
+    dataZoom: rows.length > 6 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 24 }] : undefined,
+    series: [
+      {
+        name: '加载平均',
+        type: 'bar',
+        data: rows.map((row) => row.averageLoadMs),
+        barMaxWidth: 30,
+      },
+      {
+        name: '首帧平均',
+        type: 'bar',
+        data: rows.map((row) => row.averageFirstFrameMs),
+        barMaxWidth: 30,
+      },
+      {
+        name: '停留平均',
+        type: 'line',
+        smooth: true,
+        symbolSize: 8,
+        data: rows.map((row) => row.averageStayMs),
+      },
+    ],
+  };
+}
+
+function pageTrendOption(records: PageRecord[]): WorkbenchChartOption | undefined {
+  const drawable = records.filter(hasAnyDuration);
+  if (drawable.length === 0) return undefined;
+  const xLabels = drawable.map((record) => axisDateTimeLabel(record.timestamp));
+  return {
+    color: ['#0f766e', '#2563eb', '#d97706'],
+    legend: {
+      top: 0,
+      textStyle: { color: '#52525b' },
+    },
+    grid: { left: 64, right: 28, top: 42, bottom: drawable.length > 8 ? 72 : 48 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const items = Array.isArray(params) ? params : [params];
+        const index = typeof items[0]?.dataIndex === 'number' ? items[0].dataIndex : 0;
+        const record = drawable[index];
+        if (!record) return '';
+        return [
+          record.route,
+          `时间：${formatFullDateTime(record.timestamp)}`,
+          `加载：${formatDuration(record.loadMs)}`,
+          `首帧：${formatDuration(record.firstFrameMs)}`,
+          `停留：${formatDuration(record.stayMs)}`,
+          record.sessionId ? `Session：${record.sessionId}` : undefined,
+          record.traceId ? `Trace：${record.traceId}` : undefined,
+          '来源：page.load / page.first_frame / page.stay',
+        ].filter(Boolean).join('<br />');
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: xLabels,
+      axisLabel: { color: '#71717a', hideOverlap: true },
+      axisLine: { lineStyle: { color: '#d4d4d8' } },
+      axisTick: { alignWithLabel: true },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#71717a', formatter: (value: number) => formatDuration(value) },
+      splitLine: { lineStyle: { color: '#f4f4f5' } },
+    },
+    dataZoom: drawable.length > 12 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 24 }] : undefined,
+    series: [
+      {
+        name: '加载',
+        type: 'line',
+        smooth: true,
+        symbolSize: 8,
+        data: drawable.map((record) => record.loadMs),
+      },
+      {
+        name: '首帧',
+        type: 'line',
+        smooth: true,
+        symbolSize: 8,
+        data: drawable.map((record) => record.firstFrameMs),
+      },
+      {
+        name: '停留',
+        type: 'line',
+        smooth: true,
+        symbolSize: 8,
+        data: drawable.map((record) => record.stayMs),
+      },
+    ],
+  };
+}
+
+function hasAnyDuration(record: PageRecord): boolean {
+  return [record.loadMs, record.firstFrameMs, record.stayMs].some((value) => typeof value === 'number' && Number.isFinite(value));
+}
+
+function axisDateTimeLabel(timestamp?: string): string {
+  if (!timestamp) return '-';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function formatFullDateTime(timestamp?: string): string {
+  if (!timestamp) return '-';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  }).format(date);
+}
+
+function numbers(values: Array<number | undefined>): number[] {
+  return values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+}
+
+function average(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function max(values: number[]): number | undefined {
+  return values.length > 0 ? Math.max(...values) : undefined;
 }
 
 function hasDuration(event: PerformanceMetricEvent): boolean {

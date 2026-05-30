@@ -11,10 +11,8 @@ export function normalizeEvents(body: unknown): MonitorEvent[] {
   return [];
 }
 
-export function ensureEventId(event: MonitorEvent, sequence: number): void {
-  if (!event.eventId) {
-    event.eventId = `evt_server_${Date.now()}_${sequence}`;
-  }
+export function hasEventId(event: MonitorEvent): event is MonitorEvent & { eventId: string } {
+  return typeof event.eventId === 'string' && event.eventId.length > 0;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

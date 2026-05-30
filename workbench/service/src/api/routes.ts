@@ -1,5 +1,5 @@
 import type { Express } from 'express';
-import { normalizeEvents } from '../ingest/normalize-events.js';
+import { hasEventId, normalizeEvents } from '../ingest/normalize-events.js';
 import { clampLimit, clampNumber, filtersFromRequest } from '../query/request-filters.js';
 import type { MonitorStore } from '../store/monitor-store.js';
 import type { SseHub } from '../stream/sse-hub.js';
@@ -11,29 +11,48 @@ export function registerRoutes(app: Express, store: MonitorStore, sseHub: SseHub
       return res.status(400).send({ error: 'no_events' });
     }
 
+    const rejected = incoming.filter((event) => !hasEventId(event)).length;
     const accepted = store.addEvents(incoming);
+    if (accepted.length === 0) {
+      return res.status(400).send({
+        error: 'missing_event_id',
+        accepted: 0,
+        rejected,
+        errors: rejected > 0
+          ? [{ code: 'MISSING_EVENT_ID', message: 'eventId is required', retryable: false }]
+          : [],
+      });
+    }
     sseHub.publishEvents(accepted);
 
     console.log(
-      `[FM workbench] received=${accepted.length} total=${store.health().eventCount} ` +
+      `[FM workbench] accepted=${accepted.length} rejected=${rejected} total=${store.health().eventCount} ` +
         `time=${new Date().toISOString()}`,
     );
 
     return res.status(202).send({
       accepted: accepted.length,
+      rejected,
       total: store.health().eventCount,
       eventIds: accepted.map((event) => event.eventId).filter(Boolean),
+      errors: rejected > 0
+        ? [{ code: 'MISSING_EVENT_ID', message: 'eventId is required', retryable: false }]
+        : [],
     });
   });
 
   app.post('/report', (req, res) => {
     const incoming = normalizeEvents(req.body);
+    const rejected = incoming.filter((event) => !hasEventId(event)).length;
     const accepted = store.addEvents(incoming);
+    if (accepted.length === 0) {
+      return res.status(400).send({ error: 'missing_event_id', accepted: 0, rejected });
+    }
     sseHub.publishEvents(accepted);
     console.log(
-      `[FM workbench] legacy /report received=${accepted.length} total=${store.health().eventCount}`,
+      `[FM workbench] legacy /report accepted=${accepted.length} rejected=${rejected} total=${store.health().eventCount}`,
     );
-    return res.status(202).send({ accepted: accepted.length, total: store.health().eventCount });
+    return res.status(202).send({ accepted: accepted.length, rejected, total: store.health().eventCount });
   });
 
   app.get('/api/monitor/v1/health', (_req, res) => {

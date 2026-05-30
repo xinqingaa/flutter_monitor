@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import initSqlJs, { type Database } from 'sql.js';
-import { ensureEventId } from '../ingest/normalize-events.js';
+import { hasEventId } from '../ingest/normalize-events.js';
 import {
   appVersionOf,
   environmentOf,
@@ -68,8 +68,7 @@ export class SqliteMonitorStore implements MonitorStore {
   addEvents(incoming: MonitorEvent[]): MonitorEvent[] {
     const accepted: MonitorEvent[] = [];
     for (const event of incoming) {
-      ensureEventId(event, accepted.length);
-      if (event.eventId) accepted.push(event);
+      if (hasEventId(event)) accepted.push(event);
     }
     if (accepted.length === 0) return accepted;
 

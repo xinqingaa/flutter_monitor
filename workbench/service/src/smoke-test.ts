@@ -22,8 +22,10 @@ child.stderr.on('data', (chunk) => {
 try {
   await waitForHealth();
   await postEvents();
+  await assertMissingEventId();
   await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
     assert.equal(data.count, 2);
+    assert.equal(data.events.some((event: any) => String(event.eventId).startsWith('evt_server_')), false);
   });
   await assertJson('/api/monitor/v1/sessions?userId=user_smoke&environment=dev', (data) => {
     assert.equal(data.count, 1);
@@ -139,6 +141,30 @@ async function postEvents(): Promise<void> {
     }),
   });
   assert.equal(response.status, 202);
+}
+
+async function assertMissingEventId(): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/monitor/v1/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      events: [
+        {
+          timestamp: '2026-05-29T10:00:02.000Z',
+          signalType: 'breadcrumb',
+          name: 'missing.event_id',
+          status: 'ok',
+          sessionId: 'ses_smoke',
+          traceId: 'trace_smoke',
+          attributes: {},
+          payload: {},
+        },
+      ],
+    }),
+  });
+  assert.equal(response.status, 400);
+  const data = await response.json();
+  assert.equal(data.error, 'missing_event_id');
 }
 
 async function postRetentionEvents(): Promise<void> {

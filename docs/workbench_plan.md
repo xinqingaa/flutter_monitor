@@ -4,7 +4,7 @@ Workbench 是 Flutter Monitor 的统一链路排查工作台。它面向 `EventE
 
 Workbench 不是 SDK runtime，不是官方 Flutter DevTools extension，也不是生产服务端。它不定义事件模型，不定义上报协议，不改变 SDK 采集边界。
 
-本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `docs/workbench_product_plan.md`。
+本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `docs/workbench_product_plan.md`。当前本地 Workbench service 的具体 HTTP API、`3700` / `4700` 端口边界、raw envelope 与 query summary 响应口径见 `docs/workbench_service_api.md`。
 
 ## 三层概念
 
@@ -255,26 +255,12 @@ QA 提供 userId 和大概时间
 
 ### API
 
-service 保持与 SDK `HttpOutput` 兼容：
+service 保持与 SDK `HttpOutput` 兼容。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `docs/workbench_service_api.md`。这里仅保留设计边界：
 
-- `POST /api/monitor/v1/events`
-- `GET /api/monitor/v1/recent?limit=50`
-- `GET /api/monitor/v1/events/:eventId`
-- `GET /api/monitor/v1/sessions/:sessionId`
-- `GET /api/monitor/v1/traces/:traceId`
-- `GET /api/monitor/v1/groups?by=...`
-- `GET /api/monitor/v1/health`
-
-建议补充查询 API：
-
-- `GET /api/monitor/v1/sessions?userId=&from=&to=&appVersion=&environment=&route=&status=&limit=`
-- `GET /api/monitor/v1/search?query=&from=&to=&limit=`
-- `GET /api/monitor/v1/performance/pages?from=&to=&appVersion=&environment=`
-- `GET /api/monitor/v1/performance/http?from=&to=&appVersion=&environment=`
-
-service 提供实时流：
-
-- `GET /api/monitor/v1/stream`
+- 写入接口接收完整 SDK `EventEnvelope`，缺少 `eventId` 的事件不得被 service 补写成 SDK 字段。
+- raw envelope 查询接口返回入库 envelope 本身，例如 recent、event detail、session detail、trace detail 和 search。
+- session list、performance overview、groups 和 health 可以返回 Workbench query summary，但这些摘要不是 SDK schema 字段。
+- service 提供 SSE 实时流：`GET /api/monitor/v1/stream`。
 
 service 内部模块：
 

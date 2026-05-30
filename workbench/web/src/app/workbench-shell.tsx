@@ -1,4 +1,4 @@
-import { Link, Outlet, useRouter } from '@tanstack/react-router';
+import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
 import { Home, ListTree, Pause, Play, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../components/ui/button';
@@ -8,19 +8,23 @@ import { LiveContext } from './live-context';
 export function WorkbenchShell() {
   const [live, setLive] = useState(true);
   const router = useRouter();
+  const location = useLocation();
+  const performanceRoute = isPerformanceRoute(location.pathname);
   useLiveInvalidation(live);
 
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] bg-zinc-100 text-zinc-950">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-white px-4 py-2">
+      <header className={`flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-white ${performanceRoute ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
         <div className="flex min-w-0 items-center gap-2">
-          <Link to="/" className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-zinc-950 text-white">
+          <Link to="/" className={`${performanceRoute ? 'h-8 w-8' : 'h-9 w-9'} inline-flex items-center justify-center rounded-md bg-zinc-950 text-white`}>
             <Home className="size-4" />
           </Link>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold leading-tight">Flutter Monitor 工作台</h1>
-            <p className="truncate text-xs text-zinc-500">本地实时数据 · 会话链路排查 · SQLite 持久化</p>
-          </div>
+          {!performanceRoute ? (
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold leading-tight">Flutter Monitor 工作台</h1>
+              <p className="truncate text-xs text-zinc-500">本地实时数据 · 会话链路排查 · SQLite 持久化</p>
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="ghost" className="hidden sm:inline-flex">
@@ -46,4 +50,8 @@ export function WorkbenchShell() {
       </main>
     </div>
   );
+}
+
+function isPerformanceRoute(pathname: string): boolean {
+  return ['/startup', '/pages', '/network', '/jank', '/errors'].includes(pathname);
 }
