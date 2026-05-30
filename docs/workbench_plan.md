@@ -4,6 +4,8 @@ Workbench 是 Flutter Monitor 的统一链路排查工作台。它面向 `EventE
 
 Workbench 不是 SDK runtime，不是官方 Flutter DevTools extension，也不是生产服务端。它不定义事件模型，不定义上报协议，不改变 SDK 采集边界。
 
+本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `docs/workbench_product_plan.md`。
+
 ## 三层概念
 
 Flutter Monitor 的排查体验分为三层，三层共享统一 `EventEnvelope`，但职责和实时性不同：
