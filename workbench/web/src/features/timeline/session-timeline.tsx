@@ -4,12 +4,12 @@ import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import type { MonitorEvent } from '../../shared/datasource/types';
-import { eventKind, httpStatusOf, issueLabels, readPath, stringPath } from '../../shared/event-model/accessors';
-import { formatDuration, formatTime } from '../../shared/formatting/format';
+import { eventKind, issueLabels } from '../../shared/event-model/accessors';
+import { formatDateTime, formatTime } from '../../shared/formatting/format';
 import { cn } from '../../shared/formatting/cn';
-import { EventKindBadge } from './status-badge';
 import { buildTimelineSegments, type TimelineSegment } from './session-segments';
 import type * as React from 'react';
+import { timelineDisplay } from '../../shared/event-model/display';
 
 export function SessionTimeline({
   events,
@@ -98,13 +98,12 @@ function SegmentView({
             <Icon className="size-4" />
           </span>
           <span className="min-w-0">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">{segment.title}</span>
-              <span className="shrink-0 text-xs text-zinc-400">{segment.kind === 'startup' ? '启动区段' : '页面区段'}</span>
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">{segment.kind === 'startup' ? '启动链路' : `页面 ${segment.title}`}</span>
+              {segment.durationLabel ? <span className="shrink-0 text-xs font-medium tabular-nums text-zinc-600">{segment.durationLabel}</span> : null}
+              <span className="shrink-0 text-xs text-zinc-400">{segment.nodeCount} 个节点</span>
             </span>
             <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-zinc-500">
-              {segment.durationLabel ? <span className="tabular-nums">{segment.durationLabel}</span> : null}
-              <span>{segment.nodeCount} 个节点</span>
               {segment.hasIssue ? (
                 <Badge tone={issueTone} className="rounded-md px-1.5 py-0">
                   <AlertTriangle className="size-3" />
@@ -120,15 +119,17 @@ function SegmentView({
           {segment.nodes.length === 0 ? (
             <div className="px-3 py-2 pl-9 text-xs text-zinc-400">无更多节点</div>
           ) : (
-            segment.nodes.map((node, index) => (
-              <TimelineNode
-                key={node.eventId ?? `${segment.id}-${index}`}
-                event={node}
-                selected={Boolean(node.eventId && selectedEventId === node.eventId)}
-                selectedNodeRef={selectedNodeRef}
-                onSelect={() => onSelectEvent?.(node)}
-              />
-            ))
+            <div>
+              {segment.nodes.map((node, index) => (
+                <TimelineNode
+                  key={node.eventId ?? `${segment.id}-${index}`}
+                  event={node}
+                  selected={Boolean(node.eventId && selectedEventId === node.eventId)}
+                  selectedNodeRef={selectedNodeRef}
+                  onSelect={() => onSelectEvent?.(node)}
+                />
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -151,6 +152,7 @@ function TimelineNode({
   const isError = kind === 'error' || event.status === 'error';
   const labels = issueLabels(event);
   const display = nodeDisplay(event);
+  const visibleLabels = labels.slice(0, 2);
 
   return (
     <button
@@ -158,100 +160,40 @@ function TimelineNode({
       type="button"
       onClick={onSelect}
       className={cn(
-        'grid w-full grid-cols-[88px_minmax(0,1fr)] items-start gap-2 px-3 py-1.5 text-left hover:bg-teal-50',
-        selected && 'bg-teal-50',
+        'flex w-full min-w-0 flex-col items-start justify-between gap-2 border-l-2 border-b-[0.5px] border-l-transparent border-b-zinc-200 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-teal-50',
+        selected && 'border-l-teal-500 bg-teal-50',
         isError && 'bg-red-50/60 hover:bg-red-50',
       )}
     >
-      <span className="pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatTime(event.startTime ?? event.timestamp)}</span>
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <EventKindBadge event={event} />
-          <span className={cn('min-w-0 truncate text-sm font-medium', isError ? 'text-red-700' : 'text-zinc-900')}>
-            {event.name ?? '-'}
-          </span>
-          {display.primary.map((item) => (
-            <span key={item} className="max-w-[180px] truncate text-xs font-medium text-zinc-600">{item}</span>
-          ))}
-          {typeof event.durationMs === 'number' ? (
-            <span className="text-xs tabular-nums text-zinc-500">{formatDuration(event.durationMs)}</span>
-          ) : null}
-          {labels.map((label) => (
-            <Badge key={label} tone={label === '错误' || label.includes('失败') ? 'danger' : 'warn'}>
-              {label}
-            </Badge>
-          ))}
-        </div>
-        {display.secondary.length > 0 ? <div className="mt-0.5 truncate text-xs text-zinc-500">{display.secondary.join(' · ')}</div> : null}
+      <div className="flex w-full justify-between min-w-0 ">
+        <Badge tone={display.tone} className="rounded-md px-1.5 py-0">{display.kindLabel}</Badge>
+        <span className="shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatDateTime(event.startTime ?? event.timestamp)}</span>
       </div>
+      <div className='flex flex-col gap-1 w-full'>
+        <div className='flex justify-between'>
+          <span className={cn('min-w-0 truncate text-xs font-medium', isError ? 'text-red-700' : 'text-zinc-900')}>
+            {display.title} 
+            {display.durationLabel ? <span className="text-xs  ml-2 font-medium tabular-nums text-zinc-500">{display.durationLabel}</span> : null}
+          </span>
+          {display.phaseLabel ? <span className="text-xs font-medium text-zinc-500">{display.phaseLabel}</span> : null}
+        </div>
+        {event.status && event.status !== 'ok' && event.status !== 'unknown' ? <span className="text-xs text-zinc-500">{event.status}</span> : null}
+        {visibleLabels.map((label) => (
+          <Badge key={label} tone={label === '错误' || label.includes('失败') ? 'danger' : 'warn'} className="rounded-md px-1.5 py-0">
+            {label}
+          </Badge>
+        ))}
+        {display.summaryItems.length > 0 ? (
+          <div className=" truncate text-xs text-zinc-500">
+            {display.summaryItems.slice(0, 2).join(' · ')}
+          </div>
+        ) : null}
+      </div>
+      
     </button>
   );
 }
 
-function nodeDisplay(event: MonitorEvent): { primary: string[]; secondary: string[] } {
-  const kind = eventKind(event);
-  const primary: string[] = [];
-  const secondary: string[] = [];
-  const route = stringPath(event, ['context', 'route', 'name']);
-
-  if (kind === 'http') {
-    const url =
-      stringPath(event, ['attributes', 'http.url']) ??
-      stringPath(event, ['attributes', 'url.normalized']) ??
-      stringPath(event, ['payload', 'url']);
-    if (url) primary.push(url);
-    const status = httpStatusOf(event);
-    if (status && status !== '-') secondary.push(`HTTP ${status}`);
-  } else if (kind === 'error') {
-    const message =
-      stringPath(event, ['payload', 'message']) ??
-      stringPath(event, ['attributes', 'error.message']) ??
-      stringPath(event, ['payload', 'error', 'message']);
-    if (message) primary.push(message);
-  } else if (kind === 'business') {
-    const target = stringPath(event, ['attributes', 'ui.target']) ?? stringPath(event, ['payload', 'target']);
-    if (target) primary.push(target);
-  } else if (kind === 'page') {
-    if (route) primary.push(route);
-    pushNumber(secondary, 'load', readPath(event, ['attributes', 'page.load_ms']), 'ms');
-    pushNumber(secondary, 'first frame', readPath(event, ['attributes', 'page.first_frame_ms']), 'ms');
-    pushText(secondary, 'instance', stringPath(event, ['attributes', 'page.instance_id']));
-  } else if (kind === 'startup') {
-    pushText(primary, 'type', stringPath(event, ['attributes', 'app.start.type']));
-    pushNumber(secondary, 'first frame', readPath(event, ['attributes', 'app.first_frame_ms']), 'ms');
-  } else if (kind === 'memory') {
-    pushNumber(primary, 'rss', readPath(event, ['attributes', 'memory.rss_mb']), 'MB', 1);
-    pushText(secondary, 'source', stringPath(event, ['attributes', 'memory.sample_source']));
-  } else if (event.name === 'app.lifecycle') {
-    const state = stringPath(event, ['context', 'lifecycle', 'state']);
-    const previous = stringPath(event, ['context', 'lifecycle', 'previousState']);
-    const foreground = readPath(event, ['context', 'lifecycle', 'isForeground']);
-    if (state) primary.push(state);
-    if (previous) secondary.push(`from ${previous}`);
-    if (typeof foreground === 'boolean') secondary.push(foreground ? 'foreground' : 'background');
-  } else if (event.name === 'app.foreground_duration') {
-    const state = stringPath(event, ['context', 'lifecycle', 'state']);
-    if (state) primary.push(state);
-    if (typeof event.durationMs === 'number') secondary.push(`foreground ${formatDuration(event.durationMs)}`);
-  } else if (event.name === 'sdk.lifecycle.flush') {
-    const success = readPath(event, ['attributes', 'app.exit_flush.success']);
-    const trigger = stringPath(event, ['payload', 'lifecycle.trigger_state']);
-    if (typeof success === 'boolean') primary.push(success ? 'success' : 'failed');
-    if (trigger) secondary.push(`trigger ${trigger}`);
-  } else {
-    const phase = stringPath(event, ['attributes', 'event.phase']);
-    if (phase) secondary.push(phase);
-    if (route) primary.push(route);
-  }
-
-  return { primary, secondary };
-}
-
-function pushText(target: string[], label: string, value?: string) {
-  if (value) target.push(`${label} ${value}`);
-}
-
-function pushNumber(target: string[], label: string, value: unknown, unit: string, digits = 0) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return;
-  target.push(`${label} ${value.toFixed(digits)}${unit}`);
+function nodeDisplay(event: MonitorEvent) {
+  return timelineDisplay(event);
 }

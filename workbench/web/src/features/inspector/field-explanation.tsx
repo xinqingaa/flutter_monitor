@@ -1,7 +1,7 @@
 import { Badge } from '../../components/ui/badge';
-import { readPath } from '../../shared/event-model/accessors';
 import { fieldDefinitions } from '../../shared/field-dictionary/fields';
 import type { MonitorEvent } from '../../shared/datasource/types';
+import { readCanonicalPath } from '../../shared/event-model/field-path';
 
 export function FieldExplanation({ event }: { event?: MonitorEvent }) {
   return (
@@ -11,7 +11,7 @@ export function FieldExplanation({ event }: { event?: MonitorEvent }) {
       </header>
       <div className="grid gap-2 overflow-auto p-3">
         {fieldDefinitions.map((field) => {
-          const value = event ? readPath(event, field.path.split('.')) : undefined;
+          const value = event ? readCanonicalPath(event, field.path) : undefined;
           return (
             <div key={field.path} className="rounded-md border border-zinc-200 p-2">
               <div className="flex min-w-0 items-center justify-between gap-2">

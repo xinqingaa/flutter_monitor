@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cpu, Download, Gauge, Globe2, Info, Package, Smartphone, User } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cpu, Download, Gauge, Globe2, Info, ListTree, Package, Smartphone, User } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent } from '../../components/ui/card';
 import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
-import { Button } from '../../components/ui/button';
+import { Dialog } from '../../components/ui/dialog';
 import type { JsonObject, MonitorEvent, SessionSummary } from '../../shared/datasource/types';
 import { appVersionOf, environmentOf, readPath, routeOf, stringPath, userIdOf } from '../../shared/event-model/accessors';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
 import { statusLabel } from '../../shared/event-model/status';
+import { FieldExplanation } from '../inspector/field-explanation';
 
 export function SessionHeader({
   sessionId,
@@ -28,6 +29,7 @@ export function SessionHeader({
   const contextEvent = events.find((event) => userIdOf(event) !== '-' || routeOf(event) !== '-') ?? first;
   const resource = events.find((event) => event.resource)?.resource;
   const [expanded, setExpanded] = useState(false);
+  const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
 
   return (
     <Card>
@@ -38,13 +40,19 @@ export function SessionHeader({
             <h2 className="min-w-0 truncate text-[15px] font-semibold text-zinc-950">{sessionId}</h2>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <Button type="button" variant="secondary" size="sm" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-              {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-              会话信息
-            </Button>
+            <IconTooltipButton type="button" variant="secondary" size="icon" label="字段说明" icon={ListTree} onClick={() => setFieldDialogOpen(true)} />
             {onExport ? (
               <IconTooltipButton type="button" variant="secondary" size="icon" label="导出原始 JSON" icon={Download} onClick={onExport} />
             ) : null}
+            <IconTooltipButton
+              type="button"
+              variant="secondary"
+              size="icon"
+              label={expanded ? '收起会话信息' : '展开会话信息'}
+              icon={expanded ? ChevronDown : ChevronRight}
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+            />
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
@@ -76,6 +84,14 @@ export function SessionHeader({
           </div>
         ) : null}
       </CardContent>
+      <Dialog
+        open={fieldDialogOpen}
+        title="字段说明"
+        description="当前会话首个可用事件的 canonical 字段说明和值。"
+        onClose={() => setFieldDialogOpen(false)}
+      >
+        <FieldExplanation event={contextEvent} />
+      </Dialog>
     </Card>
   );
 }
