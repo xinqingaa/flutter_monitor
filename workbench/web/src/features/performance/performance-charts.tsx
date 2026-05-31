@@ -38,11 +38,19 @@ export function SignalSummary({
   description,
   events,
   issueCount,
+  sampleLabel,
+  sampleCount,
+  sampleField,
+  sampleHint,
 }: {
   title: string;
   description: string;
   events: PerformanceMetricEvent[];
   issueCount: number;
+  sampleLabel?: string;
+  sampleCount?: number;
+  sampleField?: string;
+  sampleHint?: string;
 }) {
   const withDuration = events.filter((event) => typeof event.durationMs === 'number').length;
   return (
@@ -53,7 +61,12 @@ export function SignalSummary({
       </CardHeader>
       <CardContent className="grid gap-2 sm:grid-cols-3">
         <SummaryCell label="事件数" value={events.length} field="events.length" hint="来源：当前筛选范围内匹配该类 signal 的 SDK envelope 数量" />
-        <SummaryCell label="耗时事件" value={withDuration} field="durationMs" hint="来源：SDK envelope.durationMs。未提供 durationMs 的事件不会进入耗时类折线。" />
+        <SummaryCell
+          label={sampleLabel ?? '耗时事件'}
+          value={sampleCount ?? withDuration}
+          field={sampleField ?? 'durationMs'}
+          hint={sampleHint ?? '来源：SDK envelope.durationMs。未提供 durationMs 的事件不会进入耗时类折线。'}
+        />
         <SummaryCell label="问题数" value={issueCount} field="status / signalType" hint="来源：status=error 或 signalType=error 的 SDK envelope 数量" tone={issueCount > 0 ? 'danger' : 'normal'} />
       </CardContent>
     </Card>
@@ -311,7 +324,15 @@ function PerformanceRow({ event, columns }: { event: PerformanceMetricEvent; col
       ))}
       <div className="text-right">
         {event.sessionId ? (
-          <Link to="/sessions/$sessionId" params={{ sessionId: event.sessionId }} className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-900">
+          <Link
+            to="/sessions/$sessionId"
+            params={{ sessionId: event.sessionId }}
+            search={{
+              eventId: event.eventId,
+              traceId: event.eventId ? undefined : event.traceId,
+            }}
+            className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-900"
+          >
             Session <ArrowRight className="size-3" />
           </Link>
         ) : (

@@ -7,11 +7,11 @@ export function StartupRoute() {
   return (
     <PerformanceDetailPage
       kind="startup"
-      title="启动耗时"
-      description="启动页只读取 app.cold_start、app.hot_start、app.first_frame 和 sdk.init 已提供字段。"
+      title="启动链路"
+      description="启动页读取冷启动到首帧、SDK 初始化和后台间隔；真正热恢复耗时当前 SDK 未提供。"
       icon={Rocket}
       metric={query.data?.startup}
-      emphasis="冷启 / 热启"
+      emphasis="冷启 / 后台"
     />
   );
 }

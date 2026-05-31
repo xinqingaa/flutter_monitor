@@ -304,11 +304,71 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 
 | 字段 | 来源 / 计算口径 |
 |---|---|
-| `sourceFields` | 当前实现仅使用 SDK envelope 顶层 `durationMs`。 |
-| `sampleCount` | 当前类别中存在有效 `durationMs` 的事件数。 |
-| `averageMs` | `durationMs` 算术平均值。 |
-| `maxMs` | 最大 `durationMs`。 |
-| `latestMs` | 按事件时间倒序，最近一条有 `durationMs` 的记录。 |
+| `sourceFields` | 当前摘要使用的 SDK envelope 字段路径。通用 `durationSummary` 使用顶层 `durationMs`，专属摘要可使用标准 attributes。 |
+| `sampleCount` | 当前类别中存在有效统计值的事件数。 |
+| `averageMs` | 统计值算术平均值。 |
+| `maxMs` | 最大统计值。 |
+| `latestMs` | 按事件时间倒序，最近一条有统计值的记录。 |
+| `maxEventId` | 最大统计值对应的 `eventId`，用于回查。 |
+| `latestEventId` | 最近统计值对应的 `eventId`，用于回查。 |
+
+除兼容用的 `durationSummary` 外，`performance/overview` 会返回按 signal 语义拆分的专属摘要，避免把停留时长、错误状态或卡顿帧指标误展示成通用耗时。
+
+`startup` 额外字段：
+
+| 字段 | 来源 / 计算口径 |
+|---|---|
+| `coldStart` | `name=app.cold_start` 的 `durationMs`。当前 SDK 口径下它表示“冷启动到首帧”的累计耗时。 |
+| `firstFrame` | `name=app.first_frame` 的 `attributes["app.first_frame_ms"]`，缺失时降级到 `durationMs`。它是冷启动 trace 的首帧终点口径，通常与 `coldStart` 同值，不应在图表中作为独立阶段重复叠加。 |
+| `sdkInit` | `name=sdk.init` 的 `attributes["sdk.init.duration_ms"]`，缺失时降级到 `durationMs`。 |
+| `backgroundInterval` | `name=app.background_duration` 的 `durationMs`，以及当前 SDK 口径下 `name=app.hot_start` 的 `durationMs`。它表示后台恢复间隔，不是真正热恢复耗时。 |
+| `hotResume` | 当前固定返回 `available=false` 和 `missingReason=sdk_hot_resume_duration_missing`，等待 SDK 后续提供恢复到首帧或可交互的热启动耗时。 |
+
+Workbench 启动详情页按这个口径展示：
+
+- `启动阶段散点`：不连线、不做时间桶聚合；每个点对应一条启动链路里的已采集指标，包括冷启动到首帧、SDK 初始化和首帧前其他耗时。
+- `后台间隔`：单独展示 `app.background_duration.durationMs` 或当前 SDK 的 `app.hot_start.durationMs`，不与毫秒级启动耗时混轴。
+
+`pages` 额外字段：
+
+| 字段 | 来源 / 计算口径 |
+|---|---|
+| `load` | `name=page.load` 的 `attributes["page.load_ms"]`，缺失时降级到 `durationMs`。 |
+| `firstFrame` | `name=page.first_frame` 的 `attributes["page.first_frame_ms"]`，缺失时降级到 `durationMs`。 |
+| `stay` | `name=page.stay` 的 `durationMs`。 |
+| `routeSummaries` | 按 `context.route.name` 分组的页面加载摘要。停留时长不混入加载摘要。 |
+
+`http` 额外字段：
+
+| 字段 | 来源 / 计算口径 |
+|---|---|
+| `failedCount` | `name=http.client` 且 `status=error` 或 `attributes["http.success"]=false` 的数量。 |
+| `slowCount` | `http.client.durationMs >= 1000` 的数量。 |
+| `affectedSessionCount` | 当前 HTTP 事件影响的 distinct `sessionId` 数。 |
+| `routeSummaries` | 按 `context.route.name` 分组，统计请求数和最慢请求。 |
+| `endpointSummaries` | 按 `attributes["http.url.normalized"]` 分组。 |
+| `statusSummaries` | 按 `attributes["http.status_code"]` 或失败类型分组。 |
+
+`jank` 额外字段：
+
+| 字段 | 来源 / 计算口径 |
+|---|---|
+| `affectedSessionCount` | 当前卡顿事件影响的 distinct `sessionId` 数。 |
+| `totalJankFrames` | `attributes["jank.count"]` 求和。 |
+| `maxFrame` | `attributes["frame.max_ms"]` 摘要。 |
+| `avgFrame` | `attributes["frame.avg_ms"]` 摘要。 |
+| `jankFrames` | `attributes["jank.count"]` 摘要。 |
+| `routeSummaries` | 按 `context.route.name` 分组，统计卡顿次数和最慢帧。 |
+
+`errors` 额外字段：
+
+| 字段 | 来源 / 计算口径 |
+|---|---|
+| `affectedSessionCount` | 当前错误事件影响的 distinct `sessionId` 数。 |
+| `typeSummaries` | 按 `attributes["error.type"]` 分组，缺失时使用 `name`。 |
+| `mechanismSummaries` | 按 `attributes["error.mechanism"]` 或 `attributes["http.error_type"]` 分组。 |
+| `routeSummaries` | 按 `context.route.name` 分组。 |
+| `recent` | 最近错误事件轻量 view model。 |
 
 `events` 是轻量 view model，不是完整 envelope。字段来自：
 

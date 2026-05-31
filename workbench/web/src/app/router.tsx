@@ -27,6 +27,10 @@ const sessionsRoute = createRoute({
 const sessionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sessions/$sessionId',
+  validateSearch: (search: Record<string, unknown>): { eventId?: string; traceId?: string } => ({
+    eventId: typeof search.eventId === 'string' ? search.eventId : undefined,
+    traceId: typeof search.traceId === 'string' ? search.traceId : undefined,
+  }),
   component: SessionDetailRoute,
 });
 

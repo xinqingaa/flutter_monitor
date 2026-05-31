@@ -74,12 +74,75 @@ export interface DurationSummary {
   averageMs?: number;
   maxMs?: number;
   latestMs?: number;
+  maxEventId?: string;
+  latestEventId?: string;
+}
+
+export interface MetricGroupSummary {
+  key: string;
+  count: number;
+  sampleCount?: number;
+  averageMs?: number;
+  maxMs?: number;
+  latestMs?: number;
+  eventId?: string;
+  sessionId?: string;
+  traceId?: string;
+  route?: string;
+}
+
+export interface StartupPerformanceSummary extends PerformanceMetricSummary {
+  /** Current SDK semantics: app.cold_start.durationMs is cumulative cold-start-to-first-frame duration. */
+  coldStart: DurationSummary;
+  /** app.first_frame_ms marks the same cold-start first-frame endpoint and may equal coldStart. */
+  firstFrame: DurationSummary;
+  sdkInit: DurationSummary;
+  /** Lifecycle background interval, not hot resume rendering duration. */
+  backgroundInterval: DurationSummary;
+  hotResume: {
+    available: boolean;
+    missingReason: string;
+    sourceFields: string[];
+  };
+}
+
+export interface PagePerformanceSummary extends PerformanceMetricSummary {
+  load: DurationSummary;
+  firstFrame: DurationSummary;
+  stay: DurationSummary;
+  routeSummaries: MetricGroupSummary[];
+}
+
+export interface HttpPerformanceSummary extends PerformanceMetricSummary {
+  failedCount: number;
+  slowCount: number;
+  affectedSessionCount: number;
+  routeSummaries: MetricGroupSummary[];
+  endpointSummaries: MetricGroupSummary[];
+  statusSummaries: MetricGroupSummary[];
+}
+
+export interface JankPerformanceSummary extends PerformanceMetricSummary {
+  affectedSessionCount: number;
+  totalJankFrames: number;
+  maxFrame: DurationSummary;
+  avgFrame: DurationSummary;
+  jankFrames: DurationSummary;
+  routeSummaries: MetricGroupSummary[];
+}
+
+export interface ErrorPerformanceSummary extends PerformanceMetricSummary {
+  affectedSessionCount: number;
+  typeSummaries: MetricGroupSummary[];
+  mechanismSummaries: MetricGroupSummary[];
+  routeSummaries: MetricGroupSummary[];
+  recent: PerformanceMetricSummary['events'];
 }
 
 export interface PerformanceOverview {
-  startup: PerformanceMetricSummary;
-  pages: PerformanceMetricSummary;
-  http: PerformanceMetricSummary;
-  jank: PerformanceMetricSummary;
-  errors: PerformanceMetricSummary;
+  startup: StartupPerformanceSummary;
+  pages: PagePerformanceSummary;
+  http: HttpPerformanceSummary;
+  jank: JankPerformanceSummary;
+  errors: ErrorPerformanceSummary;
 }

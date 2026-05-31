@@ -1,4 +1,4 @@
-import { useParams } from '@tanstack/react-router';
+import { useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { EventInspector } from '../../features/inspector/event-inspector';
 import { SessionHeader } from '../../features/session/session-header';
@@ -11,19 +11,23 @@ import { downloadJson } from '../../shared/formatting/download';
 
 export function SessionDetailRoute() {
   const { sessionId } = useParams({ from: '/sessions/$sessionId' });
+  const search = useSearch({ from: '/sessions/$sessionId' }) as { eventId?: string; traceId?: string };
   const sessionQuery = useSessionQuery(sessionId);
   const sessionsQuery = useSessionsQuery({ limit: 50 });
   const events = useMemo(() => sortEvents(sessionQuery.data ?? []), [sessionQuery.data]);
   const timelineEvents = useMemo(() => prepareSessionEvents(events), [events]);
   const [selectedEventId, setSelectedEventId] = useState<string>();
   const defaultEvent = timelineEvents.find((event) => event.status === 'error') ?? firstTimelineEvent(events);
-  const selectedEvent = timelineEvents.find((event) => event.eventId === selectedEventId) ?? defaultEvent;
+  const searchSelectedEvent = timelineEvents.find((event) => (
+    search.eventId ? event.eventId === search.eventId : search.traceId ? event.traceId === search.traceId : false
+  ));
+  const selectedEvent = timelineEvents.find((event) => event.eventId === selectedEventId) ?? searchSelectedEvent ?? defaultEvent;
   const traceQuery = useTraceQuery(selectedEvent?.traceId);
   const summary = sessionsQuery.data?.sessions.find((session) => session.sessionId === sessionId);
 
   useEffect(() => {
-    setSelectedEventId(undefined);
-  }, [sessionId]);
+    setSelectedEventId(search.eventId);
+  }, [sessionId, search.eventId, search.traceId]);
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-cols-[300px_minmax(620px,1fr)_430px] xl:overflow-hidden">

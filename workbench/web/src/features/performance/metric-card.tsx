@@ -3,7 +3,17 @@ import { Link } from '@tanstack/react-router';
 import { Card, CardContent } from '../../components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import { compactNumber, formatDuration } from '../../shared/formatting/format';
-import type { PerformanceMetricEvent, PerformanceMetricSummary } from '../../shared/datasource/types';
+import type {
+  DurationSummary,
+  ErrorPerformanceSummary,
+  HttpPerformanceSummary,
+  JankPerformanceSummary,
+  PagePerformanceSummary,
+  PerformanceMetricSummary,
+  StartupPerformanceSummary,
+} from '../../shared/datasource/types';
+
+export type MetricKind = 'startup' | 'pages' | 'network' | 'jank' | 'errors';
 
 export function MetricCard({
   title,
@@ -11,15 +21,16 @@ export function MetricCard({
   summary,
   emphasis,
   to,
+  kind,
 }: {
   title: string;
   icon: LucideIcon;
   summary?: PerformanceMetricSummary;
   emphasis?: string;
   to?: string;
+  kind?: MetricKind;
 }) {
   const errorCount = summary?.errorCount ?? 0;
-  const isStartup = title === '启动耗时';
   const body = (
     <Card className="min-w-0">
       <CardContent className="grid gap-3 p-3.5">
@@ -34,7 +45,7 @@ export function MetricCard({
           <MetricNumber label="事件数" field="events.length" hint="来源：当前筛选范围内匹配该类 signal 的 SDK envelope 数量" value={summary?.count ?? 0} />
           <MetricNumber label="问题数" field="status / signalType" hint="来源：status=error 或 signalType=error 的 SDK envelope 数量" value={errorCount} tone={errorCount > 0 ? 'danger' : 'normal'} />
         </div>
-        {isStartup ? <StartupSummary events={summary?.events ?? []} /> : <DurationSummary summary={summary} />}
+        <KindSummary kind={kind ?? kindFromTitle(title)} summary={summary} />
       </CardContent>
     </Card>
   );
@@ -48,70 +59,139 @@ export function MetricCard({
   );
 }
 
-function StartupSummary({ events }: { events: PerformanceMetricEvent[] }) {
-  const cold = summarizeEvents(events.filter((event) => event.name === 'app.cold_start'));
-  const hot = summarizeEvents(events.filter((event) => event.name === 'app.hot_start'));
+function KindSummary({ kind, summary }: { kind: MetricKind; summary?: PerformanceMetricSummary }) {
+  if (kind === 'startup') return <StartupSummary summary={summary as StartupPerformanceSummary | undefined} />;
+  if (kind === 'pages') return <PagesSummary summary={summary as PagePerformanceSummary | undefined} />;
+  if (kind === 'network') return <NetworkSummary summary={summary as HttpPerformanceSummary | undefined} />;
+  if (kind === 'jank') return <JankSummary summary={summary as JankPerformanceSummary | undefined} />;
+  return <ErrorsSummary summary={summary as ErrorPerformanceSummary | undefined} />;
+}
+
+function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
   return (
     <div className="grid gap-2 text-xs">
-      <StartupGroup label="冷启动" source="name=app.cold_start · value=durationMs" summary={cold} />
-      <StartupGroup label="热启动" source="name=app.hot_start · value=durationMs" summary={hot} />
+      <DurationGroup
+        label="冷启到首帧"
+        source="name=app.cold_start · value=durationMs"
+        summary={summary?.coldStart}
+        hintSuffix="当前 SDK 的 app.cold_start 以首帧为结束点，app.first_frame_ms 是同一链路的终点口径。"
+      />
+      <DurationGroup label="SDK 初始化" source={'name=sdk.init · value=attributes["sdk.init.duration_ms"]'} summary={summary?.sdkInit} compact />
+      <DurationGroup label="后台间隔" source="app.background_duration.durationMs / 当前 app.hot_start.durationMs" summary={summary?.backgroundInterval} />
+      <MetricText
+        label="热恢复耗时"
+        value={summary?.hotResume.available ? '已提供' : 'SDK 未提供'}
+        field={summary?.hotResume.sourceFields.join('、') || 'sdk_hot_resume_duration_missing'}
+        hint="当前 SDK 尚未提供恢复到首帧或可交互的热启动耗时。现有 app.hot_start.durationMs 表示后台恢复间隔。"
+      />
     </div>
   );
 }
 
-function StartupGroup({ label, source, summary }: { label: string; source: string; summary: LocalDurationSummary }) {
+function PagesSummary({ summary }: { summary?: PagePerformanceSummary }) {
+  return (
+    <div className="grid gap-2 text-xs">
+      <DurationGroup label="页面加载" source={'page.load · attributes["page.load_ms"]'} summary={summary?.load} />
+      <DurationGroup label="页面首帧" source={'page.first_frame · attributes["page.first_frame_ms"]'} summary={summary?.firstFrame} />
+      <DurationGroup label="页面停留" source="page.stay.durationMs · 单独展示，不计入加载耗时" summary={summary?.stay} />
+    </div>
+  );
+}
+
+function NetworkSummary({ summary }: { summary?: HttpPerformanceSummary }) {
+  return (
+    <div className="grid gap-1 text-xs">
+      <MetricDuration
+        label="平均耗时"
+        value={summary?.durationSummary?.averageMs}
+        sdkField="http.client.durationMs"
+        hint={`HTTP 请求耗时平均值。样本数：${summary?.durationSummary?.sampleCount ?? 0}。`}
+      />
+      <MetricDuration
+        label="最慢请求"
+        value={summary?.durationSummary?.maxMs}
+        sdkField="http.client.durationMs"
+        hint="当前范围内 durationMs 最大的 http.client span。"
+      />
+      <MetricPlain label="失败请求" value={compactNumber(summary?.failedCount ?? 0)} />
+      <MetricPlain label="高频接口" value={summary?.endpointSummaries[0]?.key ?? '-'} />
+    </div>
+  );
+}
+
+function JankSummary({ summary }: { summary?: JankPerformanceSummary }) {
+  return (
+    <div className="grid gap-1 text-xs">
+      <MetricDuration
+        label="最慢帧"
+        value={summary?.maxFrame.maxMs}
+        sdkField={'attributes["frame.max_ms"]'}
+        hint={`卡顿序列中的最大帧耗时。样本数：${summary?.maxFrame.sampleCount ?? 0}。`}
+      />
+      <MetricDuration
+        label="平均慢帧"
+        value={summary?.avgFrame.averageMs}
+        sdkField={'attributes["frame.avg_ms"]'}
+        hint={`卡顿序列慢帧平均耗时的平均值。样本数：${summary?.avgFrame.sampleCount ?? 0}。`}
+      />
+      <MetricPlain label="卡顿帧数" value={compactNumber(summary?.totalJankFrames ?? 0)} />
+      <MetricPlain label="高频页面" value={summary?.routeSummaries[0]?.key ?? '-'} />
+    </div>
+  );
+}
+
+function ErrorsSummary({ summary }: { summary?: ErrorPerformanceSummary }) {
+  return (
+    <div className="grid gap-1 text-xs">
+      <MetricPlain label="影响会话" value={compactNumber(summary?.affectedSessionCount ?? 0)} />
+      <MetricPlain label="高频类型" value={summary?.typeSummaries[0]?.key ?? '-'} />
+      <MetricPlain label="高频机制" value={summary?.mechanismSummaries[0]?.key ?? '-'} />
+      <MetricPlain label="高频页面" value={summary?.routeSummaries[0]?.key ?? '-'} />
+    </div>
+  );
+}
+
+function DurationGroup({
+  label,
+  source,
+  summary,
+  compact = false,
+  hintSuffix,
+}: {
+  label: string;
+  source: string;
+  summary?: DurationSummary;
+  compact?: boolean;
+  hintSuffix?: string;
+}) {
   return (
     <div className="grid gap-1 rounded border border-zinc-100 bg-zinc-50 px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-zinc-600">{label}</span>
         <MetricDuration
           label="次数"
-          value={summary.count}
+          value={summary?.sampleCount}
           kind="number"
-          sdkField="durationMs"
+          sdkField={source}
           hint={`筛选口径：${source}。次数表示当前范围内匹配该启动类型的 SDK envelope 数量。`}
         />
       </div>
       <MetricDuration
         label="平均耗时"
-        value={summary.averageMs}
-        sdkField="durationMs"
-        hint={`筛选口径：${source}。计算口径：对匹配记录的 durationMs 做算术平均。样本数：${summary.sampleCount}。`}
+        value={summary?.averageMs}
+        sdkField={source}
+        hint={`筛选口径：${source}。计算口径：对匹配记录做算术平均。样本数：${summary?.sampleCount ?? 0}。${hintSuffix ?? ''}`}
       />
-      <MetricDuration
-        label="最近记录"
-        value={summary.latestMs}
-        sdkField="durationMs"
-        hint={`筛选口径：${source}。计算口径：按 timestamp 倒序取最近一条有 durationMs 的记录。样本数：${summary.sampleCount}。`}
-      />
+      {compact ? null : (
+        <MetricDuration
+          label="最慢一次"
+          value={summary?.maxMs}
+          sdkField={source}
+          hint={`筛选口径：${source}。计算口径：取最大值。样本数：${summary?.sampleCount ?? 0}。${hintSuffix ?? ''}`}
+        />
+      )}
     </div>
   );
-}
-
-function DurationSummary({ summary }: { summary?: PerformanceMetricSummary }) {
-  const sourceFields = summary?.durationSummary?.sourceFields.join('、') || 'durationMs';
-  return summary?.durationSummary ? (
-    <div className="grid gap-1 text-xs">
-      <MetricDuration
-        label="平均耗时"
-        value={summary.durationSummary.averageMs}
-        sdkField={sourceFields}
-        hint={`计算口径：当前类别下有有效 durationMs 的 SDK envelope 算术平均值。样本数：${summary.durationSummary.sampleCount}。`}
-      />
-      <MetricDuration
-        label="最慢记录"
-        value={summary.durationSummary.maxMs}
-        sdkField={sourceFields}
-        hint={`计算口径：当前类别下 durationMs 最大的一条记录。样本数：${summary.durationSummary.sampleCount}。`}
-      />
-      <MetricDuration
-        label="最近记录"
-        value={summary.durationSummary.latestMs}
-        sdkField={sourceFields}
-        hint={`计算口径：按 timestamp 倒序取最近一条有 durationMs 的记录。样本数：${summary.durationSummary.sampleCount}。`}
-      />
-    </div>
-  ) : null;
 }
 
 function MetricDuration({
@@ -137,6 +217,41 @@ function MetricDuration({
       </TooltipTrigger>
       <TooltipContent>
         <FieldHint label={label} field={sdkField} hint={hint} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function MetricPlain({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-1">
+      <span className="text-zinc-400">{label}</span>
+      <span className="truncate text-right text-zinc-600 tabular-nums">{value}</span>
+    </span>
+  );
+}
+
+function MetricText({
+  label,
+  hint,
+  field,
+  value,
+}: {
+  label: string;
+  hint: string;
+  field: string;
+  value: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="grid cursor-help grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-1 rounded border border-amber-100 bg-amber-50 px-2.5 py-2">
+          <span className="text-amber-700">{label}</span>
+          <span className="truncate text-right font-medium text-amber-800">{value}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        <FieldHint label={label} field={field} hint={hint} />
       </TooltipContent>
     </Tooltip>
   );
@@ -183,31 +298,14 @@ function FieldHint({ label, field, hint }: { label: string; field: string; hint:
   );
 }
 
-type LocalDurationSummary = {
-  count: number;
-  sampleCount: number;
-  averageMs?: number;
-  latestMs?: number;
-};
-
-function summarizeEvents(events: PerformanceMetricEvent[]): LocalDurationSummary {
-  const durationEvents = events
-    .filter((event) => typeof event.durationMs === 'number' && Number.isFinite(event.durationMs))
-    .sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
-  const durations = durationEvents.map((event) => event.durationMs as number);
-  return {
-    count: events.length,
-    sampleCount: durationEvents.length,
-    averageMs: durations.length > 0 ? durations.reduce((sum, value) => sum + value, 0) / durations.length : undefined,
-    latestMs: durationEvents.at(-1)?.durationMs,
-  };
-}
-
-function timeValue(timestamp?: string): number {
-  const value = Date.parse(timestamp ?? '');
-  return Number.isNaN(value) ? 0 : value;
-}
-
 function formatOptionalNumber(value?: number): string {
   return typeof value === 'number' && Number.isFinite(value) ? compactNumber(value) : '-';
+}
+
+function kindFromTitle(title: string): MetricKind {
+  if (title.includes('启动')) return 'startup';
+  if (title.includes('页面')) return 'pages';
+  if (title.includes('网络')) return 'network';
+  if (title.includes('卡顿')) return 'jank';
+  return 'errors';
 }

@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../shared/formatting/cn';
 
 const tabs: Array<{ to: '/startup' | '/pages' | '/network' | '/jank' | '/errors'; label: string; icon: LucideIcon }> = [
-  { to: '/startup', label: '启动耗时', icon: Rocket },
+  { to: '/startup', label: '启动链路', icon: Rocket },
   { to: '/pages', label: '页面性能', icon: Gauge },
   { to: '/network', label: '网络请求', icon: Globe2 },
   { to: '/jank', label: '卡顿', icon: Activity },
