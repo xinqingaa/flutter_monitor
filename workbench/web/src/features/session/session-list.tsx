@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Gauge, Globe2 } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { EmptyState } from '../../components/common/empty-state';
@@ -7,6 +6,7 @@ import type { SessionSummary } from '../../shared/datasource/types';
 import { formatDateTime } from '../../shared/formatting/format';
 import { cn } from '../../shared/formatting/cn';
 import { statusLabel } from '../../shared/event-model/status';
+import { SessionIssueInline, SessionMetadataLine } from './session-summary-card';
 
 export function SessionList({
   sessions,
@@ -53,40 +53,40 @@ export function SessionRows({
 
   return (
     <div className="divide-y divide-zinc-100">
-      {sessions.map((session) => (
-        <Link
-          key={session.sessionId}
-          to="/sessions/$sessionId"
-          params={{ sessionId: session.sessionId }}
-          className={cn(
-            'block px-3 py-2 text-left hover:bg-teal-50',
-            selectedSessionId === session.sessionId && 'bg-teal-50',
-            dense && 'py-1.5',
-          )}
-        >
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <ShortSessionId value={session.sessionId} />
-            <Badge tone={session.status === 'error' ? 'danger' : 'neutral'}>{statusLabel(session.status)}</Badge>
-          </div>
-          <div className="mt-1 truncate text-xs text-zinc-500">
-            {formatDateTime(session.firstTimestamp)} - {formatDateTime(session.lastTimestamp)}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
-            <span>事件 {session.count}</span>
-            <span className="inline-flex items-center gap-1"><AlertTriangle className="size-3" />错误 {session.errorCount}</span>
-            <span className="inline-flex items-center gap-1"><Gauge className="size-3" />卡顿 {session.jankCount}</span>
-            <span className="inline-flex items-center gap-1"><Globe2 className="size-3" />失败请求 {session.failedHttpCount}</span>
-          </div>
-          <div className="mt-1 truncate text-xs text-zinc-500">
-            {session.userId ?? '-'} · {session.route ?? '-'} · {session.appVersion ?? '-'}
-          </div>
-        </Link>
-      ))}
+      {sessions.map((session) => {
+        const selected = selectedSessionId === session.sessionId;
+        return (
+          <Link
+            key={session.sessionId}
+            to="/sessions/$sessionId"
+            params={{ sessionId: session.sessionId }}
+            className={cn(
+              'block border-l-2 border-transparent bg-white px-3 py-2 text-left hover:bg-zinc-50',
+              selected && 'border-teal-500 bg-teal-50 hover:bg-teal-50',
+              dense && 'py-1.5',
+            )}
+          >
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <ShortSessionId value={session.sessionId} selected={selected} />
+              <Badge tone={session.status === 'error' ? 'danger' : 'neutral'}>{statusLabel(session.status)}</Badge>
+            </div>
+            <div className="mt-1 truncate text-xs tabular-nums text-zinc-500">
+              {formatDateTime(session.firstTimestamp)} - {formatDateTime(session.lastTimestamp)}
+            </div>
+            <div className="mt-1.5">
+              <SessionIssueInline session={session} />
+            </div>
+            <div className="mt-1.5 border-t border-zinc-100 pt-1.5">
+              <SessionMetadataLine session={session} />
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }
 
-function ShortSessionId({ value }: { value: string }) {
+function ShortSessionId({ value, selected }: { value: string; selected?: boolean }) {
   const display = value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
-  return <code className="min-w-0 truncate rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-700">{display}</code>;
+  return <code className={cn('min-w-0 truncate rounded px-1.5 py-0.5 text-[11px]', selected ? 'bg-white text-teal-800' : 'bg-zinc-100 text-zinc-700')}>{display}</code>;
 }

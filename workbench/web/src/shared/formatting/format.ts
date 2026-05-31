@@ -14,13 +14,14 @@ export function formatDateTime(timestamp?: string): string {
   if (!timestamp) return '-';
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const year = pad(date.getFullYear() % 100);
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hour = pad(date.getHours());
+  const minute = pad(date.getMinutes());
+  const second = pad(date.getSeconds());
+  return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
 }
 
 export function formatDuration(value?: number): string {

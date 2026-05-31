@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { EventInspector } from '../../features/inspector/event-inspector';
+import { prepareSessionEvents } from '../../features/timeline/session-segments';
 import { SessionTimeline } from '../../features/timeline/session-timeline';
 import { useTraceQuery } from '../../shared/datasource/queries';
 import { sortEvents } from '../../shared/event-model/accessors';
@@ -13,8 +14,9 @@ export function TraceDetailRoute() {
   const { traceId } = useParams({ from: '/traces/$traceId' });
   const traceQuery = useTraceQuery(traceId);
   const events = sortEvents(traceQuery.data ?? []);
+  const timelineEvents = prepareSessionEvents(events);
   const [selectedEventId, setSelectedEventId] = useState<string>();
-  const selectedEvent = events.find((event) => event.eventId === selectedEventId) ?? events[0];
+  const selectedEvent = timelineEvents.find((event) => event.eventId === selectedEventId) ?? timelineEvents[0];
   const first = events[0];
   const last = events[events.length - 1];
   const duration = first?.timestamp && last?.timestamp ? Date.parse(last.timestamp) - Date.parse(first.timestamp) : undefined;
@@ -42,7 +44,7 @@ export function TraceDetailRoute() {
       </Card>
       <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:grid-cols-[minmax(640px,1fr)_520px] xl:overflow-hidden">
         <SessionTimeline events={events} selectedEventId={selectedEvent?.eventId} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
-        <EventInspector event={selectedEvent} traceEvents={events} />
+        <EventInspector event={selectedEvent} traceEvents={timelineEvents} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
       </div>
     </div>
   );

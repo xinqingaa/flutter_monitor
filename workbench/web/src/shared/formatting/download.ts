@@ -11,6 +11,27 @@ export function downloadJson(filename: string, value: unknown): void {
 }
 
 export async function copyJson(value: unknown): Promise<void> {
-  if (!navigator.clipboard) throw new Error('clipboard_unavailable');
-  await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
+  await copyText(JSON.stringify(value, null, 2));
+}
+
+export async function copyText(value: string): Promise<void> {
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through to the textarea strategy for browsers with stricter clipboard permissions.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('clipboard_unavailable');
 }

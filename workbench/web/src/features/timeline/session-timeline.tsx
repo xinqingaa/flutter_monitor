@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, AppWindow, ChevronDown, ChevronRight, Rocket } from 'lucide-react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import type { MonitorEvent } from '../../shared/datasource/types';
-import { eventKind, eventKindLabel, httpStatusOf, issueLabels, stringPath } from '../../shared/event-model/accessors';
+import { eventKind, httpStatusOf, issueLabels, readPath, stringPath } from '../../shared/event-model/accessors';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
 import { cn } from '../../shared/formatting/cn';
 import { EventKindBadge } from './status-badge';
 import { buildTimelineSegments, type TimelineSegment } from './session-segments';
+import type * as React from 'react';
 
 export function SessionTimeline({
   events,
@@ -21,6 +22,11 @@ export function SessionTimeline({
 }) {
   const segments = useMemo(() => buildTimelineSegments(events), [events]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const selectedNodeRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    selectedNodeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedEventId]);
 
   function toggle(set: Set<string>, id: string): Set<string> {
     const next = new Set(set);
@@ -49,6 +55,7 @@ export function SessionTimeline({
                 collapsed={collapsed.has(segment.id)}
                 onToggleCollapse={() => setCollapsed((prev) => toggle(prev, segment.id))}
                 selectedEventId={selectedEventId}
+                selectedNodeRef={selectedNodeRef}
                 onSelectEvent={onSelectEvent}
               />
             ))}
@@ -64,12 +71,14 @@ function SegmentView({
   collapsed,
   onToggleCollapse,
   selectedEventId,
+  selectedNodeRef,
   onSelectEvent,
 }: {
   segment: TimelineSegment;
   collapsed: boolean;
   onToggleCollapse: () => void;
   selectedEventId?: string;
+  selectedNodeRef: React.MutableRefObject<HTMLButtonElement | null>;
   onSelectEvent?: (event: MonitorEvent) => void;
 }) {
   const Icon = segment.kind === 'startup' ? Rocket : AppWindow;
@@ -116,6 +125,7 @@ function SegmentView({
                 key={node.eventId ?? `${segment.id}-${index}`}
                 event={node}
                 selected={Boolean(node.eventId && selectedEventId === node.eventId)}
+                selectedNodeRef={selectedNodeRef}
                 onSelect={() => onSelectEvent?.(node)}
               />
             ))
@@ -129,42 +139,22 @@ function SegmentView({
 function TimelineNode({
   event,
   selected,
+  selectedNodeRef,
   onSelect,
 }: {
   event: MonitorEvent;
   selected: boolean;
+  selectedNodeRef: React.MutableRefObject<HTMLButtonElement | null>;
   onSelect: () => void;
 }) {
   const kind = eventKind(event);
   const isError = kind === 'error' || event.status === 'error';
   const labels = issueLabels(event);
-  const meta = nodeMeta(event);
-
-  if (!isHighSignal(event)) {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className={cn(
-          'grid w-full grid-cols-[88px_minmax(0,1fr)] gap-2 px-3 py-1.5 text-left hover:bg-teal-50',
-          selected && 'bg-teal-50 text-zinc-700',
-        )}
-      >
-        <span className="pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatTime(event.timestamp ?? event.startTime)}</span>
-        <span className="min-w-0">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="size-1.5 shrink-0 rounded-full bg-zinc-300" />
-            <span className="shrink-0 text-[11px] text-zinc-400">{eventKindLabel(event)}</span>
-            <span className="min-w-0 truncate text-xs font-medium text-zinc-600">{event.name ?? '-'}</span>
-          </span>
-          {meta ? <span className="mt-0.5 block truncate text-xs text-zinc-400">{meta}</span> : null}
-        </span>
-      </button>
-    );
-  }
+  const display = nodeDisplay(event);
 
   return (
     <button
+      ref={selected ? selectedNodeRef : undefined}
       type="button"
       onClick={onSelect}
       className={cn(
@@ -173,13 +163,16 @@ function TimelineNode({
         isError && 'bg-red-50/60 hover:bg-red-50',
       )}
     >
-      <span className="pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatTime(event.timestamp ?? event.startTime)}</span>
+      <span className="pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatTime(event.startTime ?? event.timestamp)}</span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <EventKindBadge event={event} />
           <span className={cn('min-w-0 truncate text-sm font-medium', isError ? 'text-red-700' : 'text-zinc-900')}>
             {event.name ?? '-'}
           </span>
+          {display.primary.map((item) => (
+            <span key={item} className="max-w-[180px] truncate text-xs font-medium text-zinc-600">{item}</span>
+          ))}
           {typeof event.durationMs === 'number' ? (
             <span className="text-xs tabular-nums text-zinc-500">{formatDuration(event.durationMs)}</span>
           ) : null}
@@ -189,41 +182,76 @@ function TimelineNode({
             </Badge>
           ))}
         </div>
-        {meta ? <div className="mt-0.5 truncate text-xs text-zinc-500">{meta}</div> : null}
+        {display.secondary.length > 0 ? <div className="mt-0.5 truncate text-xs text-zinc-500">{display.secondary.join(' · ')}</div> : null}
       </div>
     </button>
   );
 }
 
-function isHighSignal(event: MonitorEvent): boolean {
+function nodeDisplay(event: MonitorEvent): { primary: string[]; secondary: string[] } {
   const kind = eventKind(event);
-  if (kind === 'error' || kind === 'jank' || kind === 'memory' || kind === 'http') return true;
-  if (issueLabels(event).length > 0) return true;
-  if (event.signalType === 'span' || event.signalType === 'trace') return true;
-  if (kind === 'startup') return true;
-  return event.name === 'page.load' || event.name === 'page.first_frame';
-}
+  const primary: string[] = [];
+  const secondary: string[] = [];
+  const route = stringPath(event, ['context', 'route', 'name']);
 
-function nodeMeta(event: MonitorEvent): string | undefined {
-  const kind = eventKind(event);
-  const parts: string[] = [];
   if (kind === 'http') {
     const url =
       stringPath(event, ['attributes', 'http.url']) ??
       stringPath(event, ['attributes', 'url.normalized']) ??
       stringPath(event, ['payload', 'url']);
-    if (url) parts.push(url);
+    if (url) primary.push(url);
     const status = httpStatusOf(event);
-    if (status && status !== '-') parts.push(`HTTP ${status}`);
+    if (status && status !== '-') secondary.push(`HTTP ${status}`);
   } else if (kind === 'error') {
     const message =
       stringPath(event, ['payload', 'message']) ??
       stringPath(event, ['attributes', 'error.message']) ??
       stringPath(event, ['payload', 'error', 'message']);
-    if (message) parts.push(message);
+    if (message) primary.push(message);
   } else if (kind === 'business') {
     const target = stringPath(event, ['attributes', 'ui.target']) ?? stringPath(event, ['payload', 'target']);
-    if (target) parts.push(target);
+    if (target) primary.push(target);
+  } else if (kind === 'page') {
+    if (route) primary.push(route);
+    pushNumber(secondary, 'load', readPath(event, ['attributes', 'page.load_ms']), 'ms');
+    pushNumber(secondary, 'first frame', readPath(event, ['attributes', 'page.first_frame_ms']), 'ms');
+    pushText(secondary, 'instance', stringPath(event, ['attributes', 'page.instance_id']));
+  } else if (kind === 'startup') {
+    pushText(primary, 'type', stringPath(event, ['attributes', 'app.start.type']));
+    pushNumber(secondary, 'first frame', readPath(event, ['attributes', 'app.first_frame_ms']), 'ms');
+  } else if (kind === 'memory') {
+    pushNumber(primary, 'rss', readPath(event, ['attributes', 'memory.rss_mb']), 'MB', 1);
+    pushText(secondary, 'source', stringPath(event, ['attributes', 'memory.sample_source']));
+  } else if (event.name === 'app.lifecycle') {
+    const state = stringPath(event, ['context', 'lifecycle', 'state']);
+    const previous = stringPath(event, ['context', 'lifecycle', 'previousState']);
+    const foreground = readPath(event, ['context', 'lifecycle', 'isForeground']);
+    if (state) primary.push(state);
+    if (previous) secondary.push(`from ${previous}`);
+    if (typeof foreground === 'boolean') secondary.push(foreground ? 'foreground' : 'background');
+  } else if (event.name === 'app.foreground_duration') {
+    const state = stringPath(event, ['context', 'lifecycle', 'state']);
+    if (state) primary.push(state);
+    if (typeof event.durationMs === 'number') secondary.push(`foreground ${formatDuration(event.durationMs)}`);
+  } else if (event.name === 'sdk.lifecycle.flush') {
+    const success = readPath(event, ['attributes', 'app.exit_flush.success']);
+    const trigger = stringPath(event, ['payload', 'lifecycle.trigger_state']);
+    if (typeof success === 'boolean') primary.push(success ? 'success' : 'failed');
+    if (trigger) secondary.push(`trigger ${trigger}`);
+  } else {
+    const phase = stringPath(event, ['attributes', 'event.phase']);
+    if (phase) secondary.push(phase);
+    if (route) primary.push(route);
   }
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+
+  return { primary, secondary };
+}
+
+function pushText(target: string[], label: string, value?: string) {
+  if (value) target.push(`${label} ${value}`);
+}
+
+function pushNumber(target: string[], label: string, value: unknown, unit: string, digits = 0) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return;
+  target.push(`${label} ${value.toFixed(digits)}${unit}`);
 }

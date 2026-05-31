@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { EventInspector } from '../../features/inspector/event-inspector';
+import { prepareSessionEvents } from '../../features/timeline/session-segments';
 import { SessionTimeline } from '../../features/timeline/session-timeline';
 import { useEventQuery, useSessionQuery, useTraceQuery } from '../../shared/datasource/queries';
 
@@ -12,8 +13,9 @@ export function EventDetailRoute() {
   const event = eventQuery.data;
   const sessionQuery = useSessionQuery(event?.sessionId);
   const traceQuery = useTraceQuery(event?.traceId);
+  const timelineEvents = prepareSessionEvents(sessionQuery.data ?? []);
   const [selectedEventId, setSelectedEventId] = useState<string>();
-  const selectedEvent = (sessionQuery.data ?? []).find((item) => item.eventId === selectedEventId) ?? event;
+  const selectedEvent = timelineEvents.find((item) => item.eventId === selectedEventId) ?? event;
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 p-2">
@@ -41,7 +43,11 @@ export function EventDetailRoute() {
           selectedEventId={selectedEvent?.eventId ?? eventId}
           onSelectEvent={(item) => setSelectedEventId(item.eventId)}
         />
-        <EventInspector event={selectedEvent} traceEvents={traceQuery.data ?? []} />
+        <EventInspector
+          event={selectedEvent}
+          traceEvents={prepareSessionEvents(traceQuery.data ?? [])}
+          onSelectEvent={(item) => setSelectedEventId(item.eventId)}
+        />
       </div>
     </div>
   );

@@ -1,12 +1,12 @@
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Braces, Clipboard, GitBranch, Info, ListTree } from 'lucide-react';
+import { AlertTriangle, Braces, Clipboard, ExternalLink, GitBranch, Info, ListTree, type LucideIcon } from 'lucide-react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { Button } from '../../components/ui/button';
 import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import { useToast } from '../../components/ui/toast';
 import type { JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import {
@@ -31,13 +31,16 @@ import { FieldExplanation } from './field-explanation';
 import { JsonViewer } from './json-viewer';
 import { copyJson } from '../../shared/formatting/download';
 import { statusLabel } from '../../shared/event-model/status';
+import { cn } from '../../shared/formatting/cn';
 
 export function EventInspector({
   event,
   traceEvents = [],
+  onSelectEvent,
 }: {
   event?: MonitorEvent;
   traceEvents?: MonitorEvent[];
+  onSelectEvent?: (event: MonitorEvent) => void;
 }) {
   if (!event) {
     return (
@@ -79,18 +82,18 @@ export function EventInspector({
       </CardHeader>
       <CardContent className="min-h-0 overflow-hidden p-3">
         <Tabs defaultValue="summary" className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-3">
-          <TabsList>
-            <TabsTrigger value="summary"><Info className="mr-1 size-3.5" />诊断摘要</TabsTrigger>
-            <TabsTrigger value="trace"><GitBranch className="mr-1 size-3.5" />关联链路</TabsTrigger>
-            <TabsTrigger value="fields"><ListTree className="mr-1 size-3.5" />字段说明</TabsTrigger>
-            <TabsTrigger value="raw"><Braces className="mr-1 size-3.5" />原始数据</TabsTrigger>
+          <TabsList className="w-fit">
+            <IconTab value="summary" label="诊断摘要" icon={Info} />
+            <IconTab value="trace" label="关联链路" icon={GitBranch} />
+            <IconTab value="fields" label="字段说明" icon={ListTree} />
+            <IconTab value="raw" label="原始数据" icon={Braces} />
           </TabsList>
 
           <TabsContent value="summary" className="min-h-0 overflow-auto">
             <Summary event={event} />
           </TabsContent>
           <TabsContent value="trace" className="min-h-0 overflow-auto">
-            <TracePanel event={event} traceEvents={traceEvents} breadcrumbs={breadcrumbs} />
+            <TracePanel event={event} traceEvents={traceEvents} breadcrumbs={breadcrumbs} onSelectEvent={onSelectEvent} />
           </TabsContent>
           <TabsContent value="fields" className="min-h-0 overflow-hidden">
             <FieldExplanation event={event} />
@@ -98,10 +101,7 @@ export function EventInspector({
           <TabsContent value="raw" className="min-h-0 overflow-hidden">
             <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
               <div className="flex justify-end">
-                <Button type="button" variant="secondary" onClick={() => void copyEventJson()}>
-                  <Clipboard className="size-4" />
-                  复制完整 JSON
-                </Button>
+                <IconTooltipButton type="button" variant="secondary" size="icon" label="复制完整 JSON" icon={Clipboard} onClick={() => void copyEventJson()} />
               </div>
               <JsonViewer value={event} />
             </div>
@@ -109,6 +109,24 @@ export function EventInspector({
         </Tabs>
       </CardContent>
     </Card>
+  );
+}
+
+function IconTab({ value, label, icon: Icon }: { value: string; label: string; icon: LucideIcon }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <TabsTrigger
+          value={value}
+          aria-label={label}
+          title={label}
+          className="h-7 w-8 border border-transparent px-0 data-[state=active]:border-teal-200 data-[state=active]:bg-teal-50 data-[state=active]:text-teal-800 data-[state=active]:shadow-none"
+        >
+          <Icon className="size-3.5" />
+        </TabsTrigger>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -132,7 +150,7 @@ function Summary({ event }: { event: MonitorEvent }) {
       </Section>
       <Section title="链路位置">
         <Fact label="会话" value={<CopyableId value={event.sessionId} />} />
-        <Fact label="链路" value={event.traceId ? <Link className="text-teal-700 hover:underline" to="/traces/$traceId" params={{ traceId: event.traceId }}>{event.traceId}</Link> : '-'} />
+        <Fact label="链路" value={<CopyableId value={event.traceId} />} />
         <Fact label="阶段" value={<CopyableId value={event.spanId} />} />
         <Fact label="模块" value={moduleOf(event)} />
         <Fact label="场景" value={sceneOf(event)} />
@@ -152,10 +170,12 @@ function TracePanel({
   event,
   traceEvents,
   breadcrumbs,
+  onSelectEvent,
 }: {
   event: MonitorEvent;
   traceEvents: MonitorEvent[];
   breadcrumbs: JsonObject[];
+  onSelectEvent?: (event: MonitorEvent) => void;
 }) {
   return (
     <div className="grid gap-3">
@@ -165,16 +185,43 @@ function TracePanel({
         ) : (
           <div className="divide-y divide-zinc-100 rounded-md border border-zinc-200">
             {traceEvents.map((item) => (
-              <Link
+              <div
                 key={item.eventId}
-                to="/events/$eventId"
-                params={{ eventId: item.eventId ?? '-' }}
-                className="grid grid-cols-[82px_1fr_78px] gap-2 px-2 py-1.5 text-sm hover:bg-teal-50"
+                className={cn(
+                  'grid grid-cols-[minmax(0,1fr)_auto] gap-2 px-2 py-1.5',
+                  item.eventId === event.eventId && 'bg-teal-50',
+                )}
               >
-                <span className="text-zinc-500">{formatTime(item.timestamp)}</span>
-                <span className="truncate text-zinc-900">{item.name ?? '-'}</span>
-                <span className="text-right text-zinc-500">{formatDuration(item.durationMs)}</span>
-              </Link>
+                <button type="button" onClick={() => onSelectEvent?.(item)} className="min-w-0 text-left">
+                  <div className="flex min-w-0 items-center gap-1.5 text-sm">
+                    <span className="shrink-0 text-xs tabular-nums text-zinc-500">{formatTime(item.startTime ?? item.timestamp)}</span>
+                    <EventKindBadge event={item} />
+                    <span className="min-w-0 truncate font-medium text-zinc-900">{item.name ?? '-'}</span>
+                    {item.eventId === event.eventId ? <Badge tone="teal" className="shrink-0 rounded-md px-1.5 py-0">当前</Badge> : null}
+                  </div>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
+                    <span>{formatDuration(item.durationMs)}</span>
+                    <span>{statusLabel(item.status)}</span>
+                    <span className="min-w-0 truncate">{routeOf(item)}</span>
+                  </div>
+                </button>
+                {item.eventId ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        to="/events/$eventId"
+                        params={{ eventId: item.eventId }}
+                        className="inline-flex size-7 items-center justify-center rounded-md text-zinc-500 hover:bg-white hover:text-teal-700"
+                        aria-label="打开 Event 详情"
+                        title="打开 Event 详情"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent>打开 Event 详情</TooltipContent>
+                  </Tooltip>
+                ) : null}
+              </div>
             ))}
           </div>
         )}

@@ -21,8 +21,6 @@ export interface TimelineSegment {
   issueCount: number;
 }
 
-const HEADER_CONSUMED = new Set(['app.cold_start', 'app.hot_start', 'page.visit', 'route.push', 'page.stay']);
-
 interface RawSegment {
   kind: SegmentKind;
   route?: string;
@@ -92,7 +90,7 @@ function makeRaw(kind: SegmentKind, route: string | undefined, first: MonitorEve
 
 function finalizeSegment(segment: RawSegment, index: number, nextStart: number | undefined): TimelineSegment {
   const { events, kind } = segment;
-  const nodes = events.filter((event) => !HEADER_CONSUMED.has(event.name ?? ''));
+  const nodes = events;
   const spans = events.filter((event) => timeMs(event.startTime) !== undefined && timeMs(event.endTime) !== undefined);
   const first = events[0];
   const issueCount = events.filter((event) => issueLabels(event).length > 0 || eventKind(event) === 'error').length;
@@ -109,11 +107,15 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
     spans,
     startTimestamp: first?.timestamp,
     durationLabel: segmentDurationLabel(kind, events, segment.start, nextStart),
-    nodeCount: events.length,
+    nodeCount: nodes.length,
     severity,
     hasIssue: issueCount > 0,
     issueCount,
   };
+}
+
+export function firstTimelineEvent(events: MonitorEvent[]): MonitorEvent | undefined {
+  return buildTimelineSegments(events).flatMap((segment) => segment.nodes)[0];
 }
 
 function segmentDurationLabel(

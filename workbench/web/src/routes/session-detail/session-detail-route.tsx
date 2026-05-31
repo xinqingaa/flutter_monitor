@@ -4,6 +4,7 @@ import { EventInspector } from '../../features/inspector/event-inspector';
 import { SessionHeader } from '../../features/session/session-header';
 import { SessionList } from '../../features/session/session-list';
 import { SessionTimeline } from '../../features/timeline/session-timeline';
+import { firstTimelineEvent, prepareSessionEvents } from '../../features/timeline/session-segments';
 import { useSessionQuery, useSessionsQuery, useTraceQuery } from '../../shared/datasource/queries';
 import { sortEvents } from '../../shared/event-model/accessors';
 import { downloadJson } from '../../shared/formatting/download';
@@ -13,9 +14,10 @@ export function SessionDetailRoute() {
   const sessionQuery = useSessionQuery(sessionId);
   const sessionsQuery = useSessionsQuery({ limit: 50 });
   const events = useMemo(() => sortEvents(sessionQuery.data ?? []), [sessionQuery.data]);
+  const timelineEvents = useMemo(() => prepareSessionEvents(events), [events]);
   const [selectedEventId, setSelectedEventId] = useState<string>();
-  const defaultEvent = events.find((event) => event.status === 'error') ?? events[0];
-  const selectedEvent = events.find((event) => event.eventId === selectedEventId) ?? defaultEvent;
+  const defaultEvent = timelineEvents.find((event) => event.status === 'error') ?? firstTimelineEvent(events);
+  const selectedEvent = timelineEvents.find((event) => event.eventId === selectedEventId) ?? defaultEvent;
   const traceQuery = useTraceQuery(selectedEvent?.traceId);
   const summary = sessionsQuery.data?.sessions.find((session) => session.sessionId === sessionId);
 
@@ -47,7 +49,7 @@ export function SessionDetailRoute() {
         />
       </section>
       <aside className="h-full min-h-[560px] overflow-hidden xl:min-h-0">
-        <EventInspector event={selectedEvent} traceEvents={traceQuery.data ?? []} />
+        <EventInspector event={selectedEvent} traceEvents={prepareSessionEvents(traceQuery.data ?? [])} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
       </aside>
     </div>
   );
