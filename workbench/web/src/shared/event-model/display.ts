@@ -107,7 +107,7 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     const firstFrame = formatNumberMetric(event, 'attributes.app.first_frame_ms', 'ms');
     return {
       ...base,
-      title: name === 'app.hot_start' || startType === 'hot' ? '热启动' : '冷启动',
+      title: name === 'app.hot_start' || startType === 'hot' ? '热重启' : '冷启动',
       durationLabel: duration ?? firstFrame,
       summaryItems: compactItems(route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
     };
@@ -461,7 +461,7 @@ function phaseLabel(value: string): string | undefined {
 function nameDescription(name: string): string | undefined {
   const labels: Record<string, string> = {
     'app.cold_start': '冷启动',
-    'app.hot_start': '热启动',
+    'app.hot_start': '热重启',
     'app.first_frame': '启动首帧',
     'sdk.init': 'SDK 初始化',
     'page.visit': '页面访问',

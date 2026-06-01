@@ -398,15 +398,18 @@ function PageRecordRow({ record }: { record: PageRecord }) {
 }
 
 function StartupScatterChart({ records }: { records: StartupRecord[] }) {
-  const coldRecords = records.filter((record) => record.kind === 'cold' && typeof startupTotalMs(record) === 'number');
-  const option = startupScatterOption(coldRecords);
+  const startupRecords = records.filter((record) => (
+    (record.kind === 'cold' && typeof startupTotalMs(record) === 'number') ||
+    (record.kind === 'hot' && typeof record.hotResumeMs === 'number')
+  ));
+  const option = startupScatterOption(startupRecords);
   return (
     <EchartsPanel
       title="启动阶段散点"
-      description="不连线、不做时间桶聚合；每个点对应一条启动链路里的已采集指标，冷启动当前以首帧为终点。"
-      source={'app.cold_start.durationMs / attributes["app.first_frame_ms"] / attributes["sdk.init.duration_ms"]'}
+      description="不连线、不做时间桶聚合；每个点对应一条冷启动或热重启链路里的已采集指标。"
+      source={'app.cold_start.durationMs / app.hot_start.durationMs / attributes["app.first_frame_ms"] / attributes["sdk.init.duration_ms"]'}
       option={option}
-      empty={coldRecords.length === 0}
+      empty={startupRecords.length === 0}
       height={320}
     />
   );
@@ -435,7 +438,7 @@ function StartupFieldCard({ metric }: { metric?: StartupPerformanceSummary }) {
       </CardHeader>
       <CardContent className="grid gap-2 text-sm text-zinc-600 md:grid-cols-3">
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
-          <div className="text-xs font-medium text-zinc-500">冷启动到首帧</div>
+          <div className="text-xs font-medium text-zinc-500">冷启动</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-950">{formatDuration(metric?.coldStart.latestMs)}</div>
           <div className="mt-1 text-xs leading-relaxed">来源：`app.cold_start.durationMs`。当前 SDK 的 `app.first_frame_ms` 与它同口径，用于确认首帧终点。</div>
         </div>
@@ -445,9 +448,9 @@ function StartupFieldCard({ metric }: { metric?: StartupPerformanceSummary }) {
           <div className="mt-1 text-xs leading-relaxed">来源：`app.background_duration.durationMs`，表示 App 在后台停留到 resumed 的间隔。</div>
         </div>
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
-          <div className="text-xs font-medium text-zinc-500">热恢复耗时</div>
+          <div className="text-xs font-medium text-zinc-500">热重启</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-950">{formatDuration(metric?.hotResume.latestMs)}</div>
-          <div className="mt-1 text-xs leading-relaxed">来源：`app.hot_start.durationMs`，只表示 resumed 后到首帧或可交互的恢复耗时。</div>
+          <div className="mt-1 text-xs leading-relaxed">来源：`app.hot_start.durationMs`，表示 resumed 后到首帧或可交互的热重启耗时。</div>
         </div>
       </CardContent>
     </Card>
@@ -461,7 +464,7 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
       <CardHeader className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <CardTitle className="inline-flex items-center gap-2"><ListTree className="size-4" />启动记录</CardTitle>
-          <CardDescription>按 trace 合并冷启动、SDK 初始化和首帧终点；后台间隔和热恢复耗时分别作为独立记录展示。</CardDescription>
+          <CardDescription>按 trace 合并冷启动、SDK 初始化和首帧终点；后台间隔和热重启分别作为独立记录展示。</CardDescription>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -484,11 +487,11 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
             <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
               <span>链路</span>
               <span>时间</span>
-              <span className="text-right">冷启到首帧</span>
+              <span className="text-right">冷启动</span>
               <span className="text-right">SDK 初始化</span>
-              <span className="text-right">首帧前其他</span>
+              <span className="text-right">首帧</span>
               <span className="text-right">后台间隔</span>
-              <span className="text-right">热恢复</span>
+              <span className="text-right">热重启</span>
               <span className="text-right">回查</span>
             </div>
             <div className="divide-y divide-zinc-100">
@@ -505,7 +508,7 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
 
 function StartupRecordRow({ record }: { record: StartupRecord }) {
   const eventId = record.backgroundEventId ?? record.coldStartEventId ?? record.firstFrameEventId ?? record.sdkInitEventId;
-  const typeLabel = record.kind === 'background' ? '后台间隔' : record.kind === 'hot' ? '热恢复' : '冷启动';
+  const typeLabel = record.kind === 'background' ? '后台间隔' : record.kind === 'hot' ? '热重启' : '冷启动';
   return (
     <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
       <div className="min-w-0">
@@ -935,21 +938,24 @@ function selectBackgroundIntervalEvents(events: PerformanceMetricEvent[]): Perfo
 }
 
 function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | undefined {
-  const rows = ['冷启到首帧', '首帧前其他', 'SDK 初始化'];
+  const rows = ['冷启动', '热重启', '首帧', 'SDK 初始化'];
   const totalPoints = records
-    .map((record, index) => startupScatterPoint(record, index, '冷启到首帧', startupTotalMs(record)))
+    .map((record, index) => startupScatterPoint(record, index, '冷启动', startupTotalMs(record)))
+    .filter(isStartupScatterPoint);
+  const hotPoints = records
+    .map((record, index) => startupScatterPoint(record, index, '热重启', record.hotResumeMs))
     .filter(isStartupScatterPoint);
   const otherPoints = records
-    .map((record, index) => startupScatterPoint(record, index, '首帧前其他', startupOtherMs(record)))
+    .map((record, index) => startupScatterPoint(record, index, '首帧', startupOtherMs(record)))
     .filter(isStartupScatterPoint);
   const sdkPoints = records
     .map((record, index) => startupScatterPoint(record, index, 'SDK 初始化', record.sdkInitMs))
     .filter(isStartupScatterPoint);
-  const allPoints = [...totalPoints, ...otherPoints, ...sdkPoints];
+  const allPoints = [...totalPoints, ...hotPoints, ...otherPoints, ...sdkPoints];
   if (allPoints.length === 0) return undefined;
 
   return {
-    color: ['#0f766e', '#2563eb', '#7c3aed'],
+    color: ['#0f766e', '#f59e0b', '#2563eb', '#7c3aed'],
     legend: { top: 0, textStyle: { color: '#52525b' } },
     grid: { left: 96, right: 28, top: 48, bottom: 44 },
     tooltip: {
@@ -963,7 +969,8 @@ function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | 
           `时间：${formatFullDateTime(point.timestamp)}`,
           point.sessionId ? `Session：${point.sessionId}` : undefined,
           point.traceId ? `Trace：${point.traceId}` : undefined,
-          point.metricLabel === '冷启到首帧' ? '口径：当前冷启动 trace 结束在首帧。' : undefined,
+          point.metricLabel === '冷启动' ? '口径：当前冷启动 trace 结束在首帧。' : undefined,
+          point.metricLabel === '热重启' ? '口径：resumed 后到首帧或可交互。' : undefined,
         ].filter(Boolean).join('<br />');
       },
     },
@@ -981,13 +988,19 @@ function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | 
     },
     series: [
       {
-        name: '冷启到首帧',
+        name: '冷启动',
         type: 'scatter',
         symbolSize: 11,
         data: totalPoints as never[],
       },
       {
-        name: '首帧前其他',
+        name: '热重启',
+        type: 'scatter',
+        symbolSize: 11,
+        data: hotPoints as never[],
+      },
+      {
+        name: '首帧',
         type: 'scatter',
         symbolSize: 10,
         data: otherPoints as never[],
@@ -1020,7 +1033,7 @@ function backgroundIntervalOption(events: PerformanceMetricEvent[]): WorkbenchCh
           `时间：${formatFullDateTime(event.timestamp)}`,
           `间隔：${formatDuration(event.durationMs)}`,
           event.sessionId ? `Session：${event.sessionId}` : undefined,
-          '说明：当前点表示后台停留到 resumed 的间隔，不是真正热恢复耗时。',
+          '说明：当前点表示后台停留到 resumed 的间隔，不是热重启耗时。',
         ].filter(Boolean).join('<br />');
       },
     },

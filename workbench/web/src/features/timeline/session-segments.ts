@@ -130,7 +130,7 @@ function segmentDurationLabel(
     const cold = byName('app.cold_start');
     const hot = byName('app.hot_start');
     const startup = cold ?? hot;
-    const label = startup === hot && !cold ? '热启动' : '冷启动';
+    const label = startup === hot && !cold ? '热重启' : '冷启动';
     const duration = startup?.durationMs ?? safeSpanDuration(events);
     return duration !== undefined ? `${label} ${formatDuration(duration)}` : undefined;
   }

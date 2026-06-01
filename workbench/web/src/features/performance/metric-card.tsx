@@ -76,20 +76,14 @@ function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
   return (
     <div className="grid gap-2 text-xs">
       <DurationGroup
-        label="冷启到首帧"
+        label="冷启动"
         source="name=app.cold_start · value=durationMs"
         summary={summary?.coldStart}
         hintSuffix="当前 SDK 的 app.cold_start 以首帧为结束点，app.first_frame_ms 是同一链路的终点口径。"
       />
       <DurationGroup label="SDK 初始化" source={'name=sdk.init · value=attributes["sdk.init.duration_ms"]'} summary={summary?.sdkInit} compact />
       <DurationGroup label="后台间隔" source="app.background_duration.durationMs" summary={summary?.backgroundInterval} />
-      <DurationGroup label="热恢复耗时" source="app.hot_start.durationMs" summary={summary?.hotResume} compact />
-      <MetricText
-        label="热恢复状态"
-        value={summary?.hotResume.available ? '已提供' : 'SDK 未提供'}
-        field={summary?.hotResume.sourceFields.join('、') || 'sdk_hot_resume_duration_missing'}
-        hint="热恢复耗时只读取 app.hot_start.durationMs，不回退到后台间隔。"
-      />
+      <DurationGroup label="热重启" source="app.hot_start.durationMs" summary={summary?.hotResume} compact />
     </div>
   );
 }

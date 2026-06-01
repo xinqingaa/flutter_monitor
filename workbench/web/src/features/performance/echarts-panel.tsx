@@ -1,49 +1,20 @@
-import { useEffect, useMemo, useRef } from 'react';
-import * as echarts from 'echarts/core';
-import {
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  type BarSeriesOption,
-  type LineSeriesOption,
-  type PieSeriesOption,
-  type ScatterSeriesOption,
-} from 'echarts/charts';
-import {
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  MarkLineComponent,
-  TitleComponent,
-  TooltipComponent,
-  type DataZoomComponentOption,
-  type GridComponentOption,
-  type LegendComponentOption,
-  type MarkLineComponentOption,
-  type TitleComponentOption,
-  type TooltipComponentOption,
+import { lazy, Suspense } from 'react';
+import type { BarSeriesOption, LineSeriesOption, PieSeriesOption, ScatterSeriesOption } from 'echarts/charts';
+import type {
+  DataZoomComponentOption,
+  GridComponentOption,
+  LegendComponentOption,
+  MarkLineComponentOption,
+  TitleComponentOption,
+  TooltipComponentOption,
 } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import type { ComposeOption, ECharts, SetOptionOpts } from 'echarts/core';
+import type { ComposeOption } from 'echarts/core';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { EmptyState } from '../../components/common/empty-state';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 
-echarts.use([
-  BarChart,
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  LineChart,
-  MarkLineComponent,
-  PieChart,
-  ScatterChart,
-  TitleComponent,
-  TooltipComponent,
-  CanvasRenderer,
-]);
+const LazyEchartsView = lazy(() => import('./echarts-view').then((module) => ({ default: module.EchartsView })));
 
 export type WorkbenchChartOption = ComposeOption<
   | BarSeriesOption
@@ -88,62 +59,24 @@ export function EchartsPanel({
         {empty || !option ? (
           <EmptyState title="暂无可画数据" description="SDK 没有提供对应字段时，Workbench 不会补造图表数据。" />
         ) : (
-          <EchartsView option={option} height={height} onClick={onClick} />
+          <Suspense fallback={<ChartLoading height={height} />}>
+            <LazyEchartsView option={option} height={height} onClick={onClick} />
+          </Suspense>
         )}
       </CardContent>
     </Card>
   );
 }
 
-function EchartsView({
-  option,
-  height,
-  onClick,
-}: {
-  option: WorkbenchChartOption;
-  height: number;
-  onClick?: (params: unknown) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<ECharts | null>(null);
-  const stableOption = useMemo(() => option, [option]);
-
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return undefined;
-    const chart = chartRef.current ?? echarts.init(element, undefined, { renderer: 'canvas' });
-    chartRef.current = chart;
-    const setOptions: SetOptionOpts = { notMerge: true, lazyUpdate: false };
-    chart.setOption(stableOption, setOptions);
-
-    const resize = () => chart.resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(element);
-    window.addEventListener('resize', resize);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', resize);
-    };
-  }, [stableOption]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || !onClick) return undefined;
-    const handler = (params: unknown) => onClick(params);
-    chart.on('click', handler);
-    return () => {
-      chart.off('click', handler);
-    };
-  }, [onClick]);
-
-  useEffect(() => {
-    return () => {
-      chartRef.current?.dispose();
-      chartRef.current = null;
-    };
-  }, []);
-
-  return <div ref={ref} className="min-w-0" style={{ height }} />;
+function ChartLoading({ height }: { height: number }) {
+  return (
+    <div
+      className="grid min-w-0 place-items-center rounded-md border border-zinc-100 bg-zinc-50 text-xs text-zinc-500"
+      style={{ height }}
+    >
+      图表加载中
+    </div>
+  );
 }
 
 function SourceBadge({ source }: { source: string }) {

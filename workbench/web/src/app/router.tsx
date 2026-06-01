@@ -1,12 +1,5 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
+import { createRootRoute, createRoute, createRouter, lazyRouteComponent } from '@tanstack/react-router';
 import { WorkbenchShell } from './workbench-shell';
-import { OverviewRoute } from '../routes/overview/overview-route';
-import { SessionsRoute } from '../routes/sessions/sessions-route';
-import { SessionDetailRoute } from '../routes/session-detail/session-detail-route';
-import { EventsRoute } from '../routes/events/events-route';
-import { EventDetailRoute } from '../routes/event-detail/event-detail-route';
-import { TraceDetailRoute } from '../routes/trace-detail/trace-detail-route';
-import { ErrorsRoute, JankRoute, NetworkRoute, PagesRoute, StartupRoute } from '../routes/performance/performance-routes';
 
 const rootRoute = createRootRoute({
   component: WorkbenchShell,
@@ -15,13 +8,13 @@ const rootRoute = createRootRoute({
 const overviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: OverviewRoute,
+  component: lazyRouteComponent(() => import('../routes/overview/overview-route'), 'OverviewRoute'),
 });
 
 const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sessions',
-  component: SessionsRoute,
+  component: lazyRouteComponent(() => import('../routes/sessions/sessions-route'), 'SessionsRoute'),
 });
 
 const sessionRoute = createRoute({
@@ -31,55 +24,55 @@ const sessionRoute = createRoute({
     eventId: typeof search.eventId === 'string' ? search.eventId : undefined,
     traceId: typeof search.traceId === 'string' ? search.traceId : undefined,
   }),
-  component: SessionDetailRoute,
+  component: lazyRouteComponent(() => import('../routes/session-detail/session-detail-route'), 'SessionDetailRoute'),
 });
 
 const eventsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/events',
-  component: EventsRoute,
+  component: lazyRouteComponent(() => import('../routes/events/events-route'), 'EventsRoute'),
 });
 
 const eventRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/events/$eventId',
-  component: EventDetailRoute,
+  component: lazyRouteComponent(() => import('../routes/event-detail/event-detail-route'), 'EventDetailRoute'),
 });
 
 const startupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/startup',
-  component: StartupRoute,
+  component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'StartupRoute'),
 });
 
 const pagesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pages',
-  component: PagesRoute,
+  component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'PagesRoute'),
 });
 
 const networkRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/network',
-  component: NetworkRoute,
+  component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'NetworkRoute'),
 });
 
 const jankRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/jank',
-  component: JankRoute,
+  component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'JankRoute'),
 });
 
 const errorsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/errors',
-  component: ErrorsRoute,
+  component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'ErrorsRoute'),
 });
 
 const traceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/traces/$traceId',
-  component: TraceDetailRoute,
+  component: lazyRouteComponent(() => import('../routes/trace-detail/trace-detail-route'), 'TraceDetailRoute'),
 });
 
 const routeTree = rootRoute.addChildren([

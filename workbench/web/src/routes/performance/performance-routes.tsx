@@ -8,7 +8,7 @@ export function StartupRoute() {
     <PerformanceDetailPage
       kind="startup"
       title="启动链路"
-      description="启动页读取冷启动到首帧、SDK 初始化和后台间隔；真正热恢复耗时当前 SDK 未提供。"
+      description="启动页读取冷启动、热重启、SDK 初始化和后台间隔。"
       icon={Rocket}
       metric={query.data?.startup}
       emphasis="冷启 / 后台"
