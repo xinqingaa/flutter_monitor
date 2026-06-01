@@ -176,7 +176,7 @@ function KindContent({
 function StartupContent({ events, metric }: { events: PerformanceMetricEvent[]; metric?: StartupPerformanceSummary }) {
   const coldStarts = chronological(events.filter((event) => event.name === 'app.cold_start' && hasDuration(event)));
   const backgroundIntervals = selectBackgroundIntervalEvents(events);
-  const hotResumes = chronological(events.filter((event) => event.name === 'app.hot_start' && hasDuration(event)));
+  const hotResumes = chronological(events.filter((event) => isHotResumeEvent(event) && hasDuration(event)));
   const sdkInit = chronological(events.filter((event) => event.name === 'sdk.init' && (
     attrNumber(event, 'sdk.init.duration_ms') !== undefined ||
     hasDuration(event)
@@ -257,6 +257,7 @@ type StartupRecord = {
   firstFrameEventId?: string;
   sdkInitEventId?: string;
   backgroundEventId?: string;
+  hotResumeEventId?: string;
   coldStartToFirstFrameMs?: number;
   firstFrameMs?: number;
   sdkInitMs?: number;
@@ -507,7 +508,7 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
 }
 
 function StartupRecordRow({ record }: { record: StartupRecord }) {
-  const eventId = record.backgroundEventId ?? record.coldStartEventId ?? record.firstFrameEventId ?? record.sdkInitEventId;
+  const eventId = record.hotResumeEventId ?? record.backgroundEventId ?? record.coldStartEventId ?? record.firstFrameEventId ?? record.sdkInitEventId;
   const typeLabel = record.kind === 'background' ? '后台间隔' : record.kind === 'hot' ? '热重启' : '冷启动';
   return (
     <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
@@ -874,7 +875,7 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
 
   for (const event of sorted) {
     const isBackgroundInterval = event.name === 'app.background_duration';
-    const isHotResume = event.name === 'app.hot_start';
+    const isHotResume = isHotResumeEvent(event);
     const fallbackKey = `${event.name ?? 'startup'}:${event.eventId ?? event.timestamp ?? records.size}`;
     const key = isBackgroundInterval
       ? fallbackKey
@@ -914,7 +915,7 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.completedAt = event.timestamp ?? record.completedAt;
     }
     if (isHotResume) {
-      record.backgroundEventId = event.eventId;
+      record.hotResumeEventId = event.eventId;
       record.hotResumeMs = event.durationMs;
       record.completedAt = event.timestamp ?? record.completedAt;
     }
@@ -935,6 +936,10 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
 
 function selectBackgroundIntervalEvents(events: PerformanceMetricEvent[]): PerformanceMetricEvent[] {
   return chronological(events.filter((event) => event.name === 'app.background_duration' && hasDuration(event)));
+}
+
+function isHotResumeEvent(event: PerformanceMetricEvent): boolean {
+  return event.name === 'app.hot_start' && attrString(event, 'app.start.type') === 'hot';
 }
 
 function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | undefined {

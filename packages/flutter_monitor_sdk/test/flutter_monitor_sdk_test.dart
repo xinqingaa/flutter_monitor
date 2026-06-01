@@ -750,6 +750,12 @@ void main() {
         isTrue,
       );
       expect(
+        (pageFirstFrameEvents.first['attributes'] as Map).containsKey(
+          FieldPaths.pageFirstFrameMs,
+        ),
+        isFalse,
+      );
+      expect(
         (pageFirstFrameEvents.last['attributes']
             as Map)[FieldPaths.pageFirstFrameMs],
         isA<num>(),
@@ -760,6 +766,105 @@ void main() {
         ),
         isFalse,
       );
+    },
+  );
+
+  test('paused and hidden keep active page trace open', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(flushOnBackground: false),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    reporter.startPageLoad('/home', startTime: startedAt);
+    reporter.finishPageFirstFrame(
+      '/home',
+      endTime: startedAt.add(const Duration(milliseconds: 32)),
+    );
+    await reporter.handleLifecycleState(
+      LifecycleStates.hidden,
+      timestamp: startedAt.add(const Duration(seconds: 10)),
+    );
+    await reporter.handleLifecycleState(
+      LifecycleStates.paused,
+      timestamp: startedAt.add(const Duration(seconds: 11)),
+    );
+
+    expect(
+      output.events.where(
+        (event) =>
+            event['name'] == EventNames.pageVisit &&
+            (event['attributes'] as Map)[FieldPaths.eventPhase] == 'end',
+      ),
+      isEmpty,
+    );
+    expect(
+      output.events.where((event) => event['name'] == EventNames.pageStay),
+      isEmpty,
+    );
+  });
+
+  test(
+    'detached lifecycle closes active page trace before exit flush',
+    () async {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+      final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+      final detachedAt = startedAt.add(const Duration(seconds: 5));
+
+      reporter.startPageLoad('/home', startTime: startedAt);
+      reporter.finishPageFirstFrame(
+        '/home',
+        endTime: startedAt.add(const Duration(milliseconds: 32)),
+      );
+      await reporter.handleLifecycleState(
+        LifecycleStates.detached,
+        timestamp: detachedAt,
+      );
+
+      final pageVisitEnd = output.events.firstWhere(
+        (event) =>
+            event['name'] == EventNames.pageVisit &&
+            (event['attributes'] as Map)[FieldPaths.eventPhase] == 'end',
+      );
+      final pageStay = output.events.singleWhere(
+        (event) => event['name'] == EventNames.pageStay,
+      );
+      final flushEvent = output.events.singleWhere(
+        (event) => event['name'] == EventNames.sdkLifecycleFlush,
+      );
+      final pageVisitIndex = output.events.indexOf(pageVisitEnd);
+      final flushIndex = output.events.indexOf(flushEvent);
+
+      expect(pageVisitEnd['durationMs'], 5000);
+      expect(
+        (pageVisitEnd['payload'] as Map)[PayloadKeys.pageEndReason],
+        PageEndReasons.lifecycleDetached,
+      );
+      expect(
+        (pageStay['payload'] as Map)[PayloadKeys.pageEndReason],
+        PageEndReasons.lifecycleDetached,
+      );
+      expect(
+        (pageVisitEnd['attributes'] as Map).containsKey(FieldPaths.pageTo),
+        isFalse,
+      );
+      expect(pageStay['durationMs'], 5000);
+      expect(
+        (flushEvent['payload'] as Map)[PayloadKeys.lifecycleTriggerState],
+        LifecycleStates.detached,
+      );
+      expect(output.lastFlushIsAppExiting, isTrue);
+      expect(pageVisitIndex, lessThan(flushIndex));
     },
   );
 
@@ -1979,6 +2084,48 @@ void main() {
       output.events.every((event) => event['signalType'] == 'sdk'),
       isTrue,
     );
+  });
+
+  test('dispose closes active page trace before final flush', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    reporter.startPageLoad('/home', startTime: startedAt);
+    reporter.finishPageFirstFrame(
+      '/home',
+      endTime: startedAt.add(const Duration(milliseconds: 32)),
+    );
+    await reporter.dispose();
+
+    final pageVisitEnd = output.events.firstWhere(
+      (event) =>
+          event['name'] == EventNames.pageVisit &&
+          (event['attributes'] as Map)[FieldPaths.eventPhase] == 'end',
+    );
+    final pageStay = output.events.singleWhere(
+      (event) => event['name'] == EventNames.pageStay,
+    );
+
+    expect(
+      (pageVisitEnd['payload'] as Map)[PayloadKeys.pageEndReason],
+      PageEndReasons.appDispose,
+    );
+    expect(
+      (pageStay['payload'] as Map)[PayloadKeys.pageEndReason],
+      PageEndReasons.appDispose,
+    );
+    expect(
+      (pageVisitEnd['attributes'] as Map).containsKey(FieldPaths.pageTo),
+      isFalse,
+    );
+    expect(pageStay['durationMs'], isA<num>());
+    expect(output.lastFlushIsAppExiting, isTrue);
   });
 
   test('dispose failures emit sdk self-monitoring events', () async {

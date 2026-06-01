@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';

@@ -534,6 +534,7 @@ function summarizeStartup(
   const backgroundDurationEvents = allEvents.filter((event) => nameOf(event) === 'app.background_duration');
   const hotResumeEvents = startupEvents.filter((event) => (
     nameOf(event) === 'app.hot_start' &&
+    stringAttribute(event, 'app.start.type') === 'hot' &&
     (durationOf(event) ?? 0) > 0
   ));
   const hotResume = summarizeDuration(

@@ -258,15 +258,15 @@ flowchart TB
 
 | 字段 | 类型 | 隐私等级 | 建议索引 | 说明 |
 |---|---|---|---:|---|
-| `app.start.type` | string | safe | 是 | cold/hot/warm |
+| `app.start.type` | string | safe | 是 | cold/hot；当前 core/SDK 只注册并发出 cold、hot，warm 如需支持必须先扩展 core 常量与采集语义 |
 | `app.start.end_reason` | string | safe | 是 | first_frame/interactive/timeout/manual，说明启动 trace 的闭合口径 |
 | `event.phase` | string | safe | 是 | start/end/instant，用于区分 trace/span 生命周期事件 |
 | `app.first_frame_ms` | duration_ms | safe | 是 | 启动首帧耗时 |
-| `app.interactive_ms` | duration_ms | safe | 是 | 启动可交互耗时 |
+| `app.interactive_ms` | duration_ms | safe | 是 | 启动可交互耗时；当前 core 预留，基础 SDK 仅在明确以 interactive 闭合时填写 |
 | `sdk.init.duration_ms` | duration_ms | safe | 是 | SDK 初始化耗时 |
 | `native.start.elapsed_ms` | duration_ms | safe | 是 | native 启动起点到 Flutter 可观测点耗时 |
 | `page.first_frame_ms` | duration_ms | safe | 是 | 页面首帧耗时 |
-| `page.interactive_ms` | duration_ms | safe | 是 | 页面可交互耗时 |
+| `page.interactive_ms` | duration_ms | safe | 是 | 页面可交互耗时；当前 core 预留，基础 SDK 不自动生成 |
 | `page.from` | string | queryable | 是 | 页面来源 route |
 | `page.to` | string | queryable | 是 | 页面离开后进入的 route |
 | `page.instance_id` | string | queryable | 是 | 单次页面实例 ID，用于区分同 route 多次进入 |
@@ -669,7 +669,7 @@ Trace 事件通常表示流程整体，内部阶段应使用 span 表达。
 
 - `sdk.init`
 - `app.first_frame`
-- `app.interactive`
+- `app.interactive`（预留）
 - `route.push`
 - `http.client`
 - `image.decode`
@@ -880,7 +880,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 - `app.cold_start`
 - `app.hot_start`
 - `app.first_frame`
-- `app.interactive`
+- `app.interactive`（预留）
 - `page.visit`
 - `page.load`
 - `page.first_frame`
@@ -912,7 +912,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 | 信号 | 推荐事件 | 关键字段 |
 |---|---|---|
-| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、`span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、`app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
+| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs` |
 | 网络 | `span http.client` | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
@@ -979,8 +979,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
       },
       "attributes": {
         "app.start.type": "cold",
-        "app.first_frame_ms": 640,
-        "app.interactive_ms": 1180
+        "app.first_frame_ms": 640
       },
       "payload": {}
     },

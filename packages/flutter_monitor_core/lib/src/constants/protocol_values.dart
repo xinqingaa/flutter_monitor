@@ -76,6 +76,13 @@ abstract final class StartupEndReasons {
   static const manual = 'manual';
 }
 
+abstract final class PageEndReasons {
+  static const routePop = 'route_pop';
+  static const routeReplace = 'route_replace';
+  static const lifecycleDetached = 'lifecycle.detached';
+  static const appDispose = 'app.dispose';
+}
+
 abstract final class TriggerValues {
   static const manual = 'manual';
   static const jankSequence = 'jank.sequence';

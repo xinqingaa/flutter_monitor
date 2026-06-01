@@ -45,6 +45,7 @@ abstract final class PayloadKeys {
   static const lifecycleContextState = 'lifecycle.context_state';
 
   static const pageReplaced = 'page.replaced';
+  static const pageEndReason = 'page.end_reason';
 
   static const jankCount = 'jank_count';
   static const maxDurationMs = 'max_duration_ms';

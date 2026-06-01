@@ -143,7 +143,7 @@ Native 增强来源：
 - `trace app.hot_start`
 - `span sdk.init`
 - `span app.first_frame`
-- `span app.interactive`
+- `span app.interactive`（预留；基础 SDK 当前不自动生成，需业务或 native 明确提供可交互点后再启用）
 - `breadcrumb app.lifecycle`
 
 ### 链路关联
@@ -161,7 +161,7 @@ Native 增强来源：
 - `app.start.end_reason`
 - `event.phase`
 - `app.first_frame_ms`
-- `app.interactive_ms`
+- `app.interactive_ms`（预留；仅在明确以可交互点闭合启动 trace 时填写）
 - `sdk.init.duration_ms`
 - `context.lifecycle.previousState`
 - `native.start.elapsed_ms`
@@ -188,8 +188,9 @@ Native 增强来源：
 
 - route push / pop / replace。
 - 页面首帧。
-- 页面可交互。
+- 页面可交互（预留增强能力；基础 SDK 当前以页面首帧作为自动闭合点）。
 - 页面停留结束。
+- app detached 或 SDK dispose 时，尽力结束当前活跃页面。
 - route stack 变化。
 
 ### 生成事件
@@ -198,7 +199,7 @@ Native 增强来源：
 - `span route.push`
 - `span page.load`
 - `span page.first_frame`
-- `span page.interactive`
+- `span page.interactive`（预留；基础 SDK 当前不自动生成）
 - `metric page.stay`
 - `breadcrumb page.view`
 
@@ -208,6 +209,7 @@ Native 增强来源：
 - page visit trace 作为页面活动窗口，page load span 作为页面加载阶段。
 - 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。
 - route pop/replace/page stay 应结束页面 activity window。
+- paused/hidden 不结束页面 activity window；detached、SDK dispose 或 app exiting flush 应尽力结束活跃页面，并通过 payload 标明结束原因。
 
 ### 字段映射
 
@@ -222,9 +224,12 @@ Native 增强来源：
 - `page.to`
 - `page.load_ms`
 - `page.first_frame_ms`
-- `page.interactive_ms`
+- `page.interactive_ms`（预留；仅在明确采集页面可交互点时填写）
+- `payload.page.end_reason`
 
 页面停留时长使用 `metric page.stay` 的 `durationMs`，不再使用独立 attributes 字段。
+`page.first_frame_ms` 只应出现在 `page.first_frame` end 事件和以首帧闭合的 `page.load` end 事件上，不应出现在 start 事件上。
+`payload.page.end_reason` 当前标准值包括 `route_pop`、`route_replace`、`lifecycle.detached` 和 `app.dispose`。
 
 ### 限制与降级
 
@@ -233,6 +238,7 @@ Native 增强来源：
 - module/scene 属于可选增强上下文。SDK 不应要求业务方在每个页面或代码模块手动设置 module 才能获得基础链路。
 - 如果未来提供 `setContext(module: ..., scene: ...)` 一类能力，应定位为增强检索维度，而不是普通接入必填步骤。
 - route stack 不可用时应保留当前 route 和 missing reason。
+- 进程被系统直接杀死时，Flutter/Dart 可能没有 detached 或 dispose 回调，最终 `page.stay` 只能尽力生成；native/离线缓存可作为增强补充。
 
 ## 网络采集
 
@@ -534,7 +540,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 
 - lifecycle 影响 session 切分。
 - resumed 可创建 hot start trace，但 trace 必须延后到恢复观测点闭合，不能在 resumed 回调中同步 start/end。
-- paused/detached 应触发尽力 flush。
+- paused/hidden/detached 应触发尽力 flush；detached 还应在 flush 前尽力闭合当前活跃页面。
 - lifecycle breadcrumb 应帮助解释请求中断、错误、卡顿和 native 信号。
 - 前台/后台持续时间使用 `app.foreground_duration` 和 `app.background_duration` 的 envelope `durationMs` 表达。
 - 后台停留间隔可作为 hot start 的上下文，但不得写入 `app.hot_start.durationMs`。
@@ -552,7 +558,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 
 ### 限制与降级
 
-- 移动平台退出时机不稳定，exit flush 只能尽力。
+- 移动平台退出时机不稳定，exit flush 和活跃页面闭合只能尽力。
 - 后台限制可能导致上传失败，应依赖离线缓存。
 - native lifecycle 可补充 Flutter lifecycle 缺口。
 

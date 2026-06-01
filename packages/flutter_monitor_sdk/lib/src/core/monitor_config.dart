@@ -83,7 +83,7 @@ class AppInfo {
   /// 应用渠道
   final String? channel;
 
-  /// 应用环境（dev/test/prod）
+  /// 应用环境（dev/test/staging/production）
   final String? environment;
 
   const AppInfo({

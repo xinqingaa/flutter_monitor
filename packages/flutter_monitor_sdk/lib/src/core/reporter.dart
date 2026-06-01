@@ -336,7 +336,10 @@ class Reporter {
         existing,
         endTime: startTime ?? DateTime.now(),
         status: EventStatus.unknown,
-        payload: const <String, Object?>{PayloadKeys.pageReplaced: true},
+        payload: const <String, Object?>{
+          PayloadKeys.pageEndReason: PageEndReasons.routeReplace,
+          PayloadKeys.pageReplaced: true,
+        },
       );
     }
 
@@ -418,7 +421,6 @@ class Reporter {
       EventNames.pageFirstFrame,
       traceId: record.traceId,
       startTime: record.startedAt,
-      attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
       payload: <String, Object?>{PayloadKeys.routeName: routeName},
     );
     endSpan(
@@ -464,7 +466,27 @@ class Reporter {
     _finishPageTrace(
       record.copyWith(nextRouteName: nextRouteName),
       endTime: endTime ?? DateTime.now(),
+      payload: const <String, Object?>{
+        PayloadKeys.pageEndReason: PageEndReasons.routePop,
+      },
     );
+  }
+
+  void finishActivePageTraces({
+    DateTime? endTime,
+    String endReason = PageEndReasons.appDispose,
+  }) {
+    if (_pageTraces.isEmpty) return;
+    final finishedAt = endTime ?? DateTime.now();
+    final activePages = _pageTraces.values.toList(growable: false);
+    _pageTraces.clear();
+    for (final record in activePages) {
+      _finishPageTrace(
+        record,
+        endTime: finishedAt,
+        payload: <String, Object?>{PayloadKeys.pageEndReason: endReason},
+      );
+    }
   }
 
   PipelineResult recordHttpClient({
@@ -932,6 +954,13 @@ class Reporter {
       _foregroundStartedAt = occurredAt;
     }
 
+    if (state == LifecycleStates.detached) {
+      finishActivePageTraces(
+        endTime: occurredAt,
+        endReason: PageEndReasons.lifecycleDetached,
+      );
+    }
+
     if (_config.effectiveSessionConfig.flushOnBackground &&
         isBackgroundState &&
         !_backgroundFlushPending) {
@@ -1099,6 +1128,7 @@ class Reporter {
 
   /// 清理资源，在应用关闭时调用。
   Future<void> dispose() async {
+    finishActivePageTraces(endReason: PageEndReasons.appDispose);
     await flush(isAppExiting: true);
     // 调用所有输出器的 dispose 方法，让它们清理自己的资源。
     for (final output in _config.effectiveOutputs) {
@@ -1188,6 +1218,7 @@ class Reporter {
           PayloadKeys.type: EventNames.pageStay,
           PayloadKeys.page: record.routeName,
           PayloadKeys.durationMs: stayMs,
+          ...payload,
         },
       ),
     );

@@ -75,7 +75,7 @@ SDK 应将关键 trace/span 写入 Flutter Timeline。
 - `app.cold_start`
 - `app.hot_start`
 - `app.first_frame`
-- `app.interactive`
+- `app.interactive`（预留；基础 SDK 当前不自动生成）
 - `route.push` / `route.pop`
 - `page.visit`
 - `page.load`
@@ -262,10 +262,10 @@ DevTools 应支持导出当前 session，供 QA 转交开发。
 
 DevTools 应支持以下场景：
 
-- 页面加载慢：查看 page trace 下的 `context.route.name`、first frame、interactive、HTTP、jank、memory。
+- 页面加载慢：查看 page trace 下的 `context.route.name`、first frame、HTTP、jank、memory；如业务或 native 提供 interactive，再展示可交互点。
 - 点击后卡顿：查看 action breadcrumb、后续 span、jank sequence 和 memory sample。
 - 请求慢：查看 http span 是否影响页面 trace 或 action trace。
-- 冷启动慢：查看 app cold start trace、SDK init、first frame、interactive。
+- 冷启动慢：查看 app cold start trace、SDK init、first frame；如业务或 native 提供 interactive，再展示可交互点。
 - 热启动慢：查看 lifecycle resume、hot start trace、页面恢复和首个可交互点。
 - 内存上涨：查看 memory growth、`context.route.*` / `context.module.*` / `context.network.*`、HTTP、native 信号和 suspect leak 线索。
 - native 异常：查看 native crash/OOM/ANR 的 `sessionId`、`context.route.*`、`payload.breadcrumbs` 和设备上下文。
