@@ -12,6 +12,8 @@ RUN_DIR="${FM_WORKBENCH_RUN_DIR:-/tmp/flutter_monitor_workbench}"
 SERVICE_PID_FILE="$RUN_DIR/service_${SERVER_PORT}.pid"
 WEB_PID_FILE="$RUN_DIR/web_${WEB_PORT}.pid"
 LOG_FILE="${FM_WORKBENCH_LOG:-/tmp/flutter_monitor_workbench.log}"
+ADB_REVERSE_FILE="$RUN_DIR/adb_reverse_${SERVER_PORT}.devices"
+USE_ADB_REVERSE="${FM_USE_ADB_REVERSE:-1}"
 
 run_pnpm() {
   if ! command -v pnpm >/dev/null 2>&1; then
@@ -83,6 +85,48 @@ wait_for_url() {
   return 1
 }
 
+configure_adb_reverse() {
+  if [ "$USE_ADB_REVERSE" = "0" ]; then
+    return 0
+  fi
+  if ! command -v adb >/dev/null 2>&1; then
+    return 0
+  fi
+
+  mkdir -p "$RUN_DIR"
+  : >"$ADB_REVERSE_FILE"
+
+  local device
+  local configured=0
+  while IFS= read -r device; do
+    [ -z "$device" ] && continue
+    if adb -s "$device" reverse "tcp:$SERVER_PORT" "tcp:$SERVER_PORT" >/dev/null 2>&1; then
+      echo "$device" >>"$ADB_REVERSE_FILE"
+      configured=1
+    fi
+  done < <(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')
+
+  if [ "$configured" -eq 1 ]; then
+    echo "Android adb reverse: device localhost:$SERVER_PORT -> host localhost:$SERVER_PORT"
+  fi
+}
+
+remove_adb_reverse() {
+  if ! command -v adb >/dev/null 2>&1; then
+    rm -f "$ADB_REVERSE_FILE"
+    return 0
+  fi
+
+  local device
+  if [ -f "$ADB_REVERSE_FILE" ]; then
+    while IFS= read -r device; do
+      [ -z "$device" ] && continue
+      adb -s "$device" reverse --remove "tcp:$SERVER_PORT" >/dev/null 2>&1 || true
+    done <"$ADB_REVERSE_FILE"
+    rm -f "$ADB_REVERSE_FILE"
+  fi
+}
+
 start_service_background() {
   mkdir -p "$RUN_DIR" "$DATA_DIR"
   local current_pid
@@ -130,6 +174,7 @@ start_workbench_background() {
   : >"$LOG_FILE"
   start_service_background
   start_web_background
+  configure_adb_reverse
 }
 
 start_workbench_foreground() {
@@ -145,6 +190,7 @@ start_workbench_foreground() {
   ensure_port_available "$WEB_PORT" "web"
   echo "Workbench service: http://localhost:$SERVER_PORT"
   echo "Workbench web: http://localhost:$WEB_PORT"
+  configure_adb_reverse
   exec env PORT="$SERVER_PORT" FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
     pnpm --dir "$WORKBENCH_DIR" dev
 }
@@ -229,6 +275,7 @@ stop_remaining_workbench_processes() {
 }
 
 stop_workbench() {
+  remove_adb_reverse
   stop_pid_file "$WEB_PID_FILE" "web"
   stop_pid_file "$SERVICE_PID_FILE" "service"
   stop_by_port_if_workbench "$WEB_PORT" "web"
@@ -267,6 +314,7 @@ case "$COMMAND" in
     install_dependencies
     mkdir -p "$DATA_DIR"
     ensure_port_available "$SERVER_PORT" "service"
+    configure_adb_reverse
     exec env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
       pnpm --dir "$WORKBENCH_DIR" --filter @flutter-monitor/workbench-service dev
     ;;

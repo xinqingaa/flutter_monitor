@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Activity, AlertTriangle, ArrowRight, Gauge, Globe2, Radio, UserRound } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, CalendarClock, Gauge, Globe2, Radio, UserRound } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -18,6 +18,7 @@ export function SessionSummaryCard({
   description = '刚复现的链路会自动浮出。',
   actionLabel = '进入排查',
   className,
+  panelAction,
 }: {
   session?: SessionSummary;
   live?: boolean;
@@ -25,6 +26,7 @@ export function SessionSummaryCard({
   description?: string;
   actionLabel?: string;
   className?: string;
+  panelAction?: React.ReactNode;
 }) {
   return (
     <Card className={cn('overflow-hidden', className)}>
@@ -33,24 +35,33 @@ export function SessionSummaryCard({
           <CardTitle>{title}</CardTitle>
           <p className="mt-1 text-xs text-zinc-500">{description}</p>
         </div>
-        {live ? (
-          <Badge tone="teal" className="shrink-0">
-            <Radio className="size-3" />
-            实时中
-          </Badge>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {live ? (
+            <Badge tone="teal" className="shrink-0">
+              <Radio className="size-3" />
+              实时中
+            </Badge>
+          ) : null}
+          {panelAction}
+        </div>
       </CardHeader>
       <CardContent>
         {!session ? (
           <EmptyState title="暂无会话" description="运行 example 后，最新一次 App 使用过程会出现在这里。" />
         ) : (
-          <div className="grid gap-3">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <CopyableId value={session.sessionId} />
-              <Badge tone={session.status === 'error' ? 'danger' : 'good'}>{statusLabel(session.status)}</Badge>
+          <div className="grid gap-3 rounded-lg bg-zinc-50/80 p-3">
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[11px] font-medium text-zinc-500">最新会话</div>
+                <div className="mt-1">
+                  <CopyableId value={session.sessionId} />
+                </div>
+              </div>
+              <Badge tone={session.status === 'error' ? 'danger' : 'good'} className="shrink-0">{statusLabel(session.status)}</Badge>
             </div>
-            <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs tabular-nums text-zinc-600">
-              {formatDateTime(session.firstTimestamp)} - {formatDateTime(session.lastTimestamp)}
+            <div className="flex min-w-0 items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs tabular-nums text-zinc-600 shadow-sm shadow-zinc-200/50">
+              <CalendarClock className="size-3.5 shrink-0 text-teal-600" />
+              <span className="min-w-0 truncate">{formatDateTime(session.firstTimestamp)} - {formatDateTime(session.lastTimestamp)}</span>
             </div>
             <SessionContext session={session} />
             <SessionIssueSummary session={session} />
@@ -80,11 +91,11 @@ export function SessionContext({ session, compact = false }: { session: SessionS
   }
 
   return (
-    <div className={cn('grid gap-1.5', compact ? 'grid-cols-1' : 'grid-cols-2')}>
+    <div className={cn('flex flex-wrap gap-1.5', compact ? 'flex-col' : '')}>
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <div key={item.label} className="min-w-0 rounded-md border border-zinc-200 bg-white px-2 py-1">
+          <div key={item.label} className={cn('min-w-0 rounded-md bg-white px-2 py-1 shadow-sm shadow-zinc-200/50', compact ? 'w-full' : 'max-w-full flex-1 basis-[calc(50%-0.25rem)]')}>
             <div className="flex items-center gap-1 text-[11px] text-zinc-500">
               {Icon ? <Icon className="size-3" /> : null}
               {item.label}
@@ -190,10 +201,10 @@ function IssuePill({
   return (
     <div
       className={cn(
-        'min-w-0 rounded-md border px-2 py-1',
-        tone === 'neutral' && 'border-zinc-200 bg-zinc-50 text-zinc-600',
-        tone === 'warn' && 'border-amber-200 bg-amber-50 text-amber-800',
-        tone === 'danger' && 'border-red-200 bg-red-50 text-red-700',
+        'min-w-0 rounded-md px-2 py-1 shadow-sm shadow-zinc-200/40',
+        tone === 'neutral' && 'bg-white text-zinc-600',
+        tone === 'warn' && 'bg-amber-50 text-amber-800',
+        tone === 'danger' && 'bg-red-50 text-red-700',
       )}
     >
       <div className="flex items-center gap-1 text-[11px]">

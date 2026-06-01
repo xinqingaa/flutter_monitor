@@ -37,6 +37,7 @@ abstract final class PayloadKeys {
   static const sampleCount = 'sample_count';
 
   static const durationMs = 'duration_ms';
+  static const backgroundDurationMs = 'background_duration_ms';
   static const startupPhase = 'startup.phase';
   static const sessionStartedNew = 'session.started_new';
   static const lifecyclePreviousState = 'lifecycle.previous_state';

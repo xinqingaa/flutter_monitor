@@ -22,6 +22,7 @@ export function MetricCard({
   emphasis,
   to,
   kind,
+  panelAction,
 }: {
   title: string;
   icon: LucideIcon;
@@ -29,6 +30,7 @@ export function MetricCard({
   emphasis?: string;
   to?: string;
   kind?: MetricKind;
+  panelAction?: React.ReactNode;
 }) {
   const errorCount = summary?.errorCount ?? 0;
   const body = (
@@ -39,7 +41,10 @@ export function MetricCard({
             <Icon className="size-5 shrink-0" />
             <span className="truncate">{title}</span>
           </div>
-          {emphasis ? <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">{emphasis}</span> : null}
+          <div className="flex shrink-0 items-center gap-2">
+            {emphasis ? <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">{emphasis}</span> : null}
+            {panelAction}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <MetricNumber label="事件数" field="events.length" hint="来源：当前筛选范围内匹配该类 signal 的 SDK envelope 数量" value={summary?.count ?? 0} />

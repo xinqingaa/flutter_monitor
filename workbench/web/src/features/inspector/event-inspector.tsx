@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Braces, Clipboard, ExternalLink, GitBranch, Info, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Braces, ChevronDown, ChevronRight, Clipboard, ExternalLink, GitBranch, Info, type LucideIcon } from 'lucide-react';
+import { useState } from 'react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
@@ -23,7 +24,7 @@ import {
   sceneOf,
   userIdOf,
 } from '../../shared/event-model/accessors';
-import { formatDuration, formatTime } from '../../shared/formatting/format';
+import { formatDateTime, formatDuration, formatTime } from '../../shared/formatting/format';
 import { EventKindBadge } from '../timeline/status-badge';
 import { JsonViewer } from './json-viewer';
 import { copyJson } from '../../shared/formatting/download';
@@ -35,10 +36,12 @@ export function EventInspector({
   event,
   traceEvents = [],
   onSelectEvent,
+  panelAction,
 }: {
   event?: MonitorEvent;
   traceEvents?: MonitorEvent[];
   onSelectEvent?: (event: MonitorEvent) => void;
+  panelAction?: React.ReactNode;
 }) {
   if (!event) {
     return (
@@ -75,9 +78,10 @@ export function EventInspector({
             {labels.map((label) => <Badge key={label} tone="warn">{label}</Badge>)}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 pr-1">
           <IconTooltipButton type="button" variant="secondary" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
           <CopyableId value={event.eventId} />
+          {panelAction}
         </div>
       </CardHeader>
       <CardContent className="min-h-0 overflow-hidden p-3">
@@ -210,15 +214,7 @@ function TracePanel({
           <EmptyState title="无上下文足迹" />
         ) : (
           <div className="grid gap-2">
-            {breadcrumbs.map((breadcrumb, index) => (
-              <div key={index} className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                <div className="mb-1 flex items-center gap-2 text-xs font-medium text-zinc-600">
-                  <AlertTriangle className="size-3.5" />
-                  足迹 #{index + 1}
-                </div>
-                <JsonViewer value={breadcrumb} />
-              </div>
-            ))}
+            {breadcrumbs.map((breadcrumb, index) => <BreadcrumbCard key={index} breadcrumb={breadcrumb} index={index} />)}
           </div>
         )}
       </Section>
@@ -275,7 +271,7 @@ function TraceEventRow({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-zinc-200">
+    <section className="rounded-md border border-zinc-200 bg-white">
       <div className="border-b border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm font-semibold text-zinc-700">{title}</div>
       <div className="grid gap-1.5 p-2">{children}</div>
     </section>
@@ -301,9 +297,9 @@ function FieldGroup({ title, fields, emptyText }: { title: string; fields: Inspe
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-zinc-200 bg-white">
-      <div className="border-b border-zinc-100 bg-zinc-50 px-2 py-1.5 text-xs font-semibold text-zinc-600">{title}</div>
-      <div className="divide-y divide-zinc-100">
+    <div className="rounded-md bg-zinc-50/80 px-2 py-2">
+      <div className="px-1 pb-1.5 text-xs font-semibold text-zinc-600">{title}</div>
+      <div className="grid gap-1.5">
         {fields.map((field) => <FieldRow key={field.path} field={field} />)}
       </div>
     </div>
@@ -313,10 +309,101 @@ function FieldGroup({ title, fields, emptyText }: { title: string; fields: Inspe
 function FieldRow({ field }: { field: InspectorField }) {
   if (!field) return null;
   return (
-    <div className="grid gap-1 px-2 py-1.5 text-xs sm:grid-cols-[minmax(132px,0.85fr)_minmax(96px,0.55fr)_minmax(0,1fr)] sm:items-start sm:gap-2">
+    <div className="grid gap-1 rounded-md bg-white px-2 py-1.5 text-xs shadow-sm shadow-zinc-200/40 sm:grid-cols-[minmax(128px,0.8fr)_minmax(96px,0.55fr)_minmax(0,1fr)] sm:items-start sm:gap-2">
       <div className="break-all font-mono font-medium text-zinc-500">{field.path}</div>
       <div className="break-words font-semibold text-zinc-950">{field.value}</div>
-      {field.description ? <div className="break-words leading-relaxed text-zinc-500">{field.description}</div> : <div className="hidden sm:block" />}
+      {field.description ? <div className="break-words leading-relaxed text-zinc-500">{field.description}</div> : <div className="hidden sm:block text-zinc-400">-</div>}
     </div>
   );
+}
+
+function BreadcrumbCard({ breadcrumb, index }: { breadcrumb: JsonObject; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = breadcrumbSummary(breadcrumb);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-zinc-200 bg-white">
+      <button type="button" onClick={() => setExpanded((value) => !value)} className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 px-2 py-2 text-left hover:bg-zinc-50">
+        <span className={cn(
+          'mt-0.5 inline-flex size-7 items-center justify-center rounded-md border',
+          summary.tone === 'danger' && 'border-red-200 bg-red-50 text-red-700',
+          summary.tone === 'warn' && 'border-amber-200 bg-amber-50 text-amber-800',
+          summary.tone === 'neutral' && 'border-zinc-200 bg-zinc-50 text-zinc-500',
+        )}>
+          <AlertTriangle className="size-3.5" />
+        </span>
+        <span className="min-w-0">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="text-sm font-semibold text-zinc-900">足迹 #{index + 1}</span>
+            <Badge tone={summary.tone} className="rounded-md px-1.5 py-0">{summary.type}</Badge>
+            {summary.status ? <Badge tone={summary.status === 'error' ? 'danger' : 'neutral'} className="rounded-md px-1.5 py-0">{summary.status}</Badge> : null}
+          </span>
+          <span className="mt-1 block truncate text-xs text-zinc-600">{summary.title}</span>
+          <span className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-zinc-500">
+            {summary.time ? <span>{summary.time}</span> : null}
+            {summary.route ? <span>页面 {summary.route}</span> : null}
+            {summary.duration ? <span>耗时 {summary.duration}</span> : null}
+          </span>
+        </span>
+        {expanded ? <ChevronDown className="mt-1 size-4 text-zinc-400" /> : <ChevronRight className="mt-1 size-4 text-zinc-400" />}
+      </button>
+      {expanded ? (
+        <div className="border-t border-zinc-100 bg-zinc-50 p-2">
+          <JsonViewer value={breadcrumb} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function breadcrumbSummary(breadcrumb: JsonObject) {
+  const type = readBreadcrumbText(breadcrumb, ['type', 'signalType', 'category', 'name']) ?? 'breadcrumb';
+  const name = readBreadcrumbText(breadcrumb, ['name', 'action', 'message', 'event']);
+  const route = readBreadcrumbText(breadcrumb, ['route', 'routeName', 'page', 'screen', 'context.route.name']);
+  const status = readBreadcrumbText(breadcrumb, ['status', 'level']);
+  const timestamp = readBreadcrumbText(breadcrumb, ['timestamp', 'time', 'occurredAt']);
+  const duration = readBreadcrumbNumber(breadcrumb, ['durationMs', 'duration_ms']);
+  const title = name ?? route ?? type;
+  const tone = status === 'error' || type.includes('error') || type.includes('fail')
+    ? 'danger'
+    : type.includes('jank') || type.includes('warning') || status === 'warning'
+      ? 'warn'
+      : 'neutral';
+
+  return {
+    type,
+    title,
+    route,
+    status,
+    tone: tone as 'neutral' | 'warn' | 'danger',
+    time: timestamp ? formatDateTime(timestamp) : undefined,
+    duration: typeof duration === 'number' ? formatDuration(duration) : undefined,
+  };
+}
+
+function readBreadcrumbText(object: JsonObject, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const value = readObjectPath(object, path);
+    if (typeof value === 'string' && value.length > 0) return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  }
+  return undefined;
+}
+
+function readBreadcrumbNumber(object: JsonObject, paths: string[]): number | undefined {
+  for (const path of paths) {
+    const value = readObjectPath(object, path);
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function readObjectPath(object: JsonObject, path: string): unknown {
+  if (path in object) return object[path];
+  return path.split('.').reduce<unknown>((value, key) => {
+    if (value && typeof value === 'object' && key in value) {
+      return (value as JsonObject)[key];
+    }
+    return undefined;
+  }, object);
 }

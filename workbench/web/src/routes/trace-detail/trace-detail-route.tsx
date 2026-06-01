@@ -1,6 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft, GitBranch } from 'lucide-react';
 import { useState } from 'react';
+import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { EventInspector } from '../../features/inspector/event-inspector';
@@ -20,6 +21,7 @@ export function TraceDetailRoute() {
   const first = events[0];
   const last = events[events.length - 1];
   const duration = first?.timestamp && last?.timestamp ? Date.parse(last.timestamp) - Date.parse(first.timestamp) : undefined;
+  const rightPanel = useCollapsiblePanel('workbench.traceDetail.right');
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 p-2">
@@ -42,9 +44,36 @@ export function TraceDetailRoute() {
           </div>
         </CardContent>
       </Card>
-      <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:grid-cols-[minmax(640px,1fr)_520px] xl:overflow-hidden">
+      <div
+        className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:overflow-hidden ${
+          rightPanel.collapsed ? 'xl:grid-cols-[minmax(640px,1fr)_40px]' : 'xl:grid-cols-[minmax(640px,1fr)_560px]'
+        }`}
+      >
         <SessionTimeline events={events} selectedEventId={selectedEvent?.eventId} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
-        <EventInspector event={selectedEvent} traceEvents={timelineEvents} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
+        <aside className="min-h-[560px] overflow-hidden xl:min-h-0">
+          <CollapsiblePanel
+            storageKey="workbench.traceDetail.right"
+            title="节点诊断"
+            icon={GitBranch}
+            side="right"
+            collapsed={rightPanel.collapsed}
+            onToggleCollapsed={rightPanel.toggleCollapsed}
+          >
+            <EventInspector
+              event={selectedEvent}
+              traceEvents={timelineEvents}
+              onSelectEvent={(event) => setSelectedEventId(event.eventId)}
+              panelAction={
+                <CollapsiblePanelAction
+                  side="right"
+                  title="节点诊断"
+                  collapsed={rightPanel.collapsed}
+                  onToggleCollapsed={rightPanel.toggleCollapsed}
+                />
+              }
+            />
+          </CollapsiblePanel>
+        </aside>
       </div>
     </div>
   );

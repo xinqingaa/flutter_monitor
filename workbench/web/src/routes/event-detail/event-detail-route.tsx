@@ -1,6 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, GitBranch } from 'lucide-react';
 import { useState } from 'react';
+import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Button } from '../../components/ui/button';
 import { EventInspector } from '../../features/inspector/event-inspector';
 import { prepareSessionEvents } from '../../features/timeline/session-segments';
@@ -16,6 +17,7 @@ export function EventDetailRoute() {
   const timelineEvents = prepareSessionEvents(sessionQuery.data ?? []);
   const [selectedEventId, setSelectedEventId] = useState<string>();
   const selectedEvent = timelineEvents.find((item) => item.eventId === selectedEventId) ?? event;
+  const rightPanel = useCollapsiblePanel('workbench.eventDetail.right');
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 p-2">
@@ -37,17 +39,40 @@ export function EventDetailRoute() {
         )}
         <div className="text-xs text-zinc-500">{eventId}</div>
       </div>
-      <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:grid-cols-[minmax(640px,1fr)_520px] xl:overflow-hidden">
+      <div
+        className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:overflow-hidden ${
+          rightPanel.collapsed ? 'xl:grid-cols-[minmax(640px,1fr)_40px]' : 'xl:grid-cols-[minmax(640px,1fr)_560px]'
+        }`}
+      >
         <SessionTimeline
           events={sessionQuery.data ?? []}
           selectedEventId={selectedEvent?.eventId ?? eventId}
           onSelectEvent={(item) => setSelectedEventId(item.eventId)}
         />
-        <EventInspector
-          event={selectedEvent}
-          traceEvents={prepareSessionEvents(traceQuery.data ?? [])}
-          onSelectEvent={(item) => setSelectedEventId(item.eventId)}
-        />
+        <aside className="min-h-[560px] overflow-hidden xl:min-h-0">
+          <CollapsiblePanel
+            storageKey="workbench.eventDetail.right"
+            title="节点诊断"
+            icon={GitBranch}
+            side="right"
+            collapsed={rightPanel.collapsed}
+            onToggleCollapsed={rightPanel.toggleCollapsed}
+          >
+            <EventInspector
+              event={selectedEvent}
+              traceEvents={prepareSessionEvents(traceQuery.data ?? [])}
+              onSelectEvent={(item) => setSelectedEventId(item.eventId)}
+              panelAction={
+                <CollapsiblePanelAction
+                  side="right"
+                  title="节点诊断"
+                  collapsed={rightPanel.collapsed}
+                  onToggleCollapsed={rightPanel.toggleCollapsed}
+                />
+              }
+            />
+          </CollapsiblePanel>
+        </aside>
       </div>
     </div>
   );

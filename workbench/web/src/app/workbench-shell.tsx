@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { Home, ListTree, Pause, Play, RefreshCw } from 'lucide-react';
+import { ListTree, Pause, Play, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../components/ui/button';
 import { useLiveInvalidation } from '../shared/datasource/queries';
@@ -16,8 +16,8 @@ export function WorkbenchShell() {
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] bg-zinc-100 text-zinc-950">
       <header className={`flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-white ${performanceRoute ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
         <div className="flex min-w-0 items-center gap-2">
-          <Link to="/" className={`${performanceRoute ? 'h-8 w-8' : 'h-9 w-9'} inline-flex items-center justify-center rounded-md bg-zinc-950 text-white`}>
-            <Home className="size-4" />
+          <Link to="/" className={`${performanceRoute ? 'h-8 w-8' : 'h-9 w-9'} inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white shadow-sm`}>
+            <img src="/logo.png" alt="Flutter Monitor" className={`${performanceRoute ? 'size-6' : 'size-7'} rounded`} />
           </Link>
           {!performanceRoute ? (
             <div className="min-w-0">

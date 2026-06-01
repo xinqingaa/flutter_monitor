@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { Braces, ListFilter, type LucideIcon } from 'lucide-react';
+import { Braces, ListFilter, PanelRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { OverviewMetrics } from '../../features/overview/overview-metrics';
 import { RecentLiveSession } from '../../features/overview/recent-live-session';
 import { ServiceStatusStrip } from '../../features/overview/service-status-strip';
@@ -16,9 +17,14 @@ export function OverviewRoute() {
 
   const sessions = sessionsQuery.data?.sessions ?? [];
   const recentSession = sessions[0];
+  const rightPanel = useCollapsiblePanel('workbench.overview.right');
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-cols-[minmax(760px,1fr)_340px] xl:grid-rows-[auto_minmax(0,1fr)] xl:overflow-hidden">
+    <div
+      className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-rows-[auto_minmax(0,1fr)] xl:overflow-hidden ${
+        rightPanel.collapsed ? 'xl:grid-cols-[minmax(760px,1fr)_40px]' : 'xl:grid-cols-[minmax(760px,1fr)_380px]'
+      }`}
+    >
       <div className="xl:col-span-2">
         <ServiceStatusStrip health={healthQuery.data} live={live} />
       </div>
@@ -43,29 +49,52 @@ export function OverviewRoute() {
         </Card>
       </section>
 
-      <aside className="grid min-h-[360px] content-start gap-2 xl:min-h-0">
-        <RecentLiveSession session={recentSession} live={live} compact />
+      <aside className="min-h-[360px] xl:min-h-0">
+        <CollapsiblePanel
+          storageKey="workbench.overview.right"
+          title="排查侧栏"
+          icon={PanelRight}
+          side="right"
+          collapsed={rightPanel.collapsed}
+          onToggleCollapsed={rightPanel.toggleCollapsed}
+        >
+          <div className="grid content-start gap-2">
+            <RecentLiveSession
+              session={recentSession}
+              live={live}
+              compact
+              panelAction={
+                <CollapsiblePanelAction
+                  side="right"
+                  title="排查侧栏"
+                  collapsed={rightPanel.collapsed}
+                  onToggleCollapsed={rightPanel.toggleCollapsed}
+                />
+              }
+            />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>排查入口</CardTitle>
-            <CardDescription>Session 用于复现链路，Event 用于查看原始信号。</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            <WorkbenchEntryButton
-              to="/sessions"
-              icon={ListFilter}
-              label="Session 排查"
-              description="按用户、时间、页面、版本定位一次会话"
-            />
-            <WorkbenchEntryButton
-              to="/events"
-              icon={Braces}
-              label="Event 原始流"
-              description="开发态查看 SDK 原始 envelope"
-            />
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>排查入口</CardTitle>
+                <CardDescription>Session 用于复现链路，Event 用于查看原始信号。</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-2">
+                <WorkbenchEntryButton
+                  to="/sessions"
+                  icon={ListFilter}
+                  label="Session 排查"
+                  description="按用户、时间、页面、版本定位一次会话"
+                />
+                <WorkbenchEntryButton
+                  to="/events"
+                  icon={Braces}
+                  label="Event 原始流"
+                  description="开发态查看 SDK 原始 envelope"
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </CollapsiblePanel>
       </aside>
     </div>
   );

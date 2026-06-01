@@ -14,18 +14,23 @@ export function SessionList({
   dense = false,
   title,
   description,
+  panelAction,
 }: {
   sessions: SessionSummary[];
   selectedSessionId?: string;
   dense?: boolean;
   title?: string;
   description?: string;
+  panelAction?: React.ReactNode;
 }) {
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-      <CardHeader>
-        <CardTitle>{title ?? '全部会话'}</CardTitle>
-        {description ? <p className="mt-1 text-xs text-zinc-500">{description}</p> : null}
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div className="min-w-0">
+          <CardTitle>{title ?? '全部会话'}</CardTitle>
+          {description ? <p className="mt-1 text-xs text-zinc-500">{description}</p> : null}
+        </div>
+        {panelAction}
       </CardHeader>
       <CardContent className="min-h-0 overflow-auto p-0">
         <SessionRows sessions={sessions} selectedSessionId={selectedSessionId} dense={dense} />

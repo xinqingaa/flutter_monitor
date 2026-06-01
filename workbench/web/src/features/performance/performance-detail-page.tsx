@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowRight, ListTree } from 'lucide-react';
+import { ArrowRight, ListTree, PanelLeft } from 'lucide-react';
+import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { EmptyState } from '../../components/common/empty-state';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
@@ -53,24 +54,54 @@ export function PerformanceDetailPage({
 }) {
   const events = metric?.events ?? [];
   const fieldSummary = fieldSummaryFor(kind, metric);
+  const leftPanel = useCollapsiblePanel(`workbench.performance.${kind}.left`);
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <PerformanceTabs />
-      <div className="grid min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-cols-[340px_minmax(760px,1fr)] xl:overflow-hidden">
-        <aside className="grid content-start gap-2 xl:min-h-0 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
-          <MetricCard kind={kind} title={title} icon={icon} summary={metric} emphasis={emphasis} />
-          <SignalSummary
-            title="字段口径"
-            description={description}
-            events={events}
-            issueCount={metric?.errorCount ?? 0}
-            sampleLabel={fieldSummary.label}
-            sampleCount={fieldSummary.count}
-            sampleField={fieldSummary.field}
-            sampleHint={fieldSummary.hint}
-          />
-          <PrinciplesCard />
+      <div
+        className={`grid min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:overflow-hidden ${
+          leftPanel.collapsed ? 'xl:grid-cols-[40px_minmax(760px,1fr)]' : 'xl:grid-cols-[380px_minmax(760px,1fr)]'
+        }`}
+      >
+        <aside className="xl:min-h-0">
+          <CollapsiblePanel
+            storageKey={`workbench.performance.${kind}.left`}
+            title="指标说明"
+            icon={PanelLeft}
+            side="left"
+            collapsed={leftPanel.collapsed}
+            onToggleCollapsed={leftPanel.toggleCollapsed}
+          >
+            <div className="grid content-start gap-2 xl:min-h-0 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
+              <MetricCard
+                kind={kind}
+                title={title}
+                icon={icon}
+                summary={metric}
+                emphasis={emphasis}
+                panelAction={
+                  <CollapsiblePanelAction
+                    side="left"
+                    title="指标说明"
+                    collapsed={leftPanel.collapsed}
+                    onToggleCollapsed={leftPanel.toggleCollapsed}
+                  />
+                }
+              />
+              <SignalSummary
+                title="字段口径"
+                description={description}
+                events={events}
+                issueCount={metric?.errorCount ?? 0}
+                sampleLabel={fieldSummary.label}
+                sampleCount={fieldSummary.count}
+                sampleField={fieldSummary.field}
+                sampleHint={fieldSummary.hint}
+              />
+              <PrinciplesCard />
+            </div>
+          </CollapsiblePanel>
         </aside>
 
         <section className="min-h-[620px] overflow-visible xl:overflow-auto">

@@ -927,7 +927,7 @@ class Reporter {
         );
         _emitHotStartTrace(
           timestamp: occurredAt,
-          duration: resume.backgroundDuration!,
+          backgroundDuration: resume.backgroundDuration!,
           startedNewSession: resume.startedNewSession,
           previousState: previousState,
         );
@@ -1003,7 +1003,7 @@ class Reporter {
 
   void _emitHotStartTrace({
     required DateTime timestamp,
-    required Duration duration,
+    required Duration backgroundDuration,
     required bool startedNewSession,
     String? previousState,
   }) {
@@ -1011,12 +1011,14 @@ class Reporter {
         _traceManager
             .startTrace(
               name: EventNames.appHotStart,
-              startTime: timestamp.subtract(duration),
+              startTime: timestamp,
               attributes: <String, Object?>{
                 FieldPaths.appStartType: StartTypes.hot,
               },
               payload: <String, Object?>{
                 PayloadKeys.sessionStartedNew: startedNewSession,
+                PayloadKeys.backgroundDurationMs:
+                    backgroundDuration.inMilliseconds,
                 if (previousState != null)
                   PayloadKeys.lifecyclePreviousState: previousState,
               },
@@ -1030,6 +1032,7 @@ class Reporter {
       attributes: <String, Object?>{FieldPaths.appStartType: StartTypes.hot},
       payload: <String, Object?>{
         PayloadKeys.sessionStartedNew: startedNewSession,
+        PayloadKeys.backgroundDurationMs: backgroundDuration.inMilliseconds,
         if (previousState != null)
           PayloadKeys.lifecyclePreviousState: previousState,
       },

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, PanelRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { EmptyState } from '../../components/common/empty-state';
 import { ProblemSessionList } from '../../features/overview/problem-session-list';
 import { RecentEvents } from '../../features/overview/recent-events';
@@ -21,9 +22,14 @@ export function SessionsRoute() {
     () => sessions.filter((session) => session.errorCount > 0 || session.jankCount > 0 || session.failedHttpCount > 0 || session.status === 'error'),
     [sessions],
   );
+  const rightPanel = useCollapsiblePanel('workbench.sessions.right');
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-cols-[minmax(760px,1fr)_380px] xl:overflow-hidden">
+    <div
+      className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:overflow-hidden ${
+        rightPanel.collapsed ? 'xl:grid-cols-[minmax(760px,1fr)_40px]' : 'xl:grid-cols-[minmax(760px,1fr)_380px]'
+      }`}
+    >
       <section className="grid min-h-[620px] gap-2 xl:min-h-0 xl:grid-rows-[auto_minmax(0,1fr)]">
         <Card>
           <CardHeader className="flex flex-wrap items-start justify-between gap-2">
@@ -61,23 +67,42 @@ export function SessionsRoute() {
         </Card>
       </section>
 
-      <aside className="grid min-h-[520px] gap-2 xl:min-h-0 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-          <CardHeader>
-            <CardTitle>最近问题会话</CardTitle>
-            <CardDescription>包含错误、卡顿、失败请求或异常状态的会话。</CardDescription>
-          </CardHeader>
-          <CardContent className="min-h-0 overflow-auto p-0">
-            {problemSessions.length === 0 ? (
-              <div className="p-3">
-                <EmptyState title="暂无问题会话" description="错误、卡顿、失败请求或慢启动出现后会进入这里。" />
-              </div>
-            ) : (
-              <ProblemSessionList sessions={problemSessions.slice(0, 16)} />
-            )}
-          </CardContent>
-        </Card>
-        <RecentEvents events={recentQuery.data ?? []} />
+      <aside className="min-h-[520px] xl:min-h-0">
+        <CollapsiblePanel
+          storageKey="workbench.sessions.right"
+          title="问题侧栏"
+          icon={PanelRight}
+          side="right"
+          collapsed={rightPanel.collapsed}
+          onToggleCollapsed={rightPanel.toggleCollapsed}
+        >
+          <div className="grid h-full min-h-0 gap-2 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+            <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+              <CardHeader className="flex flex-row items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <CardTitle>最近问题会话</CardTitle>
+                  <CardDescription>包含错误、卡顿、失败请求或异常状态的会话。</CardDescription>
+                </div>
+                <CollapsiblePanelAction
+                  side="right"
+                  title="问题侧栏"
+                  collapsed={rightPanel.collapsed}
+                  onToggleCollapsed={rightPanel.toggleCollapsed}
+                />
+              </CardHeader>
+              <CardContent className="min-h-0 overflow-auto p-0">
+                {problemSessions.length === 0 ? (
+                  <div className="p-3">
+                    <EmptyState title="暂无问题会话" description="错误、卡顿、失败请求或慢启动出现后会进入这里。" />
+                  </div>
+                ) : (
+                  <ProblemSessionList sessions={problemSessions.slice(0, 16)} />
+                )}
+              </CardContent>
+            </Card>
+            <RecentEvents events={recentQuery.data ?? []} />
+          </div>
+        </CollapsiblePanel>
       </aside>
     </div>
   );

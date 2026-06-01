@@ -1442,9 +1442,10 @@ void main() {
     );
 
     expect(hotStartEnd['sessionId'], originalSessionId);
-    expect(hotStartEnd['durationMs'], 300000);
+    expect(hotStartEnd['durationMs'], 0);
     expect((hotStartEnd['attributes'] as Map)[FieldPaths.appStartType], 'hot');
     expect((hotStartEnd['payload'] as Map)['session.started_new'], isFalse);
+    expect((hotStartEnd['payload'] as Map)['background_duration_ms'], 300000);
   });
 
   test('resume after timeout starts a new session', () async {
