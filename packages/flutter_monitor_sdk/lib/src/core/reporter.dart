@@ -33,6 +33,7 @@ class Reporter {
   Map<String, dynamic>? _deviceInfo;
   var _backgroundFlushPending = false;
   DateTime? _foregroundStartedAt;
+  String? _pendingHotStartTraceId;
   final Map<String, _PageTraceRecord> _pageTraces =
       <String, _PageTraceRecord>{};
 
@@ -80,9 +81,9 @@ class Reporter {
       return;
     }
     try {
-      final snapshot = await bridge
-          .getResourceSnapshot()
-          .timeout(_nativeBootstrapResourceTimeout);
+      final snapshot = await bridge.getResourceSnapshot().timeout(
+        _nativeBootstrapResourceTimeout,
+      );
       _contextManager.setNativeSnapshot(snapshot);
     } catch (error) {
       _contextManager.setNativeSnapshot(
@@ -488,14 +489,13 @@ class Reporter {
         startTime ??
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
     final errorText = error ?? payload[PayloadKeys.error];
-    final effectiveErrorType =
-        success
-            ? null
-            : _canonicalHttpErrorType(
-              errorType: errorType,
-              statusCode: statusCode,
-              error: errorText is String ? errorText : null,
-            );
+    final effectiveErrorType = success
+        ? null
+        : _canonicalHttpErrorType(
+            errorType: errorType,
+            statusCode: statusCode,
+            error: errorText is String ? errorText : null,
+          );
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -710,14 +710,12 @@ class Reporter {
         name: EventNames.memoryPressure,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
-        level:
-            level == MemoryPressureLevel.critical
-                ? EventLevel.error
-                : EventLevel.warning,
-        status:
-            level == MemoryPressureLevel.none
-                ? EventStatus.ok
-                : EventStatus.error,
+        level: level == MemoryPressureLevel.critical
+            ? EventLevel.error
+            : EventLevel.warning,
+        status: level == MemoryPressureLevel.none
+            ? EventStatus.ok
+            : EventStatus.error,
         priority: EventPriority.high,
         breadcrumbLimit: 5,
         attributes: <String, Object?>{
@@ -925,9 +923,8 @@ class Reporter {
           isForeground: true,
           sessionId: sessionId,
         );
-        _emitHotStartTrace(
+        _beginHotStartTrace(
           timestamp: occurredAt,
-          backgroundDuration: resume.backgroundDuration!,
           startedNewSession: resume.startedNewSession,
           previousState: previousState,
         );
@@ -1001,41 +998,56 @@ class Reporter {
     );
   }
 
-  void _emitHotStartTrace({
+  String? _beginHotStartTrace({
     required DateTime timestamp,
-    required Duration backgroundDuration,
     required bool startedNewSession,
     String? previousState,
   }) {
-    final traceId =
-        _traceManager
-            .startTrace(
-              name: EventNames.appHotStart,
-              startTime: timestamp,
-              attributes: <String, Object?>{
-                FieldPaths.appStartType: StartTypes.hot,
-              },
-              payload: <String, Object?>{
-                PayloadKeys.sessionStartedNew: startedNewSession,
-                PayloadKeys.backgroundDurationMs:
-                    backgroundDuration.inMilliseconds,
-                if (previousState != null)
-                  PayloadKeys.lifecyclePreviousState: previousState,
-              },
-            )
-            .traceId;
-    endTrace(
-      traceId,
-      endTime: timestamp,
-      status: EventStatus.ok,
-      includeBreadcrumbs: false,
+    if (_pendingHotStartTraceId != null) {
+      finishHotStartTrace(
+        endTime: timestamp,
+        endReason: StartupEndReasons.timeout,
+      );
+    }
+    _pendingHotStartTraceId = startTrace(
+      EventNames.appHotStart,
+      startTime: timestamp,
       attributes: <String, Object?>{FieldPaths.appStartType: StartTypes.hot},
       payload: <String, Object?>{
         PayloadKeys.sessionStartedNew: startedNewSession,
-        PayloadKeys.backgroundDurationMs: backgroundDuration.inMilliseconds,
         if (previousState != null)
           PayloadKeys.lifecyclePreviousState: previousState,
       },
+    );
+    return _pendingHotStartTraceId;
+  }
+
+  PipelineResult? finishHotStartTrace({
+    DateTime? endTime,
+    String endReason = StartupEndReasons.firstFrame,
+  }) {
+    final traceId = _pendingHotStartTraceId;
+    if (traceId == null) return null;
+    _pendingHotStartTraceId = null;
+    final finishedAt = endTime ?? DateTime.now();
+    final record = _traceManager.trace(traceId);
+    final durationMs = record == null
+        ? null
+        : finishedAt.difference(record.startTime).inMilliseconds;
+    return endTrace(
+      traceId,
+      endTime: finishedAt,
+      status: EventStatus.ok,
+      includeBreadcrumbs: false,
+      attributes: <String, Object?>{
+        FieldPaths.appStartType: StartTypes.hot,
+        FieldPaths.appStartEndReason: endReason,
+        if (durationMs != null && endReason == StartupEndReasons.firstFrame)
+          FieldPaths.appFirstFrameMs: durationMs,
+        if (durationMs != null && endReason == StartupEndReasons.interactive)
+          FieldPaths.appInteractiveMs: durationMs,
+      },
+      payload: <String, Object?>{PayloadKeys.startupPhase: endReason},
     );
   }
 

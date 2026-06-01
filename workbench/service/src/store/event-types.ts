@@ -99,10 +99,10 @@ export interface StartupPerformanceSummary extends PerformanceMetricSummary {
   sdkInit: DurationSummary;
   /** Lifecycle background interval, not hot resume rendering duration. */
   backgroundInterval: DurationSummary;
-  hotResume: {
+  /** app.hot_start.durationMs is hot foreground-resume duration when provided by SDK. */
+  hotResume: DurationSummary & {
     available: boolean;
-    missingReason: string;
-    sourceFields: string[];
+    missingReason?: string;
   };
 }
 

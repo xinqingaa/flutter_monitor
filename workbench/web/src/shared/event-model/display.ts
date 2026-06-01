@@ -342,6 +342,7 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
 
   if (name === 'app.cold_start' || name === 'app.hot_start' || name === 'app.first_frame' || name === 'sdk.init') {
     pushField(event, primary, 'attributes.app.start.type');
+    pushField(event, primary, 'attributes.app.start.end_reason');
     pushField(event, secondary, 'attributes.app.first_frame_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.app.interactive_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.sdk.init.duration_ms', { unit: 'ms' });

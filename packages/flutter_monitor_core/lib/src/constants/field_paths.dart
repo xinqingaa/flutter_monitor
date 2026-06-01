@@ -82,6 +82,7 @@ abstract final class FieldPaths {
   static const contextMissingReason = 'context.missingReason';
 
   static const appStartType = 'app.start.type';
+  static const appStartEndReason = 'app.start.end_reason';
   static const appFirstFrameMs = 'app.first_frame_ms';
   static const appInteractiveMs = 'app.interactive_ms';
   static const sdkInitDurationMs = 'sdk.init.duration_ms';

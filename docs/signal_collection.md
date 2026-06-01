@@ -133,7 +133,9 @@ Native 增强来源：
 
 - App 从后台恢复到前台。
 - 通过 lifecycle paused/resumed 或 native lifecycle 识别。
-- 恢复后首个可交互点可由 SDK heuristic 或业务 API 标记。
+- `resumed` 是热启动 trace 的开始点，不是结束点。
+- 恢复后首帧、可交互、业务手动标记或超时降级是热启动 trace 的结束点。
+- 基础 SDK 第一阶段应至少自动采集 `resumed -> next frame`，并用 `app.start.end_reason = first_frame` 标明闭合口径；后续如果业务或 native 能提供可交互点，再升级为 `interactive`。
 
 ### 生成事件
 
@@ -156,6 +158,7 @@ Native 增强来源：
 推荐字段：
 
 - `app.start.type`
+- `app.start.end_reason`
 - `event.phase`
 - `app.first_frame_ms`
 - `app.interactive_ms`
@@ -167,6 +170,7 @@ Native 增强来源：
 
 - Flutter 层无法完整覆盖进程最早 native 阶段。
 - 如果业务没有标记 interactive，只能提供 first frame 或 SDK heuristic。
+- `app.background_duration.durationMs` 是后台停留间隔；`app.hot_start.durationMs` 是热恢复耗时，不能用同一个 duration 值表达二者。
 - 如果 `appStartTime` 缺失，应生成 `context.missingReason = app_start_time_missing`。
 - Native 启动时间是增强能力，不应成为基础 SDK 必需依赖。
 
@@ -529,10 +533,11 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 ### 链路关联
 
 - lifecycle 影响 session 切分。
-- resumed 可创建 hot start trace。
+- resumed 可创建 hot start trace，但 trace 必须延后到恢复观测点闭合，不能在 resumed 回调中同步 start/end。
 - paused/detached 应触发尽力 flush。
 - lifecycle breadcrumb 应帮助解释请求中断、错误、卡顿和 native 信号。
 - 前台/后台持续时间使用 `app.foreground_duration` 和 `app.background_duration` 的 envelope `durationMs` 表达。
+- 后台停留间隔可作为 hot start 的上下文，但不得写入 `app.hot_start.durationMs`。
 
 ### 字段映射
 
@@ -542,6 +547,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - `context.lifecycle.previousState`
 - `durationMs`
 - `app.start.type`
+- `app.start.end_reason`
 - `app.exit_flush.success`
 
 ### 限制与降级

@@ -259,6 +259,7 @@ flowchart TB
 | 字段 | 类型 | 隐私等级 | 建议索引 | 说明 |
 |---|---|---|---:|---|
 | `app.start.type` | string | safe | 是 | cold/hot/warm |
+| `app.start.end_reason` | string | safe | 是 | first_frame/interactive/timeout/manual，说明启动 trace 的闭合口径 |
 | `event.phase` | string | safe | 是 | start/end/instant，用于区分 trace/span 生命周期事件 |
 | `app.first_frame_ms` | duration_ms | safe | 是 | 启动首帧耗时 |
 | `app.interactive_ms` | duration_ms | safe | 是 | 启动可交互耗时 |
@@ -376,12 +377,14 @@ flowchart TB
 
 Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中断、后台 flush、卡顿和 native 异常。状态字段属于 `context.lifecycle.*`，持续时间使用 envelope `durationMs`，不要新增平行 duration 字段。
 
+`app.background_duration` 和 `app.hot_start` 必须保持语义分离：`app.background_duration.durationMs` 只表示 App 在后台停留的间隔，可用于 session 切分和恢复上下文；`app.hot_start.durationMs` 只表示从恢复到前台后到恢复观测点的耗时，不得复用后台停留间隔。热启动 trace 由 `resumed` 打开，由恢复后首帧、可交互、业务手动标记或超时降级闭合，并通过 `app.start.end_reason` 标明闭合口径。
+
 | name | signalType | phase | status | priority 建议 | 必须/条件字段 | 说明 |
 |---|---|---|---|---|---|---|
 | `app.lifecycle` | `breadcrumb` | `instant` | `ok` | `normal` | `context.lifecycle.state`、`context.lifecycle.isForeground`，条件字段 `context.lifecycle.previousState` | 生命周期状态变化足迹 |
 | `app.foreground_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.state` | 一段前台 activity window 的持续时间 |
 | `app.background_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.previousState` | 一段后台停留时间，可辅助 hot start 和 session 切分 |
-| `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot` | 后台恢复到前台的恢复链路 |
+| `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot`、`app.start.end_reason` | 后台恢复到前台后的热恢复链路，`durationMs` 不得表示后台停留间隔 |
 | `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果；成功为 normal，失败为 high |
 
 `sdk.lifecycle.flush` 是 SDK self-monitoring 事件，不是业务事件。触发状态、flush 错误摘要等诊断信息可放在 `payload`，但 `app.exit_flush.success` 必须放在 attributes，方便 DevTools 和服务端判断 flush 是否成功。
@@ -909,7 +912,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 | 信号 | 推荐事件 | 关键字段 |
 |---|---|---|
-| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、`span app.interactive` | `event.phase`、`app.start.type`、`app.first_frame_ms`、`app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
+| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、`span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、`app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs` |
 | 网络 | `span http.client` | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |

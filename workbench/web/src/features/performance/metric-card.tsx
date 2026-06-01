@@ -82,12 +82,13 @@ function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
         hintSuffix="当前 SDK 的 app.cold_start 以首帧为结束点，app.first_frame_ms 是同一链路的终点口径。"
       />
       <DurationGroup label="SDK 初始化" source={'name=sdk.init · value=attributes["sdk.init.duration_ms"]'} summary={summary?.sdkInit} compact />
-      <DurationGroup label="后台间隔" source="app.background_duration.durationMs / 当前 app.hot_start.durationMs" summary={summary?.backgroundInterval} />
+      <DurationGroup label="后台间隔" source="app.background_duration.durationMs" summary={summary?.backgroundInterval} />
+      <DurationGroup label="热恢复耗时" source="app.hot_start.durationMs" summary={summary?.hotResume} compact />
       <MetricText
-        label="热恢复耗时"
+        label="热恢复状态"
         value={summary?.hotResume.available ? '已提供' : 'SDK 未提供'}
         field={summary?.hotResume.sourceFields.join('、') || 'sdk_hot_resume_duration_missing'}
-        hint="当前 SDK 尚未提供恢复到首帧或可交互的热启动耗时。现有 app.hot_start.durationMs 表示后台恢复间隔。"
+        hint="热恢复耗时只读取 app.hot_start.durationMs，不回退到后台间隔。"
       />
     </div>
   );

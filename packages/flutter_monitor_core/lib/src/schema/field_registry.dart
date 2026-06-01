@@ -429,6 +429,12 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.appStartEndReason,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.appFirstFrameMs,
     valueType: FieldValueType.durationMs,
     privacyLevel: PrivacyLevel.safe,

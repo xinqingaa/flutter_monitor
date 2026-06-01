@@ -42,6 +42,7 @@ void main() {
     expect(PayloadKeys.errorOriginalLength, 'error.original_length');
     expect(PayloadKeys.startupPhase, 'startup.phase');
     expect(PayloadKeys.unregisteredAttributes, 'unregistered.attributes');
+    expect(FieldPaths.appStartEndReason, 'app.start.end_reason');
 
     expect(ErrorTypes.dartError, 'dart_error');
     expect(HttpErrorTypes.httpStatus, 'http_status');
@@ -50,6 +51,8 @@ void main() {
     expect(HttpErrorTypes.badCertificate, 'bad_certificate');
     expect(HttpPayloadSources.packageHttp, 'package:http');
     expect(StartupPhases.firstFrame, 'first_frame');
+    expect(StartupEndReasons.firstFrame, 'first_frame');
+    expect(StartupEndReasons.interactive, 'interactive');
   });
 
   test('exposes stable wire values for memory and native protocol enums', () {

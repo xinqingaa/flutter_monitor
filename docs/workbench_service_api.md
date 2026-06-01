@@ -321,13 +321,14 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 | `coldStart` | `name=app.cold_start` 的 `durationMs`。当前 SDK 口径下它表示“冷启动到首帧”的累计耗时。 |
 | `firstFrame` | `name=app.first_frame` 的 `attributes["app.first_frame_ms"]`，缺失时降级到 `durationMs`。它是冷启动 trace 的首帧终点口径，通常与 `coldStart` 同值，不应在图表中作为独立阶段重复叠加。 |
 | `sdkInit` | `name=sdk.init` 的 `attributes["sdk.init.duration_ms"]`，缺失时降级到 `durationMs`。 |
-| `backgroundInterval` | `name=app.background_duration` 的 `durationMs`，以及当前 SDK 口径下 `name=app.hot_start` 的 `durationMs`。它表示后台恢复间隔，不是真正热恢复耗时。 |
-| `hotResume` | 当前固定返回 `available=false` 和 `missingReason=sdk_hot_resume_duration_missing`，等待 SDK 后续提供恢复到首帧或可交互的热启动耗时。 |
+| `backgroundInterval` | `name=app.background_duration` 的 `durationMs`。它表示后台停留间隔，只作为 lifecycle 和恢复上下文，不进入热恢复耗时统计。 |
+| `hotResume` | `name=app.hot_start` 的 `durationMs`，且 `attributes["app.start.type"] = "hot"`。`attributes["app.start.end_reason"]` 说明闭合口径，例如 `first_frame` 或 `interactive`。旧 SDK 数据如果只有 `durationMs = 0` 或仅在 payload 中带 `background_duration_ms`，应标记为 `sdk_hot_resume_duration_missing`。 |
 
 Workbench 启动详情页按这个口径展示：
 
 - `启动阶段散点`：不连线、不做时间桶聚合；每个点对应一条启动链路里的已采集指标，包括冷启动到首帧、SDK 初始化和首帧前其他耗时。
-- `后台间隔`：单独展示 `app.background_duration.durationMs` 或当前 SDK 的 `app.hot_start.durationMs`，不与毫秒级启动耗时混轴。
+- `后台间隔`：单独展示 `app.background_duration.durationMs`，不与毫秒级启动耗时混轴。
+- `热恢复耗时`：只展示 `app.hot_start.durationMs`，不回退到 `app.background_duration`，避免把后台停留间隔伪装成热启动性能。
 
 `pages` 额外字段：
 

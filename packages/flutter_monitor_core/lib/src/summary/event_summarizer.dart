@@ -83,8 +83,12 @@ class EventSummarizer {
   Map<String, Object?> _startupFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
       'start_type': _stringValue(envelope.attributes[FieldPaths.appStartType]),
+      'end_reason': _stringValue(
+        envelope.attributes[FieldPaths.appStartEndReason],
+      ),
       PayloadKeys.durationMs: envelope.durationMs,
       'first_frame_ms': envelope.attributes[FieldPaths.appFirstFrameMs],
+      'interactive_ms': envelope.attributes[FieldPaths.appInteractiveMs],
       'route': envelope.context.route?.name,
     });
   }

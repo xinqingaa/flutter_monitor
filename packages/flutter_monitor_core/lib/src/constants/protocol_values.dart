@@ -69,6 +69,13 @@ abstract final class StartupPhases {
   static const sdkInit = 'sdk_init';
 }
 
+abstract final class StartupEndReasons {
+  static const firstFrame = 'first_frame';
+  static const interactive = 'interactive';
+  static const timeout = 'timeout';
+  static const manual = 'manual';
+}
+
 abstract final class TriggerValues {
   static const manual = 'manual';
   static const jankSequence = 'jank.sequence';

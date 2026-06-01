@@ -16,6 +16,7 @@ class TraceManager {
   String? get activeSpanId => _spanStack.isEmpty ? null : _spanStack.last;
 
   bool hasTrace(String traceId) => _traces.containsKey(traceId);
+  TraceRecord? trace(String traceId) => _traces[traceId];
 
   TraceRecord startTrace({
     required String name,

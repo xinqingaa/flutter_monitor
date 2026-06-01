@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
 import 'package:flutter_monitor_sdk/src/modules/memory_collector.dart';
@@ -126,7 +127,7 @@ class MonitorBinding {
     try {
       _lifecycleManager = LifecycleManager(
         config: config.effectiveSessionConfig,
-        onStateChanged: reporter.handleLifecycleState,
+        onStateChanged: handleLifecycleState,
       )..init();
       debugPrint("✅ LifecycleManager 初始化成功");
     } catch (e) {
@@ -214,6 +215,12 @@ class MonitorBinding {
           state == LifecycleStates.paused ||
           state == LifecycleStates.hidden) {
         if (state == LifecycleStates.resumed) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            reporter.finishHotStartTrace(
+              endTime: DateTime.now(),
+              endReason: StartupEndReasons.firstFrame,
+            );
+          });
           unawaited(
             _memoryCollector?.recordGrowth(
                   trigger: TriggerValues.lifecycleResumed,

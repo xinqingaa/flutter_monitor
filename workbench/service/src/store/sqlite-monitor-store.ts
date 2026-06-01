@@ -532,9 +532,15 @@ function summarizeStartup(
   const firstFrames = startupEvents.filter((event) => nameOf(event) === 'app.first_frame');
   const sdkInit = startupEvents.filter((event) => nameOf(event) === 'sdk.init');
   const backgroundDurationEvents = allEvents.filter((event) => nameOf(event) === 'app.background_duration');
-  const backgroundIntervals = backgroundDurationEvents.length > 0
-    ? backgroundDurationEvents
-    : startupEvents.filter((event) => nameOf(event) === 'app.hot_start');
+  const hotResumeEvents = startupEvents.filter((event) => (
+    nameOf(event) === 'app.hot_start' &&
+    (durationOf(event) ?? 0) > 0
+  ));
+  const hotResume = summarizeDuration(
+    hotResumeEvents,
+    'app.hot_start.durationMs',
+    durationOf,
+  );
 
   return {
     ...base,
@@ -550,14 +556,16 @@ function summarizeStartup(
       (event) => numericAttribute(event, 'sdk.init.duration_ms') ?? durationOf(event),
     ),
     backgroundInterval: summarizeDuration(
-      backgroundIntervals,
-      'app.background_duration.durationMs / app.hot_start.durationMs',
+      backgroundDurationEvents,
+      'app.background_duration.durationMs',
       durationOf,
     ),
     hotResume: {
-      available: false,
-      missingReason: 'sdk_hot_resume_duration_missing',
-      sourceFields: [],
+      ...hotResume,
+      available: hotResume.sampleCount > 0,
+      missingReason: hotResume.sampleCount > 0
+        ? undefined
+        : 'sdk_hot_resume_duration_missing',
     },
   };
 }

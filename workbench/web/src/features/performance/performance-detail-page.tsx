@@ -117,8 +117,8 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
     const startup = metric as StartupPerformanceSummary | undefined;
     return {
       label: '启动统计样本',
-      count: (startup?.coldStart.sampleCount ?? 0) + (startup?.sdkInit.sampleCount ?? 0) + (startup?.backgroundInterval.sampleCount ?? 0),
-      field: 'app.cold_start.durationMs / sdk.init.duration_ms / app.hot_start.durationMs',
+      count: (startup?.coldStart.sampleCount ?? 0) + (startup?.sdkInit.sampleCount ?? 0) + (startup?.backgroundInterval.sampleCount ?? 0) + (startup?.hotResume.sampleCount ?? 0),
+      field: 'app.cold_start.durationMs / sdk.init.duration_ms / app.background_duration.durationMs / app.hot_start.durationMs',
       hint: '冷启动当前表示到首帧的总耗时；app.first_frame_ms 是同一启动链路的终点口径，不再作为独立阶段重复累加。',
     };
   }
@@ -176,6 +176,7 @@ function KindContent({
 function StartupContent({ events, metric }: { events: PerformanceMetricEvent[]; metric?: StartupPerformanceSummary }) {
   const coldStarts = chronological(events.filter((event) => event.name === 'app.cold_start' && hasDuration(event)));
   const backgroundIntervals = selectBackgroundIntervalEvents(events);
+  const hotResumes = chronological(events.filter((event) => event.name === 'app.hot_start' && hasDuration(event)));
   const sdkInit = chronological(events.filter((event) => event.name === 'sdk.init' && (
     attrNumber(event, 'sdk.init.duration_ms') !== undefined ||
     hasDuration(event)
@@ -184,7 +185,7 @@ function StartupContent({ events, metric }: { events: PerformanceMetricEvent[]; 
     attrNumber(event, 'app.first_frame_ms') !== undefined ||
     hasDuration(event)
   )));
-  const records = buildStartupRecords([...coldStarts, ...backgroundIntervals, ...sdkInit, ...firstFrame]);
+  const records = buildStartupRecords([...coldStarts, ...backgroundIntervals, ...hotResumes, ...sdkInit, ...firstFrame]);
 
   return (
     <div className="grid gap-2">
@@ -247,7 +248,7 @@ type PageRouteSummary = {
 
 type StartupRecord = {
   key: string;
-  kind: 'cold' | 'background';
+  kind: 'cold' | 'background' | 'hot';
   timestamp?: string;
   sessionId?: string;
   traceId?: string;
@@ -260,6 +261,7 @@ type StartupRecord = {
   firstFrameMs?: number;
   sdkInitMs?: number;
   backgroundIntervalMs?: number;
+  hotResumeMs?: number;
   completedAt?: string;
 };
 
@@ -416,7 +418,7 @@ function BackgroundIntervalChart({ events }: { events: PerformanceMetricEvent[] 
     <EchartsPanel
       title="后台间隔"
       description="单独展示后台停留到 resumed 的间隔，可能是分钟或小时，不与冷启动毫秒级指标同轴。"
-      source="app.background_duration.durationMs / 当前 app.hot_start.durationMs"
+      source="app.background_duration.durationMs"
       option={option}
       empty={events.length === 0}
       height={280}
@@ -440,12 +442,12 @@ function StartupFieldCard({ metric }: { metric?: StartupPerformanceSummary }) {
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="text-xs font-medium text-zinc-500">后台间隔</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-950">{formatDuration(metric?.backgroundInterval.latestMs)}</div>
-          <div className="mt-1 text-xs leading-relaxed">来源：当前 `app.hot_start.durationMs` 或 `app.background_duration.durationMs`，表示 App 在后台停留到 resumed 的间隔。</div>
+          <div className="mt-1 text-xs leading-relaxed">来源：`app.background_duration.durationMs`，表示 App 在后台停留到 resumed 的间隔。</div>
         </div>
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-          <div className="text-xs font-medium text-amber-700">热恢复耗时</div>
-          <div className="mt-1 text-2xl font-semibold text-amber-900">{metric?.hotResume.available ? '已提供' : 'SDK 未提供'}</div>
-          <div className="mt-1 text-xs leading-relaxed text-amber-800">后续 SDK 补充恢复到首帧或可交互耗时后，Workbench 会接入该字段并进入启动耗时统计。</div>
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+          <div className="text-xs font-medium text-zinc-500">热恢复耗时</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-950">{formatDuration(metric?.hotResume.latestMs)}</div>
+          <div className="mt-1 text-xs leading-relaxed">来源：`app.hot_start.durationMs`，只表示 resumed 后到首帧或可交互的恢复耗时。</div>
         </div>
       </CardContent>
     </Card>
@@ -459,7 +461,7 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
       <CardHeader className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <CardTitle className="inline-flex items-center gap-2"><ListTree className="size-4" />启动记录</CardTitle>
-          <CardDescription>按 trace 合并冷启动、SDK 初始化和首帧终点；后台间隔作为独立 lifecycle 记录展示。</CardDescription>
+          <CardDescription>按 trace 合并冷启动、SDK 初始化和首帧终点；后台间隔和热恢复耗时分别作为独立记录展示。</CardDescription>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -467,7 +469,7 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
           </TooltipTrigger>
           <TooltipContent>
             <div className="max-w-[360px] text-zinc-300">
-              app.cold_start.durationMs / attributes["app.first_frame_ms"] / attributes["sdk.init.duration_ms"] / app.hot_start.durationMs
+              app.cold_start.durationMs / attributes["app.first_frame_ms"] / attributes["sdk.init.duration_ms"] / app.background_duration.durationMs / app.hot_start.durationMs
             </div>
           </TooltipContent>
         </Tooltip>
@@ -479,13 +481,14 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
           </div>
         ) : (
           <div className="min-w-[980px]">
-            <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_5rem] gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
+            <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
               <span>链路</span>
               <span>时间</span>
               <span className="text-right">冷启到首帧</span>
               <span className="text-right">SDK 初始化</span>
               <span className="text-right">首帧前其他</span>
               <span className="text-right">后台间隔</span>
+              <span className="text-right">热恢复</span>
               <span className="text-right">回查</span>
             </div>
             <div className="divide-y divide-zinc-100">
@@ -502,9 +505,9 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
 
 function StartupRecordRow({ record }: { record: StartupRecord }) {
   const eventId = record.backgroundEventId ?? record.coldStartEventId ?? record.firstFrameEventId ?? record.sdkInitEventId;
-  const typeLabel = record.kind === 'background' ? '后台间隔' : '冷启动';
+  const typeLabel = record.kind === 'background' ? '后台间隔' : record.kind === 'hot' ? '热恢复' : '冷启动';
   return (
-    <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
+    <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_8rem_8rem_8rem_8rem_8rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
       <div className="min-w-0">
         <strong className="block truncate text-zinc-950">{typeLabel}</strong>
         <div className="mt-0.5 truncate text-zinc-500">
@@ -516,6 +519,7 @@ function StartupRecordRow({ record }: { record: StartupRecord }) {
       <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.sdkInitMs)}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatDuration(startupOtherMs(record))}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.backgroundIntervalMs)}</span>
+      <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.hotResumeMs)}</span>
       <span className="text-right">
         {record.sessionId ? (
           <Link
@@ -866,14 +870,15 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
   const sorted = chronological(events);
 
   for (const event of sorted) {
-    const isBackgroundInterval = event.name === 'app.hot_start' || event.name === 'app.background_duration';
+    const isBackgroundInterval = event.name === 'app.background_duration';
+    const isHotResume = event.name === 'app.hot_start';
     const fallbackKey = `${event.name ?? 'startup'}:${event.eventId ?? event.timestamp ?? records.size}`;
     const key = isBackgroundInterval
-      ? `background:${backgroundIntervalDedupeKey(event)}`
+      ? fallbackKey
       : event.traceId ?? fallbackKey;
     const record = records.get(key) ?? {
       key,
-      kind: isBackgroundInterval ? 'background' : 'cold',
+      kind: isBackgroundInterval ? 'background' : isHotResume ? 'hot' : 'cold',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       traceId: event.traceId,
@@ -905,6 +910,11 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.backgroundIntervalMs = event.durationMs;
       record.completedAt = event.timestamp ?? record.completedAt;
     }
+    if (isHotResume) {
+      record.backgroundEventId = event.eventId;
+      record.hotResumeMs = event.durationMs;
+      record.completedAt = event.timestamp ?? record.completedAt;
+    }
 
     records.set(key, record);
   }
@@ -915,27 +925,13 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.firstFrameMs,
       record.sdkInitMs,
       record.backgroundIntervalMs,
+      record.hotResumeMs,
     ].some((value) => typeof value === 'number'))
     .sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
 }
 
 function selectBackgroundIntervalEvents(events: PerformanceMetricEvent[]): PerformanceMetricEvent[] {
-  const backgroundEvents = chronological(events.filter((event) => event.name === 'app.background_duration' && hasDuration(event)));
-  const backgroundKeys = new Set(backgroundEvents.map(backgroundIntervalDedupeKey));
-  const hotStarts = chronological(events.filter((event) => (
-    event.name === 'app.hot_start' &&
-    hasDuration(event) &&
-    !backgroundKeys.has(backgroundIntervalDedupeKey(event))
-  )));
-  return chronological([...backgroundEvents, ...hotStarts]);
-}
-
-function backgroundIntervalDedupeKey(event: PerformanceMetricEvent): string {
-  return [
-    event.sessionId ?? '-',
-    event.timestamp ?? '-',
-    typeof event.durationMs === 'number' ? Math.round(event.durationMs) : '-',
-  ].join('|');
+  return chronological(events.filter((event) => event.name === 'app.background_duration' && hasDuration(event)));
 }
 
 function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | undefined {

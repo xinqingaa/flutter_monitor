@@ -145,6 +145,15 @@ export const fieldDefinitions: FieldDefinition[] = [
     emptyHint: '非启动事件。',
   },
   {
+    path: 'attributes.app.start.end_reason',
+    label: 'attributes.app.start.end_reason',
+    description: '启动 trace 的闭合口径，例如 first_frame、interactive、timeout、manual。',
+    source: 'startup collector',
+    privacy: 'public',
+    searchable: true,
+    emptyHint: '非启动 trace，或 SDK 没有提供闭合口径。',
+  },
+  {
     path: 'attributes.app.first_frame_ms',
     label: 'attributes.app.first_frame_ms',
     description: '启动首帧耗时。',

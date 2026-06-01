@@ -229,6 +229,7 @@ void main() {
       FieldPaths.contextMissing,
       FieldPaths.contextMissingReason,
       FieldPaths.appStartType,
+      FieldPaths.appStartEndReason,
       FieldPaths.appFirstFrameMs,
       FieldPaths.appInteractiveMs,
       FieldPaths.sdkInitDurationMs,

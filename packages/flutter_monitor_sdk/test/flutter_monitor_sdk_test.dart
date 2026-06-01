@@ -650,10 +650,9 @@ void main() {
       output.events
           .where((event) => event['name'] == 'app.lifecycle')
           .every(
-            (event) =>
-                !(event['payload'] as Map).containsKey(
-                  FieldPaths.payloadBreadcrumbs,
-                ),
+            (event) => !(event['payload'] as Map).containsKey(
+              FieldPaths.payloadBreadcrumbs,
+            ),
           ),
       isTrue,
     );
@@ -751,8 +750,8 @@ void main() {
         isTrue,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes'] as Map)[FieldPaths
-            .pageFirstFrameMs],
+        (pageFirstFrameEvents.last['attributes']
+            as Map)[FieldPaths.pageFirstFrameMs],
         isA<num>(),
       );
       expect(
@@ -781,16 +780,12 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/':
-              (_) => Builder(
-                builder:
-                    (context) => TextButton(
-                      onPressed:
-                          () =>
-                              Navigator.of(context).pushNamed('/complex_list'),
-                      child: const Text('complex'),
-                    ),
-              ),
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/complex_list'),
+              child: const Text('complex'),
+            ),
+          ),
           '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
         },
       ),
@@ -857,31 +852,26 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/':
-              (_) => Builder(
-                builder:
-                    (context) => TextButton(
-                      onPressed:
-                          () => Navigator.of(context).pushNamed('/detail'),
-                      child: const Text('detail'),
-                    ),
-              ),
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/detail'),
+              child: const Text('detail'),
+            ),
+          ),
           '/detail': (_) => const SizedBox(key: Key('detail-page')),
         },
       ),
     );
     await tester.pump();
-    final homeTraceId =
-        output.events.firstWhere(
-          (event) => event['name'] == 'page.visit',
-        )['traceId'];
+    final homeTraceId = output.events.firstWhere(
+      (event) => event['name'] == 'page.visit',
+    )['traceId'];
 
     await tester.tap(find.text('detail'));
     await tester.pumpAndSettle();
-    final detailTraceId =
-        output.events
-            .where((event) => event['name'] == 'page.visit')
-            .last['traceId'];
+    final detailTraceId = output.events
+        .where((event) => event['name'] == 'page.visit')
+        .last['traceId'];
 
     Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
     await tester.pumpAndSettle();
@@ -1381,72 +1371,99 @@ void main() {
     }
   });
 
-  test('bootstrap resources keep flutter-only context without bridge', () async {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(appKey: 'app_key'),
-        outputs: <MonitorOutput>[output],
-      ),
-    );
-    await reporter.resolveBootstrapResources();
-
-    final startup = StartupTraceController(
-      reporter: reporter,
-      appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
-    );
-    startup.startSdkInit();
-
-    final event = output.events.singleWhere(
-      (item) => item['name'] == EventNames.appColdStart,
-    );
-    final resource = event['resource'] as Map;
-    final sdk = resource['sdk'] as Map;
-    final context = event['context'] as Map;
-    final native = context['native'] as Map;
-
-    expect(sdk['nativeVersion'], isNull);
-    expect(native['available'], isFalse);
-    expect(native['signalSource'], PlatformSignalSources.flutter);
-  });
-
-  test('resume within timeout keeps session and emits hot start', () async {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(appKey: 'app_key'),
-        sessionConfig: const MonitorSessionConfig(
-          backgroundSessionTimeout: Duration(minutes: 30),
-          flushOnBackground: false,
+  test(
+    'bootstrap resources keep flutter-only context without bridge',
+    () async {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
         ),
-        outputs: <MonitorOutput>[output],
-      ),
-    );
+      );
+      await reporter.resolveBootstrapResources();
 
-    reporter.track(
-      action: 'session.anchor',
-      result: MonitorTrackResult.started,
-    );
-    final originalSessionId = output.events.single['sessionId'];
-    await reporter.handleLifecycleState(
-      'paused',
-      timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
-    );
-    await reporter.handleLifecycleState(
-      'resumed',
-      timestamp: DateTime.parse('2026-05-25T12:05:00.000+08:00'),
-    );
+      final startup = StartupTraceController(
+        reporter: reporter,
+        appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
+      );
+      startup.startSdkInit();
 
-    final hotStartEnd = output.events.lastWhere(
-      (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',
-    );
+      final event = output.events.singleWhere(
+        (item) => item['name'] == EventNames.appColdStart,
+      );
+      final resource = event['resource'] as Map;
+      final sdk = resource['sdk'] as Map;
+      final context = event['context'] as Map;
+      final native = context['native'] as Map;
 
-    expect(hotStartEnd['sessionId'], originalSessionId);
-    expect(hotStartEnd['durationMs'], 0);
-    expect((hotStartEnd['attributes'] as Map)[FieldPaths.appStartType], 'hot');
-    expect((hotStartEnd['payload'] as Map)['session.started_new'], isFalse);
-    expect((hotStartEnd['payload'] as Map)['background_duration_ms'], 300000);
-  });
+      expect(sdk['nativeVersion'], isNull);
+      expect(native['available'], isFalse);
+      expect(native['signalSource'], PlatformSignalSources.flutter);
+    },
+  );
+
+  test(
+    'resume within timeout keeps session and emits hot resume trace',
+    () async {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          sessionConfig: const MonitorSessionConfig(
+            backgroundSessionTimeout: Duration(minutes: 30),
+            flushOnBackground: false,
+          ),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+
+      reporter.track(
+        action: 'session.anchor',
+        result: MonitorTrackResult.started,
+      );
+      final originalSessionId = output.events.single['sessionId'];
+      await reporter.handleLifecycleState(
+        'paused',
+        timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+      );
+      await reporter.handleLifecycleState(
+        'resumed',
+        timestamp: DateTime.parse('2026-05-25T12:05:00.000+08:00'),
+      );
+      reporter.finishHotStartTrace(
+        endTime: DateTime.parse('2026-05-25T12:05:00.096+08:00'),
+      );
+
+      final hotStartEnd = output.events.lastWhere(
+        (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',
+      );
+      final backgroundDuration = output.events.singleWhere(
+        (event) => event['name'] == EventNames.appBackgroundDuration,
+      );
+
+      expect(hotStartEnd['sessionId'], originalSessionId);
+      expect(hotStartEnd['durationMs'], 96);
+      expect(
+        (hotStartEnd['attributes'] as Map)[FieldPaths.appStartType],
+        'hot',
+      );
+      expect(
+        (hotStartEnd['attributes'] as Map)[FieldPaths.appStartEndReason],
+        StartupEndReasons.firstFrame,
+      );
+      expect(
+        (hotStartEnd['attributes'] as Map)[FieldPaths.appFirstFrameMs],
+        96,
+      );
+      expect((hotStartEnd['payload'] as Map)['session.started_new'], isFalse);
+      expect(
+        (hotStartEnd['payload'] as Map).containsKey('background_duration_ms'),
+        isFalse,
+      );
+      expect(backgroundDuration['durationMs'], 300000);
+    },
+  );
 
   test('resume after timeout starts a new session', () async {
     final output = RecordingOutput();
@@ -1474,13 +1491,67 @@ void main() {
       'resumed',
       timestamp: DateTime.parse('2026-05-25T12:45:00.000+08:00'),
     );
+    reporter.finishHotStartTrace(
+      endTime: DateTime.parse('2026-05-25T12:45:00.128+08:00'),
+    );
 
     final hotStartEnd = output.events.lastWhere(
       (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',
     );
 
     expect(hotStartEnd['sessionId'], isNot(originalSessionId));
+    expect(hotStartEnd['durationMs'], 128);
     expect((hotStartEnd['payload'] as Map)['session.started_new'], isTrue);
+  });
+
+  testWidgets('binding lifecycle resumes close hot start on the next frame', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    await FlutterMonitorSDK.init(
+      config: MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(
+          backgroundSessionTimeout: Duration(minutes: 30),
+          flushOnBackground: false,
+        ),
+        enableErrorMonitor: false,
+        enableJankMonitor: false,
+        enablePerformanceMonitor: false,
+        outputs: <MonitorOutput>[output],
+      ),
+      appStartTime: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    final resumedAt = DateTime.now();
+    final pausedAt = resumedAt.subtract(const Duration(seconds: 5));
+
+    await MonitorBinding.instance.handleLifecycleState(
+      'paused',
+      timestamp: pausedAt,
+    );
+    await MonitorBinding.instance.handleLifecycleState(
+      'resumed',
+      timestamp: resumedAt,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 16));
+
+    final hotStartEnd = output.events.lastWhere(
+      (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',
+    );
+    final backgroundDuration = output.events.singleWhere(
+      (event) => event['name'] == EventNames.appBackgroundDuration,
+    );
+
+    expect(backgroundDuration['durationMs'], 5000);
+    expect(
+      (hotStartEnd['attributes'] as Map)[FieldPaths.appStartEndReason],
+      StartupEndReasons.firstFrame,
+    );
+    expect(hotStartEnd['durationMs'], lessThan(1000));
+    expect(hotStartEnd['durationMs'], isNot(backgroundDuration['durationMs']));
+    await FlutterMonitorSDK.dispose();
   });
 
   test('records memory sample growth pressure and suspect leak envelopes', () {
