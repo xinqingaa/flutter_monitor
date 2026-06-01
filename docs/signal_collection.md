@@ -170,7 +170,7 @@ Native 增强来源：
 
 - Flutter 层无法完整覆盖进程最早 native 阶段。
 - 如果业务没有标记 interactive，只能提供 first frame 或 SDK heuristic。
-- `app.background_duration.durationMs` 是后台停留间隔；`app.hot_start.durationMs` 是热恢复耗时，不能用同一个 duration 值表达二者。
+- `app.background_duration.durationMs` 是后台停留间隔；`app.hot_start.durationMs` 是热重启耗时，不能用同一个 duration 值表达二者。
 - 如果 `appStartTime` 缺失，应生成 `context.missingReason = app_start_time_missing`。
 - Native 启动时间是增强能力，不应成为基础 SDK 必需依赖。
 

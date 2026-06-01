@@ -291,7 +291,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - `metric app.foreground_duration` 和 `metric app.background_duration` 使用 envelope `durationMs` 表达前台/后台持续时间，不新增重复 duration 字段。
 - `sdk.lifecycle.flush` 必须使用 `app.exit_flush.success` 表达退出前 flush 结果；成功 flush 可保持 normal priority，失败 flush 应提升为高价值 SDK self-monitoring，但不得污染普通业务 payload。
 - hot start trace 由 resumed 生命周期打开，由恢复后首帧、可交互、业务手动标记或超时降级闭合；第一阶段至少实现 `resumed -> next frame`，并写入 `app.start.end_reason = first_frame`。
-- `app.background_duration.durationMs` 只表示后台停留间隔；`app.hot_start.durationMs` 只表示热恢复耗时，验收时必须验证两者不再使用同一个 duration 值表达。
+- `app.background_duration.durationMs` 只表示后台停留间隔；`app.hot_start.durationMs` 只表示热重启耗时，验收时必须验证两者不再使用同一个 duration 值表达。
 - SDK 提供 `MonitorNativeBridge` 抽象；主 SDK 只依赖抽象，不强依赖 `flutter_monitor_native`。
 - native bridge 输出 native raw signal，不构建最终 envelope，不直接调用 HTTP output，不维护第二套 session/trace id。
 - `flutter_monitor_native` 提供 Android/iOS native memory sample、memory pressure 和 native lifecycle 基础信号；未配置或不可用时由 SDK 降级为 Flutter-only。
@@ -344,7 +344,7 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 - local workbench service 不承担生产鉴权、多租户、长期治理、告警、remote config、SDK 离线缓存和动态采样。
 - Phase 6 Server 后续可以作为 Workbench 的 remote datasource，但 Workbench UI 不因此改变事件模型。
 
-完整目录规划、技术选型、脚本编排、Service/Web MVP、实施顺序和验收标准以 `docs/workbench_plan.md` 为准。本文只保留 SDK 总计划中的 Workbench 插入点。
+完整目录规划、技术选型、脚本编排、Service/Web MVP、实施顺序和验收标准以 `workbench/docs/workbench_plan.md` 为准。本文只保留 SDK 总计划中的 Workbench 插入点。
 
 ## Phase 6：服务端协议与稳定性
 
@@ -408,7 +408,7 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 - 是否能关联 session；
 - 是否能关联 `context.route.*` / `context.module.*`；
 - 是否能携带 breadcrumbs；
-- 是否能被 log/custom/http/devtools/file output 消费；
+- 是否能被 log/custom/http/devtools/file output 和 Workbench 消费；
 - 是否有测试或示例证明链路可还原；
 - 是否没有引入新的孤立指标结构；
 - 是否没有让 native、DevTools、CLI、MCP 形成第二套协议；

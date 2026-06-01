@@ -1,6 +1,6 @@
 # Flutter Monitor Workbench Product Plan
 
-本文档沉淀 Workbench 前端的产品定位、展示原则、信息架构和交互设计。`docs/workbench_plan.md` 负责 Workbench 架构、Service、Datasource 和协议边界；本文负责回答 Workbench Web 应该如何展示、如何帮助开发者排查问题。
+本文档沉淀 Workbench 前端的产品定位、展示原则、信息架构和交互设计。`workbench/docs/workbench_plan.md` 负责 Workbench 架构、Service、Datasource 和协议边界；本文负责回答 Workbench Web 应该如何展示、如何帮助开发者排查问题。
 
 Workbench Web 不是普通 JSON Viewer，也不是传统线上监控大盘。它是面向本地调试、QA 复现、性能分析和链路排查的可视化诊断工作台。它应让开发者先看懂一次 App 使用过程，再回到完整 `EventEnvelope` 细节。
 
@@ -382,7 +382,7 @@ Workbench 第一版 UI 应优先使用“展示名 + 原始字段口径”的双
 
 排查维度决定用户能怎样筛选、分组和度量影响面。一个维度最多承担三种角色：**筛选**（缩小数据集）、**分组**（per-X 拆解，如按页面/版本）、**影响面**（distinct 计数，如“影响 N 个用户 / N 个 session”）。
 
-维度只能来自 `EventEnvelope` 已携带的字段。若某维度不在 envelope 中，必须先经 `flutter_monitor_core` schema 与 SDK 采集补齐，**不能在 service 层凭空抠取**。索引与查询机制属于 `docs/workbench_plan.md`，本节只定义产品上“暴露哪些维度、什么优先级、各自回答什么排查问题”。
+维度只能来自 `EventEnvelope` 已携带的字段。若某维度不在 envelope 中，必须先经 `flutter_monitor_core` schema 与 SDK 采集补齐，**不能在 service 层凭空抠取**。索引与查询机制属于 `workbench/docs/workbench_plan.md`，本节只定义产品上“暴露哪些维度、什么优先级、各自回答什么排查问题”。
 
 优先级取舍：
 

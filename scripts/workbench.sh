@@ -186,6 +186,14 @@ start_workbench_foreground() {
     echo "Workbench web: http://localhost:$WEB_PORT"
     return 0
   fi
+  if is_port_used_by_workbench "$SERVER_PORT" || is_port_used_by_workbench "$WEB_PORT"; then
+    ensure_port_available "$SERVER_PORT" "service"
+    ensure_port_available "$WEB_PORT" "web"
+    start_service_background
+    start_web_background
+    configure_adb_reverse
+    return 0
+  fi
   ensure_port_available "$SERVER_PORT" "service"
   ensure_port_available "$WEB_PORT" "web"
   echo "Workbench service: http://localhost:$SERVER_PORT"
@@ -193,6 +201,20 @@ start_workbench_foreground() {
   configure_adb_reverse
   exec env PORT="$SERVER_PORT" FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
     pnpm --dir "$WORKBENCH_DIR" dev
+}
+
+start_service_foreground() {
+  install_dependencies
+  mkdir -p "$DATA_DIR"
+  if is_port_used_by_workbench "$SERVER_PORT"; then
+    echo "Workbench service: http://localhost:$SERVER_PORT"
+    configure_adb_reverse
+    return 0
+  fi
+  ensure_port_available "$SERVER_PORT" "service"
+  configure_adb_reverse
+  exec env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
+    pnpm --dir "$WORKBENCH_DIR" --filter @flutter-monitor/workbench-service dev
 }
 
 descendant_pids() {
@@ -311,12 +333,7 @@ case "$COMMAND" in
     start_workbench_background
     ;;
   service)
-    install_dependencies
-    mkdir -p "$DATA_DIR"
-    ensure_port_available "$SERVER_PORT" "service"
-    configure_adb_reverse
-    exec env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
-      pnpm --dir "$WORKBENCH_DIR" --filter @flutter-monitor/workbench-service dev
+    start_service_foreground
     ;;
   build)
     install_dependencies

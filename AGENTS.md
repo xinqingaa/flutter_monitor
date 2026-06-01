@@ -1,6 +1,6 @@
 # AGENTS.md
 
-这是本仓库面向 agent 的唯一工作规范。后续 agent 应以本文档作为项目方向、文档建设和代码演进的硬约束来源。
+这是本仓库面向 agent 的项目方向与硬约束规范。执行具体变更时还必须遵守根目录 `SKILL.md` 中的工作流，确保文档、core、sdk/native 和 Workbench 不分叉。
 
 ## 项目目标
 
@@ -27,6 +27,7 @@ SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生�
 - `packages/flutter_monitor_core`：唯一事件模型、schema、字段注册、隐私规则、session export/import 和共享配置来源。
 - `packages/flutter_monitor_sdk`：Flutter runtime 主 SDK，包含采集器、context、tracing、pipeline、outputs、DevTools bridge 和业务接入 API。
 - `packages/flutter_monitor_native`：可选 Flutter plugin，提供 native memory、memory pressure、native lifecycle、OOM、ANR、native crash 等增强信号。
+- `workbench`：独立 JS/TS 工作台，消费统一 `EventEnvelope` 做本地调试、QA 复现、session timeline、性能分析和 raw JSON 回查，不定义第二套模型。
 
 未来工具入口：
 
@@ -133,6 +134,7 @@ DevTools 侧目标：
 ## 文档分工
 
 - `AGENTS.md`：项目目标、workspace 约束、代码演进门禁和方向边界。
+- `SKILL.md`：具体变更工作流，包括 docs -> core -> sdk/native -> workbench 的执行顺序、端口复用和验证规则。
 - `docs/background.md`：项目背景、迁移原因和现有能力归位。
 - `docs/event_model.md`：统一 event schema、字段状态、signal mapping、resource、context、attributes、payload、privacy 和完整示例。
 - `docs/signal_collection.md`：各类信号的采集来源、触发时机、链路关联、字段映射、限制和降级策略。
@@ -140,6 +142,10 @@ DevTools 侧目标：
 - `docs/devtools_integration.md`：Flutter Timeline、DevTools bridge、本地 session 导出/导入和本地/服务端边界。
 - `docs/architecture.md`：workspace 目标架构、包职责、代码目录、模块边界和运行时数据流。
 - `docs/implementation_plan.md`：分阶段实施计划和验收标准。
+- `workbench/docs/README.md`：Workbench 文档索引和消费侧边界。
+- `workbench/docs/workbench_plan.md`：Workbench 架构、Service、Datasource、存储、脚本和验收标准。
+- `workbench/docs/product_plan.md`：Workbench Web 产品定位、信息架构、展示原则和交互设计。
+- `workbench/docs/service_api.md`：本地 Workbench service HTTP API、端口、raw envelope 查询和 query summary 口径。
 
 README 只作为项目入口，不作为架构、协议或 schema 的唯一事实源。
 

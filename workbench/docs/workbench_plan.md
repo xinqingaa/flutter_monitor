@@ -4,7 +4,7 @@ Workbench 是 Flutter Monitor 的统一链路排查工作台。它面向 `EventE
 
 Workbench 不是 SDK runtime，不是官方 Flutter DevTools extension，也不是生产服务端。它不定义事件模型，不定义上报协议，不改变 SDK 采集边界。
 
-本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `docs/workbench_product_plan.md`。当前本地 Workbench service 的具体 HTTP API、`3700` / `4700` 端口边界、raw envelope 与 query summary 响应口径见 `docs/workbench_service_api.md`。
+本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `workbench/docs/product_plan.md`。当前本地 Workbench service 的具体 HTTP API、`3700` / `4700` 端口边界、raw envelope 与 query summary 响应口径见 `workbench/docs/service_api.md`。
 
 ## 三层概念
 
@@ -255,7 +255,7 @@ QA 提供 userId 和大概时间
 
 ### API
 
-service 保持与 SDK `HttpOutput` 兼容。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `docs/workbench_service_api.md`。这里仅保留设计边界：
+service 保持与 SDK `HttpOutput` 兼容。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `workbench/docs/service_api.md`。这里仅保留设计边界：
 
 - 写入接口接收完整 SDK `EventEnvelope`，缺少 `eventId` 的事件不得被 service 补写成 SDK 字段。
 - raw envelope 查询接口返回入库 envelope 本身，例如 recent、event detail、session detail、trace detail 和 search。
@@ -501,15 +501,18 @@ web 不承担：
 
 根目录提供统一脚本入口，隐藏 pnpm 与多进程细节：
 
-```text
-bash scripts/workbench.sh install
-bash scripts/workbench.sh service
-bash scripts/workbench.sh web
-bash scripts/workbench.sh dev
-bash scripts/workbench.sh build
-bash scripts/workbench.sh status
-bash scripts/workbench.sh stop
-```
+| 命令 | 行为 |
+|---|---|
+| `bash scripts/workbench.sh install` | 安装 `workbench/` pnpm 依赖。 |
+| `bash scripts/workbench.sh dev` | 前台启动 service + web。 |
+| `bash scripts/workbench.sh start` | `dev` 的别名。 |
+| `bash scripts/workbench.sh web` | 当前也是 `dev` 的别名，会启动 service + web。 |
+| `bash scripts/workbench.sh service` | 只前台启动 service。 |
+| `bash scripts/workbench.sh background` | 后台启动 service + web，供 example 脚本复用。 |
+| `bash scripts/workbench.sh build` | 构建 service、shared 和 web。 |
+| `bash scripts/workbench.sh typecheck` | 运行 Workbench TypeScript 检查。 |
+| `bash scripts/workbench.sh status` | 查看默认端口上的 service/web 状态。 |
+| `bash scripts/workbench.sh stop` | 停止本项目 Workbench 进程。 |
 
 端口约定：
 
@@ -519,6 +522,12 @@ workbench web:     http://localhost:4700
 API:               /api/monitor/v1/*
 SSE:               /api/monitor/v1/stream
 ```
+
+端口复用规则：
+
+- 如果 `3700` 或 `4700` 已经有本项目 Workbench 进程活跃，默认复用已有进程。
+- 不主动关闭用户正在调试的 Workbench，不随意另起临时端口。
+- 如果端口被非 Workbench 进程占用，脚本会报错；是否换端口或关闭占用进程由使用者决定。
 
 开发态：
 

@@ -9,6 +9,7 @@ Flutter Monitor 的目标架构是一个基于 Dart pub workspaces 的多包监�
 - 用 `flutter_monitor_core` 承载唯一事件模型、schema、字段注册、隐私规则和导出格式。
 - 用 `flutter_monitor_sdk` 承载 Flutter runtime 主 SDK、采集器、pipeline、outputs 和业务接入 API。
 - 用 `flutter_monitor_native` 承载可选 native plugin 能力，例如 native memory、memory pressure、OOM、ANR 和 native crash 信号。
+- 用 `workbench` 承载本地调试、QA 复现、session timeline、查询和性能诊断工作台。
 - 让 DevTools、CLI、MCP 和其他未来入口复用 `flutter_monitor_core`，不产生第二套协议。
 - 让 Flutter 层信号、native 信号和未来工具入口都进入统一 session/trace/span/breadcrumb/context 模型。
 
@@ -28,7 +29,8 @@ flutter_monitor/
     flutter_monitor_core/
     flutter_monitor_sdk/
     flutter_monitor_native/
-  tools/
+  scripts/
+  workbench/
 ```
 
 根目录职责：
@@ -59,9 +61,9 @@ flowchart TD
   DevUI["未来自定义 DevTools UI<br/>flutter_monitor_devtools"]
   MCP["未来 MCP 入口<br/>flutter_monitor_mcp"]
 
-  Root -->|"组织 packages / docs / tools"| Core
-  Root -->|"组织 packages / docs / tools"| SDK
-  Root -->|"组织 packages / docs / tools"| Native
+  Root -->|"组织 packages / docs / scripts"| Core
+  Root -->|"组织 packages / docs / scripts"| SDK
+  Root -->|"组织 packages / docs / scripts"| Native
 
   SDK -->|"依赖统一模型"| Core
   Native -->|"依赖统一模型"| Core
@@ -95,6 +97,7 @@ flutter_monitor/
   docs/
     background.md
     event_model.md
+    signal_collection.md
     server_protocol.md
     devtools_integration.md
     architecture.md
@@ -137,9 +140,13 @@ flutter_monitor/
       android/
       ios/
       test/
-  tools/
-    schema/
-    scripts/
+  workbench/
+    package.json
+    docs/
+    service/
+    web/
+    shared/
+  scripts/
 ```
 
 ### `flutter_monitor_core`
