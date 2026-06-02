@@ -246,7 +246,7 @@ export const fieldDefinitions: FieldDefinition[] = [
   {
     path: 'attributes.memory.rss_mb',
     label: 'attributes.memory.rss_mb',
-    description: '进程常驻内存。',
+    description: '进程常驻内存 RSS。用于判断整体进程内存趋势，不等于 Flutter/Dart heap，也不能直接和 native private dirty 相加。',
     source: 'memory collector / native bridge',
     privacy: 'public',
     searchable: true,

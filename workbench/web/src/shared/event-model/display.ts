@@ -199,11 +199,16 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     const window = formatNumberMetric(event, 'attributes.memory.growth_duration_ms', 'ms');
     const baseline = formatNumberMetric(event, 'payload.evidence.baseline.used_mb', 'MB', 1);
     const current = formatNumberMetric(event, 'payload.evidence.current.used_mb', 'MB', 1);
+    const source = readStringPath(event, 'attributes.memory.sample_source');
     return {
       ...base,
       title: '内存增长',
       durationLabel: growth ? `+${growth}` : duration,
-      summaryItems: compactItems(window ? `窗口 ${window}` : undefined, baseline && current ? `${baseline} -> ${current}` : undefined),
+      summaryItems: compactItems(
+        source ? memorySourceLabel(source) : undefined,
+        window ? `窗口 ${window}` : undefined,
+        baseline && current ? `RSS ${baseline} -> ${current}` : undefined,
+      ),
     };
   }
 
@@ -212,11 +217,12 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     const threshold = formatNumberMetric(event, 'payload.evidence.threshold_mb', 'MB', 0);
     const reason = readStringPath(event, 'payload.evidence.reason');
     const assertion = readStringPath(event, 'payload.assertion');
+    const source = readStringPath(event, 'attributes.memory.sample_source');
     return {
       ...base,
       title: '疑似泄漏线索',
       durationLabel: growth ? `+${growth}` : duration,
-      summaryItems: compactItems(threshold ? `阈值 ${threshold}` : undefined, reason, assertion),
+      summaryItems: compactItems(source ? memorySourceLabel(source) : undefined, threshold ? `阈值 ${threshold}` : undefined, reason, assertion),
     };
   }
 
@@ -239,8 +245,8 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     return {
       ...base,
       title: 'Native 内存采样',
-      durationLabel: nativeUsed ? `Native ${nativeUsed}` : heap ? `Heap ${heap}` : undefined,
-      summaryItems: compactItems(heap ? `Heap ${heap}` : undefined, source ? `来源 ${source}` : undefined),
+      durationLabel: nativeUsed ? `Native private dirty ${nativeUsed}` : heap ? `JVM heap ${heap}` : undefined,
+      summaryItems: compactItems(heap ? `JVM heap ${heap}` : undefined, source ? memorySourceLabel(source) : undefined),
     };
   }
 
@@ -266,7 +272,7 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   if (name === 'memory.sample' || kind === 'memory') {
     const rss = formatNumberMetric(event, 'attributes.memory.rss_mb', 'MB', 1);
     const source = readStringPath(event, 'attributes.memory.sample_source');
-    return { ...base, title: '内存采样', durationLabel: rss ? `RSS ${rss}` : undefined, summaryItems: compactItems(source ? `来源 ${source}` : undefined) };
+    return { ...base, title: '内存采样', durationLabel: rss ? `RSS 进程常驻 ${rss}` : undefined, summaryItems: compactItems(source ? memorySourceLabel(source) : undefined) };
   }
 
   if (name === 'app.lifecycle') {
@@ -302,10 +308,12 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   const result = readStringPath(event, 'attributes.business.result');
   const target = readStringPath(event, 'attributes.ui.target');
   if (action || target) {
+    const memoryAction = memoryActionSummary(event, action);
     return {
       ...base,
-      title: action ? `业务动作 ${action}` : `用户操作 ${target}`,
-      summaryItems: compactItems(result ? trackResultLabel(result) : target),
+      kindLabel: '业务',
+      title: memoryAction?.title ?? (action ? `业务动作 ${action}` : `用户操作 ${target}`),
+      summaryItems: memoryAction?.summaryItems ?? compactItems(result ? trackResultLabel(result) : target),
     };
   }
 
@@ -346,6 +354,50 @@ function memoryPressureLabel(value: string): string {
     unknown: '未知压力',
   };
   return labels[value] ?? value;
+}
+
+function memorySourceLabel(value: string): string {
+  const labels: Record<string, string> = {
+    system: '来源 system: 进程 RSS 线索',
+    native: '来源 native: 原生桥采样',
+    dart: '来源 dart: Dart/Flutter runtime',
+    sdk: '来源 sdk: SDK 自身状态',
+    unknown: '来源未知',
+  };
+  return labels[value] ?? `来源 ${value}`;
+}
+
+function memoryActionSummary(event: MonitorEvent, action?: string): { title: string; summaryItems: string[] } | undefined {
+  if (!action?.includes('memory.')) return undefined;
+
+  const allocated = formatNumberPayload(event, 'payload.properties.allocated_mb', 'MB', 0);
+  const retained = formatNumberPayload(event, 'payload.properties.retained_mb', 'MB', 0);
+  const released = formatNumberPayload(event, 'payload.properties.released_mb', 'MB', 0);
+
+  if (action.endsWith('.allocate')) {
+    return {
+      title: allocated ? `内存分配 +${allocated}` : '内存分配',
+      summaryItems: compactItems(retained ? `保留 ${retained}` : undefined, action),
+    };
+  }
+
+  if (action.endsWith('.release')) {
+    return {
+      title: released ? `内存释放 ${released}` : '内存释放',
+      summaryItems: compactItems(action),
+    };
+  }
+
+  return {
+    title: `业务动作 ${action}`,
+    summaryItems: compactItems(allocated ? `分配 ${allocated}` : undefined, retained ? `保留 ${retained}` : undefined, released ? `释放 ${released}` : undefined),
+  };
+}
+
+function formatNumberPayload(event: MonitorEvent, path: string, unit: string, digits = 0): string | undefined {
+  const value = readCanonicalPath(event, path);
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return `${value.toFixed(digits)}${unit}`;
 }
 
 function compactActivity(value: string): string {
@@ -511,6 +563,9 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
   pushField(event, primary, 'attributes.business.result');
   pushField(event, primary, 'attributes.ui.target');
   pushField(event, secondary, 'attributes.ui.action');
+  pushField(event, secondary, 'payload.properties.allocated_mb', { unit: 'MB', digits: 0 });
+  pushField(event, secondary, 'payload.properties.retained_mb', { unit: 'MB', digits: 0 });
+  pushField(event, secondary, 'payload.properties.released_mb', { unit: 'MB', digits: 0 });
 }
 
 function pushField(
@@ -688,14 +743,14 @@ export function fieldDescription(path: string): string | undefined {
     'attributes.frame.p50_ms': '帧耗时 P50',
     'attributes.frame.p90_ms': '帧耗时 P90',
     'attributes.frame.p99_ms': '帧耗时 P99',
-    'attributes.memory.heap_used_mb': 'Dart/Flutter heap 使用',
-    'attributes.memory.heap_capacity_mb': 'heap 容量',
-    'attributes.memory.external_mb': 'external memory',
-    'attributes.memory.native_used_mb': 'native memory',
-    'attributes.memory.growth_mb': '增长量',
-    'attributes.memory.growth_duration_ms': '观察窗口',
+    'attributes.memory.heap_used_mb': 'heap 已使用。Android native bridge 当前表示 JVM/Android Runtime heap，不等于 Dart heap。',
+    'attributes.memory.heap_capacity_mb': 'heap 容量。Android native bridge 当前表示 JVM/Android Runtime heap capacity。',
+    'attributes.memory.external_mb': 'Dart/Flutter external memory，平台不支持时为空。',
+    'attributes.memory.native_used_mb': 'native memory 线索。Android 当前来自 nativePrivateDirty，只是 native 私有脏页的一部分，不等于进程总内存。',
+    'attributes.memory.growth_mb': '观察窗口内的内存增长量。当前 system 来源基于进程 RSS delta，不表示已确认泄漏。',
+    'attributes.memory.growth_duration_ms': '内存增长观察窗口时长。',
     'attributes.memory.pressure_level': 'none/moderate/critical/unknown',
-    'attributes.memory.sample_source': 'dart/native/system/unknown',
+    'attributes.memory.sample_source': '内存样本来源：system 表示进程级 RSS，native 表示原生桥采样，dart 表示 Dart/Flutter runtime。',
     'attributes.native.signal': 'memory/crash/anr/oom/lifecycle',
     'attributes.error.type': '错误类型',
     'attributes.error.mechanism': '错误机制',
@@ -708,7 +763,15 @@ export function fieldDescription(path: string): string | undefined {
     'payload.truncated': 'payload 是否被裁剪',
     'payload.truncated.reason': 'payload 被裁剪的原因',
     'payload.trace': 'active trace/span 诊断快照',
-    'payload.native': '脱敏后的 native 详情',
+    'payload.native': '脱敏后的 native 原始证据，例如系统回调、rawState、trim level 或 native memory snapshot。',
+    'payload.evidence.baseline.used_mb': '观察窗口起点内存。当前 system 来源表示 RSS 起点。',
+    'payload.evidence.current.used_mb': '观察窗口终点内存。当前 system 来源表示 RSS 终点。',
+    'payload.evidence.threshold_mb': '触发疑似泄漏线索的阈值。',
+    'payload.evidence.reason': '触发该诊断线索的原因。',
+    'payload.assertion': '诊断结论强度；suspect_only 表示只是一条疑似线索。',
+    'payload.properties.allocated_mb': '业务动作声明的本次分配内存大小。',
+    'payload.properties.retained_mb': '业务动作后仍被保留的内存大小。',
+    'payload.properties.released_mb': '业务动作声明的本次释放内存大小。',
   };
   return descriptions[path];
 }

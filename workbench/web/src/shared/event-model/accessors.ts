@@ -61,7 +61,7 @@ export function eventKind(event?: MonitorEvent): string {
   if (!event) return 'event';
   const name = event.name ?? '';
   if (name === 'http.client') return 'http';
-  if (name.includes('memory')) return 'memory';
+  if (isSdkMemoryEventName(name)) return 'memory';
   if (event.signalType === 'error' || event.status === 'error') return 'error';
   if (name.includes('jank')) return 'jank';
   if (name.startsWith('page.') || name === 'route.push') return 'page';
@@ -71,6 +71,10 @@ export function eventKind(event?: MonitorEvent): string {
   if (name.includes('lifecycle')) return 'lifecycle';
   if (name.startsWith('business.')) return 'business';
   return event.signalType ?? 'event';
+}
+
+function isSdkMemoryEventName(name: string): boolean {
+  return name.startsWith('memory.') || name.startsWith('native.memory.');
 }
 
 export function issueLabels(event: MonitorEvent): string[] {
