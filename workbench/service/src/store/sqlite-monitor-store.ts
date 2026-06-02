@@ -6,9 +6,11 @@ import {
   appVersionOf,
   environmentOf,
   eventTimeValue,
+  isCompletedHttpEvent,
   isErrorEvent,
   isFailedHttpEvent,
   isJankEvent,
+  isStabilityErrorEvent,
   nameOf,
   numericAttribute,
   routeOf,
@@ -196,7 +198,7 @@ export class SqliteMonitorStore implements MonitorStore {
     const pageEvents = events.filter(isPageEvent);
     const httpEvents = events.filter(isHttpEvent);
     const jankEvents = events.filter(isJankEvent);
-    const errorEvents = events.filter(isErrorEvent);
+    const errorEvents = events.filter(isStabilityErrorEvent);
     return {
       startup: summarizeStartup(startupEvents, events, limit),
       pages: summarizePages(pageEvents, limit),
@@ -519,7 +521,7 @@ function isPageEvent(event: MonitorEvent): boolean {
 }
 
 function isHttpEvent(event: MonitorEvent): boolean {
-  return nameOf(event) === 'http.client';
+  return isCompletedHttpEvent(event);
 }
 
 function summarizeStartup(
@@ -679,7 +681,7 @@ function summarizeErrors(events: MonitorEvent[], limit: number): ErrorPerformanc
     ),
     mechanismSummaries: groupMetric(
       events,
-      (event) => stringAttribute(event, 'error.mechanism') ?? stringAttribute(event, 'http.error_type') ?? '未知机制',
+      (event) => stringAttribute(event, 'error.mechanism') ?? nameOf(event) ?? '未知机制',
       undefined,
       '未知机制',
     ),
@@ -851,7 +853,7 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
   const firstWithUser = events.find((event) => Boolean(userIdOf(event)));
   const firstWithApp = events.find((event) => Boolean(appVersionOf(event) || environmentOf(event)));
   const lastWithRoute = [...events].reverse().find((event) => Boolean(routeOf(event)));
-  const status = events.some(isErrorEvent)
+  const status = events.some(isStabilityErrorEvent)
     ? 'error'
     : [...events].reverse().map(statusOf).find(Boolean);
 
@@ -867,7 +869,7 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
     environment: firstWithApp ? environmentOf(firstWithApp) : undefined,
     route: lastWithRoute ? routeOf(lastWithRoute) : undefined,
     status,
-    errorCount: events.filter(isErrorEvent).length,
+    errorCount: events.filter(isStabilityErrorEvent).length,
     jankCount: events.filter(isJankEvent).length,
     failedHttpCount: events.filter(isFailedHttpEvent).length,
   };

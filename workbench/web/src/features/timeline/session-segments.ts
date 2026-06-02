@@ -75,6 +75,7 @@ export function prepareSessionEvents(events: MonitorEvent[]): MonitorEvent[] {
 
 function mergeKey(event: MonitorEvent): string | undefined {
   if (event.signalType === 'span' && event.spanId) return `span:${event.spanId}`;
+  if (event.signalType === 'trace' && event.name === 'page.visit' && event.traceId) return undefined;
   if (event.signalType === 'trace' && event.traceId) return `trace:${event.traceId}:${event.name ?? ''}`;
   return undefined;
 }
@@ -136,9 +137,8 @@ function segmentDurationLabel(
   }
 
   const stay = byName('page.stay')?.durationMs;
-  const visit = events.find((event) => event.signalType === 'trace' && event.name === 'page.visit')?.durationMs;
   const boundary = nextStart !== undefined ? nextStart - start : undefined;
-  const duration = stay ?? visit ?? boundary ?? safeSpanDuration(events);
+  const duration = stay ?? boundary ?? safeSpanDuration(events);
   return duration !== undefined ? `停留 ${formatDuration(duration)}` : undefined;
 }
 

@@ -164,10 +164,10 @@ export function EventTablePanel({
             <EmptyState title="暂无记录" description="当前筛选范围内还没有可展示的记录。" />
           </div>
         ) : (
-          <div className="min-w-[760px]">
+          <div className="min-w-[680px] xl:min-w-0">
             <div
-              className="grid border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500"
-              style={{ gridTemplateColumns: `minmax(13rem,1.4fr) repeat(${columns.length}, minmax(7rem,0.8fr)) 5rem` }}
+              className="grid gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500"
+              style={{ gridTemplateColumns: tableColumns(columns.length) }}
             >
               <span>记录</span>
               {columns.map((column) => (
@@ -306,8 +306,8 @@ function SourceHint({ label, field, hint }: { label: string; field: string; hint
 function PerformanceRow({ event, columns }: { event: PerformanceMetricEvent; columns: TableColumn[] }) {
   const record = (
     <div
-      className="grid items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50"
-      style={{ gridTemplateColumns: `minmax(13rem,1.4fr) repeat(${columns.length}, minmax(7rem,0.8fr)) 5rem` }}
+      className="grid items-center gap-2 px-3 py-2 text-xs hover:bg-teal-50"
+      style={{ gridTemplateColumns: tableColumns(columns.length) }}
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
@@ -342,6 +342,10 @@ function PerformanceRow({ event, columns }: { event: PerformanceMetricEvent; col
     </div>
   );
   return record;
+}
+
+function tableColumns(columnCount: number): string {
+  return `minmax(10rem,1.25fr) repeat(${columnCount}, minmax(4.75rem,0.75fr)) minmax(3.75rem,0.45fr)`;
 }
 
 function lineOption(

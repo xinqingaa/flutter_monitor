@@ -123,7 +123,11 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   }
 
   if (name === 'page.visit') {
-    return { ...base, title: route ? `进入页面 ${route}` : '进入页面', durationLabel: duration, summaryItems: [] };
+    const phase = readStringPath(event, 'attributes.event.phase');
+    if (phase === 'end') {
+      return { ...base, title: route ? `离开页面 ${route}` : '离开页面', durationLabel: duration, summaryItems: [] };
+    }
+    return { ...base, title: route ? `进入页面 ${route}` : '进入页面', summaryItems: [] };
   }
 
   if (name === 'route.push') {

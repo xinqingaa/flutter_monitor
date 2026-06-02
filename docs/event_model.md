@@ -118,7 +118,7 @@ flowchart TB
   "parentSpanId": "span_page_product_detail",
   "resource": {},
   "context": {},
-  "attributes": {},
+  "attributes": {"event.phase": "instant"},
   "payload": {}
 }
 ```
@@ -689,7 +689,7 @@ Span 必须能通过 `traceId` 关联所属 trace。除 root span 外，span 应
 - click / tap
 - scroll
 - dialog show/dismiss
-- http request start/end
+- http request completed
 - lifecycle change
 - jank sequence
 - memory pressure
@@ -914,7 +914,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 |---|---|---|
 | 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs` |
-| 网络 | `span http.client` | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes` |
+| 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
 | 卡顿 | `metric ui.jank.sequence` | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
 | 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect` | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
@@ -1084,6 +1084,8 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
       "schemaVersion": "1.0",
       "eventId": "evt_http_product",
       "timestamp": "2026-05-24T12:00:02.120+08:00",
+      "startTime": "2026-05-24T12:00:01.600+08:00",
+      "endTime": "2026-05-24T12:00:02.120+08:00",
       "durationMs": 520,
       "signalType": "span",
       "name": "http.client",
@@ -1096,7 +1098,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
-      "attributes": {"http.method": "GET", "http.url.normalized": "/api/product/{id}", "http.status_code": 200, "http.success": true, "response.size_bytes": 23000},
+      "attributes": {"event.phase": "instant", "http.method": "GET", "http.url.normalized": "/api/product/{id}", "http.status_code": 200, "http.success": true, "response.size_bytes": 23000},
       "payload": {}
     },
     {
@@ -1175,7 +1177,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
         "payload.error.stacktrace": "...",
         "payload.error.library": "app.feature",
         "payload.breadcrumbs": [
-          {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "level": "info", "eventId": "evt_http_product", "sessionId": "ses_001", "traceId": "trace_page_product", "spanId": "span_http_product", "route": "/product/detail", "attributes": {"http.url.normalized": "/api/product/{id}", "http.status_code": 200}, "payload": {"duration_ms": 520}},
+          {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "level": "info", "eventId": "evt_http_product", "sessionId": "ses_001", "traceId": "trace_page_product", "spanId": "span_http_product", "route": "/product/detail", "attributes": {"event.phase": "instant", "http.url.normalized": "/api/product/{id}", "http.status_code": 200}, "payload": {"duration_ms": 520}},
           {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "ui.click", "level": "info", "eventId": "evt_tap_buy", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"ui.target": "buy_now_button", "ui.action": "click"}, "payload": {}},
           {"timestamp": "2026-05-24T12:00:04.500+08:00", "name": "ui.jank.sequence", "level": "warning", "eventId": "evt_jank", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"jank.count": 5}, "payload": {}}
         ]

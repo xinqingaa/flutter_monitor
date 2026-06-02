@@ -93,7 +93,7 @@ void main() async {
     appInfo: appInfo,
     jankConfig: JankConfig.lenient(),
     outputs: monitorOutputs,
-    // nativeBridge: FlutterMonitorNative().createBridge(),
+    nativeBridge: FlutterMonitorNative().createBridge(),
   );
 
   // 或者使用完整配置（可选）

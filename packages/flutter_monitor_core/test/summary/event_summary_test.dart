@@ -22,7 +22,7 @@ void main() {
         spanId: 'span_1',
         context: const MonitorContext(route: RouteContext(name: '/')),
         attributes: const <String, Object?>{
-          FieldPaths.eventPhase: 'end',
+          FieldPaths.eventPhase: EventPhases.instant,
           FieldPaths.httpMethod: 'GET',
           FieldPaths.httpUrlNormalized: '/users/flutter',
           FieldPaths.httpStatusCode: 403,
@@ -57,7 +57,7 @@ void main() {
       ]);
       expect(
         formatter.format(summary),
-        '[FM] kind=http name=http.client status=error phase=end '
+        '[FM] kind=http name=http.client status=error phase=instant '
         'method=GET url=/users/flutter code=403 success=false '
         'duration_ms=612 route=/ breadcrumbs=1 session=ses_1 '
         'trace=trace_1 span=span_1 event=evt_http',
@@ -154,7 +154,7 @@ void main() {
           name: 'http.client',
           status: EventStatus.ok,
           attributes: const <String, Object?>{
-            FieldPaths.eventPhase: 'end',
+            FieldPaths.eventPhase: EventPhases.instant,
             FieldPaths.httpStatusCode: 200,
             FieldPaths.httpSuccess: true,
           },
@@ -165,7 +165,7 @@ void main() {
           eventId: 'evt_http_error',
           status: EventStatus.error,
           attributes: const <String, Object?>{
-            FieldPaths.eventPhase: 'end',
+            FieldPaths.eventPhase: EventPhases.instant,
             FieldPaths.httpStatusCode: 500,
             FieldPaths.httpSuccess: false,
           },

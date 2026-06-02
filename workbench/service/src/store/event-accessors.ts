@@ -38,14 +38,23 @@ export function isErrorEvent(event: MonitorEvent): boolean {
   return statusOf(event) === 'error' || signalTypeOf(event) === 'error';
 }
 
+export function isStabilityErrorEvent(event: MonitorEvent): boolean {
+  if (isCompletedHttpEvent(event)) return false;
+  return statusOf(event) === 'error' || signalTypeOf(event) === 'error';
+}
+
 export function isJankEvent(event: MonitorEvent): boolean {
   const name = nameOf(event);
   return name === 'ui.jank.sequence';
 }
 
+export function isCompletedHttpEvent(event: MonitorEvent): boolean {
+  return nameOf(event) === 'http.client' &&
+    readPath(event, ['attributes', 'event.phase']) === 'instant';
+}
+
 export function isFailedHttpEvent(event: MonitorEvent): boolean {
-  const name = nameOf(event);
-  if (name !== 'http.client') return false;
+  if (!isCompletedHttpEvent(event)) return false;
   return statusOf(event) === 'error' || readPath(event, ['attributes', 'http.success']) === false;
 }
 

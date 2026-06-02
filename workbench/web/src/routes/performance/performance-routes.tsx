@@ -36,7 +36,7 @@ export function NetworkRoute() {
     <PerformanceDetailPage
       kind="network"
       title="网络请求"
-      description="网络页读取 http.client span 及 http.* 注册 attributes。"
+      description="网络页读取 completed single-span HTTP envelope：name=http.client 且 event.phase=instant。"
       icon={Globe2}
       metric={query.data?.http}
       emphasis="HTTP"
@@ -64,7 +64,7 @@ export function ErrorsRoute() {
     <PerformanceDetailPage
       kind="errors"
       title="错误"
-      description="错误页读取 error signal 与 status=error 记录，不展示无 SDK 字段支撑的耗时统计。"
+      description="错误页读取稳定性错误，不混入 completed HTTP 失败；失败请求请在网络页查看。"
       icon={AlertTriangle}
       metric={query.data?.errors}
       emphasis="稳定性"

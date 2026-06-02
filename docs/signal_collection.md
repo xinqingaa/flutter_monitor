@@ -250,15 +250,13 @@ Native 增强来源：
 
 ### 触发时机
 
-- request start。
 - response received。
 - error thrown。
 - retry / cache 命中，视接入能力而定。
 
 ### 生成事件
 
-- `span http.client`
-- 可选 breadcrumb：`http.request.start`、`http.request.end`
+- `span http.client`，当前基础 SDK 采用 completed single-span envelope：单条事件同时携带 `startTime`、`endTime`、`durationMs`，并固定 `event.phase = instant`。
 
 ### 链路关联
 
@@ -290,6 +288,7 @@ Native 增强来源：
 - streaming body 大小可能不可得。
 - retry/cache 信息依赖具体网络库能力。
 - 网络采集不应修改业务请求语义。
+- 当前基础 SDK 不生成 HTTP start/end 双事件，不展示 in-flight 请求；Workbench 和服务端统计只消费 `name = http.client` 且 `event.phase = instant` 的 completed single-span envelope。
 
 ## 错误采集
 

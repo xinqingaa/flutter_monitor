@@ -9,6 +9,12 @@ abstract final class ErrorTypes {
   static const flutterError = 'flutter_error';
 }
 
+abstract final class EventPhases {
+  static const start = 'start';
+  static const end = 'end';
+  static const instant = 'instant';
+}
+
 abstract final class HttpErrorTypes {
   static const badCertificate = 'bad_certificate';
   static const cancelled = 'cancelled';

@@ -45,6 +45,9 @@ void main() {
     expect(FieldPaths.appStartEndReason, 'app.start.end_reason');
 
     expect(ErrorTypes.dartError, 'dart_error');
+    expect(EventPhases.start, 'start');
+    expect(EventPhases.end, 'end');
+    expect(EventPhases.instant, 'instant');
     expect(HttpErrorTypes.httpStatus, 'http_status');
     expect(HttpErrorTypes.connectionError, 'connection_error');
     expect(HttpErrorTypes.timeout, 'timeout');

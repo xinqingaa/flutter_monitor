@@ -71,19 +71,18 @@ class EnvelopeBuilder {
       network: context.network,
       release: context.release,
       lifecycle: context.lifecycle,
-      native:
-          nativeSnapshot == null
-              ? context.native
-              : NativeRuntimeContext(
-                available: nativeSnapshot.available,
-                platform: nativeSnapshot.platform ?? context.native?.platform,
-                processId: nativeSnapshot.processId,
-                bridgeVersion: nativeSnapshot.bridgeVersion,
-                signalSource:
-                    nativeSnapshot.signalSource ??
-                    context.native?.signalSource ??
-                    PlatformSignalSources.native,
-              ),
+      native: nativeSnapshot == null
+          ? context.native
+          : NativeRuntimeContext(
+              available: nativeSnapshot.available,
+              platform: nativeSnapshot.platform ?? context.native?.platform,
+              processId: nativeSnapshot.processId,
+              bridgeVersion: nativeSnapshot.bridgeVersion,
+              signalSource:
+                  nativeSnapshot.signalSource ??
+                  context.native?.signalSource ??
+                  PlatformSignalSources.native,
+            ),
       missing: signal.contextMissing ?? context.missing,
       missingReason: signal.contextMissingReason ?? context.missingReason,
     );
@@ -91,9 +90,9 @@ class EnvelopeBuilder {
 
   String _defaultEventPhase(RawSignal signal) {
     return switch (signal.signalType) {
-      SignalType.trace ||
-      SignalType.span => signal.endTime == null ? 'start' : 'end',
-      _ => 'instant',
+      SignalType.trace || SignalType.span =>
+        signal.endTime == null ? EventPhases.start : EventPhases.end,
+      _ => EventPhases.instant,
     };
   }
 

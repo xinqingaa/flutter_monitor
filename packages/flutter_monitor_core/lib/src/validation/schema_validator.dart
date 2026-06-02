@@ -1,5 +1,6 @@
 import '../constants/context_missing_reasons.dart';
 import '../constants/field_paths.dart';
+import '../constants/protocol_values.dart';
 import '../model/event_envelope.dart';
 import '../model/event_level.dart';
 import '../model/event_priority.dart';
@@ -340,7 +341,11 @@ final _statusValues = EventStatus.values
 final _priorityValues = EventPriority.values
     .map((value) => value.wireValue)
     .toSet();
-const _eventPhaseValues = <String>{'start', 'end', 'instant'};
+const _eventPhaseValues = <String>{
+  EventPhases.start,
+  EventPhases.end,
+  EventPhases.instant,
+};
 
 const _deprecatedFieldPaths = <String>{
   'page.route',

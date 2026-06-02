@@ -152,8 +152,8 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
   return {
     label: '耗时事件',
     count: metric?.durationSummary?.sampleCount,
-    field: 'http.client.durationMs',
-    hint: 'HTTP 请求 span 提供的 durationMs 样本数。',
+    field: 'http.client.durationMs / attributes["event.phase"]=instant',
+    hint: 'HTTP completed single-span envelope 的 durationMs 样本数；旧 event.phase=end 数据不参与统计。',
   };
 }
 
@@ -572,7 +572,7 @@ function RouteHeatPanel({
 }
 
 function NetworkContent({ events, metric }: { events: PerformanceMetricEvent[]; metric?: HttpPerformanceSummary }) {
-  const http = chronological(events.filter((event) => event.name === 'http.client'));
+  const http = chronological(events.filter(isCompletedHttpEvent));
   const httpRecent = [...http].reverse();
   const statuses = groupCount(http.map((event) => attrNumber(event, 'http.status_code')?.toString()), '无状态码').map((item) => ({
     ...item,
@@ -592,15 +592,15 @@ function NetworkContent({ events, metric }: { events: PerformanceMetricEvent[]; 
       <RouteHeatPanel
         title="请求页面热区"
         description="按 route 汇总请求量和最慢请求，先定位哪个页面触发问题。"
-        source="context.route.name / http.client.durationMs"
+        source={'context.route.name / name=http.client / attributes["event.phase"]=instant / durationMs'}
         rows={metric?.routeSummaries ?? []}
         valueLabel="最慢请求"
       />
       <div className="grid gap-2 2xl:grid-cols-3">
         <LineChartPanel
           title="请求耗时趋势"
-          description="每个点对应一条 http.client span。"
-          source="name=http.client · value=durationMs"
+          description="每个点对应一条 completed single-span HTTP envelope。"
+          source={'name=http.client · attributes["event.phase"]=instant · value=durationMs'}
           points={http.map((event) => durationPoint(event, httpPointLabel(event)))}
         />
         <BarChartPanel title="状态码分布" description="按 http.status_code 分组。" source={'attributes["http.status_code"]'} data={statuses} />
@@ -617,8 +617,8 @@ function NetworkContent({ events, metric }: { events: PerformanceMetricEvent[]; 
       <BarChartPanel title="失败类型" description="仅失败请求通常会携带 http.error_type。" source={'attributes["http.error_type"]'} data={errorTypes} />
       <EventTablePanel
         title="网络记录"
-        description="HTTP span 原始字段记录。"
-        source={'durationMs / attributes["http.method"] / attributes["http.url.normalized"] / attributes["http.status_code"] / attributes["http.success"]'}
+        description="HTTP completed single-span 原始字段记录。"
+        source={'durationMs / attributes["event.phase"] / attributes["http.method"] / attributes["http.url.normalized"] / attributes["http.status_code"] / attributes["http.success"]'}
         events={httpRecent}
         columns={[
           { key: 'method', label: '方法', render: (event) => attrString(event, 'http.method') ?? '-' },
@@ -940,6 +940,10 @@ function selectBackgroundIntervalEvents(events: PerformanceMetricEvent[]): Perfo
 
 function isHotResumeEvent(event: PerformanceMetricEvent): boolean {
   return event.name === 'app.hot_start' && attrString(event, 'app.start.type') === 'hot';
+}
+
+function isCompletedHttpEvent(event: PerformanceMetricEvent): boolean {
+  return event.name === 'http.client' && attrString(event, 'event.phase') === 'instant';
 }
 
 function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | undefined {

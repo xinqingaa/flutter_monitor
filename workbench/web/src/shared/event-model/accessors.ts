@@ -60,8 +60,8 @@ export function breadcrumbsOf(event?: MonitorEvent): JsonObject[] {
 export function eventKind(event?: MonitorEvent): string {
   if (!event) return 'event';
   const name = event.name ?? '';
-  if (event.signalType === 'error' || event.status === 'error') return 'error';
   if (name === 'http.client') return 'http';
+  if (event.signalType === 'error' || event.status === 'error') return 'error';
   if (name.includes('jank')) return 'jank';
   if (name.startsWith('page.') || name === 'route.push') return 'page';
   if (name === 'app.cold_start' || name === 'app.hot_start' || name.includes('startup') || name.includes('start')) {
@@ -76,15 +76,28 @@ export function eventKind(event?: MonitorEvent): string {
 export function issueLabels(event: MonitorEvent): string[] {
   const labels: string[] = [];
   const kind = eventKind(event);
-  if (event.status === 'error' || event.signalType === 'error') labels.push('错误');
   if (kind === 'http' && (event.status === 'error' || readPath(event, ['attributes', 'http.success']) === false)) {
     labels.push('请求失败');
+  } else if (event.status === 'error' || event.signalType === 'error') {
+    labels.push('错误');
   }
   if (kind === 'jank') labels.push('卡顿');
   if (kind === 'startup' && (event.durationMs ?? 0) >= 1000) labels.push('启动慢');
-  if (kind === 'page' && (event.durationMs ?? 0) >= 1000) labels.push('页面慢');
+  if (kind === 'page' && isSlowPagePerformanceEvent(event)) labels.push('页面慢');
   if (kind === 'memory' && String(event.level ?? event.status ?? '').includes('warn')) labels.push('内存压力');
   return labels;
+}
+
+function isSlowPagePerformanceEvent(event: MonitorEvent): boolean {
+  if (event.name !== 'page.load' && event.name !== 'page.first_frame') return false;
+  const loadMs = readPath(event, ['attributes', 'page.load_ms']);
+  const firstFrameMs = readPath(event, ['attributes', 'page.first_frame_ms']);
+  const duration = typeof loadMs === 'number'
+    ? loadMs
+    : typeof firstFrameMs === 'number'
+      ? firstFrameMs
+      : event.durationMs;
+  return (duration ?? 0) >= 1000;
 }
 
 export function eventKindLabel(event?: MonitorEvent): string {

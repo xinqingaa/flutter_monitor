@@ -576,6 +576,7 @@ class Reporter {
         spanId: finished.spanId,
         parentSpanId: finished.parentSpanId,
         includeBreadcrumbs: !success,
+        eventPhase: EventPhases.instant,
         attributes: finished.attributes,
         payload: finished.payload,
       ),

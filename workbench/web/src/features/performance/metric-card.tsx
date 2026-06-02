@@ -81,9 +81,9 @@ function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
         summary={summary?.coldStart}
         hintSuffix="当前 SDK 的 app.cold_start 以首帧为结束点，app.first_frame_ms 是同一链路的终点口径。"
       />
-      <DurationGroup label="SDK 初始化" source={'name=sdk.init · value=attributes["sdk.init.duration_ms"]'} summary={summary?.sdkInit} compact />
-      <DurationGroup label="后台间隔" source="app.background_duration.durationMs" summary={summary?.backgroundInterval} />
       <DurationGroup label="热重启" source="app.hot_start.durationMs" summary={summary?.hotResume} compact />
+      <DurationGroup label="后台间隔" source="app.background_duration.durationMs" summary={summary?.backgroundInterval} compact />
+      <DurationGroup label="SDK 初始化" source={'name=sdk.init · value=attributes["sdk.init.duration_ms"]'} summary={summary?.sdkInit} compact />
     </div>
   );
 }
@@ -104,14 +104,14 @@ function NetworkSummary({ summary }: { summary?: HttpPerformanceSummary }) {
       <MetricDuration
         label="平均耗时"
         value={summary?.durationSummary?.averageMs}
-        sdkField="http.client.durationMs"
-        hint={`HTTP 请求耗时平均值。样本数：${summary?.durationSummary?.sampleCount ?? 0}。`}
+        sdkField={'name=http.client · attributes["event.phase"]=instant · durationMs'}
+        hint={`HTTP completed single-span 请求耗时平均值。样本数：${summary?.durationSummary?.sampleCount ?? 0}。`}
       />
       <MetricDuration
         label="最慢请求"
         value={summary?.durationSummary?.maxMs}
-        sdkField="http.client.durationMs"
-        hint="当前范围内 durationMs 最大的 http.client span。"
+        sdkField={'name=http.client · attributes["event.phase"]=instant · durationMs'}
+        hint="当前范围内 durationMs 最大的 completed single-span HTTP envelope。"
       />
       <MetricPlain label="失败请求" value={compactNumber(summary?.failedCount ?? 0)} />
       <MetricPlain label="高频接口" value={summary?.endpointSummaries[0]?.key ?? '-'} />
@@ -143,6 +143,7 @@ function JankSummary({ summary }: { summary?: JankPerformanceSummary }) {
 function ErrorsSummary({ summary }: { summary?: ErrorPerformanceSummary }) {
   return (
     <div className="grid gap-1 text-xs">
+      <MetricPlain label="错误数" value={compactNumber(summary?.count ?? 0)} />
       <MetricPlain label="影响会话" value={compactNumber(summary?.affectedSessionCount ?? 0)} />
       <MetricPlain label="高频类型" value={summary?.typeSummaries[0]?.key ?? '-'} />
       <MetricPlain label="高频机制" value={summary?.mechanismSummaries[0]?.key ?? '-'} />

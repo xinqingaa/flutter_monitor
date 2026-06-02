@@ -264,10 +264,10 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 | `userId` | 首个包含 `context.user.userId` 的事件。 |
 | `appVersion` / `environment` | 首个包含 `resource.app.*` 的事件。 |
 | `route` | 最后一条包含 `context.route.name` 的事件。 |
-| `status` | 有 error 则为 `error`，否则取最近可用 `status`。 |
-| `errorCount` | `status=error` 或 `signalType=error` 的事件数。 |
+| `status` | 有非 HTTP 的稳定性错误则为 `error`，否则取最近可用 `status`。 |
+| `errorCount` | 非 completed HTTP 的稳定性错误事件数；HTTP 失败不计入该字段。 |
 | `jankCount` | `name=ui.jank.sequence` 的事件数。 |
-| `failedHttpCount` | `name=http.client` 且 `status=error` 或 `attributes["http.success"]=false` 的事件数。 |
+| `failedHttpCount` | `name=http.client`、`attributes["event.phase"]="instant"`，且 `status=error` 或 `attributes["http.success"]=false` 的事件数。 |
 
 ### `GET /api/monitor/v1/performance/overview?...filters`
 
@@ -343,12 +343,14 @@ Workbench 启动详情页按这个口径展示：
 
 | 字段 | 来源 / 计算口径 |
 |---|---|
-| `failedCount` | `name=http.client` 且 `status=error` 或 `attributes["http.success"]=false` 的数量。 |
-| `slowCount` | `http.client.durationMs >= 1000` 的数量。 |
+| `failedCount` | `name=http.client`、`attributes["event.phase"]="instant"`，且 `status=error` 或 `attributes["http.success"]=false` 的数量。 |
+| `slowCount` | `name=http.client`、`attributes["event.phase"]="instant"`，且 `durationMs >= 1000` 的数量。 |
 | `affectedSessionCount` | 当前 HTTP 事件影响的 distinct `sessionId` 数。 |
 | `routeSummaries` | 按 `context.route.name` 分组，统计请求数和最慢请求。 |
 | `endpointSummaries` | 按 `attributes["http.url.normalized"]` 分组。 |
 | `statusSummaries` | 按 `attributes["http.status_code"]` 或失败类型分组。 |
+
+Workbench 只统计符合新规范的 completed single-span HTTP envelope：`name=http.client` 且 `attributes["event.phase"]="instant"`。旧的 `event.phase=end` HTTP 数据不做兼容，清理 SQLite 后重新采集。
 
 `jank` 额外字段：
 
@@ -363,13 +365,15 @@ Workbench 启动详情页按这个口径展示：
 
 `errors` 额外字段：
 
+Workbench 错误页关注稳定性错误，不混入 completed HTTP 失败；HTTP 失败统一在 `http.failedCount`、网络页和 Session 失败请求中展示。
+
 | 字段 | 来源 / 计算口径 |
 |---|---|
-| `affectedSessionCount` | 当前错误事件影响的 distinct `sessionId` 数。 |
+| `affectedSessionCount` | 当前稳定性错误事件影响的 distinct `sessionId` 数。 |
 | `typeSummaries` | 按 `attributes["error.type"]` 分组，缺失时使用 `name`。 |
-| `mechanismSummaries` | 按 `attributes["error.mechanism"]` 或 `attributes["http.error_type"]` 分组。 |
+| `mechanismSummaries` | 按 `attributes["error.mechanism"]` 分组，缺失时使用 `name`。 |
 | `routeSummaries` | 按 `context.route.name` 分组。 |
-| `recent` | 最近错误事件轻量 view model。 |
+| `recent` | 最近稳定性错误事件轻量 view model。 |
 
 `events` 是轻量 view model，不是完整 envelope。字段来自：
 

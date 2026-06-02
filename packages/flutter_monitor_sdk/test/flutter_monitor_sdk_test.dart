@@ -133,7 +133,7 @@ void main() {
         spanId: 'span_1',
         context: const MonitorContext(route: RouteContext(name: '/')),
         attributes: const <String, Object?>{
-          FieldPaths.eventPhase: 'end',
+          FieldPaths.eventPhase: EventPhases.instant,
           FieldPaths.httpMethod: 'GET',
           FieldPaths.httpUrlNormalized: '/users/flutter',
           FieldPaths.httpStatusCode: 403,
@@ -179,7 +179,7 @@ void main() {
         name: 'http.client',
         status: EventStatus.ok,
         attributes: const <String, Object?>{
-          FieldPaths.eventPhase: 'end',
+          FieldPaths.eventPhase: EventPhases.instant,
           FieldPaths.httpStatusCode: 200,
           FieldPaths.httpSuccess: true,
         },
@@ -222,7 +222,7 @@ void main() {
         name: 'http.client',
         status: EventStatus.ok,
         attributes: const <String, Object?>{
-          FieldPaths.eventPhase: 'end',
+          FieldPaths.eventPhase: EventPhases.instant,
           FieldPaths.httpStatusCode: 200,
           FieldPaths.httpSuccess: true,
         },
@@ -1039,6 +1039,9 @@ void main() {
     expect(httpSpan['signalType'], 'span');
     expect(httpSpan['traceId'], pageTrace['traceId']);
     expect(httpSpan['durationMs'], 32);
+    expect(httpSpan['startTime'], isNotNull);
+    expect(httpSpan['endTime'], isNotNull);
+    expect(attributes[FieldPaths.eventPhase], EventPhases.instant);
     expect(attributes[FieldPaths.httpMethod], 'GET');
     expect(attributes[FieldPaths.httpUrlNormalized], '/api/items');
     expect(attributes[FieldPaths.httpSuccess], isTrue);
@@ -1077,6 +1080,7 @@ void main() {
     final payload = httpSpan['payload'] as Map;
 
     expect(httpSpan['status'], 'error');
+    expect(attributes[FieldPaths.eventPhase], EventPhases.instant);
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], HttpErrorTypes.httpStatus);
     expect(attributes[FieldPaths.responseSizeBytes], 128);
@@ -1253,6 +1257,7 @@ void main() {
     final attributes = httpSpan['attributes'] as Map;
 
     expect(httpSpan['status'], 'error');
+    expect(attributes[FieldPaths.eventPhase], EventPhases.instant);
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], HttpErrorTypes.httpStatus);
     expect(attributes[FieldPaths.responseSizeBytes], 256);
