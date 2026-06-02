@@ -61,13 +61,13 @@ export function eventKind(event?: MonitorEvent): string {
   if (!event) return 'event';
   const name = event.name ?? '';
   if (name === 'http.client') return 'http';
+  if (name.includes('memory')) return 'memory';
   if (event.signalType === 'error' || event.status === 'error') return 'error';
   if (name.includes('jank')) return 'jank';
   if (name.startsWith('page.') || name === 'route.push') return 'page';
   if (name === 'app.cold_start' || name === 'app.hot_start' || name.includes('startup') || name.includes('start')) {
     return 'startup';
   }
-  if (name.includes('memory')) return 'memory';
   if (name.includes('lifecycle')) return 'lifecycle';
   if (name.startsWith('business.')) return 'business';
   return event.signalType ?? 'event';
@@ -84,8 +84,24 @@ export function issueLabels(event: MonitorEvent): string[] {
   if (kind === 'jank') labels.push('卡顿');
   if (kind === 'startup' && (event.durationMs ?? 0) >= 1000) labels.push('启动慢');
   if (kind === 'page' && isSlowPagePerformanceEvent(event)) labels.push('页面慢');
-  if (kind === 'memory' && String(event.level ?? event.status ?? '').includes('warn')) labels.push('内存压力');
+  if (kind === 'memory') {
+    if (isMemoryPressureEvent(event)) labels.push('内存压力');
+    else if (event.name === 'memory.leak.suspect') labels.push('疑似泄漏');
+    else if (event.name === 'memory.growth' && isMemoryGrowthIssue(event)) labels.push('内存增长');
+  }
   return labels;
+}
+
+function isMemoryPressureEvent(event: MonitorEvent): boolean {
+  if (event.name !== 'memory.pressure' && event.name !== 'native.memory.pressure') return false;
+  const level = readPath(event, ['attributes', 'memory.pressure_level']);
+  return level === undefined || (typeof level === 'string' && level !== '' && level !== 'none');
+}
+
+function isMemoryGrowthIssue(event: MonitorEvent): boolean {
+  const level = String(event.level ?? event.status ?? '');
+  const growth = readPath(event, ['attributes', 'memory.growth_mb']);
+  return level.includes('warn') || (typeof growth === 'number' && growth > 0);
 }
 
 function isSlowPagePerformanceEvent(event: MonitorEvent): boolean {

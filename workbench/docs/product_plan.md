@@ -311,6 +311,26 @@ Timeline 应从事件表格逐步升级为可视化链路：
 - 分两批落地：先上竖向时间轴，瀑布作为第二批。二者天然可分离（瀑布是挂在时间轴行上的展开），先做时间轴不会让瀑布返工。
 - 数据可行性：envelope 已含 `startTime/endTime/durationMs/parentSpanId` 与 `page.visit/route.push/page.stay`，页面分段和瀑布都能在前端 view model 内算出，几乎不需后端改动。
 
+### Timeline 区段命名规则
+
+Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view model，不是 SDK、core 或 service 协议字段。Workbench 不跨区段复制 route push/pop 事件，也不伪造前后页面节点；事件仍按 raw JSON 所属 `context.route.name`、`traceId`、`startTime/endTime/timestamp` 展示。
+
+- `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init`、`app.first_frame` 和启动完成前的启动期 `memory.sample`。
+- `页面 ${route}`：只由明确页面进入证据开启，即 `page.visit` 的 `event.phase=start` 或 `route.push`。例如 `/detail` 的进入证据如果出现在 raw JSON 的 `/detail` 事件上，就展示在 `/detail` 区段内，不复制到上一个 `/` 区段。
+- `页面活动 ${route}`：当前 route 上的非页面进入事件窗口，包括 HTTP、错误、业务足迹、内存、生命周期、热重启和 SDK 自监控等。区段标题保持中性，具体问题类型放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
+- `会话活动`：缺少 route 上下文的非页面事件窗口。
+
+页面离开与停留的展示按语义区分：`page.visit end` 是页面离开动作，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面慢只读取 `page.load` 和 `page.first_frame` 的耗时。
+
+### Memory 展示口径
+
+Workbench 展示 memory 问题时必须按事件名和证据字段拆分，不得把 `warning` level 泛化成内存压力：
+
+- `memory.pressure` / `native.memory.pressure`，或明确带有非 `none` 的 `memory.pressure_level`，才能显示为 `内存压力`。
+- `memory.growth` 显示为 `内存增长`，必须展示 `memory.growth_mb`、`memory.growth_duration_ms`，有 `payload.evidence` 时展示 baseline/current。
+- `memory.leak.suspect` 显示为 `疑似泄漏线索`，必须保留 `payload.assertion = suspect_only` 和 `payload.evidence.reason/threshold_mb` 等依据。Workbench 不得把它展示为确定泄漏、内存压力或内存溢出。
+- `memory.sample` / `native.memory.sample` 只是采样，展示 RSS、heap、native used 和 sample source，不默认标记为问题。
+
 Session Detail 内部可以展示 Trace/Span/Event 层级，但这些层级不应迫使用户跳到多个独立页面。独立 Trace Detail 和 Event Detail 可以保留为辅助深链能力，主要用于复制链接、外部分享或直接打开 raw JSON。
 
 ## 跳转规则

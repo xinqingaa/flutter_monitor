@@ -2,7 +2,7 @@ import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventKind, issueLabels, routeOf } from '../../shared/event-model/accessors';
 import { formatDuration } from '../../shared/formatting/format';
 
-export type SegmentKind = 'startup' | 'page';
+export type SegmentKind = 'startup' | 'page' | 'activity';
 export type SegmentSeverity = 'normal' | 'warn' | 'error';
 
 export interface TimelineSegment {
@@ -15,6 +15,7 @@ export interface TimelineSegment {
   spans: MonitorEvent[];
   startTimestamp?: string;
   durationLabel?: string;
+  summaryItems: string[];
   nodeCount: number;
   severity: SegmentSeverity;
   hasIssue: boolean;
@@ -32,21 +33,41 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
   const prepared = prepareSessionEvents(events);
   const raw: RawSegment[] = [];
   let current: RawSegment | undefined;
+  let startup: RawSegment | undefined;
+  let initialStartupClosed = false;
+  let seenPageEntry = false;
 
   for (const event of prepared) {
-    const kind = eventKind(event);
     const route = realRoute(event);
-    const isEntry = event.name === 'page.visit' || event.name === 'route.push';
+    const isEntry = isPageEntry(event);
+
+    if (isInitialStartupEvent(event, { startup, initialStartupClosed, seenPageEntry })) {
+      if (!startup) {
+        startup = makeRaw('startup', undefined, event);
+        raw.push(startup);
+        if (!current) current = startup;
+      }
+      startup.events.push(event);
+      if (event.name === 'app.cold_start' && eventPhase(event) === 'end') initialStartupClosed = true;
+      continue;
+    }
+
+    if (isEntry) seenPageEntry = true;
 
     if (!current) {
-      current = makeRaw(kind === 'startup' ? 'startup' : 'page', kind === 'startup' ? undefined : route, event);
+      current = makeRaw(isEntry ? 'page' : 'activity', route, event);
       raw.push(current);
     } else {
-      const leavesStartupViaPage = current.kind === 'startup' && kind === 'page' && route !== undefined;
-      const pageChanged = current.kind === 'page' && route !== undefined && route !== current.route;
-      const explicitNewPage = isEntry && route !== undefined && route !== current.route;
-      if (explicitNewPage || leavesStartupViaPage || pageChanged) {
+      const leavesStartupViaPage = current.kind === 'startup' && isEntry && route !== undefined;
+      const explicitNewPage = isEntry && route !== undefined && (current.kind !== 'page' || route !== current.route);
+      const leavesPageForActivity = current.kind === 'page' && !isPageTimelineEvent(event);
+      const activityRouteChanged = current.kind === 'activity' && route !== undefined && route !== current.route;
+
+      if (explicitNewPage || leavesStartupViaPage) {
         current = makeRaw('page', route ?? current.route, event);
+        raw.push(current);
+      } else if (leavesPageForActivity || activityRouteChanged) {
+        current = makeRaw('activity', route ?? current.route, event);
         raw.push(current);
       }
     }
@@ -70,11 +91,12 @@ export function prepareSessionEvents(events: MonitorEvent[]): MonitorEvent[] {
     if (!existing || prefersClosed(event, existing)) merged.set(key, event);
   }
 
-  return [...passthrough, ...merged.values()].sort((a, b) => effectiveStart(a) - effectiveStart(b));
+  return [...passthrough, ...merged.values()].sort(compareTimelineEvents);
 }
 
 function mergeKey(event: MonitorEvent): string | undefined {
   if (event.signalType === 'span' && event.spanId) return `span:${event.spanId}`;
+  if (event.signalType === 'trace' && event.name === 'app.cold_start') return undefined;
   if (event.signalType === 'trace' && event.name === 'page.visit' && event.traceId) return undefined;
   if (event.signalType === 'trace' && event.traceId) return `trace:${event.traceId}:${event.name ?? ''}`;
   return undefined;
@@ -86,7 +108,7 @@ function prefersClosed(candidate: MonitorEvent, existing: MonitorEvent): boolean
 }
 
 function makeRaw(kind: SegmentKind, route: string | undefined, first: MonitorEvent): RawSegment {
-  return { kind, route, events: [], start: effectiveStart(first) };
+  return { kind, route, events: [], start: timelineTime(first) };
 }
 
 function finalizeSegment(segment: RawSegment, index: number, nextStart: number | undefined): TimelineSegment {
@@ -102,12 +124,13 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
     id: `${index}-${first?.eventId ?? 'segment'}`,
     kind,
     route,
-    title: kind === 'startup' ? '启动' : (route ?? '页面'),
+    title: segmentTitle(kind, events, route),
     events,
     nodes,
     spans,
     startTimestamp: first?.timestamp,
     durationLabel: segmentDurationLabel(kind, events, segment.start, nextStart),
+    summaryItems: segmentSummaryItems(events),
     nodeCount: nodes.length,
     severity,
     hasIssue: issueCount > 0,
@@ -117,6 +140,12 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
 
 export function firstTimelineEvent(events: MonitorEvent[]): MonitorEvent | undefined {
   return buildTimelineSegments(events).flatMap((segment) => segment.nodes)[0];
+}
+
+function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string | undefined): string {
+  if (kind === 'startup') return '启动';
+  if (kind === 'page') return route ?? '页面';
+  return route ? `页面活动 ${route}` : '会话活动';
 }
 
 function segmentDurationLabel(
@@ -136,10 +165,21 @@ function segmentDurationLabel(
     return duration !== undefined ? `${label} ${formatDuration(duration)}` : undefined;
   }
 
+  if (kind === 'activity') {
+    const duration = safeWindowDuration(events, start, nextStart) ?? safeSpanDuration(events);
+    return duration !== undefined ? `持续 ${formatDuration(duration)}` : undefined;
+  }
+
   const stay = byName('page.stay')?.durationMs;
   const boundary = nextStart !== undefined ? nextStart - start : undefined;
   const duration = stay ?? boundary ?? safeSpanDuration(events);
   return duration !== undefined ? `停留 ${formatDuration(duration)}` : undefined;
+}
+
+function safeWindowDuration(events: MonitorEvent[], start: number, nextStart: number | undefined): number | undefined {
+  if (nextStart !== undefined && nextStart >= start) return nextStart - start;
+  const last = events.map((event) => timelineTime(event)).filter(isNumber).at(-1);
+  return last !== undefined && last >= start ? last - start : undefined;
 }
 
 function safeSpanDuration(events: MonitorEvent[]): number | undefined {
@@ -150,10 +190,58 @@ function safeSpanDuration(events: MonitorEvent[]): number | undefined {
   return Math.max(...ends) - Math.min(...starts);
 }
 
+function segmentSummaryItems(events: MonitorEvent[]): string[] {
+  const failedHttp = events.filter(isFailedHttpEvent).length;
+  const errors = events.filter(isNonHttpErrorEvent).length;
+  const hotStarts = events.filter((event) => event.name === 'app.hot_start' && event.durationMs !== undefined).length;
+  const background = events
+    .filter((event) => event.name === 'app.background_duration' && typeof event.durationMs === 'number')
+    .map((event) => event.durationMs as number);
+  const memorySamples = events.filter((event) => event.name === 'memory.sample').length;
+  const lifecycle = events.filter((event) => event.name === 'app.lifecycle').length;
+
+  const items: string[] = [];
+  if (failedHttp > 0) items.push(`失败请求 ${failedHttp}`);
+  if (errors > 0) items.push(`错误 ${errors}`);
+  if (hotStarts > 0) items.push(`热重启 ${hotStarts}`);
+  if (background.length > 0) items.push(`后台 ${formatDuration(Math.max(...background))}`);
+  if (memorySamples > 0) items.push(`内存采样 ${memorySamples}`);
+  if (lifecycle > 0) items.push(`生命周期 ${lifecycle}`);
+  return items.slice(0, 4);
+}
+
 function segmentSeverity(events: MonitorEvent[]): SegmentSeverity {
   if (events.some((event) => eventKind(event) === 'error' || event.status === 'error')) return 'error';
   if (events.some((event) => issueLabels(event).length > 0)) return 'warn';
   return 'normal';
+}
+
+function isFailedHttpEvent(event: MonitorEvent): boolean {
+  return eventKind(event) === 'http' && (event.status === 'error' || event.attributes?.['http.success'] === false);
+}
+
+function isNonHttpErrorEvent(event: MonitorEvent): boolean {
+  return eventKind(event) !== 'http' && (eventKind(event) === 'error' || event.status === 'error');
+}
+
+function isPageEntry(event: MonitorEvent): boolean {
+  if (event.name === 'route.push') return true;
+  return event.name === 'page.visit' && eventPhase(event) === 'start';
+}
+
+function isPageTimelineEvent(event: MonitorEvent): boolean {
+  return event.name === 'route.push' || event.name === 'page.visit' || event.name === 'page.load' ||
+    event.name === 'page.first_frame' || event.name === 'page.view' || event.name === 'page.stay';
+}
+
+function isInitialStartupEvent(
+  event: MonitorEvent,
+  state: { startup?: RawSegment; initialStartupClosed: boolean; seenPageEntry: boolean },
+): boolean {
+  if (event.name === 'app.hot_start') return false;
+  if (state.initialStartupClosed) return false;
+  if (event.name === 'app.cold_start' || event.name === 'app.first_frame' || event.name === 'sdk.init') return true;
+  return !state.seenPageEntry && event.name === 'memory.sample';
 }
 
 function realRoute(event: MonitorEvent): string | undefined {
@@ -161,8 +249,45 @@ function realRoute(event: MonitorEvent): string | undefined {
   return route && route !== '-' ? route : undefined;
 }
 
+function eventPhase(event: MonitorEvent): string | undefined {
+  const phase = event.attributes?.['event.phase'];
+  return typeof phase === 'string' ? phase : undefined;
+}
+
 function effectiveStart(event: MonitorEvent): number {
   return timeMs(event.startTime) ?? timeMs(event.timestamp) ?? 0;
+}
+
+function compareTimelineEvents(a: MonitorEvent, b: MonitorEvent): number {
+  return timelineTime(a) - timelineTime(b) ||
+    timelinePriority(a) - timelinePriority(b) ||
+    effectiveStart(a) - effectiveStart(b) ||
+    eventId(a).localeCompare(eventId(b));
+}
+
+function timelineTime(event: MonitorEvent): number {
+  const phase = eventPhase(event);
+  if (phase === 'start') return timeMs(event.startTime) ?? timeMs(event.timestamp) ?? 0;
+  if (phase === 'end') return timeMs(event.endTime) ?? timeMs(event.timestamp) ?? timeMs(event.startTime) ?? 0;
+  return timeMs(event.timestamp) ?? timeMs(event.startTime) ?? 0;
+}
+
+function timelinePriority(event: MonitorEvent): number {
+  const phase = eventPhase(event);
+  if (event.name === 'page.visit' && phase === 'start') return 10;
+  if (event.name === 'route.push') return 20;
+  if (event.name === 'page.view') return 30;
+  if (event.name === 'page.load') return 40;
+  if (event.name === 'page.first_frame') return 50;
+  if (event.name === 'page.stay') return 80;
+  if (event.name === 'page.visit' && phase === 'end') return 90;
+  if (event.name === 'http.client') return 55;
+  if (event.signalType === 'error' || event.status === 'error') return 60;
+  return 70;
+}
+
+function eventId(event: MonitorEvent): string {
+  return event.eventId ?? event.spanId ?? event.traceId ?? event.name ?? '';
 }
 
 function timeMs(timestamp?: string): number | undefined {

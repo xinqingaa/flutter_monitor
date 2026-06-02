@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, AppWindow, ChevronDown, ChevronRight, Clock3, Rocket } from 'lucide-react';
+import { Activity, AlertTriangle, AppWindow, ChevronDown, ChevronRight, Clock3, Rocket } from 'lucide-react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -46,7 +46,7 @@ export function SessionTimeline({
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <CardHeader>
         <CardTitle>会话链路</CardTitle>
-        <CardDescription>时间自上而下，启动和页面形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
+        <CardDescription>时间自上而下，启动、页面和会话活动形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
       </CardHeader>
       <CardContent className="min-h-0 overflow-auto p-0">
         {segments.length === 0 ? (
@@ -88,9 +88,14 @@ function SegmentView({
   selectedNodeRef: React.MutableRefObject<HTMLButtonElement | null>;
   onSelectEvent?: (event: MonitorEvent) => void;
 }) {
-  const Icon = segment.kind === 'startup' ? Rocket : AppWindow;
+  const Icon = segment.kind === 'startup' ? Rocket : segment.kind === 'activity' ? Activity : AppWindow;
   const issueTone = segment.severity === 'error' ? 'danger' : 'warn';
-  const accentClass = segment.severity === 'error' ? 'border-l-red-400' : segment.severity === 'warn' ? 'border-l-amber-400' : segment.kind === 'startup' ? 'border-l-teal-400' : 'border-l-blue-300';
+  const accentClass = segment.severity === 'error' ? 'border-l-red-400' : segment.severity === 'warn' ? 'border-l-amber-400' : segment.kind === 'startup' ? 'border-l-teal-400' : segment.kind === 'activity' ? 'border-l-violet-300' : 'border-l-blue-300';
+  const heading = segment.kind === 'startup'
+    ? '启动链路'
+    : segment.kind === 'activity'
+      ? segment.title
+      : `页面 ${segment.title}`;
 
   return (
     <div className={cn('mx-2 mb-2 overflow-hidden rounded-lg border border-zinc-200 border-l-4 bg-white shadow-sm shadow-zinc-200/50 last:mb-0', accentClass)}>
@@ -102,13 +107,14 @@ function SegmentView({
             segment.severity === 'error' && 'border-red-200 bg-red-50 text-red-600',
             segment.severity === 'warn' && 'border-amber-200 bg-amber-50 text-amber-700',
             segment.severity === 'normal' && segment.kind === 'startup' && 'border-teal-200 bg-teal-50 text-teal-700',
+            segment.severity === 'normal' && segment.kind === 'activity' && 'border-violet-200 bg-violet-50 text-violet-700',
             segment.severity === 'normal' && segment.kind === 'page' && 'border-blue-200 bg-blue-50 text-blue-700',
           )}>
             <Icon className="size-4" />
           </span>
           <span className="min-w-0">
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">{segment.kind === 'startup' ? '启动链路' : `页面 ${segment.title}`}</span>
+              <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">{heading}</span>
               <span className="shrink-0 text-xs text-zinc-400">{segment.nodeCount} 个节点</span>
             </span>
             <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-zinc-500">
@@ -124,6 +130,11 @@ function SegmentView({
                   问题 {segment.issueCount}
                 </Badge>
               ) : null}
+              {segment.summaryItems.map((item) => (
+                <span key={item} className="inline-flex items-center gap-1 text-zinc-500">
+                  {item}
+                </span>
+              ))}
             </span>
           </span>
         </button>
@@ -168,6 +179,7 @@ function TimelineNode({
   const display = nodeDisplay(event);
   const visibleLabels = labels.slice(0, 2);
   const isSlow = labels.some((label) => label.includes('慢'));
+  const hasWarningIssue = labels.length > 0 && !isError && !isSlow;
 
   return (
     <button
@@ -176,10 +188,11 @@ function TimelineNode({
       onClick={onSelect}
       className={cn(
         'group relative mb-1 flex w-full min-w-0 flex-col items-start justify-between gap-2 rounded-md border border-zinc-100 bg-white px-3 py-2 text-left transition-colors last:mb-0 hover:border-teal-200 hover:bg-teal-50/60',
-        !selected && !isError && !isSlow && 'border-b-zinc-200',
+        !selected && !isError && !isSlow && !hasWarningIssue && 'border-b-zinc-200',
         selected && 'border-teal-300 bg-teal-50 shadow-sm shadow-teal-100',
         isError && 'border-red-200 bg-red-50/60 hover:border-red-300 hover:bg-red-50',
         isSlow && !isError && 'border-amber-300 hover:border-amber-400',
+        hasWarningIssue && 'border-amber-300 bg-amber-50/40 hover:border-amber-400 hover:bg-amber-50',
       )}
     >
       <span className={cn(
@@ -187,6 +200,7 @@ function TimelineNode({
         selected && 'size-2.5 bg-teal-700',
         isError && 'bg-red-600',
         isSlow && !isError && !selected && 'bg-amber-500',
+        hasWarningIssue && !selected && 'bg-amber-500',
       )} />
       <div className="flex w-full justify-between min-w-0 ">
         <Badge tone={display.tone} className="rounded-md px-1.5 py-0">{display.kindLabel}</Badge>

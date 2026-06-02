@@ -125,19 +125,23 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   if (name === 'page.visit') {
     const phase = readStringPath(event, 'attributes.event.phase');
     if (phase === 'end') {
-      return { ...base, title: route ? `离开页面 ${route}` : '离开页面', durationLabel: duration, summaryItems: [] };
+      const to = readStringPath(event, 'attributes.page.to');
+      const reason = readStringPath(event, 'payload.page.end_reason');
+      const verb = reason === 'route_pop' && to ? `返回 ${to}` : route ? `离开页面 ${route}` : '离开页面';
+      return { ...base, title: verb, durationLabel: duration, summaryItems: compactItems(route ? `来源页面 ${route}` : undefined) };
     }
-    return { ...base, title: route ? `进入页面 ${route}` : '进入页面', summaryItems: [] };
+    const from = readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
+    return { ...base, title: route ? `进入页面 ${route}` : '进入页面', summaryItems: compactItems(from ? `来源 ${from}` : undefined) };
   }
 
   if (name === 'route.push') {
-    const from = readStringPath(event, 'attributes.page.from');
-    const to = readStringPath(event, 'attributes.page.to') ?? route;
+    const from = readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
+    const to = readStringPath(event, 'attributes.page.to') ?? readStringPath(event, 'payload.route.name') ?? route;
     return {
       ...base,
-      title: to ? `路由切换到 ${to}` : '路由切换',
+      title: to ? (from ? `从 ${from} 进入 ${to}` : `路由切换到 ${to}`) : '路由切换',
       durationLabel: duration,
-      summaryItems: compactItems(from ? `来源 ${from}` : undefined),
+      summaryItems: compactItems(from && to ? `目标 ${to}` : from ? `来源 ${from}` : undefined),
     };
   }
 
@@ -186,6 +190,56 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
       title: typeof count === 'number' ? `连续卡顿 ${count} 帧` : '连续卡顿',
       durationLabel: maxFrame ? `最慢 ${maxFrame}` : duration,
       summaryItems: compactItems(route ? `页面 ${route}` : undefined, avgFrame ? `平均 ${avgFrame}` : undefined),
+    };
+  }
+
+  if (name === 'memory.growth') {
+    const growth = formatNumberMetric(event, 'attributes.memory.growth_mb', 'MB', 1);
+    const window = formatNumberMetric(event, 'attributes.memory.growth_duration_ms', 'ms');
+    const baseline = formatNumberMetric(event, 'payload.evidence.baseline.used_mb', 'MB', 1);
+    const current = formatNumberMetric(event, 'payload.evidence.current.used_mb', 'MB', 1);
+    return {
+      ...base,
+      title: '内存增长',
+      durationLabel: growth ? `+${growth}` : duration,
+      summaryItems: compactItems(window ? `窗口 ${window}` : undefined, baseline && current ? `${baseline} -> ${current}` : undefined),
+    };
+  }
+
+  if (name === 'memory.leak.suspect') {
+    const growth = formatNumberMetric(event, 'attributes.memory.growth_mb', 'MB', 1);
+    const threshold = formatNumberMetric(event, 'payload.evidence.threshold_mb', 'MB', 0);
+    const reason = readStringPath(event, 'payload.evidence.reason');
+    const assertion = readStringPath(event, 'payload.assertion');
+    return {
+      ...base,
+      title: '疑似泄漏线索',
+      durationLabel: growth ? `+${growth}` : duration,
+      summaryItems: compactItems(threshold ? `阈值 ${threshold}` : undefined, reason, assertion),
+    };
+  }
+
+  if (name === 'memory.pressure' || name === 'native.memory.pressure') {
+    const level = readStringPath(event, 'attributes.memory.pressure_level');
+    const nativeUsed = formatNumberMetric(event, 'attributes.memory.native_used_mb', 'MB', 1);
+    const source = readStringPath(event, 'attributes.memory.sample_source');
+    return {
+      ...base,
+      title: '内存压力',
+      durationLabel: level ? memoryPressureLabel(level) : undefined,
+      summaryItems: compactItems(nativeUsed ? `Native ${nativeUsed}` : undefined, source ? `来源 ${source}` : undefined),
+    };
+  }
+
+  if (name === 'native.memory.sample') {
+    const nativeUsed = formatNumberMetric(event, 'attributes.memory.native_used_mb', 'MB', 1);
+    const heap = formatNumberMetric(event, 'attributes.memory.heap_used_mb', 'MB', 1);
+    const source = readStringPath(event, 'attributes.memory.sample_source');
+    return {
+      ...base,
+      title: 'Native 内存采样',
+      durationLabel: nativeUsed ? `Native ${nativeUsed}` : heap ? `Heap ${heap}` : undefined,
+      summaryItems: compactItems(heap ? `Heap ${heap}` : undefined, source ? `来源 ${source}` : undefined),
     };
   }
 
@@ -260,6 +314,16 @@ function lifecycleStateLabel(value: string): string {
     paused: '后台',
     detached: '退出',
     hidden: '隐藏',
+  };
+  return labels[value] ?? value;
+}
+
+function memoryPressureLabel(value: string): string {
+  const labels: Record<string, string> = {
+    none: '无压力',
+    moderate: '中等压力',
+    critical: '严重压力',
+    unknown: '未知压力',
   };
   return labels[value] ?? value;
 }
@@ -365,10 +429,29 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
 
   if (name === 'memory.sample' || name.startsWith('memory.')) {
     pushField(event, primary, 'attributes.memory.rss_mb', { unit: 'MB', digits: 1 });
+    pushField(event, primary, 'attributes.memory.growth_mb', { unit: 'MB', digits: 1 });
+    pushField(event, primary, 'attributes.memory.pressure_level');
     pushField(event, secondary, 'attributes.memory.heap_used_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.heap_capacity_mb', { unit: 'MB', digits: 1 });
     pushField(event, secondary, 'attributes.memory.native_used_mb', { unit: 'MB', digits: 1 });
-    pushField(event, secondary, 'attributes.memory.pressure_level');
+    pushField(event, secondary, 'attributes.memory.growth_duration_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.memory.sample_source');
+    pushField(event, secondary, 'payload.evidence.baseline.used_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'payload.evidence.current.used_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'payload.evidence.threshold_mb', { unit: 'MB', digits: 0 });
+    pushField(event, secondary, 'payload.evidence.reason');
+    pushField(event, secondary, 'payload.assertion');
+    return;
+  }
+
+  if (name === 'native.memory.sample' || name === 'native.memory.pressure') {
+    pushField(event, primary, 'attributes.memory.native_used_mb', { unit: 'MB', digits: 1 });
+    pushField(event, primary, 'attributes.memory.pressure_level');
+    pushField(event, secondary, 'attributes.memory.heap_used_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.heap_capacity_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.rss_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.sample_source');
+    pushField(event, secondary, 'attributes.native.signal');
     return;
   }
 
