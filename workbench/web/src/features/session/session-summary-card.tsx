@@ -1,39 +1,35 @@
 import { Link } from '@tanstack/react-router';
-import { Activity, AlertTriangle, ArrowRight, CalendarClock, Gauge, Globe2, Radio, UserRound } from 'lucide-react';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { CopyableId } from '../../components/common/copyable-id';
+import { Activity, AlertTriangle, CalendarClock, Cpu, Gauge, Globe2, Radio, UserRound } from 'lucide-react';
+import type * as React from 'react';
 import { EmptyState } from '../../components/common/empty-state';
+import { Badge } from '../../components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type { SessionSummary } from '../../shared/datasource/types';
-import { formatDateTime } from '../../shared/formatting/format';
 import { statusLabel } from '../../shared/event-model/status';
 import { cn } from '../../shared/formatting/cn';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { formatDateTime } from '../../shared/formatting/format';
+
+export type SessionCardVariant = 'featured' | 'row' | 'compact';
 
 export function SessionSummaryCard({
   session,
   live = false,
   title = '最近 / 实时 Session',
-  description = '刚复现的链路会自动浮出。',
-  actionLabel = '进入排查',
   className,
   panelAction,
 }: {
   session?: SessionSummary;
   live?: boolean;
   title?: string;
-  description?: string;
-  actionLabel?: string;
   className?: string;
   panelAction?: React.ReactNode;
 }) {
   return (
     <Card className={cn('overflow-hidden', className)}>
-      <CardHeader className="flex items-start justify-between gap-2">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
         <div className="min-w-0">
           <CardTitle>{title}</CardTitle>
-          <p className="mt-1 text-xs text-zinc-500">{description}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {live ? (
@@ -45,36 +41,97 @@ export function SessionSummaryCard({
           {panelAction}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="grid gap-2">
         {!session ? (
           <EmptyState title="暂无会话" description="运行 example 后，最新一次 App 使用过程会出现在这里。" />
         ) : (
-          <div className="grid gap-3 rounded-lg bg-zinc-50/80 p-3">
-            <div className="flex min-w-0 items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[11px] font-medium text-zinc-500">最新会话</div>
-                <div className="mt-1">
-                  <CopyableId value={session.sessionId} />
-                </div>
-              </div>
-              <Badge tone={session.status === 'error' ? 'danger' : 'good'} className="shrink-0">{statusLabel(session.status)}</Badge>
-            </div>
-            <div className="flex min-w-0 items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs tabular-nums text-zinc-600 shadow-sm shadow-zinc-200/50">
-              <CalendarClock className="size-3.5 shrink-0 text-teal-600" />
-              <span className="min-w-0 truncate">{formatDateTime(session.firstTimestamp)} - {formatDateTime(session.lastTimestamp)}</span>
-            </div>
-            <SessionContext session={session} />
-            <SessionIssueSummary session={session} />
-            <Button asChild variant="default" className="w-full">
-              <Link to="/sessions/$sessionId" params={{ sessionId: session.sessionId }} className="justify-center">
-                {actionLabel}
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-          </div>
+          <SessionCard session={session} variant="featured" />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+export function SessionCard({
+  session,
+  variant = 'row',
+  selected = false,
+  className,
+}: {
+  session: SessionSummary;
+  variant?: SessionCardVariant;
+  selected?: boolean;
+  className?: string;
+}) {
+  const featured = variant === 'featured';
+  const compact = variant === 'compact';
+
+  return (
+    <Link
+      to="/sessions/$sessionId"
+      params={{ sessionId: session.sessionId }}
+      className={cn(
+        'group block min-w-0 rounded-md border bg-white text-left transition-colors hover:border-teal-300 hover:bg-teal-50/40',
+        selected ? 'border-teal-400 bg-teal-50/70' : 'border-zinc-200',
+        featured ? 'p-3 shadow-sm shadow-zinc-200/60' : compact ? 'p-2' : 'p-3',
+        className,
+      )}
+    >
+      <div className="grid min-w-0 grid-cols-[3px_minmax(0,1fr)] gap-2">
+        <span className={cn(
+          'rounded-full',
+          session.status === 'error' ? 'bg-red-500' : session.nativeAvailable ? 'bg-teal-500' : 'bg-zinc-300',
+        )} />
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <code className={cn('min-w-0 truncate text-xs font-semibold text-zinc-950', featured && 'text-sm')}>
+              {session.sessionId}
+            </code>
+            <div className="flex shrink-0 items-center gap-1">
+              <Badge tone={session.status === 'error' ? 'danger' : 'neutral'} className="rounded-md px-1.5 py-0">
+                {statusLabel(session.status)}
+              </Badge>
+              <NativeBadge session={session} />
+            </div>
+          </div>
+
+          <div className="mt-2 flex min-w-0 items-center gap-1.5 text-xs tabular-nums text-zinc-500">
+            <CalendarClock className="size-3.5 shrink-0 text-teal-600" />
+            <span className="min-w-0 truncate">{formatDateTime(session.firstTimestamp)} - {formatDateTime(session.lastTimestamp)}</span>
+          </div>
+
+          {compact ? (
+            <div className="mt-2">
+              <SessionIssueInline session={session} />
+            </div>
+          ) : (
+            <>
+              <SessionContext session={session} compact={!featured} />
+              <SessionIssueSummary session={session} compact={!featured} />
+            </>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+export function NativeBadge({ session }: { session: SessionSummary }) {
+  const label = session.nativeAvailable ? 'Native on' : 'Native off';
+  const detail = session.nativeAvailable
+    ? [session.nativePlatform, session.nativeVersion].filter(Boolean).join(' · ')
+    : undefined;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge tone={session.nativeAvailable ? 'teal' : 'neutral'} className="rounded-md px-1.5 py-0">
+          <Cpu className="size-3" />
+          {label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>{detail || label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -87,21 +144,18 @@ export function SessionContext({ session, compact = false }: { session: SessionS
   ].filter((item) => Boolean(item.value));
 
   if (items.length === 0) {
-    return <div className="text-xs text-zinc-400">暂无用户、页面、版本或环境上下文</div>;
+    return <div className="mt-2 text-xs text-zinc-400">暂无用户、页面、版本或环境上下文</div>;
   }
 
   return (
-    <div className={cn('flex flex-wrap gap-1.5', compact ? 'flex-col' : '')}>
+    <div className={cn('mt-2 flex flex-wrap gap-1.5', compact ? 'text-xs' : '')}>
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <div key={item.label} className={cn('min-w-0 rounded-md bg-white px-2 py-1 shadow-sm shadow-zinc-200/50', compact ? 'w-full' : 'max-w-full flex-1 basis-[calc(50%-0.25rem)]')}>
-            <div className="flex items-center gap-1 text-[11px] text-zinc-500">
-              {Icon ? <Icon className="size-3" /> : null}
-              {item.label}
-            </div>
-            <div className="mt-0.5 truncate text-xs font-medium text-zinc-900">{item.value}</div>
-          </div>
+          <span key={item.label} className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-zinc-100 bg-zinc-50 px-2 py-1 text-xs text-zinc-600">
+            {Icon ? <Icon className="size-3 shrink-0 text-zinc-400" /> : <span className="shrink-0 text-zinc-400">{item.label}</span>}
+            <span className="min-w-0 truncate font-medium text-zinc-800">{item.value}</span>
+          </span>
         );
       })}
     </div>
@@ -109,44 +163,23 @@ export function SessionContext({ session, compact = false }: { session: SessionS
 }
 
 export function SessionMetadataLine({ session }: { session: SessionSummary }) {
-  const items = [
-    { label: '用户', value: session.userId },
-    { label: '页面', value: session.route },
-    { label: '版本', value: session.appVersion },
-    { label: '环境', value: session.environment },
-  ].filter((item) => Boolean(item.value));
-
-  if (items.length === 0) {
-    return <div className="truncate text-xs text-zinc-400">暂无用户、页面、版本或环境上下文</div>;
-  }
-
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
-      {items.map((item, index) => (
-        <span key={item.label} className="inline-flex min-w-0 items-center gap-2">
-          {index > 0 ? <span className="text-zinc-300">·</span> : null}
-          <span className="shrink-0 text-zinc-400">{item.label}</span>
-          <span className="min-w-0 truncate font-medium text-zinc-700">{item.value}</span>
-        </span>
-      ))}
-    </div>
-  );
+  return <SessionContext session={session} compact />;
 }
 
-export function SessionIssueSummary({ session }: { session: SessionSummary }) {
+export function SessionIssueSummary({ session, compact = false }: { session: SessionSummary; compact?: boolean }) {
   return (
-    <div className="grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-4">
-      <IssuePill label="事件" value={session.count} />
-      <IssuePill label="错误" value={session.errorCount} icon={AlertTriangle} tone={session.errorCount > 0 ? 'danger' : 'neutral'} />
-      <IssuePill label="卡顿" value={session.jankCount} icon={Gauge} tone={session.jankCount > 0 ? 'warn' : 'neutral'} />
-      <IssuePill label="失败请求" value={session.failedHttpCount} icon={Globe2} tone={session.failedHttpCount > 0 ? 'danger' : 'neutral'} />
+    <div className={cn('mt-2 grid gap-1.5 text-xs', compact ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4')}>
+      <IssuePill label="事件" value={session.count} compact={compact} />
+      <IssuePill label="错误" value={session.errorCount} icon={AlertTriangle} tone={session.errorCount > 0 ? 'danger' : 'neutral'} compact={compact} />
+      <IssuePill label="卡顿" value={session.jankCount} icon={Gauge} tone={session.jankCount > 0 ? 'warn' : 'neutral'} compact={compact} />
+      <IssuePill label="网络" value={session.failedHttpCount} icon={Globe2} tone={session.failedHttpCount > 0 ? 'danger' : 'neutral'} compact={compact} />
     </div>
   );
 }
 
 export function SessionIssueInline({ session }: { session: SessionSummary }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-zinc-600">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-zinc-600">
       <InlineMetric label="事件数" value={session.count} icon={Activity} />
       <InlineMetric label="错误数" value={session.errorCount} icon={AlertTriangle} tone={session.errorCount > 0 ? 'danger' : 'neutral'} />
       <InlineMetric label="卡顿数" value={session.jankCount} icon={Gauge} tone={session.jankCount > 0 ? 'warn' : 'neutral'} />
@@ -172,7 +205,7 @@ function InlineMetric({
         <span
           aria-label={`${label} ${value}`}
           className={cn(
-            'inline-flex h-6 min-w-0 items-center gap-1 rounded-full px-1.5 tabular-nums',
+            'inline-flex h-6 min-w-0 items-center gap-1 rounded-md px-1.5 tabular-nums',
             tone === 'neutral' && 'text-zinc-600',
             tone === 'warn' && 'text-amber-700',
             tone === 'danger' && 'text-red-700',
@@ -192,24 +225,26 @@ function IssuePill({
   value,
   icon: Icon,
   tone = 'neutral',
+  compact = false,
 }: {
   label: string;
   value: number;
   icon?: typeof AlertTriangle;
   tone?: 'neutral' | 'warn' | 'danger';
+  compact?: boolean;
 }) {
   return (
     <div
       className={cn(
-        'min-w-0 rounded-md px-2 py-1 shadow-sm shadow-zinc-200/40',
-        tone === 'neutral' && 'bg-white text-zinc-600',
-        tone === 'warn' && 'bg-amber-50 text-amber-800',
-        tone === 'danger' && 'bg-red-50 text-red-700',
+        'min-w-0 rounded-md border px-2 py-1',
+        tone === 'neutral' && 'border-zinc-100 bg-zinc-50 text-zinc-600',
+        tone === 'warn' && 'border-amber-100 bg-amber-50 text-amber-800',
+        tone === 'danger' && 'border-red-100 bg-red-50 text-red-700',
       )}
     >
       <div className="flex items-center gap-1 text-[11px]">
         {Icon ? <Icon className="size-3" /> : null}
-        {label}
+        {!compact ? label : <span className="truncate">{label}</span>}
       </div>
       <div className="mt-0.5 text-sm font-semibold tabular-nums">{value}</div>
     </div>

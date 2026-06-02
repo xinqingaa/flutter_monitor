@@ -33,6 +33,9 @@ export interface SessionSummary {
   environment?: string;
   route?: string;
   status?: string;
+  nativeAvailable?: boolean;
+  nativeVersion?: string;
+  nativePlatform?: string;
   errorCount: number;
   jankCount: number;
   failedHttpCount: number;
@@ -151,17 +154,28 @@ export interface SessionFilters {
   name?: string;
   signalType?: string;
   limit?: number;
+  offset?: number;
 }
 
 export interface SessionListResult {
   sessions: SessionSummary[];
   userIdAvailable: boolean;
   userIdQueryAvailable?: boolean;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface EventListResult {
+  events: MonitorEvent[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 export interface WorkbenchDatasource {
   health(): Promise<Record<string, unknown>>;
-  recent(limit?: number): Promise<MonitorEvent[]>;
+  recent(limit?: number, offset?: number): Promise<EventListResult>;
   listSessions(filters: SessionFilters): Promise<SessionListResult>;
   getSession(sessionId: string): Promise<MonitorEvent[]>;
   getTrace(traceId: string): Promise<MonitorEvent[]>;

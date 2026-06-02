@@ -7,17 +7,19 @@ export function RecentLiveSession({
   live,
   compact = false,
   panelAction,
+  title,
 }: {
   session?: SessionSummary;
   live: boolean;
   compact?: boolean;
   panelAction?: React.ReactNode;
+  title?: string;
 }) {
   return (
     <SessionSummaryCard
       session={session}
       live={live}
-      description={compact ? '刚复现的链路会自动浮出。' : '刚复现的链路自动浮在这里，便于本地实时自调试。'}
+      title={title}
       panelAction={panelAction}
     />
   );

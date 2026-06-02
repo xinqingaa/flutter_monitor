@@ -109,10 +109,17 @@ export class SqliteMonitorStore implements MonitorStore {
     );
   }
 
-  getRecentEvents(limit: number): MonitorEvent[] {
-    return this.selectEvents('', [], 'order by timestamp_ms desc, sequence desc limit ?', [
-      clampLimit(limit, 50),
+  getRecentEvents(limit: number, offset = 0): { events: MonitorEvent[]; hasMore: boolean } {
+    const safeLimit = clampLimit(limit, 50);
+    const safeOffset = clampOffset(offset);
+    const events = this.selectEvents('', [], 'order by timestamp_ms desc, sequence desc limit ? offset ?', [
+      safeLimit + 1,
+      safeOffset,
     ]);
+    return {
+      events: events.slice(0, safeLimit),
+      hasMore: events.length > safeLimit,
+    };
   }
 
   groupEvents(by: string): Array<Record<string, unknown>> {
@@ -154,10 +161,14 @@ export class SqliteMonitorStore implements MonitorStore {
   listSessions(filters: EventFilters): {
     sessions: SessionSummary[];
     userIdAvailable: boolean;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
   } {
     const userIdAvailable = this.hasAnyUserId();
     const { whereSql, params } = whereFromFilters(filters);
     const limit = clampLimit(filters.limit, 50);
+    const offset = clampOffset(filters.offset);
     const rows = this.selectRows<SessionRow>(
       `
         select session_id
@@ -166,16 +177,17 @@ export class SqliteMonitorStore implements MonitorStore {
           ${whereSql ? 'and' : 'where'} session_id is not null
         group by session_id
         order by max(timestamp_ms) desc
-        limit ?
+        limit ? offset ?
       `,
-      [...params, limit],
+      [...params, limit + 1, offset],
     );
 
-    const sessions = rows
+    const pageRows = rows.slice(0, limit);
+    const sessions = pageRows
       .map((row) => buildSessionSummary(row.session_id, this.getSessionEvents(row.session_id)))
       .filter((summary): summary is SessionSummary => Boolean(summary));
 
-    return { sessions, userIdAvailable };
+    return { sessions, userIdAvailable, limit, offset, hasMore: rows.length > limit };
   }
 
   searchEvents(query: string, filters: EventFilters): MonitorEvent[] {
@@ -855,6 +867,9 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
   const firstWithUser = events.find((event) => Boolean(userIdOf(event)));
   const firstWithApp = events.find((event) => Boolean(appVersionOf(event) || environmentOf(event)));
   const lastWithRoute = [...events].reverse().find((event) => Boolean(routeOf(event)));
+  const firstNativeAvailable = events.find((event) => readBooleanPath(event, ['context', 'native', 'available']) === true);
+  const firstNativeVersion = events.find((event) => Boolean(readStringPath(event, ['resource', 'sdk', 'nativeVersion'])));
+  const firstNativePlatform = events.find((event) => Boolean(readStringPath(event, ['context', 'native', 'platform'])));
   const status = events.some(isStabilityErrorEvent)
     ? 'error'
     : [...events].reverse().map(statusOf).find(Boolean);
@@ -871,10 +886,36 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
     environment: firstWithApp ? environmentOf(firstWithApp) : undefined,
     route: lastWithRoute ? routeOf(lastWithRoute) : undefined,
     status,
+    nativeAvailable: firstNativeAvailable ? true : undefined,
+    nativeVersion: firstNativeVersion ? readStringPath(firstNativeVersion, ['resource', 'sdk', 'nativeVersion']) : undefined,
+    nativePlatform: firstNativePlatform ? readStringPath(firstNativePlatform, ['context', 'native', 'platform']) : undefined,
     errorCount: events.filter(isStabilityErrorEvent).length,
     jankCount: events.filter(isJankEvent).length,
     failedHttpCount: events.filter(isFailedHttpEvent).length,
   };
+}
+
+function readStringPath(event: MonitorEvent, path: string[]): string | undefined {
+  const value = readUnknownPath(event, path);
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function readBooleanPath(event: MonitorEvent, path: string[]): boolean | undefined {
+  const value = readUnknownPath(event, path);
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function readUnknownPath(value: unknown, path: string[]): unknown {
+  let current = value;
+  for (const segment of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function timestampValue(timestamp: string | undefined): number {
@@ -886,6 +927,12 @@ function clampLimit(value: unknown, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, 1), 500);
+}
+
+function clampOffset(value: unknown): number {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(parsed, 0);
 }
 
 function escapeLike(value: string): string {

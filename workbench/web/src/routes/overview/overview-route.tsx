@@ -2,9 +2,10 @@ import { Link } from '@tanstack/react-router';
 import { Braces, ListFilter, PanelRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { OverviewMetrics } from '../../features/overview/overview-metrics';
-import { RecentLiveSession } from '../../features/overview/recent-live-session';
+import { SessionCard } from '../../features/session/session-summary-card';
 import { ServiceStatusStrip } from '../../features/overview/service-status-strip';
 import { useHealthQuery, usePerformanceQuery, useSessionsQuery } from '../../shared/datasource/queries';
 import { useLiveState } from '../../app/live-context';
@@ -16,7 +17,7 @@ export function OverviewRoute() {
   const live = useLiveState();
 
   const sessions = sessionsQuery.data?.sessions ?? [];
-  const recentSession = sessions[0];
+  const recentSessions = sessions.slice(0, 2);
   const rightPanel = useCollapsiblePanel('workbench.overview.right');
 
   return (
@@ -59,38 +60,41 @@ export function OverviewRoute() {
           onToggleCollapsed={rightPanel.toggleCollapsed}
         >
           <div className="grid content-start gap-2">
-            <RecentLiveSession
-              session={recentSession}
-              live={live}
-              compact
-              panelAction={
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                <div>
+                  <CardTitle>排查入口</CardTitle>
+                </div>
                 <CollapsiblePanelAction
                   side="right"
                   title="排查侧栏"
                   collapsed={rightPanel.collapsed}
                   onToggleCollapsed={rightPanel.toggleCollapsed}
                 />
-              }
-            />
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-2">
+                <WorkbenchEntryButton to="/sessions" icon={ListFilter} label="Session" tooltip="sessionlist" />
+                <WorkbenchEntryButton to="/events" icon={Braces} label="Event" tooltip="eventlist" />
+              </CardContent>
+            </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>排查入口</CardTitle>
-                <CardDescription>Session 用于复现链路，Event 用于查看原始信号。</CardDescription>
+              <CardHeader className="pb-2">
+                <CardTitle>最近 / 实时</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2">
-                <WorkbenchEntryButton
-                  to="/sessions"
-                  icon={ListFilter}
-                  label="Session 排查"
-                  description="按用户、时间、页面、版本定位一次会话"
-                />
-                <WorkbenchEntryButton
-                  to="/events"
-                  icon={Braces}
-                  label="Event 原始流"
-                  description="开发态查看 SDK 原始 envelope"
-                />
+                {recentSessions.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
+                    暂无会话
+                  </div>
+                ) : recentSessions.map((session, index) => (
+                  <SessionCard
+                    key={session.sessionId}
+                    session={session}
+                    variant="featured"
+                    className={index > 0 ? 'mt-1' : undefined}
+                  />
+                ))}
               </CardContent>
             </Card>
           </div>
@@ -104,24 +108,24 @@ function WorkbenchEntryButton({
   to,
   icon: Icon,
   label,
-  description,
+  tooltip,
 }: {
   to: '/sessions' | '/events';
   icon: LucideIcon;
   label: string;
-  description: string;
+  tooltip: string;
 }) {
   return (
-    <Button asChild variant="secondary" className="h-auto w-full justify-start px-3 py-2 text-left">
-      <Link to={to} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
-        <span className="inline-flex size-9 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
-          <Icon className="size-4" />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold text-zinc-950">{label}</span>
-          <span className="mt-0.5 block whitespace-normal text-xs font-normal leading-relaxed text-zinc-500">{description}</span>
-        </span>
-      </Link>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button asChild variant="secondary" className="h-10 w-full justify-start px-3">
+          <Link to={to}>
+            <Icon className="size-4" />
+            {label}
+          </Link>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }

@@ -1,4 +1,5 @@
 import type {
+  EventListResult,
   MonitorEvent,
   PerformanceOverview,
   SessionFilters,
@@ -11,9 +12,14 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
     return this.getJson('/api/monitor/v1/health');
   }
 
-  async recent(limit = 50): Promise<MonitorEvent[]> {
-    const data = await this.getJson(`/api/monitor/v1/recent?limit=${limit}`);
-    return Array.isArray(data.events) ? (data.events as MonitorEvent[]) : [];
+  async recent(limit = 50, offset = 0): Promise<EventListResult> {
+    const data = await this.getJson(`/api/monitor/v1/recent?${toParams({ limit, offset })}`);
+    return {
+      events: Array.isArray(data.events) ? (data.events as MonitorEvent[]) : [],
+      limit: typeof data.limit === 'number' ? data.limit : limit,
+      offset: typeof data.offset === 'number' ? data.offset : offset,
+      hasMore: Boolean(data.hasMore),
+    };
   }
 
   async listSessions(filters: SessionFilters): Promise<SessionListResult> {
@@ -22,6 +28,9 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
       sessions: Array.isArray(data.sessions) ? data.sessions : [],
       userIdAvailable: Boolean(data.userIdAvailable),
       userIdQueryAvailable: data.userIdQueryAvailable as boolean | undefined,
+      limit: typeof data.limit === 'number' ? data.limit : (filters.limit ?? 50),
+      offset: typeof data.offset === 'number' ? data.offset : (filters.offset ?? 0),
+      hasMore: Boolean(data.hasMore),
     };
   }
 

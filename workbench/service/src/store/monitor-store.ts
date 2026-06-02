@@ -18,11 +18,17 @@ export interface MonitorStore {
   getEvent(eventId: string): MonitorEvent | undefined;
   getSessionEvents(sessionId: string): MonitorEvent[];
   getTraceEvents(traceId: string): MonitorEvent[];
-  getRecentEvents(limit: number): MonitorEvent[];
+  getRecentEvents(limit: number, offset?: number): {
+    events: MonitorEvent[];
+    hasMore: boolean;
+  };
   groupEvents(by: string): Array<Record<string, unknown>>;
   listSessions(filters: EventFilters): {
     sessions: SessionSummary[];
     userIdAvailable: boolean;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
   };
   searchEvents(query: string, filters: EventFilters): MonitorEvent[];
   performanceOverview(filters: EventFilters): PerformanceOverview;

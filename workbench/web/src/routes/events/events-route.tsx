@@ -1,21 +1,66 @@
 import { Link } from '@tanstack/react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { EmptyState } from '../../components/common/empty-state';
 import { EventKindBadge } from '../../features/timeline/status-badge';
 import { useRecentQuery } from '../../shared/datasource/queries';
+import type { MonitorEvent } from '../../shared/datasource/types';
 import { routeOf } from '../../shared/event-model/accessors';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
 
+type PageSize = 30 | 50 | 100;
+const DEFAULT_PAGE_SIZE: PageSize = 50;
+const PAGE_SIZES: PageSize[] = [30, 50, 100];
+
 export function EventsRoute() {
-  const recentQuery = useRecentQuery(200);
-  const events = recentQuery.data ?? [];
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
+  const [offset, setOffset] = useState(0);
+  const [loadedEvents, setLoadedEvents] = useState<MonitorEvent[]>([]);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const recentQuery = useRecentQuery(pageSize, offset);
+  const pageEvents = useMemo(() => recentQuery.data?.events ?? [], [recentQuery.data?.events]);
+  const events = loadedEvents.length > 0 ? loadedEvents : pageEvents;
+
+  useEffect(() => {
+    if (!recentQuery.data) return;
+    if (offset === 0) {
+      setLoadedEvents(pageEvents);
+      return;
+    }
+    setLoadedEvents((current) => {
+      const seen = new Set(current.map((event) => event.eventId));
+      const next = pageEvents.filter((event) => !seen.has(event.eventId));
+      return next.length > 0 ? [...current, ...next] : current;
+    });
+  }, [offset, pageEvents, recentQuery.data]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      if (!recentQuery.data?.hasMore || recentQuery.isFetching) return;
+      setOffset(events.length);
+    }, { rootMargin: '160px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [events.length, recentQuery.data?.hasMore, recentQuery.isFetching]);
+
+  function changePageSize(nextSize: PageSize) {
+    setPageSize(nextSize);
+    setOffset(0);
+    setLoadedEvents([]);
+  }
 
   return (
     <div className="grid h-full min-h-0 p-2">
       <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-        <CardHeader>
-          <CardTitle>Event 列表</CardTitle>
-          <CardDescription>偏开发态的原始事件入口；常规排查优先从 Session Detail 进入。</CardDescription>
+        <CardHeader className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle>Event 列表</CardTitle>
+            <CardDescription>偏开发态的原始事件入口；常规排查优先从 Session Detail 进入。</CardDescription>
+          </div>
+          <PageSizeSelect value={pageSize} onChange={changePageSize} />
         </CardHeader>
         <CardContent className="min-h-0 overflow-auto p-0">
           {events.length === 0 ? (
@@ -38,10 +83,33 @@ export function EventsRoute() {
                   <span className="text-right text-xs tabular-nums text-zinc-500">{formatDuration(event.durationMs)}</span>
                 </Link>
               ))}
+              <ListFooter isFetching={recentQuery.isFetching} hasMore={recentQuery.data?.hasMore} label="Event" />
+              <div ref={sentinelRef} className="h-1" />
             </div>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ListFooter({ isFetching, hasMore, label }: { isFetching: boolean; hasMore?: boolean; label: string }) {
+  if (isFetching) return <div className="px-3 py-3 text-center text-xs text-zinc-500">加载中...</div>;
+  if (hasMore) return null;
+  return <div className="px-3 py-3 text-center text-xs text-zinc-500">已加载全部 {label}</div>;
+}
+
+function PageSizeSelect({ value, onChange }: { value: PageSize; onChange: (value: PageSize) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-zinc-500">
+      每页
+      <select
+        className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value) as PageSize)}
+      >
+        {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+      </select>
+    </label>
   );
 }

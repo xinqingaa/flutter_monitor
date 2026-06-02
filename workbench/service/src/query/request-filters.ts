@@ -13,6 +13,7 @@ export function filtersFromRequest(req: Request): EventFilters {
     name: readQueryString(req, 'name'),
     signalType: readQueryString(req, 'signalType'),
     limit: readQueryNumber(req, 'limit'),
+    offset: readQueryNumber(req, 'offset'),
   };
 }
 

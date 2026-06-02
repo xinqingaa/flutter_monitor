@@ -30,6 +30,7 @@ export interface EventFilters {
   name?: string;
   signalType?: string;
   limit?: number;
+  offset?: number;
 }
 
 export interface SessionSummary {
@@ -44,6 +45,9 @@ export interface SessionSummary {
   environment?: string;
   route?: string;
   status?: string;
+  nativeAvailable?: boolean;
+  nativeVersion?: string;
+  nativePlatform?: string;
   errorCount: number;
   jankCount: number;
   failedHttpCount: number;

@@ -70,8 +70,15 @@ export function registerRoutes(app: Express, store: MonitorStore, sseHub: SseHub
 
   app.get('/api/monitor/v1/recent', (req, res) => {
     const limit = clampLimit(req.query.limit, 50);
-    const events = store.getRecentEvents(limit);
-    res.send({ count: events.length, events });
+    const offset = clampNumber(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+    const result = store.getRecentEvents(limit, offset);
+    res.send({
+      count: result.events.length,
+      limit,
+      offset,
+      hasMore: result.hasMore,
+      events: result.events,
+    });
   });
 
   app.get('/api/monitor/v1/sessions', (req, res) => {
@@ -79,6 +86,9 @@ export function registerRoutes(app: Express, store: MonitorStore, sseHub: SseHub
     const result = store.listSessions(filters);
     res.send({
       count: result.sessions.length,
+      limit: result.limit,
+      offset: result.offset,
+      hasMore: result.hasMore,
       userIdAvailable: result.userIdAvailable,
       userIdQueryAvailable: filters.userId ? result.userIdAvailable : undefined,
       sessions: result.sessions,
