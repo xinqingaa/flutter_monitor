@@ -17,7 +17,7 @@ export function OverviewRoute() {
   const live = useLiveState();
 
   const sessions = sessionsQuery.data?.sessions ?? [];
-  const recentSessions = sessions.slice(0, 2);
+  const recentSessions = sessions.slice(0, 3);
   const rightPanel = useCollapsiblePanel('workbench.overview.right');
 
   return (
