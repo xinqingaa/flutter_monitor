@@ -1,5 +1,6 @@
 import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventKind, issueLabels, routeOf } from '../../shared/event-model/accessors';
+import { isNativeLifecycleEvent, isNativeMemoryEvent } from '../../shared/event-model/native';
 import { formatDuration } from '../../shared/formatting/format';
 
 export type SegmentKind = 'startup' | 'page' | 'activity';
@@ -198,6 +199,8 @@ function segmentSummaryItems(events: MonitorEvent[]): string[] {
     .filter((event) => event.name === 'app.background_duration' && typeof event.durationMs === 'number')
     .map((event) => event.durationMs as number);
   const memorySamples = events.filter((event) => event.name === 'memory.sample').length;
+  const nativeLifecycle = events.filter(isNativeLifecycleEvent).length;
+  const nativeMemory = events.filter(isNativeMemoryEvent).length;
   const lifecycle = events.filter((event) => event.name === 'app.lifecycle').length;
 
   const items: string[] = [];
@@ -205,6 +208,8 @@ function segmentSummaryItems(events: MonitorEvent[]): string[] {
   if (errors > 0) items.push(`错误 ${errors}`);
   if (hotStarts > 0) items.push(`热重启 ${hotStarts}`);
   if (background.length > 0) items.push(`后台 ${formatDuration(Math.max(...background))}`);
+  if (nativeLifecycle > 0) items.push(`Native lifecycle ${nativeLifecycle}`);
+  if (nativeMemory > 0) items.push(`Native 内存 ${nativeMemory}`);
   if (memorySamples > 0) items.push(`内存采样 ${memorySamples}`);
   if (lifecycle > 0) items.push(`生命周期 ${lifecycle}`);
   return items.slice(0, 4);

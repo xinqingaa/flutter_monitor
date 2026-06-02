@@ -4,6 +4,7 @@ import { fieldDefinitionFor } from '../field-dictionary/fields';
 import { formatDuration } from '../formatting/format';
 import { eventKind } from './accessors';
 import { readCanonicalPath, readStringPath } from './field-path';
+import { nativeActivity, nativeCallback, nativeRawState, nativeTrimLevel, nativeTrimLevelName } from './native';
 
 export interface DisplayField {
   path: string;
@@ -225,7 +226,7 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     const source = readStringPath(event, 'attributes.memory.sample_source');
     return {
       ...base,
-      title: '内存压力',
+      title: name === 'native.memory.pressure' ? 'Native 内存压力' : '内存压力',
       durationLabel: level ? memoryPressureLabel(level) : undefined,
       summaryItems: compactItems(nativeUsed ? `Native ${nativeUsed}` : undefined, source ? `来源 ${source}` : undefined),
     };
@@ -240,6 +241,25 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
       title: 'Native 内存采样',
       durationLabel: nativeUsed ? `Native ${nativeUsed}` : heap ? `Heap ${heap}` : undefined,
       summaryItems: compactItems(heap ? `Heap ${heap}` : undefined, source ? `来源 ${source}` : undefined),
+    };
+  }
+
+  if (name === 'native.lifecycle') {
+    const callback = nativeCallback(event);
+    const rawState = nativeRawState(event);
+    const activity = nativeActivity(event);
+    const trimName = nativeTrimLevelName(event);
+    const trimLevel = nativeTrimLevel(event);
+    return {
+      ...base,
+      kindLabel: 'Native',
+      title: callback ? `Native 生命周期 ${callback}` : 'Native 生命周期',
+      summaryItems: compactItems(
+        rawState ? `rawState ${rawState}` : undefined,
+        trimName ? `${trimName}${trimLevel !== undefined ? ` · level ${trimLevel}` : ''}` : undefined,
+        activity ? compactActivity(activity) : undefined,
+      ),
+      tone: trimName ? 'warn' : 'info',
     };
   }
 
@@ -326,6 +346,11 @@ function memoryPressureLabel(value: string): string {
     unknown: '未知压力',
   };
   return labels[value] ?? value;
+}
+
+function compactActivity(value: string): string {
+  const parts = value.split('.');
+  return parts[parts.length - 1] ?? value;
 }
 
 function timelinePhaseLabel(value: string): string {
@@ -452,6 +477,19 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.memory.rss_mb', { unit: 'MB', digits: 1 });
     pushField(event, secondary, 'attributes.memory.sample_source');
     pushField(event, secondary, 'attributes.native.signal');
+    pushField(event, secondary, 'payload.native.sampleSource');
+    return;
+  }
+
+  if (name === 'native.lifecycle') {
+    pushField(event, primary, 'attributes.native.signal');
+    pushField(event, primary, 'payload.native.callback');
+    pushField(event, primary, 'payload.native.rawState');
+    pushField(event, secondary, 'context.lifecycle.state');
+    pushField(event, secondary, 'context.lifecycle.previousState');
+    pushField(event, secondary, 'payload.native.activity');
+    pushField(event, secondary, 'payload.native.trimLevel');
+    pushField(event, secondary, 'payload.native.trimLevelName');
     return;
   }
 

@@ -50,6 +50,8 @@ export interface PerformanceMetricEvent {
   status?: string;
   timestamp?: string;
   attributes?: JsonObject;
+  resource?: JsonObject;
+  context?: JsonObject;
 }
 
 export interface PerformanceMetricSummary {

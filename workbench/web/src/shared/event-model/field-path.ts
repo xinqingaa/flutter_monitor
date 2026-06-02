@@ -30,6 +30,16 @@ function readPayloadPath(payload: JsonObject | undefined, path: string): unknown
   const keyWithoutPrefix = path.slice('payload.'.length);
   if (payload[keyWithoutPrefix] !== undefined) return payload[keyWithoutPrefix];
 
+  const segments = keyWithoutPrefix.split('.');
+  for (let index = segments.length - 1; index > 0; index -= 1) {
+    const flattenedParentKey = `payload.${segments.slice(0, index).join('.')}`;
+    const parentValue = payload[flattenedParentKey];
+    if (!isRecord(parentValue)) continue;
+
+    const nestedValue = readNestedPath(parentValue, segments.slice(index));
+    if (nestedValue !== undefined) return nestedValue;
+  }
+
   return readNestedPath(payload, keyWithoutPrefix.split('.'));
 }
 

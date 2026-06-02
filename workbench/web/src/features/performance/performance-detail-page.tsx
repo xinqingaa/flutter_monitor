@@ -34,6 +34,7 @@ import {
 } from './performance-charts';
 import type { WorkbenchChartOption } from './echarts-panel';
 import { PerformanceTabs } from './performance-tabs';
+import { nativeAvailable } from '../../shared/event-model/native';
 
 export type PerformanceKind = 'startup' | 'pages' | 'network' | 'jank' | 'errors';
 
@@ -191,7 +192,7 @@ function StartupContent({ events, metric }: { events: PerformanceMetricEvent[]; 
     <div className="grid gap-2">
       <StartupScatterChart records={records} />
       <BackgroundIntervalChart events={backgroundIntervals} />
-      <StartupFieldCard metric={metric} />
+      <StartupFieldCard metric={metric} records={records} />
       <StartupRecordTable records={records} />
     </div>
   );
@@ -264,6 +265,8 @@ type StartupRecord = {
   backgroundIntervalMs?: number;
   hotResumeMs?: number;
   completedAt?: string;
+  nativeAvailable?: boolean;
+  nativeVersion?: string;
 };
 
 type StartupScatterPoint = {
@@ -430,7 +433,8 @@ function BackgroundIntervalChart({ events }: { events: PerformanceMetricEvent[] 
   );
 }
 
-function StartupFieldCard({ metric }: { metric?: StartupPerformanceSummary }) {
+function StartupFieldCard({ metric, records }: { metric?: StartupPerformanceSummary; records: StartupRecord[] }) {
+  const native = startupNativeSummary(records);
   return (
     <Card>
       <CardHeader>
@@ -453,6 +457,16 @@ function StartupFieldCard({ metric }: { metric?: StartupPerformanceSummary }) {
           <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-950">{formatDuration(metric?.hotResume.latestMs)}</div>
           <div className="mt-1 text-xs leading-relaxed">来源：`app.hot_start.durationMs`，表示 resumed 后到首帧或可交互的热重启耗时。</div>
         </div>
+        {native.hasNative || native.hasFlutterOnly ? (
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 md:col-span-3">
+            <div className="text-xs font-medium text-zinc-500">Native bridge 成本</div>
+            <div className="mt-1 text-sm font-semibold text-zinc-950">
+              {native.hasNative ? `Native on: SDK 初始化最慢 ${formatDuration(native.nativeMaxSdkInitMs)}` : '当前范围未观察到 Native on 会话'}
+              {native.hasFlutterOnly ? ` · Native off: 最慢 ${formatDuration(native.flutterOnlyMaxSdkInitMs)}` : ''}
+            </div>
+            <div className="mt-1 text-xs leading-relaxed">接入 Native bridge 的会话可能包含 native resource 探测成本，`sdk.init` 可高于 Flutter-only 会话；这是解释性上下文，不单独判定为性能问题。</div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -515,7 +529,7 @@ function StartupRecordRow({ record }: { record: StartupRecord }) {
       <div className="min-w-0">
         <strong className="block truncate text-zinc-950">{typeLabel}</strong>
         <div className="mt-0.5 truncate text-zinc-500">
-          {record.route ?? '-'} · {record.traceId ?? record.key}
+          {record.route ?? '-'} · {record.traceId ?? record.key} · {record.nativeAvailable ? `Native ${record.nativeVersion ?? 'on'}` : 'Native off'}
         </div>
       </div>
       <span className="text-zinc-500 tabular-nums">{formatDateTime(record.timestamp)}</span>
@@ -893,6 +907,8 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
     record.sessionId = record.sessionId ?? event.sessionId;
     record.traceId = record.traceId ?? event.traceId;
     record.route = record.route ?? event.route;
+    record.nativeAvailable = record.nativeAvailable ?? nativeAvailable(event);
+    record.nativeVersion = record.nativeVersion ?? eventStringPath(event, ['resource', 'sdk', 'nativeVersion']);
 
     if (event.name === 'app.cold_start') {
       record.coldStartEventId = event.eventId;
@@ -932,6 +948,27 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.hotResumeMs,
     ].some((value) => typeof value === 'number'))
     .sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
+}
+
+function startupNativeSummary(records: StartupRecord[]) {
+  const withSdkInit = records.filter((record) => typeof record.sdkInitMs === 'number');
+  const nativeRecords = withSdkInit.filter((record) => record.nativeAvailable);
+  const flutterOnlyRecords = withSdkInit.filter((record) => !record.nativeAvailable);
+  return {
+    hasNative: nativeRecords.length > 0,
+    hasFlutterOnly: flutterOnlyRecords.length > 0,
+    nativeMaxSdkInitMs: max(numbers(nativeRecords.map((record) => record.sdkInitMs))),
+    flutterOnlyMaxSdkInitMs: max(numbers(flutterOnlyRecords.map((record) => record.sdkInitMs))),
+  };
+}
+
+function eventStringPath(event: PerformanceMetricEvent, path: string[]): string | undefined {
+  let current: unknown = event;
+  for (const segment of path) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return typeof current === 'string' && current.length > 0 ? current : undefined;
 }
 
 function selectBackgroundIntervalEvents(events: PerformanceMetricEvent[]): PerformanceMetricEvent[] {

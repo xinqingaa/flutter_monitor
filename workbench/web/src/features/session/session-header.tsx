@@ -9,6 +9,7 @@ import { appVersionOf, environmentOf, readPath, routeOf, stringPath, userIdOf } 
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
 import { statusLabel } from '../../shared/event-model/status';
 import { FieldExplanation } from '../inspector/field-explanation';
+import { summarizeNativeSession } from '../../shared/event-model/native';
 
 export function SessionHeader({
   sessionId,
@@ -28,6 +29,7 @@ export function SessionHeader({
     : undefined;
   const contextEvent = events.find((event) => userIdOf(event) !== '-' || routeOf(event) !== '-') ?? first;
   const resource = events.find((event) => event.resource)?.resource;
+  const native = summarizeNativeSession(events);
   const [expanded, setExpanded] = useState(false);
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
 
@@ -37,6 +39,7 @@ export function SessionHeader({
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <Badge tone={summary?.status === 'error' ? 'danger' : 'neutral'}>{statusLabel(summary?.status)}</Badge>
+            <Badge tone={native.available ? 'teal' : 'neutral'}>{native.available ? 'Native on' : 'Native off'}</Badge>
             <h2 className="min-w-0 truncate text-[15px] font-semibold text-zinc-950">{sessionId}</h2>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -76,9 +79,11 @@ export function SessionHeader({
               <HeaderMetric icon={Globe2} label="页面" value={summary?.route ?? routeOf(contextEvent)} />
               <HeaderMetric icon={AlertTriangle} label="错误数" value={String(summary?.errorCount ?? 0)} />
               <HeaderMetric icon={Gauge} label="卡顿 / 失败请求" value={`${summary?.jankCount ?? 0} / ${summary?.failedHttpCount ?? 0}`} />
+              <HeaderMetric icon={Cpu} label="Native" value={native.available ? `${native.platform ?? 'native'} ${native.version ? `v${native.version}` : 'on'}` : 'off'} />
             </div>
             <div className="text-xs text-zinc-500">
               App {summary?.appVersion ?? appVersionOf(contextEvent)} · 环境 {summary?.environment ?? environmentOf(contextEvent)} · 事件 {events.length}
+              {native.available ? ` · Native lifecycle ${native.lifecycleCount} · Native memory ${native.memoryCount}` : ''}
             </div>
             {resource ? <ResourceSummary resource={resource} /> : null}
           </div>

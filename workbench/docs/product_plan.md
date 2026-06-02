@@ -331,6 +331,16 @@ Workbench 展示 memory 问题时必须按事件名和证据字段拆分，不�
 - `memory.leak.suspect` 显示为 `疑似泄漏线索`，必须保留 `payload.assertion = suspect_only` 和 `payload.evidence.reason/threshold_mb` 等依据。Workbench 不得把它展示为确定泄漏、内存压力或内存溢出。
 - `memory.sample` / `native.memory.sample` 只是采样，展示 RSS、heap、native used 和 sample source，不默认标记为问题。
 
+### Native 展示口径
+
+Native 是 Flutter 主链路之外的增强证据层。Workbench 必须保留 Flutter 层和 Native 层两套原始事件，不把它们合并成一条伪造事件：
+
+- Session Header 显示 `Native on/off`，展开态展示 native bridge 版本、platform、native lifecycle 数量和 native memory 数量。
+- Timeline 以 Flutter lifecycle、memory、hot start 作为主会话链路，同时按时间展示 `native.lifecycle`、`native.memory.sample`、`native.memory.pressure` 作为相邻底层证据。
+- `native.lifecycle` 节点必须展示平台 callback，例如 `onActivityPaused`、`onActivityStopped`、`onActivityResumed`、`onTrimMemory`，并保留 `rawState`、`activity`、`trimLevel/trimLevelName`。
+- `native.memory.sample` 展示 native used、heap used/capacity 和 sample source；`native.memory.pressure` 才能展示为 Native 内存压力。
+- 启动性能页可用 `context.native.available`、`resource.sdk.nativeVersion` 和 `sdk.init.durationMs` 解释 native bridge 初始化成本，但不能把 native 接入本身判定为性能问题。
+
 Session Detail 内部可以展示 Trace/Span/Event 层级，但这些层级不应迫使用户跳到多个独立页面。独立 Trace Detail 和 Event Detail 可以保留为辅助深链能力，主要用于复制链接、外部分享或直接打开 raw JSON。
 
 ## 跳转规则

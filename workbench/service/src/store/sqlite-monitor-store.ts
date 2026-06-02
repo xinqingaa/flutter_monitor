@@ -719,6 +719,8 @@ function summarizeMetric(events: MonitorEvent[], limit: number): PerformanceMetr
       status: statusOf(event),
       timestamp: event.timestamp,
       attributes: event.attributes,
+      resource: event.resource,
+      context: event.context,
     }));
 
   return {

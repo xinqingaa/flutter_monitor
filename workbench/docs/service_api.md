@@ -390,6 +390,8 @@ Workbench 错误页关注稳定性错误，不混入 completed HTTP 失败；HTT
 | `status` | `status` |
 | `timestamp` | `timestamp` |
 | `attributes` | `attributes` |
+| `resource` | `resource`，用于 Workbench Web 解释 native bridge、app/device/runtime 等上下文。 |
+| `context` | `context`，用于 Workbench Web 解释 route、native availability、lifecycle 等上下文。 |
 
 ### `GET /api/monitor/v1/performance/pages?...filters`
 

@@ -65,6 +65,8 @@ export interface PerformanceMetricSummary {
     status?: string;
     timestamp?: string;
     attributes?: Record<string, unknown>;
+    resource?: Record<string, unknown>;
+    context?: Record<string, unknown>;
   }>;
 }
 
