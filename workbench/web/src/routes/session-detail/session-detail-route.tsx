@@ -1,10 +1,14 @@
-import { useParams, useSearch } from '@tanstack/react-router';
+import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { GitBranch, ListTree } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { EmptyState } from '../../components/common/empty-state';
 import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
 import { EventInspector } from '../../features/inspector/event-inspector';
 import { SessionHeader } from '../../features/session/session-header';
 import { SessionList } from '../../features/session/session-list';
+import { hasActiveScope, pickScopeSearch, scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
 import { SessionTimeline } from '../../features/timeline/session-timeline';
 import { firstTimelineEvent, prepareSessionEvents } from '../../features/timeline/session-segments';
 import { useSessionQuery, useSessionsQuery, useTraceQuery } from '../../shared/datasource/queries';
@@ -14,9 +18,16 @@ import { downloadJson } from '../../shared/formatting/download';
 export function SessionDetailRoute() {
   const { sessionId } = useParams({ from: '/sessions/$sessionId' });
   const search = useSearch({ from: '/sessions/$sessionId' }) as { eventId?: string; traceId?: string };
+  const { filters: scopeFilters } = useScopeFilters();
+  const scopeQueryFilters = useMemo(() => scopeToSessionFilters(scopeFilters), [scopeFilters]);
+  const scopeActive = hasActiveScope(scopeFilters);
+  const [sideSessionId, setSideSessionId] = useState('');
   const sessionQuery = useSessionQuery(sessionId);
-  const sessionsQuery = useSessionsQuery({ limit: 50 });
+  const scopedSessionQuery = useSessionsQuery({ ...scopeQueryFilters, sessionId, limit: 1 });
+  const sessionsQuery = useSessionsQuery({ ...scopeQueryFilters, sessionId: sideSessionId || undefined, limit: 50 });
   const events = useMemo(() => sortEvents(sessionQuery.data ?? []), [sessionQuery.data]);
+  const currentSessionInScope = !scopeActive || Boolean(scopedSessionQuery.data?.sessions.some((session) => session.sessionId === sessionId));
+  const visibleEvents = currentSessionInScope ? events : [];
   const timelineEvents = useMemo(() => prepareSessionEvents(events), [events]);
   const [selectedEventId, setSelectedEventId] = useState<string>();
   const defaultEvent = firstTimelineEvent(events);
@@ -24,7 +35,7 @@ export function SessionDetailRoute() {
     search.eventId ? event.eventId === search.eventId : search.traceId ? event.traceId === search.traceId : false
   ));
   const selectedEvent = timelineEvents.find((event) => event.eventId === selectedEventId) ?? searchSelectedEvent ?? defaultEvent;
-  const traceQuery = useTraceQuery(selectedEvent?.traceId);
+  const traceQuery = useTraceQuery(currentSessionInScope ? selectedEvent?.traceId : undefined);
   const summary = sessionsQuery.data?.sessions.find((session) => session.sessionId === sessionId);
   const leftPanel = useCollapsiblePanel('workbench.sessionDetail.left');
   const rightPanel = useCollapsiblePanel('workbench.sessionDetail.right');
@@ -57,6 +68,15 @@ export function SessionDetailRoute() {
           <SessionList
             sessions={sessionsQuery.data?.sessions ?? []}
             selectedSessionId={sessionId}
+            headerContent={(
+              <Input
+                aria-label="左侧 Session ID"
+                className="m-2 mb-0 h-8 w-[calc(100%-1rem)]"
+                placeholder="搜索 Session ID"
+                value={sideSessionId}
+                onChange={(event) => setSideSessionId(event.target.value)}
+              />
+            )}
             panelAction={
               <CollapsiblePanelAction
                 side="left"
@@ -69,22 +89,43 @@ export function SessionDetailRoute() {
         </CollapsiblePanel>
       </aside>
       <section className="grid min-h-[620px] grid-rows-[auto_minmax(0,1fr)] gap-2 xl:min-h-0">
-        <SessionHeader
-          sessionId={sessionId}
-          events={events}
-          summary={summary}
-          onExport={() => downloadJson(`flutter-monitor-session-${sessionId}.json`, {
-            sessionId,
-            exportedAt: new Date().toISOString(),
-            count: events.length,
-            events,
-          })}
-        />
-        <SessionTimeline
-          events={events}
-          selectedEventId={selectedEvent?.eventId}
-          onSelectEvent={(event) => setSelectedEventId(event.eventId)}
-        />
+        {currentSessionInScope ? (
+          <>
+            <SessionHeader
+              sessionId={sessionId}
+              events={visibleEvents}
+              summary={summary}
+              onExport={() => downloadJson(`flutter-monitor-session-${sessionId}.json`, {
+                sessionId,
+                exportedAt: new Date().toISOString(),
+                count: visibleEvents.length,
+                events: visibleEvents,
+              })}
+            />
+            <SessionTimeline
+              events={visibleEvents}
+              selectedEventId={selectedEvent?.eventId}
+              onSelectEvent={(event) => setSelectedEventId(event.eventId)}
+            />
+          </>
+        ) : (
+          <div className="grid min-h-0 place-items-center rounded-md border border-zinc-200 bg-white p-4">
+            <div className="grid max-w-md gap-3">
+              <EmptyState
+                title="当前会话不在顶部筛选范围内"
+                description="顶部范围已经排除了这个 session，链路和诊断内容不会展示。"
+              />
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button asChild variant="secondary">
+                  <Link to="/sessions" search={(current) => pickScopeSearch(current)}>返回 Session 列表</Link>
+                </Button>
+                <Button asChild variant="default">
+                  <Link to="/sessions/$sessionId" params={{ sessionId }}>清空顶部筛选</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
       <aside className="h-full min-h-[560px] overflow-hidden xl:min-h-0">
         <CollapsiblePanel
@@ -95,19 +136,25 @@ export function SessionDetailRoute() {
           collapsed={rightPanel.collapsed}
           onToggleCollapsed={rightPanel.toggleCollapsed}
         >
-          <EventInspector
-            event={selectedEvent}
-            traceEvents={prepareSessionEvents(traceQuery.data ?? [])}
-            onSelectEvent={(event) => setSelectedEventId(event.eventId)}
-            panelAction={
-              <CollapsiblePanelAction
-                side="right"
-                title="节点诊断"
-                collapsed={rightPanel.collapsed}
-                onToggleCollapsed={rightPanel.toggleCollapsed}
-              />
-            }
-          />
+          {currentSessionInScope ? (
+            <EventInspector
+              event={selectedEvent}
+              traceEvents={prepareSessionEvents(traceQuery.data ?? [])}
+              onSelectEvent={(event) => setSelectedEventId(event.eventId)}
+              panelAction={
+                <CollapsiblePanelAction
+                  side="right"
+                  title="节点诊断"
+                  collapsed={rightPanel.collapsed}
+                  onToggleCollapsed={rightPanel.toggleCollapsed}
+                />
+              }
+            />
+          ) : (
+            <div className="grid h-full min-h-0 place-items-center bg-white p-3">
+              <EmptyState title="无诊断内容" description="当前会话已被顶部范围排除。" />
+            </div>
+          )}
         </CollapsiblePanel>
       </aside>
     </div>

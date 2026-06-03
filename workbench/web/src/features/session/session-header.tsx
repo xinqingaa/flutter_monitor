@@ -15,11 +15,13 @@ export function SessionHeader({
   sessionId,
   events,
   summary,
+  scopeNotice,
   onExport,
 }: {
   sessionId: string;
   events: MonitorEvent[];
   summary?: SessionSummary;
+  scopeNotice?: string;
   onExport?: () => void;
 }) {
   const first = events[0];
@@ -71,6 +73,11 @@ export function SessionHeader({
           <span className="text-zinc-300">·</span>
           <span>失败请求 {summary?.failedHttpCount ?? 0}</span>
         </div>
+        {scopeNotice ? (
+          <div className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+            {scopeNotice}
+          </div>
+        ) : null}
         {expanded ? (
           <div className="grid gap-3 border-t border-zinc-100 pt-2">
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">

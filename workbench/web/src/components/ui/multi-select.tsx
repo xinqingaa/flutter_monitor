@@ -11,6 +11,8 @@ export function MultiSelect({
   onChange,
   className,
   ariaLabel,
+  open,
+  onOpenChange,
 }: {
   values?: string[];
   placeholder: string;
@@ -18,6 +20,8 @@ export function MultiSelect({
   onChange: (values?: string[]) => void;
   className?: string;
   ariaLabel?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const selected = values ?? [];
   const selectedSet = new Set(selected);
@@ -31,9 +35,10 @@ export function MultiSelect({
   }
 
   return (
-    <SelectPrimitive.Root value="" onValueChange={toggle}>
+    <SelectPrimitive.Root value="" open={open} onOpenChange={onOpenChange} onValueChange={toggle}>
       <SelectPrimitive.Trigger
         aria-label={ariaLabel ?? placeholder}
+        onMouseDown={() => onOpenChange?.(true)}
         className={cn(
           'inline-flex h-8 min-w-[128px] max-w-full items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none transition-colors hover:bg-zinc-50 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 data-[placeholder]:text-zinc-500',
           selected.length === 0 && 'text-zinc-500',

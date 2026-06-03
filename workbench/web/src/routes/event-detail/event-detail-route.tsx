@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Button } from '../../components/ui/button';
 import { EventInspector } from '../../features/inspector/event-inspector';
+import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { prepareSessionEvents } from '../../features/timeline/session-segments';
 import { SessionTimeline } from '../../features/timeline/session-timeline';
 import { useEventQuery, useSessionQuery, useTraceQuery } from '../../shared/datasource/queries';
@@ -24,7 +25,7 @@ export function EventDetailRoute() {
       <div className="flex items-center justify-between">
         {event?.sessionId ? (
           <Button asChild variant="secondary">
-            <Link to="/sessions/$sessionId" params={{ sessionId: event.sessionId }}>
+            <Link to="/sessions/$sessionId" params={{ sessionId: event.sessionId }} search={(current) => pickScopeSearch(current)}>
               <ArrowLeft className="size-4" />
               返回会话
             </Link>

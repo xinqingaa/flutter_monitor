@@ -10,9 +10,6 @@ export interface ScopeFilters {
   from?: string;
   to?: string;
   userId?: string;
-  route?: string;
-  status?: string;
-  problemType?: string;
 }
 
 const SCOPE_KEYS: Array<keyof ScopeFilters> = [
@@ -22,10 +19,7 @@ const SCOPE_KEYS: Array<keyof ScopeFilters> = [
   'devicePlatform',
   'from',
   'to',
-  'route',
   'userId',
-  'status',
-  'problemType',
 ];
 
 export function useScopeFilters(): {
@@ -66,6 +60,19 @@ export function scopeToSessionFilters(filters: ScopeFilters): SessionFilters {
   return cleanFilters({ ...filters });
 }
 
+export function hasActiveScope(filters: ScopeFilters): boolean {
+  return Object.values(filters).some((value) => Array.isArray(value) ? value.length > 0 : value !== undefined && value !== '');
+}
+
+export function pickScopeSearch(search: unknown): Record<string, unknown> {
+  const filters = readScopeFilters(search);
+  const entries = Object.entries(filters).map(([key, value]) => [
+    key,
+    Array.isArray(value) ? value.join(',') : value,
+  ]);
+  return cleanFilters(Object.fromEntries(entries));
+}
+
 function readScopeFilters(search: unknown): ScopeFilters {
   if (!isRecord(search)) return {};
   return cleanFilters({
@@ -75,10 +82,7 @@ function readScopeFilters(search: unknown): ScopeFilters {
     devicePlatform: stringListValue(search.devicePlatform),
     from: stringValue(search.from),
     to: stringValue(search.to),
-    route: stringValue(search.route),
     userId: stringValue(search.userId),
-    status: stringValue(search.status),
-    problemType: stringValue(search.problemType),
   });
 }
 

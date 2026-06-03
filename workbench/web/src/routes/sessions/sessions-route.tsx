@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Select } from '../../components/ui/select';
+import { SessionListFilterForm } from '../../features/session/session-list-filter-form';
+import { sessionListToSessionFilters, useSessionListFilters } from '../../features/session/session-list-filters';
 import { SessionRows } from '../../features/session/session-list';
 import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
-import { useSessionsQuery } from '../../shared/datasource/queries';
+import { useDimensionsQuery, useSessionsQuery } from '../../shared/datasource/queries';
 import type { SessionSummary } from '../../shared/datasource/types';
 
 type PageSize = 30 | 50 | 100;
@@ -12,11 +14,15 @@ const PAGE_SIZES: PageSize[] = [30, 50, 100];
 
 export function SessionsRoute() {
   const { filters: scopeFilters } = useScopeFilters();
-  const queryFilters = useMemo(() => scopeToSessionFilters(scopeFilters), [scopeFilters]);
+  const { filters: listFilters, patchFilters: patchListFilters, clearFilters: clearListFilters } = useSessionListFilters();
+  const scopeQueryFilters = useMemo(() => scopeToSessionFilters(scopeFilters), [scopeFilters]);
+  const localQueryFilters = useMemo(() => sessionListToSessionFilters(listFilters), [listFilters]);
+  const queryFilters = useMemo(() => ({ ...scopeQueryFilters, ...localQueryFilters }), [scopeQueryFilters, localQueryFilters]);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
   const [loadedSessions, setLoadedSessions] = useState<SessionSummary[]>([]);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const dimensionsQuery = useDimensionsQuery(scopeQueryFilters);
   const filters = useMemo(() => cleanFilters({ ...queryFilters, limit: pageSize, offset }), [queryFilters, pageSize, offset]);
   const sessionsQuery = useSessionsQuery(filters);
   const pageSessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data?.sessions]);
@@ -64,7 +70,24 @@ export function SessionsRoute() {
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:overflow-hidden">
-      <section className="grid min-h-[620px] xl:min-h-0">
+      <section className="grid min-h-[620px] gap-2 xl:min-h-0 xl:grid-rows-[auto_minmax(0,1fr)]">
+        <Card>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle>Session 检索</CardTitle>
+              <CardDescription>在顶部全局范围内按会话 ID、页面、状态或问题类型缩小会话列表。</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <SessionListFilterForm
+              filters={listFilters}
+              dimensions={dimensionsQuery.data}
+              onChange={patchListFilters}
+              onClear={clearListFilters}
+            />
+          </CardContent>
+        </Card>
+
         <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
           <CardHeader className="flex flex-wrap items-start justify-between gap-2">
             <div>

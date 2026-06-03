@@ -155,6 +155,7 @@ export interface PerformanceOverview {
 }
 
 export interface SessionFilters {
+  sessionId?: string;
   appKey?: string | string[];
   appName?: string | string[];
   packageName?: string | string[];

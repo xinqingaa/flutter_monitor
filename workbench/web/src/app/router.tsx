@@ -6,16 +6,9 @@ type RootSearch = {
   environment?: string;
   appVersion?: string;
   devicePlatform?: string;
-  deviceModel?: string;
-  deviceTier?: string;
   from?: string;
   to?: string;
-  route?: string;
   userId?: string;
-  status?: string;
-  problemType?: string;
-  nativeAvailable?: boolean;
-  nativePlatform?: string;
 };
 
 const rootRoute = createRootRoute({
@@ -24,16 +17,9 @@ const rootRoute = createRootRoute({
     environment: stringListSearchParam(search.environment),
     appVersion: stringListSearchParam(search.appVersion),
     devicePlatform: stringListSearchParam(search.devicePlatform),
-    deviceModel: stringSearch(search.deviceModel),
-    deviceTier: stringSearch(search.deviceTier),
     from: stringSearch(search.from),
     to: stringSearch(search.to),
-    route: stringSearch(search.route),
     userId: stringSearch(search.userId),
-    status: stringSearch(search.status),
-    problemType: stringSearch(search.problemType),
-    nativeAvailable: booleanSearch(search.nativeAvailable),
-    nativePlatform: stringSearch(search.nativePlatform),
   }),
   component: WorkbenchShell,
 });
@@ -154,12 +140,6 @@ function stringParts(value: unknown): string[] {
     }
   }
   return value.split(',');
-}
-
-function booleanSearch(value: unknown): boolean | undefined {
-  if (value === true || value === 'true') return true;
-  if (value === false || value === 'false') return false;
-  return undefined;
 }
 
 function cleanSearch<T extends Record<string, unknown>>(search: T): T {

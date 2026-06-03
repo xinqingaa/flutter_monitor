@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Card, CardContent } from '../../components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { pickScopeSearch } from '../scope/scope-filters';
 import { compactNumber, formatDuration } from '../../shared/formatting/format';
 import type {
   DurationSummary,
@@ -58,7 +59,7 @@ export function MetricCard({
   if (!to) return body;
 
   return (
-    <Link to={to} search className="block min-w-0 transition-transform hover:-translate-y-0.5">
+    <Link to={to} search={(current) => pickScopeSearch(current)} className="block min-w-0 transition-transform hover:-translate-y-0.5">
       {body}
     </Link>
   );

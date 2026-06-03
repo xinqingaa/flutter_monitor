@@ -2,6 +2,7 @@ import { Link, useLocation } from '@tanstack/react-router';
 import { Activity, AlertTriangle, Gauge, Globe2, Rocket } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../shared/formatting/cn';
+import { pickScopeSearch } from '../scope/scope-filters';
 
 const tabs: Array<{ to: '/startup' | '/pages' | '/network' | '/jank' | '/errors'; label: string; icon: LucideIcon }> = [
   { to: '/startup', label: '启动链路', icon: Rocket },
@@ -23,7 +24,7 @@ export function PerformanceTabs() {
             <Link
               key={to}
               to={to}
-              search
+              search={(current) => pickScopeSearch(current)}
               className={cn(
                 'inline-flex h-8 items-center justify-center gap-1.5 rounded px-3 text-sm font-medium text-zinc-600 transition-colors',
                 active && 'bg-zinc-950 text-white [&_*]:text-white',

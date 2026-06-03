@@ -3,6 +3,7 @@ import type { EventFilters } from '../store/event-types.js';
 
 export function filtersFromRequest(req: Request): EventFilters {
   return {
+    sessionId: readQueryString(req, 'sessionId'),
     appKey: readQueryStringList(req, 'appKey'),
     appName: readQueryStringList(req, 'appName'),
     packageName: readQueryStringList(req, 'packageName'),

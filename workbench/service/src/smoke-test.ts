@@ -49,6 +49,10 @@ try {
     assert.equal(data.count, 1);
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
   });
+  await assertJson('/api/monitor/v1/sessions?sessionId=ses_smo', (data) => {
+    assert.equal(data.count, 1);
+    assert.equal(data.sessions[0].sessionId, 'ses_smoke');
+  });
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
     assert.equal(data.count, 2);
   });

@@ -9,6 +9,7 @@ export function SessionList({
   dense = false,
   title,
   description,
+  headerContent,
   panelAction,
 }: {
   sessions: SessionSummary[];
@@ -16,11 +17,12 @@ export function SessionList({
   dense?: boolean;
   title?: string;
   description?: string;
+  headerContent?: React.ReactNode;
   panelAction?: React.ReactNode;
 }) {
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-      <CardHeader className="flex flex-row items-start justify-between gap-2">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
         <div className="min-w-0">
           <CardTitle>{title ?? '全部会话'}</CardTitle>
           {description ? <p className="mt-1 text-xs text-zinc-500">{description}</p> : null}
@@ -28,6 +30,7 @@ export function SessionList({
         {panelAction}
       </CardHeader>
       <CardContent className="min-h-0 overflow-auto p-0">
+        {headerContent}
         <SessionRows sessions={sessions} selectedSessionId={selectedSessionId} variant={dense ? 'compact' : 'compact'} />
       </CardContent>
     </Card>

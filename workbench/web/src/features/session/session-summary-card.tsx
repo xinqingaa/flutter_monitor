@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { pickScopeSearch } from '../scope/scope-filters';
 import type { SessionSummary } from '../../shared/datasource/types';
 import { statusLabel } from '../../shared/event-model/status';
 import { cn } from '../../shared/formatting/cn';
@@ -70,6 +71,7 @@ export function SessionCard({
     <Link
       to="/sessions/$sessionId"
       params={{ sessionId: session.sessionId }}
+      search={(current) => pickScopeSearch(current)}
       className={cn(
         'group block min-w-0 rounded-md border bg-white text-left transition-colors hover:border-teal-300 hover:bg-teal-50/40',
         selected ? 'border-teal-400 bg-teal-50/70' : 'border-zinc-200',

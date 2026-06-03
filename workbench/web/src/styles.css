@@ -42,6 +42,15 @@ pre {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
+.scope-panel-scroll {
+  scrollbar-width: none;
+}
+
+.scope-panel-scroll::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+
 @media (max-width: 900px) {
   body {
     overflow: auto;

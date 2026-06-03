@@ -752,6 +752,7 @@ export class SqliteMonitorStore implements MonitorStore {
 function whereFromFilters(filters: EventFilters): { whereSql: string; params: SqlParam[] } {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
+  addLikeFilter(clauses, params, 'session_id', filters.sessionId);
   addEqualityFilter(clauses, params, 'app_key', filters.appKey);
   addEqualityFilter(clauses, params, 'app_name', filters.appName);
   addEqualityFilter(clauses, params, 'package_name', filters.packageName);
@@ -804,6 +805,18 @@ function addEqualityFilter(
   if (!value) return;
   clauses.push(`${columnName} = ?`);
   params.push(value);
+}
+
+function addLikeFilter(
+  clauses: string[],
+  params: SqlParam[],
+  columnName: string,
+  value: string | undefined,
+): void {
+  const normalized = value?.trim();
+  if (!normalized) return;
+  clauses.push(`${columnName} like ? escape '\\'`);
+  params.push(`%${escapeLike(normalized)}%`);
 }
 
 function addBooleanFilter(
