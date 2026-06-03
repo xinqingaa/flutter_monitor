@@ -7,7 +7,8 @@ export const datasource = new LocalWorkbenchDatasource();
 
 export const queryKeys = {
   health: ['health'] as const,
-  recent: (limit: number, offset = 0) => ['recent', limit, offset] as const,
+  dimensions: (filters: SessionFilters) => ['dimensions', filters] as const,
+  recent: (limit: number, offset = 0, filters: SessionFilters = {}) => ['recent', limit, offset, filters] as const,
   sessions: (filters: SessionFilters) => ['sessions', filters] as const,
   session: (sessionId: string | undefined) => ['session', sessionId] as const,
   trace: (traceId: string | undefined) => ['trace', traceId] as const,
@@ -23,10 +24,17 @@ export function useHealthQuery() {
   });
 }
 
-export function useRecentQuery(limit = 80, offset = 0) {
+export function useDimensionsQuery(filters: SessionFilters) {
   return useQuery({
-    queryKey: queryKeys.recent(limit, offset),
-    queryFn: () => datasource.recent(limit, offset),
+    queryKey: queryKeys.dimensions(filters),
+    queryFn: () => datasource.dimensions(filters),
+  });
+}
+
+export function useRecentQuery(limit = 80, offset = 0, filters: SessionFilters = {}) {
+  return useQuery({
+    queryKey: queryKeys.recent(limit, offset, filters),
+    queryFn: () => datasource.recent(limit, offset, filters),
   });
 }
 
@@ -80,24 +88,10 @@ export function useLiveInvalidation(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return undefined;
     return datasource.subscribeEvents((event: MonitorEvent) => {
-      queryClient.setQueryData<EventListResult>(queryKeys.recent(80, 0), (current) => {
-        const events = [event, ...(current?.events ?? [])].slice(0, current?.limit ?? 80);
-        return {
-          events,
-          limit: current?.limit ?? 80,
-          offset: current?.offset ?? 0,
-          hasMore: current?.hasMore ?? false,
-        };
-      });
-      queryClient.setQueryData<EventListResult>(queryKeys.recent(100, 0), (current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          events: [event, ...current.events].slice(0, current.limit),
-        };
-      });
       queryClient.setQueriesData<SessionListResult>({ queryKey: ['sessions'] }, (current) => current ? { ...current } : current);
       void queryClient.invalidateQueries({ queryKey: queryKeys.health });
+      void queryClient.invalidateQueries({ queryKey: ['dimensions'] });
+      void queryClient.invalidateQueries({ queryKey: ['recent'] });
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
       void queryClient.invalidateQueries({ queryKey: ['performance'] });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) });

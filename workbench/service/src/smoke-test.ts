@@ -27,6 +27,15 @@ try {
     assert.equal(data.count, 2);
     assert.equal(data.events.some((event: any) => String(event.eventId).startsWith('evt_server_')), false);
   });
+  await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=failed_http', (data) => {
+    assert.equal(data.count, 1);
+    assert.equal(data.events[0].eventId, 'evt_smoke_http');
+  });
+  await assertJson('/api/monitor/v1/dimensions', (data) => {
+    assert.equal(data.apps[0].appKey, 'smoke_app');
+    assert.equal(data.environments.some((item: any) => item.value === 'dev'), true);
+    assert.equal(data.devicePlatforms.some((item: any) => item.value === 'android'), true);
+  });
   await assertJson('/api/monitor/v1/sessions?userId=user_smoke&environment=dev', (data) => {
     assert.equal(data.count, 1);
     assert.equal(data.userIdAvailable, true);
@@ -118,8 +127,11 @@ async function postEvents(): Promise<void> {
           status: 'ok',
           sessionId: 'ses_smoke',
           traceId: 'trace_smoke',
-          resource: { app: { appVersion: '1.0.0', environment: 'dev' } },
-          context: { user: { userId: 'user_smoke' }, route: { name: '/' } },
+          resource: {
+            app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
+            device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
+          },
+          context: { user: { userId: 'user_smoke' }, route: { name: '/' }, native: { available: false, platform: 'android' } },
           attributes: {},
           payload: {},
         },
@@ -135,8 +147,11 @@ async function postEvents(): Promise<void> {
           sessionId: 'ses_smoke',
           traceId: 'trace_smoke',
           spanId: 'span_smoke_http',
-          resource: { app: { appVersion: '1.0.0', environment: 'dev' } },
-          context: { user: { userId: 'user_smoke' }, route: { name: '/detail' } },
+          resource: {
+            app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
+            device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
+          },
+          context: { user: { userId: 'user_smoke' }, route: { name: '/detail' }, native: { available: false, platform: 'android' } },
           attributes: { 'event.phase': 'instant', 'http.success': false },
           payload: {},
         },

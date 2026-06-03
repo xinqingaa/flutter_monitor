@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Activity, AlertTriangle, CalendarClock, Cpu, Gauge, Globe2, Radio, UserRound } from 'lucide-react';
+import { Activity, AlertTriangle, CalendarClock, Cpu, Gauge, Globe2, Radio, Smartphone, UserRound } from 'lucide-react';
 import type * as React from 'react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
@@ -137,10 +137,12 @@ export function NativeBadge({ session }: { session: SessionSummary }) {
 
 export function SessionContext({ session, compact = false }: { session: SessionSummary; compact?: boolean }) {
   const items = [
-    { label: '用户', value: session.userId, icon: UserRound },
-    { label: '页面', value: session.route, icon: Globe2 },
+    { label: '应用', value: appLabel(session) },
+    { label: '用户', value: session.userId ?? '无登录', icon: UserRound },
+    { label: '页面', value: session.route, },
     { label: '版本', value: session.appVersion },
     { label: '环境', value: session.environment },
+    { label: '设备', value: deviceLabel(session), icon: Smartphone, tooltip: deviceTierHint(session.deviceTier) },
   ].filter((item) => Boolean(item.value));
 
   if (items.length === 0) {
@@ -151,15 +153,39 @@ export function SessionContext({ session, compact = false }: { session: SessionS
     <div className={cn('mt-2 flex flex-wrap gap-1.5', compact ? 'text-xs' : '')}>
       {items.map((item) => {
         const Icon = item.icon;
-        return (
+        const chip = (
           <span key={item.label} className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-zinc-100 bg-zinc-50 px-2 py-1 text-xs text-zinc-600">
             {Icon ? <Icon className="size-3 shrink-0 text-zinc-400" /> : <span className="shrink-0 text-zinc-400">{item.label}</span>}
             <span className="min-w-0 truncate font-medium text-zinc-800">{item.value}</span>
           </span>
         );
+        if (!item.tooltip) return chip;
+        return (
+          <Tooltip key={item.label}>
+            <TooltipTrigger asChild>{chip}</TooltipTrigger>
+            <TooltipContent>{item.tooltip}</TooltipContent>
+          </Tooltip>
+        );
       })}
     </div>
   );
+}
+
+function appLabel(session: SessionSummary): string | undefined {
+  if (!session.appKey && !session.appName) return undefined;
+  if (session.appName && session.appKey) return `${session.appName} · ${session.appKey}`;
+  return session.appName ?? session.appKey;
+}
+
+function deviceLabel(session: SessionSummary): string | undefined {
+  const model = [session.deviceManufacturer, session.deviceModel].filter(Boolean).join(' ');
+  const platform = [session.devicePlatform, session.deviceTier ? `设备 ${session.deviceTier}` : undefined].filter(Boolean).join(' · ');
+  return [model, platform].filter(Boolean).join(' · ') || undefined;
+}
+
+function deviceTierHint(tier?: string): string | undefined {
+  if (!tier) return undefined;
+  return `用于性能指标分组对比，不代表问题严重程度。`;
 }
 
 export function SessionMetadataLine({ session }: { session: SessionSummary }) {

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Select } from '../../components/ui/select';
 import { EmptyState } from '../../components/common/empty-state';
 import { EventKindBadge } from '../../features/timeline/status-badge';
 import { useRecentQuery } from '../../shared/datasource/queries';
@@ -101,15 +102,13 @@ function ListFooter({ isFetching, hasMore, label }: { isFetching: boolean; hasMo
 
 function PageSizeSelect({ value, onChange }: { value: PageSize; onChange: (value: PageSize) => void }) {
   return (
-    <label className="flex items-center gap-2 text-xs text-zinc-500">
-      每页
-      <select
-        className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value) as PageSize)}
-      >
-        {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
-      </select>
-    </label>
+    <Select
+      ariaLabel="每页数量"
+      placeholder="每页"
+      value={String(value)}
+      className="min-w-[92px]"
+      onChange={(next) => onChange(Number(next ?? value) as PageSize)}
+      options={PAGE_SIZES.map((size) => ({ value: String(size), label: `每页 ${size}` }))}
+    />
   );
 }

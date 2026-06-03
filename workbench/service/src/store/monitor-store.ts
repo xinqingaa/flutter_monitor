@@ -1,4 +1,5 @@
 import type {
+  DimensionSummary,
   EventFilters,
   MonitorEvent,
   PerformanceOverview,
@@ -18,7 +19,7 @@ export interface MonitorStore {
   getEvent(eventId: string): MonitorEvent | undefined;
   getSessionEvents(sessionId: string): MonitorEvent[];
   getTraceEvents(traceId: string): MonitorEvent[];
-  getRecentEvents(limit: number, offset?: number): {
+  getRecentEvents(limit: number, offset?: number, filters?: EventFilters): {
     events: MonitorEvent[];
     hasMore: boolean;
   };
@@ -32,6 +33,7 @@ export interface MonitorStore {
   };
   searchEvents(query: string, filters: EventFilters): MonitorEvent[];
   performanceOverview(filters: EventFilters): PerformanceOverview;
+  dimensions(filters: EventFilters): DimensionSummary;
   health(): MonitorStoreHealth;
   close?(): void;
 }

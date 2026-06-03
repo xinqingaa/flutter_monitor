@@ -3,22 +3,40 @@ import { dirname } from 'node:path';
 import initSqlJs, { type Database } from 'sql.js';
 import { hasEventId } from '../ingest/normalize-events.js';
 import {
+  appKeyOf,
+  appNameOf,
   appVersionOf,
+  buildNumberOf,
+  channelOf,
+  deviceManufacturerOf,
+  deviceModelOf,
+  devicePlatformOf,
+  deviceTierOf,
   environmentOf,
   eventTimeValue,
+  flavorOf,
   isCompletedHttpEvent,
   isErrorEvent,
   isFailedHttpEvent,
   isJankEvent,
   isStabilityErrorEvent,
   nameOf,
+  nativeAvailableOf,
+  nativePlatformOf,
+  nativeVersionOf,
   numericAttribute,
+  osVersionOf,
+  packageNameOf,
+  problemTypeOf,
   routeOf,
   signalTypeOf,
   statusOf,
   userIdOf,
 } from './event-accessors.js';
 import type {
+  DimensionAppOption,
+  DimensionOption,
+  DimensionSummary,
   DurationSummary,
   ErrorPerformanceSummary,
   EventFilters,
@@ -54,6 +72,37 @@ type GroupRow = {
   first_event_id?: string;
   last_event_id?: string;
 };
+
+type DimensionRow = {
+  value: string;
+  count: number;
+};
+
+type AppDimensionRow = {
+  app_key: string;
+  app_name?: string;
+  package_name?: string;
+  event_count: number;
+  last_timestamp_ms?: number;
+};
+
+const INDEX_COLUMNS = [
+  'app_key',
+  'app_name',
+  'package_name',
+  'build_number',
+  'channel',
+  'flavor',
+  'device_platform',
+  'device_model',
+  'device_manufacturer',
+  'device_tier',
+  'os_version',
+  'native_available',
+  'native_platform',
+  'native_version',
+  'problem_type',
+] as const;
 
 export class SqliteMonitorStore implements MonitorStore {
   private lastIngestAt: string | undefined;
@@ -109,10 +158,11 @@ export class SqliteMonitorStore implements MonitorStore {
     );
   }
 
-  getRecentEvents(limit: number, offset = 0): { events: MonitorEvent[]; hasMore: boolean } {
+  getRecentEvents(limit: number, offset = 0, filters: EventFilters = {}): { events: MonitorEvent[]; hasMore: boolean } {
     const safeLimit = clampLimit(limit, 50);
     const safeOffset = clampOffset(offset);
-    const events = this.selectEvents('', [], 'order by timestamp_ms desc, sequence desc limit ? offset ?', [
+    const { whereSql, params } = whereFromFilters(filters);
+    const events = this.selectEvents(whereSql, params, 'order by timestamp_ms desc, sequence desc limit ? offset ?', [
       safeLimit + 1,
       safeOffset,
     ]);
@@ -220,6 +270,67 @@ export class SqliteMonitorStore implements MonitorStore {
     };
   }
 
+  dimensions(filters: EventFilters): DimensionSummary {
+    const dimensionFilters = withoutPaging(filters);
+    const appFilters = { ...dimensionFilters, appKey: undefined };
+    const { whereSql: appWhereSql, params: appParams } = whereFromFilters(appFilters);
+    const apps = this.selectRows<AppDimensionRow>(
+      `
+        select
+          app_key,
+          (
+            select latest.app_name
+            from events latest
+            where latest.app_key = events.app_key and latest.app_name is not null
+            order by latest.timestamp_ms desc, latest.sequence desc
+            limit 1
+          ) as app_name,
+          (
+            select latest.package_name
+            from events latest
+            where latest.app_key = events.app_key and latest.package_name is not null
+            order by latest.timestamp_ms desc, latest.sequence desc
+            limit 1
+          ) as package_name,
+          count(*) as event_count,
+          max(timestamp_ms) as last_timestamp_ms
+        from events
+        ${appWhereSql}
+          ${appWhereSql ? 'and' : 'where'} app_key is not null
+        group by app_key
+        order by last_timestamp_ms desc
+        limit 200
+      `,
+      appParams,
+    );
+
+    return {
+      apps: apps.map((row): DimensionAppOption => ({
+        appKey: row.app_key,
+        appName: row.app_name,
+        packageName: row.package_name,
+        eventCount: row.event_count,
+        lastTimestamp: row.last_timestamp_ms ? new Date(row.last_timestamp_ms).toISOString() : undefined,
+      })),
+      appNames: this.dimensionOptions('app_name', dimensionFilters, 'appName'),
+      packageNames: this.dimensionOptions('package_name', dimensionFilters, 'packageName'),
+      environments: this.dimensionOptions('environment', dimensionFilters, 'environment'),
+      appVersions: this.dimensionOptions('app_version', dimensionFilters, 'appVersion'),
+      buildNumbers: this.dimensionOptions('build_number', dimensionFilters, 'buildNumber'),
+      channels: this.dimensionOptions('channel', dimensionFilters, 'channel'),
+      flavors: this.dimensionOptions('flavor', dimensionFilters, 'flavor'),
+      devicePlatforms: this.dimensionOptions('device_platform', dimensionFilters, 'devicePlatform'),
+      deviceModels: this.dimensionOptions('device_model', dimensionFilters, 'deviceModel'),
+      deviceTiers: this.dimensionOptions('device_tier', dimensionFilters, 'deviceTier'),
+      osVersions: this.dimensionOptions('os_version', dimensionFilters, 'osVersion'),
+      nativePlatforms: this.dimensionOptions('native_platform', dimensionFilters, 'nativePlatform'),
+      routes: this.dimensionOptions('route', dimensionFilters, 'route'),
+      statuses: this.dimensionOptions('status', dimensionFilters, 'status'),
+      names: this.dimensionOptions('name', dimensionFilters, 'name'),
+      signalTypes: this.dimensionOptions('signal_type', dimensionFilters, 'signalType'),
+    };
+  }
+
   health(): MonitorStoreHealth {
     return {
       storageMode: 'sqlite',
@@ -245,23 +356,47 @@ export class SqliteMonitorStore implements MonitorStore {
         trace_id text,
         span_id text,
         timestamp_ms integer,
+        app_key text,
+        app_name text,
+        package_name text,
+        build_number text,
+        channel text,
+        flavor text,
         user_id text,
         route text,
         app_version text,
         environment text,
+        device_platform text,
+        device_model text,
+        device_manufacturer text,
+        device_tier text,
+        os_version text,
+        native_available integer,
+        native_platform text,
+        native_version text,
+        problem_type text,
         signal_type text,
         name text,
         status text,
         envelope_json text not null
       );
+    `);
+    this.ensureIndexColumns();
+    this.db.run(`
       create index if not exists idx_events_time on events(timestamp_ms, sequence);
       create index if not exists idx_events_session on events(session_id, timestamp_ms, sequence);
       create index if not exists idx_events_trace on events(trace_id, timestamp_ms, sequence);
       create index if not exists idx_events_user_time on events(user_id, timestamp_ms, sequence);
       create index if not exists idx_events_route_time on events(route, timestamp_ms, sequence);
+      create index if not exists idx_events_app_key_time on events(app_key, timestamp_ms, sequence);
+      create index if not exists idx_events_app_scope_time on events(app_key, environment, app_version, timestamp_ms, sequence);
       create index if not exists idx_events_app_time on events(app_version, environment, timestamp_ms, sequence);
+      create index if not exists idx_events_device_time on events(app_key, device_platform, device_tier, timestamp_ms, sequence);
+      create index if not exists idx_events_native_time on events(app_key, native_available, native_platform, timestamp_ms, sequence);
+      create index if not exists idx_events_problem_time on events(problem_type, timestamp_ms, sequence);
       create index if not exists idx_events_name_time on events(name, signal_type, status, timestamp_ms, sequence);
     `);
+    this.backfillIndexColumns();
     this.flushToDisk();
   }
 
@@ -332,24 +467,54 @@ export class SqliteMonitorStore implements MonitorStore {
         trace_id,
         span_id,
         timestamp_ms,
+        app_key,
+        app_name,
+        package_name,
+        build_number,
+        channel,
+        flavor,
         user_id,
         route,
         app_version,
         environment,
+        device_platform,
+        device_model,
+        device_manufacturer,
+        device_tier,
+        os_version,
+        native_available,
+        native_platform,
+        native_version,
+        problem_type,
         signal_type,
         name,
         status,
         envelope_json
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(event_id) do update set
         session_id = excluded.session_id,
         trace_id = excluded.trace_id,
         span_id = excluded.span_id,
         timestamp_ms = excluded.timestamp_ms,
+        app_key = excluded.app_key,
+        app_name = excluded.app_name,
+        package_name = excluded.package_name,
+        build_number = excluded.build_number,
+        channel = excluded.channel,
+        flavor = excluded.flavor,
         user_id = excluded.user_id,
         route = excluded.route,
         app_version = excluded.app_version,
         environment = excluded.environment,
+        device_platform = excluded.device_platform,
+        device_model = excluded.device_model,
+        device_manufacturer = excluded.device_manufacturer,
+        device_tier = excluded.device_tier,
+        os_version = excluded.os_version,
+        native_available = excluded.native_available,
+        native_platform = excluded.native_platform,
+        native_version = excluded.native_version,
+        problem_type = excluded.problem_type,
         signal_type = excluded.signal_type,
         name = excluded.name,
         status = excluded.status,
@@ -364,10 +529,25 @@ export class SqliteMonitorStore implements MonitorStore {
           event.traceId ?? null,
           event.spanId ?? null,
           eventTimeValue(event),
+          appKeyOf(event) ?? null,
+          appNameOf(event) ?? null,
+          packageNameOf(event) ?? null,
+          buildNumberOf(event) ?? null,
+          channelOf(event) ?? null,
+          flavorOf(event) ?? null,
           userIdOf(event) ?? null,
           routeOf(event) ?? null,
           appVersionOf(event) ?? null,
           environmentOf(event) ?? null,
+          devicePlatformOf(event) ?? null,
+          deviceModelOf(event) ?? null,
+          deviceManufacturerOf(event) ?? null,
+          deviceTierOf(event) ?? null,
+          osVersionOf(event) ?? null,
+          booleanSqlValue(nativeAvailableOf(event)),
+          nativePlatformOf(event) ?? null,
+          nativeVersionOf(event) ?? null,
+          problemTypeOf(event) ?? null,
           signalTypeOf(event) ?? null,
           nameOf(event) ?? null,
           statusOf(event) ?? null,
@@ -458,18 +638,140 @@ export class SqliteMonitorStore implements MonitorStore {
     mkdirSync(dirname(this.filePath), { recursive: true });
     writeFileSync(this.filePath, Buffer.from(this.db.export()));
   }
+
+  private ensureIndexColumns(): void {
+    const existing = new Set(this.selectRows<{ name: string }>('pragma table_info(events)').map((column) => column.name));
+    const definitions: Record<(typeof INDEX_COLUMNS)[number], string> = {
+      app_key: 'text',
+      app_name: 'text',
+      package_name: 'text',
+      build_number: 'text',
+      channel: 'text',
+      flavor: 'text',
+      device_platform: 'text',
+      device_model: 'text',
+      device_manufacturer: 'text',
+      device_tier: 'text',
+      os_version: 'text',
+      native_available: 'integer',
+      native_platform: 'text',
+      native_version: 'text',
+      problem_type: 'text',
+    };
+    for (const column of INDEX_COLUMNS) {
+      if (existing.has(column)) continue;
+      this.db.run(`alter table events add column ${column} ${definitions[column]}`);
+    }
+  }
+
+  private backfillIndexColumns(): void {
+    const rows = this.selectRows<(EventRow & { event_id: string })>(
+      `
+        select event_id, envelope_json
+        from events
+        where app_key is null
+          or device_platform is null
+          or native_available is null
+          or problem_type is null
+        limit 5000
+      `,
+    );
+    if (rows.length === 0) return;
+    const statement = this.db.prepare(`
+      update events set
+        app_key = ?,
+        app_name = ?,
+        package_name = ?,
+        build_number = ?,
+        channel = ?,
+        flavor = ?,
+        device_platform = ?,
+        device_model = ?,
+        device_manufacturer = ?,
+        device_tier = ?,
+        os_version = ?,
+        native_available = ?,
+        native_platform = ?,
+        native_version = ?,
+        problem_type = ?
+      where event_id = ?
+    `);
+    try {
+      this.db.run('begin');
+      for (const row of rows) {
+        const event = JSON.parse(row.envelope_json) as MonitorEvent;
+        statement.run([
+          appKeyOf(event) ?? null,
+          appNameOf(event) ?? null,
+          packageNameOf(event) ?? null,
+          buildNumberOf(event) ?? null,
+          channelOf(event) ?? null,
+          flavorOf(event) ?? null,
+          devicePlatformOf(event) ?? null,
+          deviceModelOf(event) ?? null,
+          deviceManufacturerOf(event) ?? null,
+          deviceTierOf(event) ?? null,
+          osVersionOf(event) ?? null,
+          booleanSqlValue(nativeAvailableOf(event)),
+          nativePlatformOf(event) ?? null,
+          nativeVersionOf(event) ?? null,
+          problemTypeOf(event) ?? null,
+          row.event_id,
+        ]);
+      }
+      this.db.run('commit');
+    } catch (error) {
+      this.db.run('rollback');
+      throw error;
+    } finally {
+      statement.free();
+    }
+  }
+
+  private dimensionOptions(
+    columnName: string,
+    filters: EventFilters,
+    ownFilterKey: keyof EventFilters,
+  ): DimensionOption[] {
+    const { whereSql, params } = whereFromFilters({ ...filters, [ownFilterKey]: undefined });
+    return this.selectRows<DimensionRow>(
+      `
+        select ${columnName} as value, count(*) as count
+        from events
+        ${whereSql}
+          ${whereSql ? 'and' : 'where'} ${columnName} is not null
+        group by ${columnName}
+        order by count desc, value asc
+        limit 200
+      `,
+      params,
+    ).map((row) => ({ value: row.value, count: row.count }));
+  }
 }
 
 function whereFromFilters(filters: EventFilters): { whereSql: string; params: SqlParam[] } {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
+  addEqualityFilter(clauses, params, 'app_key', filters.appKey);
+  addEqualityFilter(clauses, params, 'app_name', filters.appName);
+  addEqualityFilter(clauses, params, 'package_name', filters.packageName);
+  addEqualityFilter(clauses, params, 'build_number', filters.buildNumber);
+  addEqualityFilter(clauses, params, 'channel', filters.channel);
+  addEqualityFilter(clauses, params, 'flavor', filters.flavor);
   addEqualityFilter(clauses, params, 'user_id', filters.userId);
   addEqualityFilter(clauses, params, 'app_version', filters.appVersion);
   addEqualityFilter(clauses, params, 'environment', filters.environment);
+  addEqualityFilter(clauses, params, 'device_platform', filters.devicePlatform);
+  addEqualityFilter(clauses, params, 'device_model', filters.deviceModel);
+  addEqualityFilter(clauses, params, 'device_tier', filters.deviceTier);
+  addEqualityFilter(clauses, params, 'os_version', filters.osVersion);
+  addBooleanFilter(clauses, params, 'native_available', filters.nativeAvailable);
+  addEqualityFilter(clauses, params, 'native_platform', filters.nativePlatform);
   addEqualityFilter(clauses, params, 'route', filters.route);
   addEqualityFilter(clauses, params, 'status', filters.status);
   addEqualityFilter(clauses, params, 'name', filters.name);
   addEqualityFilter(clauses, params, 'signal_type', filters.signalType);
+  addEqualityFilter(clauses, params, 'problem_type', filters.problemType);
 
   if (filters.from) {
     clauses.push('timestamp_ms >= ?');
@@ -495,6 +797,27 @@ function addEqualityFilter(
   if (!value) return;
   clauses.push(`${columnName} = ?`);
   params.push(value);
+}
+
+function addBooleanFilter(
+  clauses: string[],
+  params: SqlParam[],
+  columnName: string,
+  value: boolean | undefined,
+): void {
+  if (value === undefined) return;
+  clauses.push(`${columnName} = ?`);
+  params.push(booleanSqlValue(value));
+}
+
+function booleanSqlValue(value: boolean | undefined): number | null {
+  if (value === undefined) return null;
+  return value ? 1 : 0;
+}
+
+function withoutPaging(filters: EventFilters): EventFilters {
+  const { limit: _limit, offset: _offset, ...rest } = filters;
+  return rest;
 }
 
 function groupColumn(by: string): string {
@@ -865,11 +1188,22 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
   const first = events[0];
   const last = events[events.length - 1];
   const firstWithUser = events.find((event) => Boolean(userIdOf(event)));
-  const firstWithApp = events.find((event) => Boolean(appVersionOf(event) || environmentOf(event)));
+  const firstWithApp = events.find((event) => Boolean(
+    appKeyOf(event) ||
+    appNameOf(event) ||
+    appVersionOf(event) ||
+    environmentOf(event),
+  ));
+  const firstWithDevice = events.find((event) => Boolean(
+    devicePlatformOf(event) ||
+    deviceModelOf(event) ||
+    deviceTierOf(event) ||
+    osVersionOf(event),
+  ));
   const lastWithRoute = [...events].reverse().find((event) => Boolean(routeOf(event)));
-  const firstNativeAvailable = events.find((event) => readBooleanPath(event, ['context', 'native', 'available']) === true);
-  const firstNativeVersion = events.find((event) => Boolean(readStringPath(event, ['resource', 'sdk', 'nativeVersion'])));
-  const firstNativePlatform = events.find((event) => Boolean(readStringPath(event, ['context', 'native', 'platform'])));
+  const firstNativeAvailable = events.find((event) => nativeAvailableOf(event) === true);
+  const firstNativeVersion = events.find((event) => Boolean(nativeVersionOf(event)));
+  const firstNativePlatform = events.find((event) => Boolean(nativePlatformOf(event)));
   const status = events.some(isStabilityErrorEvent)
     ? 'error'
     : [...events].reverse().map(statusOf).find(Boolean);
@@ -881,41 +1215,29 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
     lastTimestamp: last?.timestamp,
     firstEventId: first?.eventId,
     lastEventId: last?.eventId,
+    appKey: firstWithApp ? appKeyOf(firstWithApp) : undefined,
+    appName: firstWithApp ? appNameOf(firstWithApp) : undefined,
+    packageName: firstWithApp ? packageNameOf(firstWithApp) : undefined,
+    buildNumber: firstWithApp ? buildNumberOf(firstWithApp) : undefined,
+    channel: firstWithApp ? channelOf(firstWithApp) : undefined,
+    flavor: firstWithApp ? flavorOf(firstWithApp) : undefined,
     userId: firstWithUser ? userIdOf(firstWithUser) : undefined,
     appVersion: firstWithApp ? appVersionOf(firstWithApp) : undefined,
     environment: firstWithApp ? environmentOf(firstWithApp) : undefined,
+    devicePlatform: firstWithDevice ? devicePlatformOf(firstWithDevice) : undefined,
+    deviceModel: firstWithDevice ? deviceModelOf(firstWithDevice) : undefined,
+    deviceManufacturer: firstWithDevice ? deviceManufacturerOf(firstWithDevice) : undefined,
+    deviceTier: firstWithDevice ? deviceTierOf(firstWithDevice) : undefined,
+    osVersion: firstWithDevice ? osVersionOf(firstWithDevice) : undefined,
     route: lastWithRoute ? routeOf(lastWithRoute) : undefined,
     status,
     nativeAvailable: firstNativeAvailable ? true : undefined,
-    nativeVersion: firstNativeVersion ? readStringPath(firstNativeVersion, ['resource', 'sdk', 'nativeVersion']) : undefined,
-    nativePlatform: firstNativePlatform ? readStringPath(firstNativePlatform, ['context', 'native', 'platform']) : undefined,
+    nativeVersion: firstNativeVersion ? nativeVersionOf(firstNativeVersion) : undefined,
+    nativePlatform: firstNativePlatform ? nativePlatformOf(firstNativePlatform) : undefined,
     errorCount: events.filter(isStabilityErrorEvent).length,
     jankCount: events.filter(isJankEvent).length,
     failedHttpCount: events.filter(isFailedHttpEvent).length,
   };
-}
-
-function readStringPath(event: MonitorEvent, path: string[]): string | undefined {
-  const value = readUnknownPath(event, path);
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function readBooleanPath(event: MonitorEvent, path: string[]): boolean | undefined {
-  const value = readUnknownPath(event, path);
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-function readUnknownPath(value: unknown, path: string[]): unknown {
-  let current = value;
-  for (const segment of path) {
-    if (!isRecord(current)) return undefined;
-    current = current[segment];
-  }
-  return current;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function timestampValue(timestamp: string | undefined): number {

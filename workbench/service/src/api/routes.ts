@@ -69,9 +69,10 @@ export function registerRoutes(app: Express, store: MonitorStore, sseHub: SseHub
   });
 
   app.get('/api/monitor/v1/recent', (req, res) => {
+    const filters = filtersFromRequest(req);
     const limit = clampLimit(req.query.limit, 50);
     const offset = clampNumber(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const result = store.getRecentEvents(limit, offset);
+    const result = store.getRecentEvents(limit, offset, filters);
     res.send({
       count: result.events.length,
       limit,
@@ -79,6 +80,11 @@ export function registerRoutes(app: Express, store: MonitorStore, sseHub: SseHub
       hasMore: result.hasMore,
       events: result.events,
     });
+  });
+
+  app.get('/api/monitor/v1/dimensions', (req, res) => {
+    const filters = filtersFromRequest(req);
+    res.send(store.dimensions(filters));
   });
 
   app.get('/api/monitor/v1/sessions', (req, res) => {

@@ -1,4 +1,5 @@
 import type {
+  DimensionSummary,
   EventListResult,
   MonitorEvent,
   PerformanceOverview,
@@ -12,13 +13,36 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
     return this.getJson('/api/monitor/v1/health');
   }
 
-  async recent(limit = 50, offset = 0): Promise<EventListResult> {
-    const data = await this.getJson(`/api/monitor/v1/recent?${toParams({ limit, offset })}`);
+  async recent(limit = 50, offset = 0, filters: SessionFilters = {}): Promise<EventListResult> {
+    const data = await this.getJson(`/api/monitor/v1/recent?${toParams({ ...filters, limit, offset })}`);
     return {
       events: Array.isArray(data.events) ? (data.events as MonitorEvent[]) : [],
       limit: typeof data.limit === 'number' ? data.limit : limit,
       offset: typeof data.offset === 'number' ? data.offset : offset,
       hasMore: Boolean(data.hasMore),
+    };
+  }
+
+  async dimensions(filters: SessionFilters): Promise<DimensionSummary> {
+    const data = await this.getJson(`/api/monitor/v1/dimensions?${toParams(filters)}`);
+    return {
+      apps: Array.isArray(data.apps) ? data.apps : [],
+      appNames: Array.isArray(data.appNames) ? data.appNames : [],
+      packageNames: Array.isArray(data.packageNames) ? data.packageNames : [],
+      environments: Array.isArray(data.environments) ? data.environments : [],
+      appVersions: Array.isArray(data.appVersions) ? data.appVersions : [],
+      buildNumbers: Array.isArray(data.buildNumbers) ? data.buildNumbers : [],
+      channels: Array.isArray(data.channels) ? data.channels : [],
+      flavors: Array.isArray(data.flavors) ? data.flavors : [],
+      devicePlatforms: Array.isArray(data.devicePlatforms) ? data.devicePlatforms : [],
+      deviceModels: Array.isArray(data.deviceModels) ? data.deviceModels : [],
+      deviceTiers: Array.isArray(data.deviceTiers) ? data.deviceTiers : [],
+      osVersions: Array.isArray(data.osVersions) ? data.osVersions : [],
+      nativePlatforms: Array.isArray(data.nativePlatforms) ? data.nativePlatforms : [],
+      routes: Array.isArray(data.routes) ? data.routes : [],
+      statuses: Array.isArray(data.statuses) ? data.statuses : [],
+      names: Array.isArray(data.names) ? data.names : [],
+      signalTypes: Array.isArray(data.signalTypes) ? data.signalTypes : [],
     };
   }
 

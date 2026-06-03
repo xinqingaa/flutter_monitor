@@ -1,7 +1,8 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { ListTree, Pause, Play, RefreshCw } from 'lucide-react';
+import { Braces, ListFilter, type LucideIcon, Pause, Play, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { useLiveInvalidation } from '../shared/datasource/queries';
 import { LiveContext } from './live-context';
 
@@ -27,20 +28,15 @@ export function WorkbenchShell() {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" className="hidden sm:inline-flex">
-            <Link to="/sessions">
-              <ListTree className="size-4" />
-              Sessions
-            </Link>
-          </Button>
-          <Button variant={live ? 'default' : 'secondary'} onClick={() => setLive((value) => !value)}>
-            {live ? <Pause className="size-4" /> : <Play className="size-4" />}
-            {live ? '实时中' : '已暂停'}
-          </Button>
-          <Button variant="secondary" onClick={() => void router.invalidate()}>
-            <RefreshCw className="size-4" />
-            刷新
-          </Button>
+          <HeaderIconButton to="/sessions" icon={ListFilter} tooltip="会话列表" search />
+          <HeaderIconButton to="/events" icon={Braces} tooltip="事件列表" />
+          <HeaderIconButton
+            icon={live ? Pause : Play}
+            tooltip={live ? '暂停实时更新' : '恢复实时更新'}
+            active={live}
+            onClick={() => setLive((value) => !value)}
+          />
+          <HeaderIconButton icon={RefreshCw} tooltip="刷新数据" onClick={() => void router.invalidate()} />
         </div>
       </header>
       <main className="min-h-0 overflow-hidden">
@@ -54,4 +50,49 @@ export function WorkbenchShell() {
 
 function isPerformanceRoute(pathname: string): boolean {
   return ['/startup', '/pages', '/network', '/jank', '/errors'].includes(pathname);
+}
+
+export function HeaderIconButton({
+  to,
+  icon: Icon,
+  tooltip,
+  search,
+  active = false,
+  onClick,
+}: {
+  to?: '/sessions' | '/events';
+  icon: LucideIcon;
+  tooltip: string;
+  search?: true;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const button = (
+    <Button
+      asChild={Boolean(to)}
+      type={to ? undefined : 'button'}
+      variant={active ? 'default' : 'secondary'}
+      size="icon"
+      className="h-10 w-10"
+      onClick={to ? undefined : onClick}
+      aria-label={tooltip}
+    >
+      {to ? (
+        <Link to={to} search={search}>
+          <Icon className="size-4" />
+        </Link>
+      ) : (
+        <Icon className="size-4" />
+      )}
+    </Button>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {button}
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
 }

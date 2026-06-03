@@ -10,6 +10,30 @@ export function userIdOf(event: MonitorEvent): string | undefined {
   return stringValue(readPath(event, ['context', 'user', 'userId']));
 }
 
+export function appKeyOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'app', 'appKey']));
+}
+
+export function appNameOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'app', 'appName']));
+}
+
+export function packageNameOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'app', 'packageName']));
+}
+
+export function buildNumberOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'app', 'buildNumber']));
+}
+
+export function channelOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'app', 'channel']));
+}
+
+export function flavorOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'app', 'flavor']));
+}
+
 export function routeOf(event: MonitorEvent): string | undefined {
   return stringValue(readPath(event, ['context', 'route', 'name']));
 }
@@ -20,6 +44,39 @@ export function appVersionOf(event: MonitorEvent): string | undefined {
 
 export function environmentOf(event: MonitorEvent): string | undefined {
   return stringValue(readPath(event, ['resource', 'app', 'environment']));
+}
+
+export function devicePlatformOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'device', 'platform']));
+}
+
+export function deviceModelOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'device', 'model']));
+}
+
+export function deviceManufacturerOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'device', 'manufacturer']));
+}
+
+export function deviceTierOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'device', 'deviceTier']));
+}
+
+export function osVersionOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'device', 'osVersion']));
+}
+
+export function nativeAvailableOf(event: MonitorEvent): boolean | undefined {
+  const value = readPath(event, ['context', 'native', 'available']);
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+export function nativePlatformOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['context', 'native', 'platform']));
+}
+
+export function nativeVersionOf(event: MonitorEvent): string | undefined {
+  return stringValue(readPath(event, ['resource', 'sdk', 'nativeVersion']));
 }
 
 export function statusOf(event: MonitorEvent): string | undefined {
@@ -58,6 +115,18 @@ export function isFailedHttpEvent(event: MonitorEvent): boolean {
   return statusOf(event) === 'error' || readPath(event, ['attributes', 'http.success']) === false;
 }
 
+export function problemTypeOf(event: MonitorEvent): string | undefined {
+  if (isFailedHttpEvent(event)) return 'failed_http';
+  if (isStabilityErrorEvent(event)) return 'error';
+  if (isJankEvent(event)) return 'jank';
+  if (isMemoryLeakSuspectEvent(event)) return 'memory_leak_suspect';
+  if (isMemoryGrowthIssue(event)) return 'memory_growth';
+  if (isMemoryPressureEvent(event)) return 'memory_pressure';
+  if (isSlowStartupEvent(event)) return 'slow_startup';
+  if (isSlowPageEvent(event)) return 'slow_page';
+  return undefined;
+}
+
 export function numericAttribute(event: MonitorEvent, key: string): number | undefined {
   const value = readPath(event, ['attributes', key]);
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -88,4 +157,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function isMemoryPressureEvent(event: MonitorEvent): boolean {
+  const name = nameOf(event);
+  if (name !== 'memory.pressure' && name !== 'native.memory.pressure') return false;
+  const level = readPath(event, ['attributes', 'memory.pressure_level']);
+  return level === undefined || (typeof level === 'string' && level !== '' && level !== 'none');
+}
+
+function isMemoryGrowthIssue(event: MonitorEvent): boolean {
+  if (nameOf(event) !== 'memory.growth') return false;
+  const level = String(event.level ?? event.status ?? '');
+  const growth = readPath(event, ['attributes', 'memory.growth_mb']);
+  return level.includes('warn') || (typeof growth === 'number' && growth > 0);
+}
+
+function isMemoryLeakSuspectEvent(event: MonitorEvent): boolean {
+  return nameOf(event) === 'memory.leak.suspect';
+}
+
+function isSlowStartupEvent(event: MonitorEvent): boolean {
+  const name = nameOf(event);
+  return (name === 'app.cold_start' || name === 'app.hot_start') &&
+    typeof event.durationMs === 'number' &&
+    event.durationMs >= 1000;
+}
+
+function isSlowPageEvent(event: MonitorEvent): boolean {
+  const name = nameOf(event);
+  if (name !== 'page.load' && name !== 'page.first_frame') return false;
+  const loadMs = readPath(event, ['attributes', 'page.load_ms']);
+  const firstFrameMs = readPath(event, ['attributes', 'page.first_frame_ms']);
+  const duration = typeof loadMs === 'number'
+    ? loadMs
+    : typeof firstFrameMs === 'number'
+      ? firstFrameMs
+      : event.durationMs;
+  return (duration ?? 0) >= 1000;
 }

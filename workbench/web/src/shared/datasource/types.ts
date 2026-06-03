@@ -28,9 +28,20 @@ export interface SessionSummary {
   lastTimestamp?: string;
   firstEventId?: string;
   lastEventId?: string;
+  appKey?: string;
+  appName?: string;
+  packageName?: string;
+  buildNumber?: string;
+  channel?: string;
+  flavor?: string;
   userId?: string;
   appVersion?: string;
   environment?: string;
+  devicePlatform?: string;
+  deviceModel?: string;
+  deviceManufacturer?: string;
+  deviceTier?: string;
+  osVersion?: string;
   route?: string;
   status?: string;
   nativeAvailable?: boolean;
@@ -144,17 +155,63 @@ export interface PerformanceOverview {
 }
 
 export interface SessionFilters {
+  appKey?: string;
+  appName?: string;
+  packageName?: string;
+  channel?: string;
+  flavor?: string;
+  buildNumber?: string;
   userId?: string;
   from?: string;
   to?: string;
   appVersion?: string;
   environment?: string;
+  devicePlatform?: string;
+  deviceModel?: string;
+  deviceTier?: string;
+  osVersion?: string;
+  nativeAvailable?: boolean;
+  nativePlatform?: string;
   route?: string;
   status?: string;
   name?: string;
   signalType?: string;
+  problemType?: string;
   limit?: number;
   offset?: number;
+}
+
+export interface DimensionAppOption {
+  appKey: string;
+  appName?: string;
+  packageName?: string;
+  eventCount: number;
+  lastTimestamp?: string;
+}
+
+export interface DimensionOption {
+  value: string;
+  count: number;
+}
+
+export interface DimensionSummary {
+  apps: DimensionAppOption[];
+  appNames: DimensionOption[];
+  packageNames: DimensionOption[];
+  environments: DimensionOption[];
+  appVersions: DimensionOption[];
+  buildNumbers: DimensionOption[];
+  channels: DimensionOption[];
+  flavors: DimensionOption[];
+  devicePlatforms: DimensionOption[];
+  deviceModels: DimensionOption[];
+  deviceTiers: DimensionOption[];
+  osVersions: DimensionOption[];
+  nativePlatforms: DimensionOption[];
+  routes: DimensionOption[];
+  statuses: DimensionOption[];
+  names: DimensionOption[];
+  signalTypes: DimensionOption[];
 }
 
 export interface SessionListResult {
@@ -175,7 +232,8 @@ export interface EventListResult {
 
 export interface WorkbenchDatasource {
   health(): Promise<Record<string, unknown>>;
-  recent(limit?: number, offset?: number): Promise<EventListResult>;
+  recent(limit?: number, offset?: number, filters?: SessionFilters): Promise<EventListResult>;
+  dimensions(filters: SessionFilters): Promise<DimensionSummary>;
   listSessions(filters: SessionFilters): Promise<SessionListResult>;
   getSession(sessionId: string): Promise<MonitorEvent[]>;
   getTrace(traceId: string): Promise<MonitorEvent[]>;

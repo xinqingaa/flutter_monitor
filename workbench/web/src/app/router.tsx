@@ -1,7 +1,34 @@
 import { createRootRoute, createRoute, createRouter, lazyRouteComponent } from '@tanstack/react-router';
 import { WorkbenchShell } from './workbench-shell';
 
+type RootSearch = {
+  appKey?: string;
+  environment?: string;
+  appVersion?: string;
+  devicePlatform?: string;
+  deviceModel?: string;
+  deviceTier?: string;
+  route?: string;
+  userId?: string;
+  problemType?: string;
+  nativeAvailable?: boolean;
+  nativePlatform?: string;
+};
+
 const rootRoute = createRootRoute({
+  validateSearch: (search: Record<string, unknown>): RootSearch => cleanSearch({
+    appKey: stringSearch(search.appKey),
+    environment: stringSearch(search.environment),
+    appVersion: stringSearch(search.appVersion),
+    devicePlatform: stringSearch(search.devicePlatform),
+    deviceModel: stringSearch(search.deviceModel),
+    deviceTier: stringSearch(search.deviceTier),
+    route: stringSearch(search.route),
+    userId: stringSearch(search.userId),
+    problemType: stringSearch(search.problemType),
+    nativeAvailable: booleanSearch(search.nativeAvailable),
+    nativePlatform: stringSearch(search.nativePlatform),
+  }),
   component: WorkbenchShell,
 });
 
@@ -90,6 +117,22 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 export const router = createRouter({ routeTree });
+
+function stringSearch(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function booleanSearch(value: unknown): boolean | undefined {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
+}
+
+function cleanSearch<T extends Record<string, unknown>>(search: T): T {
+  return Object.fromEntries(
+    Object.entries(search).filter(([, value]) => value !== undefined && value !== ''),
+  ) as T;
+}
 
 declare module '@tanstack/react-router' {
   interface Register {

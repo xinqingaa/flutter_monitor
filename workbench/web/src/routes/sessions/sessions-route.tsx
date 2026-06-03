@@ -3,9 +3,12 @@ import { Link } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { Select } from '../../components/ui/select';
 import { SessionFilterForm } from '../../features/session/session-filter-form';
 import { SessionRows } from '../../features/session/session-list';
-import { useSessionsQuery } from '../../shared/datasource/queries';
+import { ScopeChips } from '../../features/scope/scope-bar';
+import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
+import { useDimensionsQuery, useSessionsQuery } from '../../shared/datasource/queries';
 import type { SessionFilters, SessionSummary } from '../../shared/datasource/types';
 
 type PageSize = 30 | 50 | 100;
@@ -13,27 +16,24 @@ const DEFAULT_PAGE_SIZE: PageSize = 50;
 const PAGE_SIZES: PageSize[] = [30, 50, 100];
 
 export function SessionsRoute() {
+  const { filters: scopeFilters, clearFilters: clearScopeFilters } = useScopeFilters();
+  const initialFilters = useMemo(() => scopeToSessionFilters(scopeFilters), [scopeFilters]);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
-  const [draftFilters, setDraftFilters] = useState<SessionFilters>({ limit: DEFAULT_PAGE_SIZE, offset: 0 });
-  const [filters, setFilters] = useState<SessionFilters>({ limit: DEFAULT_PAGE_SIZE, offset: 0 });
+  const [draftFilters, setDraftFilters] = useState<SessionFilters>({ ...initialFilters, limit: DEFAULT_PAGE_SIZE, offset: 0 });
+  const [filters, setFilters] = useState<SessionFilters>({ ...initialFilters, limit: DEFAULT_PAGE_SIZE, offset: 0 });
   const [loadedSessions, setLoadedSessions] = useState<SessionSummary[]>([]);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const dimensionsQuery = useDimensionsQuery({});
   const sessionsQuery = useSessionsQuery(filters);
   const pageSessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data?.sessions]);
   const visibleSessions = loadedSessions.length > 0 ? loadedSessions : pageSessions;
 
-  const filterOptions = useMemo(() => ({
-    environments: uniqueValues(visibleSessions.map((session) => session.environment)),
-    appVersions: uniqueValues(visibleSessions.map((session) => session.appVersion)),
-    routes: uniqueValues(visibleSessions.map((session) => session.route)),
-    statuses: uniqueValues(visibleSessions.map((session) => session.status)),
-  }), [visibleSessions]);
-
-  function applyFilters() {
-    const next = { ...draftFilters, limit: pageSize, offset: 0 };
+  useEffect(() => {
+    const next = cleanFilters({ ...initialFilters, limit: pageSize, offset: 0 });
+    setDraftFilters(next);
     setFilters(next);
     setLoadedSessions([]);
-  }
+  }, [initialFilters, pageSize]);
 
   function loadMore() {
     const loaded = visibleSessions.length;
@@ -42,11 +42,25 @@ export function SessionsRoute() {
 
   function changePageSize(nextSize: PageSize) {
     setPageSize(nextSize);
-    const nextFilters = { ...draftFilters, limit: nextSize, offset: 0 };
+    const nextFilters = cleanFilters({ ...draftFilters, limit: nextSize, offset: 0 });
     setDraftFilters(nextFilters);
     setFilters(nextFilters);
     setLoadedSessions([]);
   }
+
+  function clearSessionFilters() {
+    clearScopeFilters();
+    const nextFilters = { limit: pageSize, offset: 0 };
+    setDraftFilters(nextFilters);
+    setFilters(nextFilters);
+    setLoadedSessions([]);
+  }
+
+  useEffect(() => {
+    const next = cleanFilters({ ...draftFilters, limit: pageSize, offset: 0 });
+    setFilters(next);
+    setLoadedSessions([]);
+  }, [draftFilters, pageSize]);
 
   useEffect(() => {
     if (!sessionsQuery.data) return;
@@ -80,19 +94,17 @@ export function SessionsRoute() {
           <CardHeader className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <CardTitle>Session 检索</CardTitle>
-              <CardDescription>按用户、时间范围、版本、环境、页面或状态定位一次 App 使用过程。</CardDescription>
+              <CardDescription>按时间、状态或问题类型定位一次 App 使用过程；首页范围条件会作为只读上下文带入。</CardDescription>
             </div>
-            {visibleSessions[0] ? (
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/sessions/$sessionId" params={{ sessionId: visibleSessions[0].sessionId }}>
-                  打开最新
-                  <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-            ) : null}
           </CardHeader>
           <CardContent>
-            <SessionFilterForm filters={draftFilters} options={filterOptions} onChange={setDraftFilters} onSubmit={applyFilters} />
+            <ScopeChips filters={scopeFilters} className="mb-2" />
+            <SessionFilterForm
+              filters={draftFilters}
+              dimensions={dimensionsQuery.data}
+              onChange={setDraftFilters}
+              onClear={clearSessionFilters}
+            />
             {sessionsQuery.data?.userIdQueryAvailable === false ? (
               <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
                 当前数据没有 `context.user.userId`，不能按用户检索；请改用时间、版本、页面或问题类型。
@@ -128,19 +140,19 @@ function ListFooter({ isFetching, hasMore, label }: { isFetching: boolean; hasMo
 
 function PageSizeSelect({ value, onChange }: { value: PageSize; onChange: (value: PageSize) => void }) {
   return (
-    <label className="flex items-center gap-2 text-xs text-zinc-500">
-      每页
-      <select
-        className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value) as PageSize)}
-      >
-        {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
-      </select>
-    </label>
+    <Select
+      ariaLabel="每页数量"
+      placeholder="每页"
+      value={String(value)}
+      className="min-w-[92px]"
+      onChange={(next) => onChange(Number(next ?? value) as PageSize)}
+      options={PAGE_SIZES.map((size) => ({ value: String(size), label: `每页 ${size}` }))}
+    />
   );
 }
 
-function uniqueValues(values: Array<string | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
+function cleanFilters<T extends Record<string, unknown>>(filters: T): T {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
+  ) as T;
 }

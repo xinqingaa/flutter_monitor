@@ -3,15 +3,28 @@ import type { EventFilters } from '../store/event-types.js';
 
 export function filtersFromRequest(req: Request): EventFilters {
   return {
+    appKey: readQueryString(req, 'appKey'),
+    appName: readQueryString(req, 'appName'),
+    packageName: readQueryString(req, 'packageName'),
+    channel: readQueryString(req, 'channel'),
+    flavor: readQueryString(req, 'flavor'),
+    buildNumber: readQueryString(req, 'buildNumber'),
     userId: readQueryString(req, 'userId'),
     from: readQueryString(req, 'from'),
     to: readQueryString(req, 'to'),
     appVersion: readQueryString(req, 'appVersion'),
     environment: readQueryString(req, 'environment'),
+    devicePlatform: readQueryString(req, 'devicePlatform'),
+    deviceModel: readQueryString(req, 'deviceModel'),
+    deviceTier: readQueryString(req, 'deviceTier'),
+    osVersion: readQueryString(req, 'osVersion'),
+    nativeAvailable: readQueryBoolean(req, 'nativeAvailable'),
+    nativePlatform: readQueryString(req, 'nativePlatform'),
     route: readQueryString(req, 'route'),
     status: readQueryString(req, 'status'),
     name: readQueryString(req, 'name'),
     signalType: readQueryString(req, 'signalType'),
+    problemType: readQueryString(req, 'problemType'),
     limit: readQueryNumber(req, 'limit'),
     offset: readQueryNumber(req, 'offset'),
   };
@@ -40,6 +53,13 @@ function readQueryNumber(req: Request, key: string): number | undefined {
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readQueryBoolean(req: Request, key: string): boolean | undefined {
+  const value = readQueryString(req, key);
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
 }
 
 function stringOrUndefined(value: unknown): string | undefined {

@@ -2,8 +2,12 @@ import { Activity, AlertTriangle, Gauge, Globe2, Rocket } from 'lucide-react';
 import { PerformanceDetailPage } from '../../features/performance/performance-detail-page';
 import { usePerformanceQuery } from '../../shared/datasource/queries';
 
+function usePerformancePageQuery() {
+  return usePerformanceQuery({ limit: 200 });
+}
+
 export function StartupRoute() {
-  const query = usePerformanceQuery({ limit: 200 });
+  const query = usePerformancePageQuery();
   return (
     <PerformanceDetailPage
       kind="startup"
@@ -17,7 +21,7 @@ export function StartupRoute() {
 }
 
 export function PagesRoute() {
-  const query = usePerformanceQuery({ limit: 200 });
+  const query = usePerformancePageQuery();
   return (
     <PerformanceDetailPage
       kind="pages"
@@ -31,7 +35,7 @@ export function PagesRoute() {
 }
 
 export function NetworkRoute() {
-  const query = usePerformanceQuery({ limit: 200 });
+  const query = usePerformancePageQuery();
   return (
     <PerformanceDetailPage
       kind="network"
@@ -45,7 +49,7 @@ export function NetworkRoute() {
 }
 
 export function JankRoute() {
-  const query = usePerformanceQuery({ limit: 200 });
+  const query = usePerformancePageQuery();
   return (
     <PerformanceDetailPage
       kind="jank"
@@ -59,7 +63,7 @@ export function JankRoute() {
 }
 
 export function ErrorsRoute() {
-  const query = usePerformanceQuery({ limit: 200 });
+  const query = usePerformancePageQuery();
   return (
     <PerformanceDetailPage
       kind="errors"
