@@ -8,8 +8,11 @@ type RootSearch = {
   devicePlatform?: string;
   deviceModel?: string;
   deviceTier?: string;
+  from?: string;
+  to?: string;
   route?: string;
   userId?: string;
+  status?: string;
   problemType?: string;
   nativeAvailable?: boolean;
   nativePlatform?: string;
@@ -17,14 +20,17 @@ type RootSearch = {
 
 const rootRoute = createRootRoute({
   validateSearch: (search: Record<string, unknown>): RootSearch => cleanSearch({
-    appKey: stringSearch(search.appKey),
-    environment: stringSearch(search.environment),
-    appVersion: stringSearch(search.appVersion),
-    devicePlatform: stringSearch(search.devicePlatform),
+    appKey: stringListSearchParam(search.appKey),
+    environment: stringListSearchParam(search.environment),
+    appVersion: stringListSearchParam(search.appVersion),
+    devicePlatform: stringListSearchParam(search.devicePlatform),
     deviceModel: stringSearch(search.deviceModel),
     deviceTier: stringSearch(search.deviceTier),
+    from: stringSearch(search.from),
+    to: stringSearch(search.to),
     route: stringSearch(search.route),
     userId: stringSearch(search.userId),
+    status: stringSearch(search.status),
     problemType: stringSearch(search.problemType),
     nativeAvailable: booleanSearch(search.nativeAvailable),
     nativePlatform: stringSearch(search.nativePlatform),
@@ -119,7 +125,35 @@ const routeTree = rootRoute.addChildren([
 export const router = createRouter({ routeTree });
 
 function stringSearch(value: unknown): string | undefined {
+  if (Array.isArray(value)) return stringSearch(value[0]);
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function stringListSearchParam(value: unknown): string | undefined {
+  const values = stringListSearch(value);
+  return values.length > 0 ? values.join(',') : undefined;
+}
+
+function stringListSearch(value: unknown): string[] {
+  const values = (Array.isArray(value) ? value : [value])
+    .flatMap((item) => stringParts(item))
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function stringParts(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string');
+    } catch {
+      return value.split(',');
+    }
+  }
+  return value.split(',');
 }
 
 function booleanSearch(value: unknown): boolean | undefined {
@@ -130,7 +164,10 @@ function booleanSearch(value: unknown): boolean | undefined {
 
 function cleanSearch<T extends Record<string, unknown>>(search: T): T {
   return Object.fromEntries(
-    Object.entries(search).filter(([, value]) => value !== undefined && value !== ''),
+    Object.entries(search).filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== undefined && value !== '';
+    }),
   ) as T;
 }
 

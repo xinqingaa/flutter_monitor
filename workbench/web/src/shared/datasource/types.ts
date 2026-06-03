@@ -155,28 +155,28 @@ export interface PerformanceOverview {
 }
 
 export interface SessionFilters {
-  appKey?: string;
-  appName?: string;
-  packageName?: string;
-  channel?: string;
-  flavor?: string;
-  buildNumber?: string;
+  appKey?: string | string[];
+  appName?: string | string[];
+  packageName?: string | string[];
+  channel?: string | string[];
+  flavor?: string | string[];
+  buildNumber?: string | string[];
   userId?: string;
   from?: string;
   to?: string;
-  appVersion?: string;
-  environment?: string;
-  devicePlatform?: string;
-  deviceModel?: string;
-  deviceTier?: string;
-  osVersion?: string;
+  appVersion?: string | string[];
+  environment?: string | string[];
+  devicePlatform?: string | string[];
+  deviceModel?: string | string[];
+  deviceTier?: string | string[];
+  osVersion?: string | string[];
   nativeAvailable?: boolean;
-  nativePlatform?: string;
-  route?: string;
-  status?: string;
-  name?: string;
-  signalType?: string;
-  problemType?: string;
+  nativePlatform?: string | string[];
+  route?: string | string[];
+  status?: string | string[];
+  name?: string | string[];
+  signalType?: string | string[];
+  problemType?: string | string[];
   limit?: number;
   offset?: number;
 }

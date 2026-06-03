@@ -4,7 +4,6 @@ import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '.
 import { OverviewMetrics } from '../../features/overview/overview-metrics';
 import { SessionCard } from '../../features/session/session-summary-card';
 import { ServiceStatusStrip } from '../../features/overview/service-status-strip';
-import { ScopeBar } from '../../features/scope/scope-bar';
 import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
 import { useHealthQuery, usePerformanceQuery, useSessionsQuery } from '../../shared/datasource/queries';
 import { useLiveState } from '../../app/live-context';
@@ -23,16 +22,12 @@ export function OverviewRoute() {
 
   return (
     <div
-      className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-rows-[auto_auto_minmax(0,1fr)] xl:overflow-hidden ${
+      className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-rows-[auto_minmax(0,1fr)] xl:overflow-hidden ${
         rightPanel.collapsed ? 'xl:grid-cols-[minmax(760px,1fr)_40px]' : 'xl:grid-cols-[minmax(760px,1fr)_380px]'
       }`}
     >
       <div className="xl:col-span-2">
         <ServiceStatusStrip health={healthQuery.data} live={live} />
-      </div>
-
-      <div className="xl:col-span-2">
-        <ScopeBar />
       </div>
 
       <section className="grid min-h-[560px] xl:min-h-0">

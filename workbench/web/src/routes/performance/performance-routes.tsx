@@ -1,9 +1,11 @@
 import { Activity, AlertTriangle, Gauge, Globe2, Rocket } from 'lucide-react';
 import { PerformanceDetailPage } from '../../features/performance/performance-detail-page';
+import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
 import { usePerformanceQuery } from '../../shared/datasource/queries';
 
 function usePerformancePageQuery() {
-  return usePerformanceQuery({ limit: 200 });
+  const { filters } = useScopeFilters();
+  return usePerformanceQuery({ ...scopeToSessionFilters(filters), limit: 200 });
 }
 
 export function StartupRoute() {

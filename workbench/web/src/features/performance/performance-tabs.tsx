@@ -23,6 +23,7 @@ export function PerformanceTabs() {
             <Link
               key={to}
               to={to}
+              search
               className={cn(
                 'inline-flex h-8 items-center justify-center gap-1.5 rounded px-3 text-sm font-medium text-zinc-600 transition-colors',
                 active && 'bg-zinc-950 text-white [&_*]:text-white',

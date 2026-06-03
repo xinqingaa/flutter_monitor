@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Select } from '../../components/ui/select';
 import { EmptyState } from '../../components/common/empty-state';
+import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
 import { EventKindBadge } from '../../features/timeline/status-badge';
 import { useRecentQuery } from '../../shared/datasource/queries';
 import type { MonitorEvent } from '../../shared/datasource/types';
@@ -14,13 +15,20 @@ const DEFAULT_PAGE_SIZE: PageSize = 50;
 const PAGE_SIZES: PageSize[] = [30, 50, 100];
 
 export function EventsRoute() {
+  const { filters: scopeFilters } = useScopeFilters();
+  const queryFilters = useMemo(() => scopeToSessionFilters(scopeFilters), [scopeFilters]);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
   const [loadedEvents, setLoadedEvents] = useState<MonitorEvent[]>([]);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const recentQuery = useRecentQuery(pageSize, offset);
+  const recentQuery = useRecentQuery(pageSize, offset, queryFilters);
   const pageEvents = useMemo(() => recentQuery.data?.events ?? [], [recentQuery.data?.events]);
   const events = loadedEvents.length > 0 ? loadedEvents : pageEvents;
+
+  useEffect(() => {
+    setOffset(0);
+    setLoadedEvents([]);
+  }, [queryFilters]);
 
   useEffect(() => {
     if (!recentQuery.data) return;
@@ -59,7 +67,7 @@ export function EventsRoute() {
         <CardHeader className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <CardTitle>Event 列表</CardTitle>
-            <CardDescription>偏开发态的原始事件入口；常规排查优先从 Session Detail 进入。</CardDescription>
+            <CardDescription>使用顶部全局范围筛选原始事件；常规排查优先从 Session Detail 进入。</CardDescription>
           </div>
           <PageSizeSelect value={pageSize} onChange={changePageSize} />
         </CardHeader>

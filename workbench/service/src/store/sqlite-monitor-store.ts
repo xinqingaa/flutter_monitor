@@ -792,8 +792,15 @@ function addEqualityFilter(
   clauses: string[],
   params: SqlParam[],
   columnName: string,
-  value: string | undefined,
+  value: string | string[] | undefined,
 ): void {
+  if (Array.isArray(value)) {
+    const values = value.filter((item) => item.length > 0);
+    if (values.length === 0) return;
+    clauses.push(`${columnName} in (${values.map(() => '?').join(', ')})`);
+    params.push(...values);
+    return;
+  }
   if (!value) return;
   clauses.push(`${columnName} = ?`);
   params.push(value);

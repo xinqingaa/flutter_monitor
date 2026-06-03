@@ -16,7 +16,7 @@ export function SessionFilterForm({
   onChange: (filters: SessionFilters) => void;
   onClear: () => void;
 }) {
-  const hasFilters = Boolean(filters.from || filters.to || filters.status || filters.problemType);
+  const hasFilters = Boolean(filters.from || filters.to || stringFilterValue(filters.status) || stringFilterValue(filters.problemType));
 
   function patch(patchFilters: SessionFilters) {
     onChange(cleanFilters({ ...filters, ...patchFilters }));
@@ -29,14 +29,14 @@ export function SessionFilterForm({
       <Select
         ariaLabel="会话状态"
         placeholder="全部状态"
-        value={filters.status}
+        value={stringFilterValue(filters.status)}
         onChange={(status) => patch({ status })}
         options={dimensionOptions(dimensions?.statuses)}
       />
       <Select
         ariaLabel="问题类型"
         placeholder="全部问题"
-        value={filters.problemType}
+        value={stringFilterValue(filters.problemType)}
         onChange={(problemType) => patch({ problemType })}
         options={problemOptions()}
       />
@@ -67,6 +67,13 @@ function DateTimeBox({ ariaLabel, value, onChange }: { ariaLabel: string; value?
 
 function cleanFilters<T extends Record<string, unknown>>(filters: T): T {
   return Object.fromEntries(
-    Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
+    Object.entries(filters).filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== undefined && value !== '';
+    }),
   ) as T;
+}
+
+function stringFilterValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

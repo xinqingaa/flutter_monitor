@@ -102,7 +102,13 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
 function toParams(values: object): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined && value !== '') params.set(key, String(value));
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item !== undefined && item !== '') params.append(key, String(item));
+      }
+    } else if (value !== undefined && value !== '') {
+      params.set(key, String(value));
+    }
   }
   return params.toString();
 }

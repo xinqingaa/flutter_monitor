@@ -3,6 +3,7 @@ import { Braces, ListFilter, type LucideIcon, Pause, Play, RefreshCw } from 'luc
 import { useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { ScopeBar } from '../features/scope/scope-bar';
 import { useLiveInvalidation } from '../shared/datasource/queries';
 import { LiveContext } from './live-context';
 
@@ -14,10 +15,10 @@ export function WorkbenchShell() {
   useLiveInvalidation(live);
 
   return (
-    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] bg-zinc-100 text-zinc-950">
+    <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] bg-zinc-100 text-zinc-950">
       <header className={`flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-white ${performanceRoute ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
         <div className="flex min-w-0 items-center gap-2">
-          <Link to="/" className={`${performanceRoute ? 'h-8 w-8' : 'h-9 w-9'} inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white shadow-sm`}>
+          <Link to="/" search className={`${performanceRoute ? 'h-8 w-8' : 'h-9 w-9'} inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white shadow-sm`}>
             <img src="/logo.png" alt="Flutter Monitor" className={`${performanceRoute ? 'size-6' : 'size-7'} rounded`} />
           </Link>
           {!performanceRoute ? (
@@ -29,7 +30,7 @@ export function WorkbenchShell() {
         </div>
         <div className="flex items-center gap-2">
           <HeaderIconButton to="/sessions" icon={ListFilter} tooltip="会话列表" search />
-          <HeaderIconButton to="/events" icon={Braces} tooltip="事件列表" />
+          <HeaderIconButton to="/events" icon={Braces} tooltip="事件列表" search />
           <HeaderIconButton
             icon={live ? Pause : Play}
             tooltip={live ? '暂停实时更新' : '恢复实时更新'}
@@ -39,6 +40,7 @@ export function WorkbenchShell() {
           <HeaderIconButton icon={RefreshCw} tooltip="刷新数据" onClick={() => void router.invalidate()} />
         </div>
       </header>
+      <ScopeBar />
       <main className="min-h-0 overflow-hidden">
         <LiveContext.Provider value={live}>
           <Outlet />

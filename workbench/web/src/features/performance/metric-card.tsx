@@ -58,7 +58,7 @@ export function MetricCard({
   if (!to) return body;
 
   return (
-    <Link to={to} className="block min-w-0 transition-transform hover:-translate-y-0.5">
+    <Link to={to} search className="block min-w-0 transition-transform hover:-translate-y-0.5">
       {body}
     </Link>
   );

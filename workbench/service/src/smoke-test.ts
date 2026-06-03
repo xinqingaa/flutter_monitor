@@ -31,6 +31,9 @@ try {
     assert.equal(data.count, 1);
     assert.equal(data.events[0].eventId, 'evt_smoke_http');
   });
+  await assertJson('/api/monitor/v1/recent?limit=10&appKey=missing_app&appKey=smoke_app', (data) => {
+    assert.equal(data.count, 2);
+  });
   await assertJson('/api/monitor/v1/dimensions', (data) => {
     assert.equal(data.apps[0].appKey, 'smoke_app');
     assert.equal(data.environments.some((item: any) => item.value === 'dev'), true);
@@ -41,6 +44,10 @@ try {
     assert.equal(data.userIdAvailable, true);
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
     assert.equal(data.sessions[0].failedHttpCount, 1);
+  });
+  await assertJson('/api/monitor/v1/sessions?environment=missing,dev&devicePlatform=ios,android', (data) => {
+    assert.equal(data.count, 1);
+    assert.equal(data.sessions[0].sessionId, 'ses_smoke');
   });
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
     assert.equal(data.count, 2);
