@@ -221,20 +221,19 @@ Native 增强来源：
 
 - route push 创建或更新当前 route context。
 - `trace page.visit` 表达一次页面实例的生命周期，`span page.load` 表达页面加载阶段。
-- 页面性能采集应额外维护页面活跃窗口：同一时刻只有一个当前活跃窗口，但同一页面实例可能被覆盖后再次恢复，因此可能拥有多段活跃窗口。
-- 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。基础 SDK 默认把页面活跃窗口帧摘要和进入/退出 RSS 合并到 `page.visit` trace end；诊断模式如需输出独立页面 `memory.sample` 或 `ui.frame.window`，还应携带当前 `page.active_window_id`。
-- route pop/replace/page stay 应结束页面实例；route push 会结束旧页面活跃窗口并开启新页面活跃窗口。
-- paused/hidden 不结束页面实例，但应闭合当前页面活跃窗口并尽力 flush 页面级性能窗口；detached、SDK dispose 或 app exiting flush 应尽力结束活跃页面实例，并通过 payload 标明结束原因。
+- 页面性能采集应围绕页面实例维护可见阶段：同一时刻只有一个当前可见页面，但同一页面实例可能被覆盖后再次恢复，因此可能拥有多段可见阶段。
+- 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。基础 SDK 把页面可见阶段累计到的帧摘要和进入/退出 RSS 写入 `page.visit` trace end。
+- route pop/replace/page stay 应结束页面实例；route push 会结束旧页面的当前可见阶段并开启新页面实例。
+- paused/hidden 不结束页面实例，但应闭合当前页面可见阶段并尽力 flush 页面级性能聚合；detached、SDK dispose 或 app exiting flush 应尽力结束活跃页面实例，并通过 payload 标明结束原因。
 
-### 页面实例与活跃窗口编排
+### 页面实例与可见阶段编排
 
-页面链路使用三层标识：
+页面链路使用两类稳定标识：
 
 - `context.route.name`：route 类型，用于查询和聚合，例如 `/detail`。
 - `page.instance_id`：一次 route push 产生的页面实例，用于还原一次打开过程。SDK 推荐使用 route name 加单调时间或 ID，例如 `/detail_1780364621916721`。
-- `page.active_window_id`：页面实例处于当前可见状态的一段活跃窗口，用于页面级内存和帧表现归因。
 
-`page.instance_id` 不应由 Workbench 或服务端补写；它是 SDK 采集事实的一部分。SDK 内部如果已经生成 `page.instance_id`，页面 trace、首帧、停留、页面级内存和帧窗口都应优先围绕该实例 ID 关联。route name 可以作为查找当前栈顶页面的辅助索引，但不应作为同 route 多实例场景下的唯一事实主键。
+`page.instance_id` 不应由 Workbench 或服务端补写；它是 SDK 采集事实的一部分。SDK 内部如果已经生成 `page.instance_id`，页面 trace、首帧、停留、页面级内存和帧聚合都应优先围绕该实例 ID 关联。route name 可以作为查找当前栈顶页面的辅助索引，但不应作为同 route 多实例场景下的唯一事实主键。
 
 以 `A -> B(id=1) -> B(id=2) -> C -> A` 为例：
 
@@ -245,26 +244,26 @@ route 实例:
   B2  = /b_300
   C1  = /c_400
 
-活跃窗口:
-  A1.window1: A 首次可见，直到 B1 push
-  B1.window1: B1 可见，直到 B2 push
-  B2.window1: B2 可见，直到 C push
-  C1.window1: C 可见，直到 C/B2/B1 pop
-  A1.window2: A1 恢复可见
+可见阶段:
+  A1: A 首次可见，直到 B1 push
+  B1: B1 可见，直到 B2 push
+  B2: B2 可见，直到 C push
+  C1: C 可见，直到 C/B2/B1 pop
+  A1: A1 恢复可见
 ```
 
-回到 A 时不应创建新的 A route 实例；它仍然是 `A1`。但恢复后的可见时间应开启新的 `page.active_window_id`，这样页面级 FPS、慢帧、内存采样不会跨过被 B/C 覆盖的时间段。
+回到 A 时不应创建新的 A route 实例；它仍然是 `A1`。恢复阶段通过 `page.active_phase = page.resume` 表达，页面级 FPS、慢帧和内存证据仍写回同一个页面实例的 `page.visit`。
 
 推荐的内部流转：
 
-| 路由事件 | 页面实例动作 | 活跃窗口动作 | 采集动作 |
+| 路由事件 | 页面实例动作 | 可见阶段动作 | 采集动作 |
 |---|---|---|---|
-| App 首个页面进入 / route push | 创建 `page.instance_id`，启动 `page.visit` | 开启 `page.active_window_id`，phase=`page.enter` | 页面内存采样；页面帧窗口开始聚合 |
-| 新 route push | 新建新页面实例 | 旧窗口以 `page.covered` 闭合，新窗口以 `page.enter` 开启 | 旧页面帧窗口 flush；旧/新页面可各采一次内存 |
-| route pop | 结束被 pop 页面实例，生成 `page.stay` | 被 pop 页面窗口以 `page.exit` 闭合；上一个页面以 `page.resume` 开启新窗口 | 被 pop 页面帧窗口 flush；被 pop/恢复页面可采内存 |
-| lifecycle hidden/paused | 页面实例保留 | 当前窗口以 `lifecycle.background` 闭合 | App/page 帧窗口 flush；当前页面内存采样 |
-| resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` 开启新窗口 | App/page 帧窗口重新开始；可采恢复点内存 |
-| detached/dispose | 尽力结束活跃页面实例 | 当前窗口以 `app.dispose` 闭合 | flush 和最终采样尽力执行，不阻塞退出 |
+| App 首个页面进入 / route push | 创建 `page.instance_id`，启动 `page.visit` | `page.active_phase = page.enter` | 记录进入 RSS；页面帧聚合开始 |
+| 新 route push | 新建新页面实例 | 旧页面以 `page.covered` 闭合，新页面以 `page.enter` 开启 | 旧页面帧聚合 flush；新页面记录进入 RSS |
+| route pop | 结束被 pop 页面实例，生成 `page.stay` | 被 pop 页面以 `page.exit` 闭合；上一个页面以 `page.resume` 恢复 | 被 pop 页面帧聚合 flush；被 pop 页面记录退出 RSS |
+| lifecycle hidden/paused | 页面实例保留 | 当前页面以 `lifecycle.background` 闭合 | App/page 帧聚合 flush；lifecycle 低频内存采样 |
+| resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` 恢复 | App/page 帧聚合重新开始；lifecycle 恢复检查 |
+| detached/dispose | 尽力结束活跃页面实例 | 当前页面以 `app.dispose` 闭合 | flush 和最终采样尽力执行，不阻塞退出 |
 
 第一阶段不要求完整支持所有 Navigator 复杂操作。`didPush`、`didPop`、`didReplace` 和 SDK dispose 是基础路径；`popUntil`、嵌套路由、tab router、匿名 route 和第三方 router 集成应通过后续适配补充，但不能改变上述 route / page instance / active window 三层语义。
 
@@ -277,7 +276,6 @@ route 实例:
 - `context.module.name`
 - `context.module.scene`
 - `page.instance_id`
-- `page.active_window_id`
 - `page.active_phase`
 - `page.from`
 - `page.to`
@@ -483,7 +481,6 @@ route 实例:
 ### 生成事件
 
 - `metric ui.jank.sequence`
-- `metric ui.frame.window`（诊断/手动 API；基础 SDK 默认把 App / 页面帧表现摘要合并到启动或页面主 trace end）
 - 可选 breadcrumb：`ui.jank.sequence`
 - 可选 span：关键 trace 内的 `ui.render_block`
 
@@ -492,8 +489,7 @@ route 实例:
 - 卡顿应关联当前 `sessionId`、`context.route.*` / `context.module.*`、active page trace 或 action trace。
 - 卡顿事件应携带裁剪后的相关 breadcrumbs，优先选择同 trace / 同 route 足迹。
 - 卡顿前后的 HTTP、memory、native signals 可用于定位原因。
-- 默认链路不再输出独立 `ui.frame.window` 事件；启动窗口帧摘要合并到 `app.cold_start` / `app.hot_start` end，页面窗口帧摘要合并到 `page.visit` end。
-- 诊断模式或手动 API 输出的 `ui.frame.window` 应关联当前 session；页面窗口还应携带 `traceId`、`page.instance_id` 和 `page.active_window_id`。它是性能摘要，不应被 Workbench 或服务端默认等同为卡顿问题。
+- 启动帧摘要写入 `app.cold_start` / `app.hot_start` end，页面帧摘要写入 `page.visit` end。
 
 ### 字段映射
 
@@ -508,15 +504,11 @@ route 实例:
 - `frame.p50_ms`
 - `frame.p90_ms`
 - `frame.p99_ms`
-- `frame.window_id`
-- `frame.window_type`
-- `frame.window_phase`
 - `frame.sample_count`
 - `frame.slow_count`
 - `frame.dropped_count`
 - `frame.refresh_rate`
 - `page.instance_id`
-- `page.active_window_id`
 - `resource.device.deviceTier`
 
 ### 限制与降级
@@ -526,17 +518,17 @@ route 实例:
 - 高频 frame 数据不能全量上报，应聚合为序列或窗口统计。
 - 阈值应考虑刷新率和设备等级。
 
-### App 与页面帧窗口策略
+### App 与页面帧聚合策略
 
-帧窗口采集用于补充正常情况下的 App 和页面帧表现，不替代 `ui.jank.sequence`。推荐通过统一 frame timing 入口同时驱动 jank detector 和 frame window collector，避免多个模块各自注册 `addTimingsCallback` 后产生口径差异。基础 SDK 默认只保留窗口聚合状态，并在主链路闭合时把摘要写入对应 trace end。
+帧聚合用于补充正常情况下的 App 和页面帧表现，不替代 `ui.jank.sequence`。推荐通过统一 frame timing 入口同时驱动 jank detector 和 frame collector，避免多个模块各自注册 `addTimingsCallback` 后产生口径差异。基础 SDK 只保留内存聚合状态，并在主链路闭合时把摘要写入对应 trace end。
 
 默认策略应保持低事件量：
 
 - App 前台窗口在 App 进入前台时开始，在 background、detached 或 SDK dispose 时 flush。
-- 页面窗口在 `page.active_window_id` 开启时开始，在 `page.covered`、`page.exit`、`lifecycle.background` 或 `app.dispose` 时 flush。
+- 页面帧聚合在页面进入或恢复可见时开始，在 `page.covered`、`page.exit`、`lifecycle.background` 或 `app.dispose` 时 flush。
 - 启动窗口在首帧闭合时把摘要写入 `app.cold_start` / `app.hot_start` trace end；页面窗口在页面实例闭合时把已累计摘要写入 `page.visit` trace end。
-- 默认不按帧上报，也不默认每 10s/30s 周期 flush 页面窗口；长停留页面周期 flush 可作为 diagnostic 配置。
-- 默认不为 App/page 窗口输出独立 `ui.frame.window` envelope；该事件只作为诊断模式或手动 API 能力保留。
+- 不按帧上报，也不默认每 10s/30s 周期 flush 页面窗口；长停留页面切片属于后续扩展。
+- 不为 App/page 窗口输出独立 envelope。
 - callback 内只做低成本聚合，例如 count、sum、max、slow count、dropped count 和有界样本保留；不得构建 envelope、执行 IO 或保存无界逐帧数据。
 
 窗口指标建议使用同一口径：
@@ -575,7 +567,7 @@ Native 层：
 
 ### 生成事件
 
-- `metric memory.sample`（session/lifecycle/jank/native 等低频诊断采样；页面切换默认不再额外输出）
+- `metric memory.sample`（session/lifecycle/jank/native 等低频采样）
 - `metric memory.growth`
 - `metric memory.pressure`
 - `metric memory.leak.suspect`
@@ -585,7 +577,7 @@ Native 层：
 ### 链路关联
 
 - memory sample 应关联当前 `sessionId` 和 `context.route.*` / `context.module.*`。
-- 页面切换默认只读取进入/退出 RSS 并合并到 `page.visit` trace end，不额外输出页面 `memory.sample` envelope。诊断模式如需输出页面采样点，应关联当前 `traceId`、`page.instance_id` 和 `page.active_window_id`；页面进入、覆盖、出栈、恢复和后台切换都应使用固定 `memory.sample_phase` 表达触发点。
+- 页面切换读取进入/退出 RSS 并写入 `page.visit` trace end，不额外输出页面 `memory.sample` envelope。session、lifecycle、jank 和 native 低频采样使用固定 `memory.sample_phase` 表达触发点。
 - 页面退出后持续增长可关联上一页面活跃窗口，但缺少足够证据时不得生成确定性泄漏结论。
 - memory pressure 应进入统一 metric 或 error 链路，并可被保存到 recent breadcrumbs 快照中帮助解释后续卡顿、错误或 OOM。
 - native memory 通过 bridge 进入同一 pipeline。
@@ -609,9 +601,7 @@ Native 层：
 - `memory.pressure_level`
 - `memory.sample_source`
 - `memory.sample_phase`
-- `memory.sample_delay_ms`
 - `page.instance_id`
-- `page.active_window_id`
 
 Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pressure_level`，并通过 `memory.sample_source = native`、`name = native.memory.sample` / `native.memory.pressure` 或 `context.native.*` 表明来源。采集器不应新增 `native.memory.*` 平行字段表达同一个数值。
 
@@ -848,11 +838,7 @@ FlutterMonitorSDK.setContext(
 );
 ```
 
-历史 API 归位：
-
-- `setUserId`、`setUserInfo` 应归并到统一上下文入口。
-- `setCustomData` 不应作为可索引上下文来源；如保留，应明确映射到标准 context 或 payload-only 详情。
-- `userProperties`、任意 custom map 不得默认提升为 `attributes` 或服务端索引。
+用户上下文入口应保持统一语义：用户维度进入 `context.user.*`，业务动作详情进入 `payload.properties`，`userProperties` 和任意 custom map 不得默认提升为 `attributes` 或服务端索引。
 
 ### 查询影响
 

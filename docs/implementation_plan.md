@@ -21,7 +21,7 @@ flowchart TD
 
   P0 -->|"先确定包边界"| P1
   P1 -->|"模型与字段契约稳定后铺管线"| P2
-  P2 -->|"管线可用后迁移信号"| P3
+  P2 -->|"管线可用后接入信号"| P3
   P3 -->|"基础信号稳定后增强"| P4
   P4 -->|"统一 envelope 可被本地消费"| P5
   P4 -->|"统一 envelope 可被服务端消费"| P6
@@ -29,7 +29,7 @@ flowchart TD
   P6 -->|"协议与导出能力复用"| P7
 ```
 
-阶段依赖的核心是先稳定模型和 pipeline，再迁移现有信号，最后扩展 DevTools、服务端和工具入口。
+阶段依赖的核心是先稳定模型和 pipeline，再接入现有信号，最后扩展 DevTools、服务端和工具入口。
 
 ## Phase 0：Workspace 与包边界
 
@@ -101,7 +101,7 @@ flowchart TD
 
 本阶段不要求：
 
-- 迁移所有现有 collector；
+- 接入所有现有 collector；
 - 完整实现 HTTP 重试、离线缓存和 remote config；
 - 完整实现 DevTools 面板；
 - 实现 native 深度能力；
@@ -133,10 +133,10 @@ flowchart TD
 - compact log 的摘要规则沉淀在 core，作为 `EventEnvelope` 的派生视图。
 - compact log 不得创建第二套事件模型、第二套服务端协议或第二套字段事实源。
 - 业务主动埋点收敛为 `FlutterMonitorSDK.track(...)`，用于记录关键业务动作；普通业务接入不推荐直接使用 `startTrace`、`startSpan`、`addBreadcrumb`、`FieldPaths` 或自定义 `attributes` / `payload`。
-- 用户维度排查依赖统一上下文语义。`setUserId`、`setUserInfo`、`setCustomData` 等历史 API 后续应归并或废弃到 `setContext(...)` 一类的通用上下文入口。
+- 用户维度排查依赖统一上下文语义。用户、用户类型、用户标签和 cohort 后续应由 `setContext(...)` 一类的通用上下文入口承载。
 - `context.module.*` 只作为可选增强上下文，不作为基础接入前置条件；不得要求业务方在每个代码模块或页面频繁手动设置 module。
 
-建议迁移顺序：
+建议接入顺序：
 
 1. error；
 2. behavior / click / PV；
@@ -239,7 +239,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - `track` 由 SDK 内部映射 `business.action`、`business.result`、`ui.target`、`payload.properties` 等 canonical fields，并自动进入 breadcrumb store。
 - `track.properties` 只作为事件详情，默认不作为主要聚合索引。
 - 普通业务接入需要用户维度排查时，应通过统一上下文入口写入 `context.user.userId`；没有 userId 时不得阻塞基础采集、页面/错误/性能查询和 session timeline。
-- `setUserId`、`setUserInfo`、`setCustomData` 等历史 API 不应继续扩散到新文档和 example；目标 API 应收敛到 `setContext(...)` 语义。
+- 新文档和 example 应使用 `setContext(...)` 语义表达用户上下文，不扩散多套用户或自定义上下文入口。
 - 完整 JSON 仍符合 `docs/event_model.md`。
 - core 中的摘要规则可被 SDK、Workbench、未来 CLI/DevTools 复用。
 - compact 摘要不形成第二套事件模型或服务端协议。
@@ -288,7 +288,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - `metric memory.leak.suspect` 只能表达疑似线索，必须在 payload 中说明依据，例如采样窗口、页面切换后增长、pressure 信号或 native 补充信息；不得在缺少证据时宣称确定泄漏。
 - Flutter/Dart 层拿不到的内存字段必须省略或标记 `context.missingReason = platform_limited`，不得伪造 RSS、native memory 或 heap capacity。
 - memory sample 默认低频采集，普通 sample 不应在默认控制台模式刷屏；pressure、growth、suspect leak 可进入 compact 摘要或高价值 breadcrumb。
-- 默认 page activity 不输出 `memory.sample`，只在 `page.visit` end 写入 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb`；如果后续开启 diagnostic 页面采样，必须明确配置并标记 `page.instance_id` / `page.active_window_id`。
+- page activity 不输出 `memory.sample`，只在 `page.visit` end 写入 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb`；同 route 多实例通过 `page.instance_id` 区分。
 - `breadcrumb app.lifecycle` 继续表达状态变化，并更新 `context.lifecycle.state`、`context.lifecycle.previousState` 和 `context.lifecycle.isForeground`。
 - `metric app.foreground_duration` 和 `metric app.background_duration` 使用 envelope `durationMs` 表达前台/后台持续时间，不新增重复 duration 字段。
 - `sdk.lifecycle.flush` 必须使用 `app.exit_flush.success` 表达退出前 flush 结果；成功 flush 可保持 normal priority，失败 flush 应提升为高价值 SDK self-monitoring，但不得污染普通业务 payload。

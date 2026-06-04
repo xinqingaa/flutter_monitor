@@ -48,32 +48,6 @@ class MemoryCollector {
     );
   }
 
-  Future<void> recordPageActivitySample({
-    required PageActivitySnapshot activity,
-    DateTime? timestamp,
-  }) async {
-    if (!_config.enabled) return;
-    final occurredAt = timestamp ?? DateTime.now();
-    final sample = await _captureSample(occurredAt);
-    if (sample == null) return;
-    _lastSampleAt[activity.activePhase] = occurredAt;
-    _baseline ??= sample;
-    _lastSample = sample;
-    final delayMs = occurredAt.difference(activity.timestamp).inMilliseconds;
-    _reporter.recordMemorySample(
-      rssMb: sample.rssMb,
-      source: sample.source,
-      trigger: activity.activePhase,
-      samplePhase: activity.activePhase,
-      sampleDelayMs: delayMs < 0 ? 0 : delayMs,
-      routeName: activity.routeName,
-      traceId: activity.traceId,
-      pageInstanceId: activity.pageInstanceId,
-      pageActiveWindowId: activity.activeWindowId,
-      timestamp: occurredAt,
-    );
-  }
-
   Future<void> recordGrowth({
     required String trigger,
     DateTime? timestamp,

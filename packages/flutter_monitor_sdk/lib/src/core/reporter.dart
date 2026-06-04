@@ -39,7 +39,6 @@ class Reporter {
   final Map<String, _PageTraceRecord> _pageTracesByInstanceId =
       <String, _PageTraceRecord>{};
   final List<String> _pageInstanceStack = <String>[];
-  final Map<String, int> _activeWindowCounters = <String, int>{};
   PageActivitySnapshot? _currentPageActivity;
   _StartupPerfRecord? _startupPerfRecord;
 
@@ -705,71 +704,6 @@ class Reporter {
     return result;
   }
 
-  PipelineResult recordFrameWindow({
-    required String windowId,
-    required String windowType,
-    required String windowPhase,
-    required int sampleCount,
-    required int slowCount,
-    required int droppedCount,
-    required num refreshRate,
-    required num frameMaxMs,
-    required num frameAvgMs,
-    required num frameBudgetMs,
-    num? frameFps,
-    num? frameStability,
-    num? frameP50Ms,
-    num? frameP90Ms,
-    num? frameP99Ms,
-    String? routeName,
-    String? traceId,
-    String? pageInstanceId,
-    String? pageActiveWindowId,
-    DateTime? startTime,
-    DateTime? endTime,
-  }) {
-    final finishedAt = endTime ?? DateTime.now();
-    final startedAt = startTime ?? finishedAt;
-    final duration = finishedAt.difference(startedAt);
-    return _pipeline.capture(
-      RawSignal(
-        source: SignalSources.sdkJank,
-        name: EventNames.uiFrameWindow,
-        signalType: SignalType.metric,
-        timestamp: finishedAt,
-        startTime: startedAt,
-        endTime: finishedAt,
-        durationMs: duration.inMilliseconds,
-        level: EventLevel.debug,
-        status: EventStatus.ok,
-        priority: EventPriority.low,
-        includeBreadcrumbs: false,
-        traceId: traceId,
-        contextRouteName: routeName,
-        attributes: <String, Object?>{
-          FieldPaths.frameWindowId: windowId,
-          FieldPaths.frameWindowType: windowType,
-          FieldPaths.frameWindowPhase: windowPhase,
-          FieldPaths.frameSampleCount: sampleCount,
-          FieldPaths.frameSlowCount: slowCount,
-          FieldPaths.frameDroppedCount: droppedCount,
-          FieldPaths.frameRefreshRate: refreshRate,
-          FieldPaths.frameMaxMs: frameMaxMs,
-          FieldPaths.frameAvgMs: frameAvgMs,
-          FieldPaths.frameBudgetMs: frameBudgetMs,
-          if (frameFps != null) FieldPaths.frameFps: frameFps,
-          if (frameStability != null) FieldPaths.frameStability: frameStability,
-          if (frameP50Ms != null) FieldPaths.frameP50Ms: frameP50Ms,
-          if (frameP90Ms != null) FieldPaths.frameP90Ms: frameP90Ms,
-          if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
-          if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
-          if (pageActiveWindowId != null)
-            FieldPaths.pageActiveWindowId: pageActiveWindowId,
-        },
-      ),
-    );
-  }
-
   PipelineResult recordFlutterError(
     FlutterErrorDetails details, {
     DateTime? timestamp,
@@ -810,11 +744,9 @@ class Reporter {
     MemorySampleSource source = MemorySampleSource.dart,
     String trigger = TriggerValues.manual,
     String? samplePhase,
-    num? sampleDelayMs,
     String? routeName,
     String? traceId,
     String? pageInstanceId,
-    String? pageActiveWindowId,
     DateTime? timestamp,
   }) {
     return _pipeline.capture(
@@ -838,11 +770,7 @@ class Reporter {
           if (externalMb != null) FieldPaths.memoryExternalMb: externalMb,
           if (nativeUsedMb != null) FieldPaths.memoryNativeUsedMb: nativeUsedMb,
           if (samplePhase != null) FieldPaths.memorySamplePhase: samplePhase,
-          if (sampleDelayMs != null)
-            FieldPaths.memorySampleDelayMs: sampleDelayMs,
           if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
-          if (pageActiveWindowId != null)
-            FieldPaths.pageActiveWindowId: pageActiveWindowId,
         },
         payload: <String, Object?>{PayloadKeys.trigger: trigger},
       ),
@@ -1500,15 +1428,11 @@ class Reporter {
   }) {
     final record = _pageTracesByInstanceId[pageInstanceId];
     if (record == null) return;
-    final count = (_activeWindowCounters[pageInstanceId] ?? 0) + 1;
-    _activeWindowCounters[pageInstanceId] = count;
     final openedAt = timestamp ?? DateTime.now();
-    final windowId = '${pageInstanceId}_window_$count';
     final snapshot = PageActivitySnapshot(
       routeName: record.routeName,
       traceId: record.traceId,
       pageInstanceId: record.pageInstanceId,
-      activeWindowId: windowId,
       activePhase: phase,
       timestamp: openedAt,
     );
@@ -1669,7 +1593,6 @@ class PageActivitySnapshot {
     required this.routeName,
     required this.traceId,
     required this.pageInstanceId,
-    required this.activeWindowId,
     required this.activePhase,
     required this.timestamp,
   });
@@ -1677,7 +1600,6 @@ class PageActivitySnapshot {
   final String routeName;
   final String traceId;
   final String pageInstanceId;
-  final String activeWindowId;
   final String activePhase;
   final DateTime timestamp;
 
@@ -1686,7 +1608,6 @@ class PageActivitySnapshot {
       routeName: routeName,
       traceId: traceId,
       pageInstanceId: pageInstanceId,
-      activeWindowId: activeWindowId,
       activePhase: activePhase ?? this.activePhase,
       timestamp: timestamp ?? this.timestamp,
     );

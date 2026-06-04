@@ -6,6 +6,9 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart'
     show PageActivitySnapshot;
 
+const appFrameWindowType = 'app';
+const pageFrameWindowType = 'page';
+
 class FrameWindowCollector {
   FrameWindowCollector({
     this.onAppWindowFinished,
@@ -29,26 +32,23 @@ class FrameWindowCollector {
   double get frameBudgetMs => 1000 / refreshRate;
 
   void startAppWindow({DateTime? timestamp}) {
-    if (_windows.containsKey(FrameWindowTypes.app)) return;
-    _windows[FrameWindowTypes.app] = _FrameWindow(
-      id: '${FrameWindowTypes.app}_${(timestamp ?? DateTime.now()).microsecondsSinceEpoch}',
-      type: FrameWindowTypes.app,
+    if (_windows.containsKey(appFrameWindowType)) return;
+    _windows[appFrameWindowType] = _FrameWindow(
+      type: appFrameWindowType,
       startedAt: timestamp ?? DateTime.now(),
       refreshRate: refreshRate,
     );
   }
 
   void startPageWindow(PageActivitySnapshot activity) {
-    if (_windows.containsKey(FrameWindowTypes.page)) return;
-    _windows[FrameWindowTypes.page] = _FrameWindow(
-      id: activity.activeWindowId,
-      type: FrameWindowTypes.page,
+    if (_windows.containsKey(pageFrameWindowType)) return;
+    _windows[pageFrameWindowType] = _FrameWindow(
+      type: pageFrameWindowType,
       startedAt: activity.timestamp,
       refreshRate: refreshRate,
       routeName: activity.routeName,
       traceId: activity.traceId,
       pageInstanceId: activity.pageInstanceId,
-      pageActiveWindowId: activity.activeWindowId,
     );
   }
 
@@ -64,7 +64,7 @@ class FrameWindowCollector {
   }
 
   void finishPageWindow(String phase, {DateTime? timestamp}) {
-    final window = _windows.remove(FrameWindowTypes.page);
+    final window = _windows.remove(pageFrameWindowType);
     if (window == null) return;
     final snapshot = _snapshot(window, phase: phase, timestamp: timestamp);
     if (snapshot != null) onPageWindowFinished?.call(snapshot);
@@ -73,7 +73,7 @@ class FrameWindowCollector {
   void finishAppWindow(String phase, {DateTime? timestamp}) {
     _pendingAppWindowFinish?.complete();
     _pendingAppWindowFinish = null;
-    final window = _windows.remove(FrameWindowTypes.app);
+    final window = _windows.remove(appFrameWindowType);
     if (window == null) return;
     final snapshot = _snapshot(window, phase: phase, timestamp: timestamp);
     if (snapshot != null) onAppWindowFinished?.call(snapshot);
@@ -83,7 +83,7 @@ class FrameWindowCollector {
     String phase, {
     DateTime? timestamp,
   }) {
-    final window = _windows[FrameWindowTypes.app];
+    final window = _windows[appFrameWindowType];
     if (window == null) return Future<void>.value();
     if (window.sampleCount > 0) {
       finishAppWindow(phase, timestamp: timestamp);
@@ -120,7 +120,6 @@ class FrameWindowCollector {
     final endedAt = timestamp ?? DateTime.now();
     final percentiles = window.percentiles();
     return FrameStatsSnapshot(
-      windowId: window.id,
       windowType: window.type,
       windowPhase: phase,
       sampleCount: window.sampleCount,
@@ -138,7 +137,6 @@ class FrameWindowCollector {
       routeName: window.routeName,
       traceId: window.traceId,
       pageInstanceId: window.pageInstanceId,
-      pageActiveWindowId: window.pageActiveWindowId,
       startTime: window.startedAt,
       endTime: endedAt,
     );
@@ -166,7 +164,6 @@ class _PendingAppWindowFinish {
 
 class FrameStatsSnapshot {
   const FrameStatsSnapshot({
-    required this.windowId,
     required this.windowType,
     required this.windowPhase,
     required this.sampleCount,
@@ -184,12 +181,10 @@ class FrameStatsSnapshot {
     this.routeName,
     this.traceId,
     this.pageInstanceId,
-    this.pageActiveWindowId,
     this.startTime,
     this.endTime,
   });
 
-  final String windowId;
   final String windowType;
   final String windowPhase;
   final int sampleCount;
@@ -207,17 +202,11 @@ class FrameStatsSnapshot {
   final String? routeName;
   final String? traceId;
   final String? pageInstanceId;
-  final String? pageActiveWindowId;
   final DateTime? startTime;
   final DateTime? endTime;
 
-  Map<String, Object?> toAttributes({bool includeWindowFields = false}) {
+  Map<String, Object?> toAttributes() {
     return <String, Object?>{
-      if (includeWindowFields) ...<String, Object?>{
-        FieldPaths.frameWindowId: windowId,
-        FieldPaths.frameWindowType: windowType,
-        FieldPaths.frameWindowPhase: windowPhase,
-      },
       FieldPaths.frameSampleCount: sampleCount,
       FieldPaths.frameSlowCount: slowCount,
       FieldPaths.frameDroppedCount: droppedCount,
@@ -231,32 +220,26 @@ class FrameStatsSnapshot {
       if (frameP90Ms != null) FieldPaths.frameP90Ms: frameP90Ms,
       if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
       if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
-      if (pageActiveWindowId != null)
-        FieldPaths.pageActiveWindowId: pageActiveWindowId,
     };
   }
 }
 
 class _FrameWindow {
   _FrameWindow({
-    required this.id,
     required this.type,
     required this.startedAt,
     required this.refreshRate,
     this.routeName,
     this.traceId,
     this.pageInstanceId,
-    this.pageActiveWindowId,
   });
 
-  final String id;
   final String type;
   final DateTime startedAt;
   final double refreshRate;
   final String? routeName;
   final String? traceId;
   final String? pageInstanceId;
-  final String? pageActiveWindowId;
   final List<double> _samples = <double>[];
   var sampleCount = 0;
   var slowCount = 0;

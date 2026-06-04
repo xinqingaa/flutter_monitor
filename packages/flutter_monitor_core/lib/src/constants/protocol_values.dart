@@ -98,11 +98,6 @@ abstract final class PageActivePhases {
   static const appDispose = 'app.dispose';
 }
 
-abstract final class FrameWindowTypes {
-  static const app = 'app';
-  static const page = 'page';
-}
-
 abstract final class TriggerValues {
   static const manual = 'manual';
   static const jankSequence = 'jank.sequence';

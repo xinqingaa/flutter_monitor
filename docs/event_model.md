@@ -57,7 +57,7 @@ Trace/span 可按生命周期流式上报，也可只上报完成态摘要。流
 - `FlutterMonitorSDK.track(...)`：业务主动埋点入口，记录关键业务动作。
 - 未来统一上下文入口，例如 `FlutterMonitorSDK.setContext(...)`：补充 `userId` 等通用排查上下文。
 
-`startTrace`、`startSpan`、`addBreadcrumb`、自定义 `attributes` / `payload` 等能力如保留，应定位为 SDK 内部、高级诊断或调试能力，不作为真实 App 的普通接入示例。历史 API 例如 `setUserId`、`setUserInfo`、`setCustomData` 如继续存在，应逐步归并到统一上下文语义，避免在 public API 中形成多套概念。
+`startTrace`、`startSpan`、`addBreadcrumb`、自定义 `attributes` / `payload` 等能力如保留，应定位为 SDK 内部、高级调试能力，不作为真实 App 的普通接入示例。用户、发布、模块等通用排查上下文由统一上下文入口承载，避免在 public API 中形成多套概念。
 
 ### 隐私默认安全
 
@@ -174,7 +174,7 @@ flowchart TB
 
 本节是项目内部字段的唯一契约。一个语义只能出现在一个规范路径中，不允许通过 `attributes` 复制 `resource` 或 `context` 中已经存在的字段。
 
-本节只定义 canonical field paths。迁移期的历史路径不在正文中枚举，也不作为新文档、新示例和新注册表的设计依据；随着字段契约落地，它们会自然退出目标模型。
+本节只定义 canonical field paths。新文档、新示例、core 注册表和 SDK 输出都应以本节为准。
 
 字段归属规则：
 
@@ -270,7 +270,6 @@ flowchart TB
 | `page.from` | string | queryable | 是 | 页面来源 route |
 | `page.to` | string | queryable | 是 | 页面离开后进入的 route |
 | `page.instance_id` | string | queryable | 是 | 单次页面实例 ID，用于区分同 route 多次进入 |
-| `page.active_window_id` | string | queryable | 是 | 单次页面活跃窗口 ID，用于区分同一页面实例多段前台可见时间 |
 | `page.active_phase` | string | safe | 是 | 页面活跃窗口阶段，例如 page.enter、page.covered、page.exit、page.resume、lifecycle.background、app.dispose |
 | `page.load_ms` | duration_ms | safe | 是 | 页面加载耗时，通常等于首次可渲染帧耗时 |
 | `http.method` | string | safe | 是 | GET/POST 等 |
@@ -295,9 +294,6 @@ flowchart TB
 | `frame.p50_ms` | duration_ms | safe | 是 | 帧耗时 P50 |
 | `frame.p90_ms` | duration_ms | safe | 是 | 帧耗时 P90 |
 | `frame.p99_ms` | duration_ms | safe | 是 | 帧耗时 P99 |
-| `frame.window_id` | string | queryable | 是 | 帧聚合窗口 ID；页面窗口应等于或关联 `page.active_window_id` |
-| `frame.window_type` | string | safe | 是 | 帧窗口类型，当前规划为 app/page |
-| `frame.window_phase` | string | safe | 是 | 帧窗口闭合阶段，例如 app.background、page.covered、page.exit |
 | `frame.sample_count` | number | safe | 是 | 窗口内参与统计的帧样本数 |
 | `frame.slow_count` | number | safe | 是 | 窗口内超过帧预算的慢帧数量 |
 | `frame.dropped_count` | number | safe | 是 | 基于帧耗时估算的 dropped frame 数量 |
@@ -317,7 +313,6 @@ flowchart TB
 | `memory.pressure_level` | string | safe | 是 | none/moderate/critical/unknown |
 | `memory.sample_source` | string | safe | 是 | dart/native/system/unknown |
 | `memory.sample_phase` | string | safe | 是 | 内存采样阶段，例如 session.start、page.enter、page.covered、page.exit、page.resume、lifecycle.background |
-| `memory.sample_delay_ms` | duration_ms | safe | 是 | 采样相对触发点的延迟，用于解释异步或延迟采样 |
 | `app.exit_flush.success` | boolean | safe | 是 | 退出前 flush 是否成功 |
 | `native.signal` | string | safe | 是 | memory/crash/anr/oom/lifecycle |
 | `native.thread` | string | queryable | 否 | native 线程名 |
@@ -339,7 +334,7 @@ flowchart TB
 
 内存事件用于解释页面慢、卡顿、错误、OOM 线索和资源增长趋势。Flutter/Dart 层只能上报实际可获得的字段；拿不到的 RSS、native memory、heap capacity 等字段必须省略，或在上下文中标记 `context.missingReason = platform_limited`，不得伪造。
 
-基础 SDK 的启动和页面性能证据不应再默认拆成额外 `memory.sample` 或 `ui.frame.window` 主时间线事件。启动 RSS 使用 `memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` 合并到 `app.cold_start` / `app.hot_start` trace end；页面 RSS 使用 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` 合并到对应 `page.visit` trace end。独立 `memory.sample` 仍用于 session/lifecycle/jank/native 等低频诊断采样，不作为页面切换默认证据形态。
+基础 SDK 的启动和页面性能证据属于主链路。启动 RSS 使用 `memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` 写入 `app.cold_start` / `app.hot_start` trace end；页面 RSS 使用 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` 写入对应 `page.visit` trace end。`memory.sample` 用于 session/lifecycle/jank/native 等低频采样，不作为页面切换证据形态。
 
 | name | signalType | status | priority 建议 | 必须/条件字段 | 说明 |
 |---|---|---|---|---|---|
@@ -397,19 +392,18 @@ flowchart TB
 
 `memory.leak.suspect` 不是确定性泄漏结论。SDK、example、DevTools、Workbench 和服务端展示都只能使用“疑似泄漏”或“泄漏线索”表达；只有业务或外部工具提供额外证据时，才能在 payload 中附带该证据来源。
 
-### 页面实例与活跃窗口
+### 页面实例与可见阶段
 
-页面性能采集需要区分 route 名称、页面实例和页面活跃窗口，三者不能互相替代：
+页面性能采集需要区分 route 名称和页面实例，二者不能互相替代：
 
 | 概念 | 字段 | 语义 | 主要用途 |
 |---|---|---|---|
 | route 名称 | `context.route.name` | 页面类型或路由标识，例如 `/detail` | 查询、聚合、展示 |
 | 页面实例 | `page.instance_id` | 一次 route push 产生的页面实例，推荐由 route 名称和单调时间/ID 组成 | 区分同 route 多次进入，关联 page trace/load/stay |
-| 页面活跃窗口 | `page.active_window_id` | 某个页面实例处于前台可见、可归因性能的一段时间 | 关联页面级内存样本和帧聚合窗口 |
 
-同一时刻只有一个当前页面活跃窗口，但同一个页面实例可以拥有多段活跃窗口。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`；活跃窗口是 `A1.window1`、`B1.window1`、`B2.window1`、`C1.window1`、`A1.window2`。回到 A 时不应伪造成新的 A route 实例，但应开启新的 A 活跃窗口，用于单独统计恢复后这一段的内存和帧表现。
+同一个 route 可以同时或连续产生多个页面实例。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`。回到 A 时不应伪造成新的 A route 实例；它仍然是 `A1`，恢复后的可见阶段通过 `page.active_phase = page.resume` 表达。
 
-页面 trace 仍由 `trace page.visit` 表达页面实例生命周期；`page.active_window_id` 只表达性能采集窗口，不替代 `traceId`、`spanId` 或 `page.instance_id`。基础 SDK 默认把页面活跃窗口的帧摘要和页面进入/退出 RSS 合并到 `page.visit` trace end：route 用于聚合，页面实例用于还原一次打开，活跃窗口用于解释用户实际看到页面这一段时间内的性能。诊断模式或手动 API 如需保留独立 `memory.sample` / `ui.frame.window`，也必须同时携带 `context.route.name`、`page.instance_id` 和 `page.active_window_id`，不得只靠 routeName 归因。
+页面 trace 由 `trace page.visit` 表达页面实例生命周期。基础 SDK 把页面可见期间的帧摘要和页面进入/退出 RSS 写入 `page.visit` trace end：route 用于聚合，`page.instance_id` 用于还原一次打开并区分同 route 多实例。
 
 页面活跃阶段推荐使用固定值：
 
@@ -585,11 +579,7 @@ route、app、device、runtime、HTTP、错误、卡顿、启动等上下文应�
 
 如果 App 不调用统一上下文入口，SDK 仍必须能采集和查询基础链路。Workbench 仍可按时间范围、App 版本、环境、页面、错误、慢请求、卡顿、启动问题、session/trace/event ID 等维度查找数据。只有按用户排查时，才依赖 App 提供 `context.user.userId`。
 
-历史 API 归位：
-
-- `setUserId`、`setUserInfo`：语义上应归并到统一上下文入口。
-- `setCustomData`：不应作为可索引上下文来源；如保留，仅作为迁移期能力，最终应明确映射到标准 context 或 payload-only 详情。
-- `UserInfo.userProperties`、任意 custom map：不得默认提升为 `attributes` 或服务端索引。
+用户上下文、用户标签和业务自定义详情必须保持分层：`context.user.*` 用于用户维度检索，`payload.properties` 用于业务动作详情，任意 custom map 不得默认提升为 `attributes` 或服务端索引。
 
 ### track 与上下文的区别
 
@@ -599,7 +589,7 @@ route、app、device、runtime、HTTP、错误、卡顿、启动等上下文应�
 | SDK 自动采集 route/device/app | 提供基础排查上下文 | `context.route.*`、`resource.*` | 是 |
 | `track(action/result/target)` | 记录一次业务动作摘要 | `attributes.business.*`、`attributes.ui.target` | 是，低基数摘要 |
 | `track.properties` | 记录该动作的详情 | `payload.properties` | 否，默认只做详情展示 |
-| 未注册自定义 attributes | 迁移期诊断详情 | `payload.unregistered.attributes` | 否 |
+| 未注册自定义 attributes | payload-only 详情 | `payload.unregistered.attributes` | 否 |
 
 ### Payload 字段
 
@@ -965,7 +955,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
 | 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
-| 卡顿 | `metric ui.jank.sequence`；诊断模式可输出 `metric ui.frame.window` | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
+| 卡顿 | `metric ui.jank.sequence`；启动和页面帧摘要写入对应主 trace end | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
 | 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect`；页面/启动边界 RSS 默认合并到主 trace | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
 | 生命周期 | `breadcrumb app.lifecycle`、`metric app.foreground_duration`、`metric app.background_duration`、`trace app.hot_start`、`sdk.lifecycle.flush` | `context.lifecycle.*`、`durationMs`、`app.start.type`、`app.exit_flush.success` |
 | Native | `metric native.memory.sample`、`metric native.memory.pressure`、`breadcrumb native.lifecycle`、`breadcrumb native.warning`、`error native.oom`、`error native.anr`、`error native.crash` | `context.native.*`、`native.signal`、`memory.native_used_mb`、`memory.pressure_level`、`payload.native` |

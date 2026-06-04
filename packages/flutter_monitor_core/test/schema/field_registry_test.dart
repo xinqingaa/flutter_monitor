@@ -131,16 +131,8 @@ void main() {
       FieldValueType.durationMs,
     );
     expect(
-      registry.lookup(FieldPaths.pageActiveWindowId)?.privacyLevel,
-      PrivacyLevel.queryable,
-    );
-    expect(
       registry.lookup(FieldPaths.pageActivePhase)?.valueType,
       FieldValueType.string,
-    );
-    expect(
-      registry.lookup(FieldPaths.frameWindowId)?.privacyLevel,
-      PrivacyLevel.queryable,
     );
     expect(
       registry.lookup(FieldPaths.frameSampleCount)?.valueType,
@@ -153,10 +145,6 @@ void main() {
     expect(
       registry.lookup(FieldPaths.memorySamplePhase)?.valueType,
       FieldValueType.string,
-    );
-    expect(
-      registry.lookup(FieldPaths.memorySampleDelayMs)?.valueType,
-      FieldValueType.durationMs,
     );
     expect(
       registry.lookup(FieldPaths.contextMissingReason)?.privacyLevel,
@@ -287,7 +275,6 @@ void main() {
       FieldPaths.pageFrom,
       FieldPaths.pageTo,
       FieldPaths.pageInstanceId,
-      FieldPaths.pageActiveWindowId,
       FieldPaths.pageActivePhase,
       FieldPaths.pageLoadMs,
       FieldPaths.httpMethod,
@@ -312,9 +299,6 @@ void main() {
       FieldPaths.frameP50Ms,
       FieldPaths.frameP90Ms,
       FieldPaths.frameP99Ms,
-      FieldPaths.frameWindowId,
-      FieldPaths.frameWindowType,
-      FieldPaths.frameWindowPhase,
       FieldPaths.frameSampleCount,
       FieldPaths.frameSlowCount,
       FieldPaths.frameDroppedCount,
@@ -334,7 +318,6 @@ void main() {
       FieldPaths.memoryPressureLevel,
       FieldPaths.memorySampleSource,
       FieldPaths.memorySamplePhase,
-      FieldPaths.memorySampleDelayMs,
       FieldPaths.appExitFlushSuccess,
       FieldPaths.nativeSignal,
       FieldPaths.nativeThread,

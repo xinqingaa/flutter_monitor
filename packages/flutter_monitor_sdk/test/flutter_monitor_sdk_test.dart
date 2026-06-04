@@ -1340,8 +1340,7 @@ void main() {
     startup.startSdkInit();
     reporter.addStartupFrameStats(
       FrameStatsSnapshot(
-        windowId: 'app_1',
-        windowType: FrameWindowTypes.app,
+        windowType: appFrameWindowType,
         windowPhase: StartupEndReasons.firstFrame,
         sampleCount: 4,
         slowCount: 1,
@@ -1383,9 +1382,8 @@ void main() {
     expect(attributes[FieldPaths.memoryStartRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryEndRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
-    expect(attributes.containsKey(FieldPaths.frameWindowId), isFalse);
     expect(
-      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      output.events.where((event) => event['name'] == 'ui.frame.window'),
       isEmpty,
     );
     expect(
@@ -1417,8 +1415,7 @@ void main() {
     reporter.beginStartupPerformance(startTime: resumedAt);
     reporter.addStartupFrameStats(
       FrameStatsSnapshot(
-        windowId: 'app_hot_1',
-        windowType: FrameWindowTypes.app,
+        windowType: appFrameWindowType,
         windowPhase: StartupEndReasons.firstFrame,
         sampleCount: 3,
         slowCount: 0,
@@ -1457,9 +1454,8 @@ void main() {
     expect(attributes[FieldPaths.memoryStartRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryEndRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
-    expect(attributes.containsKey(FieldPaths.frameWindowId), isFalse);
     expect(
-      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      output.events.where((event) => event['name'] == 'ui.frame.window'),
       isEmpty,
     );
   });
@@ -1497,7 +1493,7 @@ void main() {
       await finished;
 
       expect(snapshots, hasLength(1));
-      expect(snapshots.single.windowType, FrameWindowTypes.app);
+      expect(snapshots.single.windowType, appFrameWindowType);
       expect(snapshots.single.windowPhase, StartupEndReasons.firstFrame);
       expect(snapshots.single.sampleCount, 1);
       expect(snapshots.single.frameAvgMs, 17);
@@ -1527,8 +1523,7 @@ void main() {
     );
     reporter.addPageFrameStats(
       FrameStatsSnapshot(
-        windowId: '${pageInstanceId}_window_1',
-        windowType: FrameWindowTypes.page,
+        windowType: pageFrameWindowType,
         windowPhase: PageActivePhases.exit,
         sampleCount: 5,
         slowCount: 2,
@@ -1544,7 +1539,6 @@ void main() {
         frameP99Ms: 50,
         routeName: '/detail',
         pageInstanceId: pageInstanceId,
-        pageActiveWindowId: '${pageInstanceId}_window_1',
         startTime: startedAt,
         endTime: startedAt.add(const Duration(seconds: 1)),
       ),
@@ -1577,9 +1571,8 @@ void main() {
     expect(attributes[FieldPaths.memoryEnterRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryExitRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
-    expect(attributes.containsKey(FieldPaths.frameWindowId), isFalse);
     expect(
-      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      output.events.where((event) => event['name'] == 'ui.frame.window'),
       isEmpty,
     );
     expect(
@@ -1615,8 +1608,7 @@ void main() {
     )!;
     reporter.addPageFrameStats(
       FrameStatsSnapshot(
-        windowId: '${firstPageId}_window_1',
-        windowType: FrameWindowTypes.page,
+        windowType: pageFrameWindowType,
         windowPhase: PageActivePhases.covered,
         sampleCount: 2,
         slowCount: 0,
@@ -1630,8 +1622,7 @@ void main() {
     );
     reporter.addPageFrameStats(
       FrameStatsSnapshot(
-        windowId: '${secondPageId}_window_1',
-        windowType: FrameWindowTypes.page,
+        windowType: pageFrameWindowType,
         windowPhase: PageActivePhases.exit,
         sampleCount: 7,
         slowCount: 3,
@@ -1683,7 +1674,7 @@ void main() {
     expect(secondAttributes[FieldPaths.frameSampleCount], 7);
     expect(secondAttributes[FieldPaths.frameMaxMs], 60);
     expect(
-      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      output.events.where((event) => event['name'] == 'ui.frame.window'),
       isEmpty,
     );
   });
@@ -2104,11 +2095,9 @@ void main() {
       source: MemorySampleSource.system,
       trigger: 'test.sample',
       samplePhase: PageActivePhases.enter,
-      sampleDelayMs: 3,
       routeName: '/detail',
       traceId: 'trace_detail',
       pageInstanceId: '/detail_100',
-      pageActiveWindowId: '/detail_100_window_1',
     );
     reporter.recordMemoryGrowth(
       growthMb: 32,
@@ -2143,12 +2132,7 @@ void main() {
       sampleAttributes[FieldPaths.memorySamplePhase],
       PageActivePhases.enter,
     );
-    expect(sampleAttributes[FieldPaths.memorySampleDelayMs], 3);
     expect(sampleAttributes[FieldPaths.pageInstanceId], '/detail_100');
-    expect(
-      sampleAttributes[FieldPaths.pageActiveWindowId],
-      '/detail_100_window_1',
-    );
     expect(sample['traceId'], 'trace_detail');
     expect(((sample['context'] as Map)['route'] as Map)['name'], '/detail');
 
@@ -2187,64 +2171,6 @@ void main() {
         isTrue,
       );
     }
-  });
-
-  test('records frame window envelopes with page attribution', () {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(appKey: 'app_key'),
-        outputs: <MonitorOutput>[output],
-      ),
-    );
-    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
-    final endedAt = startedAt.add(const Duration(seconds: 1));
-
-    reporter.recordFrameWindow(
-      windowId: '/detail_100_window_1',
-      windowType: FrameWindowTypes.page,
-      windowPhase: PageActivePhases.exit,
-      sampleCount: 3,
-      slowCount: 1,
-      droppedCount: 2,
-      refreshRate: 60,
-      frameMaxMs: 48,
-      frameAvgMs: 24,
-      frameBudgetMs: 16.67,
-      frameFps: 41.6,
-      frameStability: 0.66,
-      frameP50Ms: 16,
-      frameP90Ms: 48,
-      frameP99Ms: 48,
-      routeName: '/detail',
-      traceId: 'trace_detail',
-      pageInstanceId: '/detail_100',
-      pageActiveWindowId: '/detail_100_window_1',
-      startTime: startedAt,
-      endTime: endedAt,
-    );
-
-    final event = output.events.singleWhere(
-      (item) => item['name'] == EventNames.uiFrameWindow,
-    );
-    final attributes = event['attributes'] as Map;
-    expect(event['signalType'], SignalType.metric.toJson());
-    expect(event['durationMs'], 1000);
-    expect(event['traceId'], 'trace_detail');
-    expect(((event['context'] as Map)['route'] as Map)['name'], '/detail');
-    expect(attributes[FieldPaths.frameWindowId], '/detail_100_window_1');
-    expect(attributes[FieldPaths.frameWindowType], FrameWindowTypes.page);
-    expect(attributes[FieldPaths.frameWindowPhase], PageActivePhases.exit);
-    expect(attributes[FieldPaths.frameSampleCount], 3);
-    expect(attributes[FieldPaths.frameSlowCount], 1);
-    expect(attributes[FieldPaths.frameDroppedCount], 2);
-    expect(attributes[FieldPaths.frameRefreshRate], 60);
-    expect(attributes[FieldPaths.pageInstanceId], '/detail_100');
-    expect(attributes[FieldPaths.pageActiveWindowId], '/detail_100_window_1');
-    expect(
-      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
-      isTrue,
-    );
   });
 
   test('memory pressure is available as breadcrumb context', () {

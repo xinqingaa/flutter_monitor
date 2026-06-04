@@ -93,7 +93,6 @@ abstract final class FieldPaths {
   static const pageFrom = 'page.from';
   static const pageTo = 'page.to';
   static const pageInstanceId = 'page.instance_id';
-  static const pageActiveWindowId = 'page.active_window_id';
   static const pageActivePhase = 'page.active_phase';
   static const pageLoadMs = 'page.load_ms';
 
@@ -121,9 +120,6 @@ abstract final class FieldPaths {
   static const frameP50Ms = 'frame.p50_ms';
   static const frameP90Ms = 'frame.p90_ms';
   static const frameP99Ms = 'frame.p99_ms';
-  static const frameWindowId = 'frame.window_id';
-  static const frameWindowType = 'frame.window_type';
-  static const frameWindowPhase = 'frame.window_phase';
   static const frameSampleCount = 'frame.sample_count';
   static const frameSlowCount = 'frame.slow_count';
   static const frameDroppedCount = 'frame.dropped_count';
@@ -144,7 +140,6 @@ abstract final class FieldPaths {
   static const memoryPressureLevel = 'memory.pressure_level';
   static const memorySampleSource = 'memory.sample_source';
   static const memorySamplePhase = 'memory.sample_phase';
-  static const memorySampleDelayMs = 'memory.sample_delay_ms';
 
   static const appExitFlushSuccess = 'app.exit_flush.success';
 

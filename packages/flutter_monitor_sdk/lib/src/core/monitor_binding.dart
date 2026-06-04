@@ -361,7 +361,7 @@ class MonitorBinding {
       );
     }
     unawaited(
-      Future<void>.sync(() => reporter.recordPageActivityMemory(activity)),
+      Future<void>.microtask(() => reporter.recordPageActivityMemory(activity)),
     );
   }
 }
