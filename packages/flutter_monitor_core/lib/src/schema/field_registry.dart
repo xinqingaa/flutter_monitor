@@ -489,6 +489,18 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.pageActiveWindowId,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.pageActivePhase,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.pageLoadMs,
     valueType: FieldValueType.durationMs,
     privacyLevel: PrivacyLevel.safe,
@@ -624,6 +636,48 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.frameWindowId,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.frameWindowType,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.frameWindowPhase,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.frameSampleCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.frameSlowCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.frameDroppedCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.frameRefreshRate,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.memoryRssMb,
     valueType: FieldValueType.number,
     privacyLevel: PrivacyLevel.safe,
@@ -671,6 +725,18 @@ const defaultFieldDefinitions = <FieldDefinition>[
   FieldDefinition(
     path: FieldPaths.memorySampleSource,
     valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.memorySamplePhase,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.memorySampleDelayMs,
+    valueType: FieldValueType.durationMs,
     privacyLevel: PrivacyLevel.safe,
     indexed: true,
   ),

@@ -89,6 +89,20 @@ abstract final class PageEndReasons {
   static const appDispose = 'app.dispose';
 }
 
+abstract final class PageActivePhases {
+  static const enter = 'page.enter';
+  static const covered = 'page.covered';
+  static const exit = 'page.exit';
+  static const resume = 'page.resume';
+  static const lifecycleBackground = 'lifecycle.background';
+  static const appDispose = 'app.dispose';
+}
+
+abstract final class FrameWindowTypes {
+  static const app = 'app';
+  static const page = 'page';
+}
+
 abstract final class TriggerValues {
   static const manual = 'manual';
   static const jankSequence = 'jank.sequence';
@@ -97,6 +111,12 @@ abstract final class TriggerValues {
   static const lifecycleResumed = 'lifecycle.resumed';
   static const nativeBridge = 'native.bridge';
   static const sessionStart = 'session.start';
+  static const pageEnter = PageActivePhases.enter;
+  static const pageCovered = PageActivePhases.covered;
+  static const pageExit = PageActivePhases.exit;
+  static const pageResume = PageActivePhases.resume;
+  static const lifecycleBackground = PageActivePhases.lifecycleBackground;
+  static const appDispose = PageActivePhases.appDispose;
 
   static String lifecycleState(String state) {
     return switch (state) {

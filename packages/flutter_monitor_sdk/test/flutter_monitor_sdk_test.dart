@@ -650,9 +650,10 @@ void main() {
       output.events
           .where((event) => event['name'] == 'app.lifecycle')
           .every(
-            (event) => !(event['payload'] as Map).containsKey(
-              FieldPaths.payloadBreadcrumbs,
-            ),
+            (event) =>
+                !(event['payload'] as Map).containsKey(
+                  FieldPaths.payloadBreadcrumbs,
+                ),
           ),
       isTrue,
     );
@@ -756,8 +757,8 @@ void main() {
         isFalse,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes']
-            as Map)[FieldPaths.pageFirstFrameMs],
+        (pageFirstFrameEvents.last['attributes'] as Map)[FieldPaths
+            .pageFirstFrameMs],
         isA<num>(),
       );
       expect(
@@ -805,6 +806,64 @@ void main() {
     expect(
       output.events.where((event) => event['name'] == EventNames.pageStay),
       isEmpty,
+    );
+  });
+
+  test('same route page instances do not overwrite each other', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final t0 = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    final firstId = reporter.startPageLoad('/detail', startTime: t0);
+    reporter.finishPageFirstFrame(
+      '/detail',
+      pageInstanceId: firstId,
+      endTime: t0.add(const Duration(milliseconds: 16)),
+    );
+    final secondId = reporter.startPageLoad(
+      '/detail',
+      previousRouteName: '/detail',
+      startTime: t0.add(const Duration(seconds: 1)),
+    );
+    reporter.finishPageFirstFrame(
+      '/detail',
+      pageInstanceId: secondId,
+      endTime: t0.add(const Duration(seconds: 1, milliseconds: 16)),
+    );
+
+    reporter.finishPageLoad(
+      '/detail',
+      pageInstanceId: secondId,
+      nextRouteName: '/detail',
+      endTime: t0.add(const Duration(seconds: 2)),
+    );
+    reporter.finishPageLoad(
+      '/detail',
+      pageInstanceId: firstId,
+      endTime: t0.add(const Duration(seconds: 3)),
+    );
+
+    final pageStayEvents = output.events
+        .where((event) => event['name'] == EventNames.pageStay)
+        .toList(growable: false);
+    expect(pageStayEvents, hasLength(2));
+    expect(
+      pageStayEvents
+          .map(
+            (event) => (event['attributes'] as Map)[FieldPaths.pageInstanceId],
+          )
+          .toSet(),
+      {firstId, secondId},
+    );
+    expect(pageStayEvents.first['durationMs'], 1000);
+    expect(pageStayEvents.last['durationMs'], 3000);
+    expect(
+      (pageStayEvents.first['attributes'] as Map)[FieldPaths.pageTo],
+      '/detail',
     );
   });
 
@@ -885,12 +944,16 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/': (_) => Builder(
-            builder: (context) => TextButton(
-              onPressed: () => Navigator.of(context).pushNamed('/complex_list'),
-              child: const Text('complex'),
-            ),
-          ),
+          '/':
+              (_) => Builder(
+                builder:
+                    (context) => TextButton(
+                      onPressed:
+                          () =>
+                              Navigator.of(context).pushNamed('/complex_list'),
+                      child: const Text('complex'),
+                    ),
+              ),
           '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
         },
       ),
@@ -957,26 +1020,31 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/': (_) => Builder(
-            builder: (context) => TextButton(
-              onPressed: () => Navigator.of(context).pushNamed('/detail'),
-              child: const Text('detail'),
-            ),
-          ),
+          '/':
+              (_) => Builder(
+                builder:
+                    (context) => TextButton(
+                      onPressed:
+                          () => Navigator.of(context).pushNamed('/detail'),
+                      child: const Text('detail'),
+                    ),
+              ),
           '/detail': (_) => const SizedBox(key: Key('detail-page')),
         },
       ),
     );
     await tester.pump();
-    final homeTraceId = output.events.firstWhere(
-      (event) => event['name'] == 'page.visit',
-    )['traceId'];
+    final homeTraceId =
+        output.events.firstWhere(
+          (event) => event['name'] == 'page.visit',
+        )['traceId'];
 
     await tester.tap(find.text('detail'));
     await tester.pumpAndSettle();
-    final detailTraceId = output.events
-        .where((event) => event['name'] == 'page.visit')
-        .last['traceId'];
+    final detailTraceId =
+        output.events
+            .where((event) => event['name'] == 'page.visit')
+            .last['traceId'];
 
     Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
     await tester.pumpAndSettle();
@@ -1677,6 +1745,12 @@ void main() {
       rssMb: 128,
       source: MemorySampleSource.system,
       trigger: 'test.sample',
+      samplePhase: PageActivePhases.enter,
+      sampleDelayMs: 3,
+      routeName: '/detail',
+      traceId: 'trace_detail',
+      pageInstanceId: '/detail_100',
+      pageActiveWindowId: '/detail_100_window_1',
     );
     reporter.recordMemoryGrowth(
       growthMb: 32,
@@ -1707,6 +1781,18 @@ void main() {
       sampleAttributes[FieldPaths.memorySampleSource],
       MemorySampleSource.system.toJson(),
     );
+    expect(
+      sampleAttributes[FieldPaths.memorySamplePhase],
+      PageActivePhases.enter,
+    );
+    expect(sampleAttributes[FieldPaths.memorySampleDelayMs], 3);
+    expect(sampleAttributes[FieldPaths.pageInstanceId], '/detail_100');
+    expect(
+      sampleAttributes[FieldPaths.pageActiveWindowId],
+      '/detail_100_window_1',
+    );
+    expect(sample['traceId'], 'trace_detail');
+    expect(((sample['context'] as Map)['route'] as Map)['name'], '/detail');
 
     final growth = output.events.singleWhere(
       (event) => event['name'] == EventNames.memoryGrowth,
@@ -1743,6 +1829,64 @@ void main() {
         isTrue,
       );
     }
+  });
+
+  test('records frame window envelopes with page attribution', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    final endedAt = startedAt.add(const Duration(seconds: 1));
+
+    reporter.recordFrameWindow(
+      windowId: '/detail_100_window_1',
+      windowType: FrameWindowTypes.page,
+      windowPhase: PageActivePhases.exit,
+      sampleCount: 3,
+      slowCount: 1,
+      droppedCount: 2,
+      refreshRate: 60,
+      frameMaxMs: 48,
+      frameAvgMs: 24,
+      frameBudgetMs: 16.67,
+      frameFps: 41.6,
+      frameStability: 0.66,
+      frameP50Ms: 16,
+      frameP90Ms: 48,
+      frameP99Ms: 48,
+      routeName: '/detail',
+      traceId: 'trace_detail',
+      pageInstanceId: '/detail_100',
+      pageActiveWindowId: '/detail_100_window_1',
+      startTime: startedAt,
+      endTime: endedAt,
+    );
+
+    final event = output.events.singleWhere(
+      (item) => item['name'] == EventNames.uiFrameWindow,
+    );
+    final attributes = event['attributes'] as Map;
+    expect(event['signalType'], SignalType.metric.toJson());
+    expect(event['durationMs'], 1000);
+    expect(event['traceId'], 'trace_detail');
+    expect(((event['context'] as Map)['route'] as Map)['name'], '/detail');
+    expect(attributes[FieldPaths.frameWindowId], '/detail_100_window_1');
+    expect(attributes[FieldPaths.frameWindowType], FrameWindowTypes.page);
+    expect(attributes[FieldPaths.frameWindowPhase], PageActivePhases.exit);
+    expect(attributes[FieldPaths.frameSampleCount], 3);
+    expect(attributes[FieldPaths.frameSlowCount], 1);
+    expect(attributes[FieldPaths.frameDroppedCount], 2);
+    expect(attributes[FieldPaths.frameRefreshRate], 60);
+    expect(attributes[FieldPaths.pageInstanceId], '/detail_100');
+    expect(attributes[FieldPaths.pageActiveWindowId], '/detail_100_window_1');
+    expect(
+      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+      isTrue,
+    );
   });
 
   test('memory pressure is available as breadcrumb context', () {

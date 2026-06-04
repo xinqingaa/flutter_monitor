@@ -34,8 +34,12 @@ class Reporter {
   var _backgroundFlushPending = false;
   DateTime? _foregroundStartedAt;
   String? _pendingHotStartTraceId;
-  final Map<String, _PageTraceRecord> _pageTraces =
+  void Function(PageActivitySnapshot snapshot)? onPageActivity;
+  final Map<String, _PageTraceRecord> _pageTracesByInstanceId =
       <String, _PageTraceRecord>{};
+  final List<String> _pageInstanceStack = <String>[];
+  final Map<String, int> _activeWindowCounters = <String, int>{};
+  PageActivitySnapshot? _currentPageActivity;
 
   Reporter(this._config) {
     _init();
@@ -324,27 +328,15 @@ class Reporter {
     );
   }
 
-  void startPageLoad(
+  String? startPageLoad(
     String routeName, {
     String? previousRouteName,
     DateTime? startTime,
   }) {
-    if (routeName.isEmpty) return;
-    final existing = _pageTraces.remove(routeName);
-    if (existing != null) {
-      _finishPageTrace(
-        existing,
-        endTime: startTime ?? DateTime.now(),
-        status: EventStatus.unknown,
-        payload: const <String, Object?>{
-          PayloadKeys.pageEndReason: PageEndReasons.routeReplace,
-          PayloadKeys.pageReplaced: true,
-        },
-      );
-    }
-
+    if (routeName.isEmpty) return null;
     final startedAt = startTime ?? DateTime.now();
     final pageInstanceId = '${routeName}_${startedAt.microsecondsSinceEpoch}';
+    _closeCurrentPageWindow(PageActivePhases.covered, timestamp: startedAt);
     setCurrentRoute(routeName);
     final traceId = startTrace(
       EventNames.pageVisit,
@@ -389,7 +381,7 @@ class Reporter {
           PayloadKeys.routePrevious: previousRouteName,
       },
     );
-    _pageTraces[routeName] = _PageTraceRecord(
+    _pageTracesByInstanceId[pageInstanceId] = _PageTraceRecord(
       routeName: routeName,
       traceId: traceId,
       loadSpanId: loadSpanId,
@@ -397,7 +389,14 @@ class Reporter {
       startedAt: startedAt,
       previousRouteName: previousRouteName,
     );
+    _pageInstanceStack.add(pageInstanceId);
     _traceManager.setActiveTrace(traceId: traceId);
+    _openPageWindow(
+      pageInstanceId,
+      PageActivePhases.enter,
+      timestamp: startedAt,
+    );
+    return pageInstanceId;
   }
 
   PipelineResult recordPageView(String routeName) {
@@ -410,8 +409,15 @@ class Reporter {
     );
   }
 
-  void finishPageFirstFrame(String routeName, {DateTime? endTime}) {
-    final record = _pageTraces[routeName];
+  void finishPageFirstFrame(
+    String routeName, {
+    DateTime? endTime,
+    String? pageInstanceId,
+  }) {
+    final record =
+        pageInstanceId == null
+            ? _activePageTraceForRoute(routeName)
+            : _pageTracesByInstanceId[pageInstanceId];
     if (record == null || record.firstFrameReported) {
       return;
     }
@@ -421,14 +427,24 @@ class Reporter {
       EventNames.pageFirstFrame,
       traceId: record.traceId,
       startTime: record.startedAt,
-      payload: <String, Object?>{PayloadKeys.routeName: routeName},
+      attributes: <String, Object?>{
+        FieldPaths.pageInstanceId: record.pageInstanceId,
+        if (record.previousRouteName != null)
+          FieldPaths.pageFrom: record.previousRouteName,
+      },
+      payload: <String, Object?>{PayloadKeys.routeName: record.routeName},
     );
     endSpan(
       spanId,
       endTime: finishedAt,
       includeBreadcrumbs: false,
-      attributes: <String, Object?>{FieldPaths.pageFirstFrameMs: durationMs},
-      payload: <String, Object?>{PayloadKeys.routeName: routeName},
+      attributes: <String, Object?>{
+        FieldPaths.pageInstanceId: record.pageInstanceId,
+        FieldPaths.pageFirstFrameMs: durationMs,
+        if (record.previousRouteName != null)
+          FieldPaths.pageFrom: record.previousRouteName,
+      },
+      payload: <String, Object?>{PayloadKeys.routeName: record.routeName},
     );
     if (!record.loadTraceFinished) {
       endSpan(
@@ -442,10 +458,10 @@ class Reporter {
           if (record.previousRouteName != null)
             FieldPaths.pageFrom: record.previousRouteName,
         },
-        payload: <String, Object?>{PayloadKeys.routeName: routeName},
+        payload: <String, Object?>{PayloadKeys.routeName: record.routeName},
       );
     }
-    _pageTraces[routeName] = record.copyWith(
+    _pageTracesByInstanceId[record.pageInstanceId] = record.copyWith(
       firstFrameReported: true,
       loadTraceFinished: true,
     );
@@ -453,33 +469,54 @@ class Reporter {
   }
 
   bool hasActivePageTrace(String routeName) {
-    return _pageTraces.containsKey(routeName);
+    return _activePageTraceForRoute(routeName) != null;
   }
 
   void finishPageLoad(
     String routeName, {
     String? nextRouteName,
     DateTime? endTime,
+    String? pageInstanceId,
+    String endReason = PageEndReasons.routePop,
+    bool resumePrevious = true,
   }) {
-    final record = _pageTraces.remove(routeName);
+    final finishedAt = endTime ?? DateTime.now();
+    final record =
+        pageInstanceId == null
+            ? _activePageTraceForRoute(routeName)
+            : _pageTracesByInstanceId[pageInstanceId];
     if (record == null) return;
+    _pageTracesByInstanceId.remove(record.pageInstanceId);
+    _pageInstanceStack.remove(record.pageInstanceId);
+    _closePageWindow(
+      record.pageInstanceId,
+      PageActivePhases.exit,
+      timestamp: finishedAt,
+    );
     _finishPageTrace(
       record.copyWith(nextRouteName: nextRouteName),
-      endTime: endTime ?? DateTime.now(),
-      payload: const <String, Object?>{
-        PayloadKeys.pageEndReason: PageEndReasons.routePop,
-      },
+      endTime: finishedAt,
+      payload: <String, Object?>{PayloadKeys.pageEndReason: endReason},
     );
+    if (resumePrevious && nextRouteName != null && nextRouteName.isNotEmpty) {
+      _resumeTopPage(nextRouteName, timestamp: finishedAt);
+    }
   }
 
   void finishActivePageTraces({
     DateTime? endTime,
     String endReason = PageEndReasons.appDispose,
   }) {
-    if (_pageTraces.isEmpty) return;
+    if (_pageTracesByInstanceId.isEmpty) return;
     final finishedAt = endTime ?? DateTime.now();
-    final activePages = _pageTraces.values.toList(growable: false);
-    _pageTraces.clear();
+    final activePages = _pageTracesByInstanceId.values.toList(growable: false);
+    final activePhase =
+        endReason == PageEndReasons.appDispose
+            ? PageActivePhases.appDispose
+            : PageActivePhases.lifecycleBackground;
+    _closeCurrentPageWindow(activePhase, timestamp: finishedAt);
+    _pageTracesByInstanceId.clear();
+    _pageInstanceStack.clear();
     for (final record in activePages) {
       _finishPageTrace(
         record,
@@ -511,13 +548,14 @@ class Reporter {
         startTime ??
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
     final errorText = error ?? payload[PayloadKeys.error];
-    final effectiveErrorType = success
-        ? null
-        : _canonicalHttpErrorType(
-            errorType: errorType,
-            statusCode: statusCode,
-            error: errorText is String ? errorText : null,
-          );
+    final effectiveErrorType =
+        success
+            ? null
+            : _canonicalHttpErrorType(
+              errorType: errorType,
+              statusCode: statusCode,
+              error: errorText is String ? errorText : null,
+            );
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -621,6 +659,71 @@ class Reporter {
     return result;
   }
 
+  PipelineResult recordFrameWindow({
+    required String windowId,
+    required String windowType,
+    required String windowPhase,
+    required int sampleCount,
+    required int slowCount,
+    required int droppedCount,
+    required num refreshRate,
+    required num frameMaxMs,
+    required num frameAvgMs,
+    required num frameBudgetMs,
+    num? frameFps,
+    num? frameStability,
+    num? frameP50Ms,
+    num? frameP90Ms,
+    num? frameP99Ms,
+    String? routeName,
+    String? traceId,
+    String? pageInstanceId,
+    String? pageActiveWindowId,
+    DateTime? startTime,
+    DateTime? endTime,
+  }) {
+    final finishedAt = endTime ?? DateTime.now();
+    final startedAt = startTime ?? finishedAt;
+    final duration = finishedAt.difference(startedAt);
+    return _pipeline.capture(
+      RawSignal(
+        source: SignalSources.sdkJank,
+        name: EventNames.uiFrameWindow,
+        signalType: SignalType.metric,
+        timestamp: finishedAt,
+        startTime: startedAt,
+        endTime: finishedAt,
+        durationMs: duration.inMilliseconds,
+        level: EventLevel.debug,
+        status: EventStatus.ok,
+        priority: EventPriority.low,
+        includeBreadcrumbs: false,
+        traceId: traceId,
+        contextRouteName: routeName,
+        attributes: <String, Object?>{
+          FieldPaths.frameWindowId: windowId,
+          FieldPaths.frameWindowType: windowType,
+          FieldPaths.frameWindowPhase: windowPhase,
+          FieldPaths.frameSampleCount: sampleCount,
+          FieldPaths.frameSlowCount: slowCount,
+          FieldPaths.frameDroppedCount: droppedCount,
+          FieldPaths.frameRefreshRate: refreshRate,
+          FieldPaths.frameMaxMs: frameMaxMs,
+          FieldPaths.frameAvgMs: frameAvgMs,
+          FieldPaths.frameBudgetMs: frameBudgetMs,
+          if (frameFps != null) FieldPaths.frameFps: frameFps,
+          if (frameStability != null) FieldPaths.frameStability: frameStability,
+          if (frameP50Ms != null) FieldPaths.frameP50Ms: frameP50Ms,
+          if (frameP90Ms != null) FieldPaths.frameP90Ms: frameP90Ms,
+          if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
+          if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
+          if (pageActiveWindowId != null)
+            FieldPaths.pageActiveWindowId: pageActiveWindowId,
+        },
+      ),
+    );
+  }
+
   PipelineResult recordFlutterError(
     FlutterErrorDetails details, {
     DateTime? timestamp,
@@ -660,6 +763,12 @@ class Reporter {
     num? nativeUsedMb,
     MemorySampleSource source = MemorySampleSource.dart,
     String trigger = TriggerValues.manual,
+    String? samplePhase,
+    num? sampleDelayMs,
+    String? routeName,
+    String? traceId,
+    String? pageInstanceId,
+    String? pageActiveWindowId,
     DateTime? timestamp,
   }) {
     return _pipeline.capture(
@@ -672,6 +781,8 @@ class Reporter {
         status: EventStatus.ok,
         priority: EventPriority.low,
         includeBreadcrumbs: false,
+        traceId: traceId,
+        contextRouteName: routeName,
         attributes: <String, Object?>{
           FieldPaths.memorySampleSource: source.toJson(),
           if (rssMb != null) FieldPaths.memoryRssMb: rssMb,
@@ -680,6 +791,12 @@ class Reporter {
             FieldPaths.memoryHeapCapacityMb: heapCapacityMb,
           if (externalMb != null) FieldPaths.memoryExternalMb: externalMb,
           if (nativeUsedMb != null) FieldPaths.memoryNativeUsedMb: nativeUsedMb,
+          if (samplePhase != null) FieldPaths.memorySamplePhase: samplePhase,
+          if (sampleDelayMs != null)
+            FieldPaths.memorySampleDelayMs: sampleDelayMs,
+          if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
+          if (pageActiveWindowId != null)
+            FieldPaths.pageActiveWindowId: pageActiveWindowId,
         },
         payload: <String, Object?>{PayloadKeys.trigger: trigger},
       ),
@@ -733,12 +850,14 @@ class Reporter {
         name: EventNames.memoryPressure,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
-        level: level == MemoryPressureLevel.critical
-            ? EventLevel.error
-            : EventLevel.warning,
-        status: level == MemoryPressureLevel.none
-            ? EventStatus.ok
-            : EventStatus.error,
+        level:
+            level == MemoryPressureLevel.critical
+                ? EventLevel.error
+                : EventLevel.warning,
+        status:
+            level == MemoryPressureLevel.none
+                ? EventStatus.ok
+                : EventStatus.error,
         priority: EventPriority.high,
         breadcrumbLimit: 5,
         attributes: <String, Object?>{
@@ -889,6 +1008,10 @@ class Reporter {
       _foregroundStartedAt = occurredAt;
     }
     if (isBackgroundState) {
+      _closeCurrentPageWindow(
+        PageActivePhases.lifecycleBackground,
+        timestamp: occurredAt,
+      );
       if (_foregroundStartedAt != null) {
         _recordLifecycleDuration(
           name: EventNames.appForegroundDuration,
@@ -953,6 +1076,10 @@ class Reporter {
         );
       }
       _foregroundStartedAt = occurredAt;
+      final currentRoute = _topPageTrace()?.routeName;
+      if (currentRoute != null) {
+        _resumeTopPage(currentRoute, timestamp: occurredAt);
+      }
     }
 
     if (state == LifecycleStates.detached) {
@@ -1061,9 +1188,10 @@ class Reporter {
     _pendingHotStartTraceId = null;
     final finishedAt = endTime ?? DateTime.now();
     final record = _traceManager.trace(traceId);
-    final durationMs = record == null
-        ? null
-        : finishedAt.difference(record.startTime).inMilliseconds;
+    final durationMs =
+        record == null
+            ? null
+            : finishedAt.difference(record.startTime).inMilliseconds;
     return endTrace(
       traceId,
       endTime: finishedAt,
@@ -1118,6 +1246,8 @@ class Reporter {
   void activatePageTrace(String? routeName) {
     _activatePageTrace(routeName);
   }
+
+  PageActivitySnapshot? get currentPageActivity => _currentPageActivity;
 
   void setModule({String? name, String? scene}) {
     _contextManager.setModule(name: name, scene: scene);
@@ -1278,8 +1408,83 @@ class Reporter {
   }
 
   void _activatePageTrace(String? routeName) {
-    final record = routeName == null ? null : _pageTraces[routeName];
+    final record =
+        routeName == null ? null : _activePageTraceForRoute(routeName);
     _traceManager.setActiveTrace(traceId: record?.traceId);
+  }
+
+  _PageTraceRecord? _activePageTraceForRoute(String routeName) {
+    for (final pageInstanceId in _pageInstanceStack.reversed) {
+      final record = _pageTracesByInstanceId[pageInstanceId];
+      if (record?.routeName == routeName) return record;
+    }
+    return null;
+  }
+
+  _PageTraceRecord? _topPageTrace() {
+    for (final pageInstanceId in _pageInstanceStack.reversed) {
+      final record = _pageTracesByInstanceId[pageInstanceId];
+      if (record != null) return record;
+    }
+    return null;
+  }
+
+  void _resumeTopPage(String routeName, {DateTime? timestamp}) {
+    final record = _activePageTraceForRoute(routeName) ?? _topPageTrace();
+    if (record == null) {
+      _traceManager.setActiveTrace(traceId: null);
+      return;
+    }
+    setCurrentRoute(record.routeName);
+    _traceManager.setActiveTrace(traceId: record.traceId);
+    _openPageWindow(
+      record.pageInstanceId,
+      PageActivePhases.resume,
+      timestamp: timestamp,
+    );
+  }
+
+  void _openPageWindow(
+    String pageInstanceId,
+    String phase, {
+    DateTime? timestamp,
+  }) {
+    final record = _pageTracesByInstanceId[pageInstanceId];
+    if (record == null) return;
+    final count = (_activeWindowCounters[pageInstanceId] ?? 0) + 1;
+    _activeWindowCounters[pageInstanceId] = count;
+    final openedAt = timestamp ?? DateTime.now();
+    final windowId = '${pageInstanceId}_window_$count';
+    final snapshot = PageActivitySnapshot(
+      routeName: record.routeName,
+      traceId: record.traceId,
+      pageInstanceId: record.pageInstanceId,
+      activeWindowId: windowId,
+      activePhase: phase,
+      timestamp: openedAt,
+    );
+    _currentPageActivity = snapshot;
+    onPageActivity?.call(snapshot);
+  }
+
+  void _closeCurrentPageWindow(String phase, {DateTime? timestamp}) {
+    final current = _currentPageActivity;
+    if (current == null) return;
+    _currentPageActivity = current.copyWith(
+      activePhase: phase,
+      timestamp: timestamp ?? DateTime.now(),
+    );
+    onPageActivity?.call(_currentPageActivity!);
+    _currentPageActivity = null;
+  }
+
+  void _closePageWindow(
+    String pageInstanceId,
+    String phase, {
+    DateTime? timestamp,
+  }) {
+    if (_currentPageActivity?.pageInstanceId != pageInstanceId) return;
+    _closeCurrentPageWindow(phase, timestamp: timestamp);
   }
 
   String _normalizedUrl(String rawUrl) {
@@ -1380,6 +1585,35 @@ class Reporter {
       MonitorTrackResult.failed => EventLevel.warning,
       _ => EventLevel.info,
     };
+  }
+}
+
+class PageActivitySnapshot {
+  const PageActivitySnapshot({
+    required this.routeName,
+    required this.traceId,
+    required this.pageInstanceId,
+    required this.activeWindowId,
+    required this.activePhase,
+    required this.timestamp,
+  });
+
+  final String routeName;
+  final String traceId;
+  final String pageInstanceId;
+  final String activeWindowId;
+  final String activePhase;
+  final DateTime timestamp;
+
+  PageActivitySnapshot copyWith({String? activePhase, DateTime? timestamp}) {
+    return PageActivitySnapshot(
+      routeName: routeName,
+      traceId: traceId,
+      pageInstanceId: pageInstanceId,
+      activeWindowId: activeWindowId,
+      activePhase: activePhase ?? this.activePhase,
+      timestamp: timestamp ?? this.timestamp,
+    );
   }
 }
 

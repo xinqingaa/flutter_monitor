@@ -63,6 +63,16 @@ class MonitorMemoryConfig {
   static const MonitorMemoryConfig defaultConfig = MonitorMemoryConfig();
 }
 
+/// Frame window aggregation config.
+class MonitorFrameConfig {
+  /// Whether SDK emits app/page frame window summary metrics.
+  final bool enabled;
+
+  const MonitorFrameConfig({this.enabled = true});
+
+  static const MonitorFrameConfig defaultConfig = MonitorFrameConfig();
+}
+
 /// 应用信息配置
 class AppInfo {
   /// 应用标识（必填）
@@ -171,6 +181,9 @@ class MonitorConfig {
   /// Memory 采样配置（可选）
   final MonitorMemoryConfig? memoryConfig;
 
+  /// Frame window 聚合配置（可选）
+  final MonitorFrameConfig? frameConfig;
+
   /// 可选 native bridge。未提供时 SDK 只保留 Flutter/Dart 层能力。
   final MonitorNativeBridge? nativeBridge;
 
@@ -188,6 +201,7 @@ class MonitorConfig {
     this.queueConfig,
     this.sessionConfig,
     this.memoryConfig,
+    this.frameConfig,
     this.nativeBridge,
     this.customData,
   });
@@ -231,5 +245,9 @@ class MonitorConfig {
   /// 获取实际使用的 memory 配置
   MonitorMemoryConfig get effectiveMemoryConfig {
     return memoryConfig ?? MonitorMemoryConfig.defaultConfig;
+  }
+
+  MonitorFrameConfig get effectiveFrameConfig {
+    return frameConfig ?? MonitorFrameConfig.defaultConfig;
   }
 }

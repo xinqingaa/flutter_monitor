@@ -111,6 +111,34 @@ void main() {
       FieldValueType.durationMs,
     );
     expect(
+      registry.lookup(FieldPaths.pageActiveWindowId)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
+      registry.lookup(FieldPaths.pageActivePhase)?.valueType,
+      FieldValueType.string,
+    );
+    expect(
+      registry.lookup(FieldPaths.frameWindowId)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
+      registry.lookup(FieldPaths.frameSampleCount)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.frameRefreshRate)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memorySamplePhase)?.valueType,
+      FieldValueType.string,
+    );
+    expect(
+      registry.lookup(FieldPaths.memorySampleDelayMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
       registry.lookup(FieldPaths.contextMissingReason)?.privacyLevel,
       PrivacyLevel.safe,
     );
@@ -134,9 +162,10 @@ void main() {
   });
 
   test('does not register deprecated duplicate fields', () {
-    final paths = FieldRegistry.defaults().fields
-        .map((definition) => definition.path)
-        .toSet();
+    final paths =
+        FieldRegistry.defaults().fields
+            .map((definition) => definition.path)
+            .toSet();
 
     expect(paths, isNot(contains('page.route')));
     expect(paths, isNot(contains('page.route.source')));
@@ -157,9 +186,10 @@ void main() {
   });
 
   test('registers every canonical FieldPaths value', () {
-    final paths = FieldRegistry.defaults().fields
-        .map((definition) => definition.path)
-        .toSet();
+    final paths =
+        FieldRegistry.defaults().fields
+            .map((definition) => definition.path)
+            .toSet();
 
     const canonicalPaths = <String>{
       FieldPaths.schemaVersion,
@@ -239,6 +269,8 @@ void main() {
       FieldPaths.pageFrom,
       FieldPaths.pageTo,
       FieldPaths.pageInstanceId,
+      FieldPaths.pageActiveWindowId,
+      FieldPaths.pageActivePhase,
       FieldPaths.pageLoadMs,
       FieldPaths.httpMethod,
       FieldPaths.httpUrlNormalized,
@@ -262,6 +294,13 @@ void main() {
       FieldPaths.frameP50Ms,
       FieldPaths.frameP90Ms,
       FieldPaths.frameP99Ms,
+      FieldPaths.frameWindowId,
+      FieldPaths.frameWindowType,
+      FieldPaths.frameWindowPhase,
+      FieldPaths.frameSampleCount,
+      FieldPaths.frameSlowCount,
+      FieldPaths.frameDroppedCount,
+      FieldPaths.frameRefreshRate,
       FieldPaths.memoryRssMb,
       FieldPaths.memoryHeapUsedMb,
       FieldPaths.memoryHeapCapacityMb,
@@ -271,6 +310,8 @@ void main() {
       FieldPaths.memoryGrowthDurationMs,
       FieldPaths.memoryPressureLevel,
       FieldPaths.memorySampleSource,
+      FieldPaths.memorySamplePhase,
+      FieldPaths.memorySampleDelayMs,
       FieldPaths.appExitFlushSuccess,
       FieldPaths.nativeSignal,
       FieldPaths.nativeThread,

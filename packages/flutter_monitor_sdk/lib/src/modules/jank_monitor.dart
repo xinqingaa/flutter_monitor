@@ -35,9 +35,6 @@ class JankMonitor {
   final VoidCallback? _onJankSequenceReported;
   final JankConfig _config;
 
-  // 添加回调标记，防止重复移除
-  bool _isCallbackAdded = false;
-
   JankMonitor(
     this._reporter, {
     String Function()? getCurrentPage,
@@ -70,31 +67,22 @@ class JankMonitor {
   static const int _samplingRate = 3; // 每3帧采样一次
 
   void init() {
-    if (_isCallbackAdded) {
-      debugPrint("警告: JankMonitor 回调已添加，跳过重复添加");
-      return;
-    }
     _initializeAdaptiveThresholds();
-    try {
-      SchedulerBinding.instance.addTimingsCallback(_onTimings);
-      _isCallbackAdded = true;
-      debugPrint("✅ JankMonitor 回调已注册");
-    } catch (e) {
-      debugPrint("错误: JankMonitor 回调注册失败: $e");
-    }
+    debugPrint("✅ JankMonitor 初始化成功");
   }
 
   /// 初始化自适应阈值
   void _initializeAdaptiveThresholds() {
     const double defaultRefreshRate = 60.0;
     // 使用 PlatformDispatcher 替代已弃用的 window
-    final double refreshRate = SchedulerBinding
-        .instance
-        .platformDispatcher
-        .views
-        .first
-        .display
-        .refreshRate;
+    final double refreshRate =
+        SchedulerBinding
+            .instance
+            .platformDispatcher
+            .views
+            .first
+            .display
+            .refreshRate;
     _frameBudgetMs =
         1000 / (refreshRate > 0 ? refreshRate : defaultRefreshRate);
 
@@ -109,7 +97,7 @@ class JankMonitor {
     debugPrint("- Jitter tolerance: ${_config.jitterToleranceMs}ms");
   }
 
-  void _onTimings(List<FrameTiming> timings) {
+  void recordTimings(List<FrameTiming> timings) {
     // 采样控制：不是每帧都处理，减少性能影响
     _frameCounter++;
     if (_frameCounter % _samplingRate != 0) return;
@@ -278,17 +266,6 @@ class JankMonitor {
   }
 
   void dispose() {
-    if (!_isCallbackAdded) {
-      debugPrint("注意: JankMonitor 回调未添加，无需移除");
-      return;
-    }
-    try {
-      SchedulerBinding.instance.removeTimingsCallback(_onTimings);
-      _isCallbackAdded = false;
-      debugPrint("✅ JankMonitor 回调已移除");
-    } catch (e) {
-      debugPrint("错误: JankMonitor dispose 失败: $e");
-    }
     // 清理数据，防止内存泄漏
     _recentFrameTimes.clear();
     _resetJankState();

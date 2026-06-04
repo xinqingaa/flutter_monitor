@@ -7,7 +7,8 @@ import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 // 用于页面路由监听  可以适当修改泛型 <Route<dynamic>>
 class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
   final Reporter _reporter;
-  final Map<String, DateTime> _pagePushTimes = {};
+  final Map<Route<dynamic>, String> _routePageInstances =
+      <Route<dynamic>, String>{};
   void Function(String?)? onPageRoutePushed; // 用于通知外部页面已切换
 
   MonitorRouteObserver(this._reporter);
@@ -20,15 +21,20 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
       if (pageName.isNotEmpty) {
         final now = DateTime.now();
         final previousPageName = previousRoute?.settings.name;
-        _pagePushTimes[pageName] = now;
-        _reporter.startPageLoad(
+        final pageInstanceId = _reporter.startPageLoad(
           pageName,
           previousRouteName: previousPageName,
           startTime: now,
         );
+        if (pageInstanceId != null) {
+          _routePageInstances[route] = pageInstanceId;
+        }
         onPageRoutePushed?.call(pageName); // 触发回调
         _reporter.recordPageView(pageName);
-        _schedulePageFirstFrameFallback(pageName);
+        _schedulePageFirstFrameFallback(
+          pageName,
+          pageInstanceId: pageInstanceId,
+        );
       }
     }
   }
@@ -40,13 +46,54 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
       final pageName = route.settings.name!;
       if (pageName.isNotEmpty) {
         final previousPageName = previousRoute?.settings.name;
-        _pagePushTimes.remove(pageName);
-        _reporter.finishPageLoad(pageName, nextRouteName: previousPageName);
+        final pageInstanceId = _routePageInstances.remove(route);
+        _reporter.finishPageLoad(
+          pageName,
+          nextRouteName: previousPageName,
+          pageInstanceId: pageInstanceId,
+        );
         if (previousPageName != null && previousPageName.isNotEmpty) {
           _reporter.setCurrentRoute(previousPageName);
           _reporter.activatePageTrace(previousPageName);
           onPageRoutePushed?.call(previousPageName);
         }
+      }
+    }
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    final oldName = oldRoute?.settings.name;
+    if (oldName != null && oldName.isNotEmpty) {
+      final oldPageInstanceId =
+          oldRoute == null ? null : _routePageInstances.remove(oldRoute);
+      _reporter.finishPageLoad(
+        oldName,
+        nextRouteName: newRoute?.settings.name,
+        pageInstanceId: oldPageInstanceId,
+        endReason: PageEndReasons.routeReplace,
+        resumePrevious: false,
+      );
+    }
+    if (newRoute is PageRoute && newRoute.settings.name != null) {
+      final newName = newRoute.settings.name!;
+      if (newName.isNotEmpty) {
+        final now = DateTime.now();
+        final pageInstanceId = _reporter.startPageLoad(
+          newName,
+          previousRouteName: oldName,
+          startTime: now,
+        );
+        if (pageInstanceId != null) {
+          _routePageInstances[newRoute] = pageInstanceId;
+        }
+        onPageRoutePushed?.call(newName);
+        _reporter.recordPageView(newName);
+        _schedulePageFirstFrameFallback(
+          newName,
+          pageInstanceId: pageInstanceId,
+        );
       }
     }
   }
@@ -63,9 +110,12 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     }
   }
 
-  void _schedulePageFirstFrameFallback(String pageName) {
+  void _schedulePageFirstFrameFallback(
+    String pageName, {
+    String? pageInstanceId,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _reporter.finishPageFirstFrame(pageName);
+      _reporter.finishPageFirstFrame(pageName, pageInstanceId: pageInstanceId);
     });
   }
 }

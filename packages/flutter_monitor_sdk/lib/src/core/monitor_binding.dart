@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
+import 'package:flutter_monitor_sdk/src/modules/frame_timing_dispatcher.dart';
+import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/memory_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
@@ -20,6 +22,8 @@ class MonitorBinding {
   MemoryCollector? _memoryCollector;
   NativeBridgeController? _nativeBridgeController;
   StartupTraceController? _startupTraceController;
+  FrameWindowCollector? _frameWindowCollector;
+  FrameTimingDispatcher? _frameTimingDispatcher;
   String? _currentPage; // 用于给 JankMonitor 提供当前页面信息
 
   // --- 单例模式设置 ---
@@ -47,6 +51,8 @@ class MonitorBinding {
     }
 
     // 2. 根据配置，决定是否初始化各个监控模块。
+    reporter.onPageActivity = _handlePageActivity;
+
     if (config.enableErrorMonitor) {
       try {
         errorMonitor = ErrorMonitor(reporter);
@@ -78,6 +84,24 @@ class MonitorBinding {
       }
     }
 
+    final needsFrameTimings =
+        config.enableJankMonitor || config.effectiveFrameConfig.enabled;
+    if (needsFrameTimings) {
+      _frameTimingDispatcher = FrameTimingDispatcher();
+    }
+
+    if (config.effectiveFrameConfig.enabled) {
+      try {
+        _frameWindowCollector = FrameWindowCollector(reporter)
+          ..startAppWindow(timestamp: appStartTime);
+        _frameTimingDispatcher?.addListener(
+          _frameWindowCollector!.recordTimings,
+        );
+      } catch (e) {
+        debugPrint("错误: FrameWindowCollector 初始化失败: $e");
+      }
+    }
+
     // 4. enableJankMonitor 初始化UI卡顿
     if (config.enableJankMonitor) {
       try {
@@ -102,11 +126,14 @@ class MonitorBinding {
           config: config.effectiveJankConfig,
         );
         jankMonitor.init();
+        _frameTimingDispatcher?.addListener(jankMonitor.recordTimings);
         debugPrint("✅ JankMonitor 初始化成功");
       } catch (e) {
         debugPrint("错误: JankMonitor 初始化失败: $e");
       }
     }
+
+    _frameTimingDispatcher?.init();
 
     if (config.effectiveMemoryConfig.enabled) {
       try {
@@ -214,6 +241,7 @@ class MonitorBinding {
           state == LifecycleStates.paused ||
           state == LifecycleStates.hidden) {
         if (state == LifecycleStates.resumed) {
+          _frameWindowCollector?.startAppWindow(timestamp: timestamp);
           WidgetsBinding.instance.addPostFrameCallback((_) {
             reporter.finishHotStartTrace(
               endTime: DateTime.now(),
@@ -233,6 +261,14 @@ class MonitorBinding {
                 Future<void>.value(),
           );
         } else {
+          _frameWindowCollector?.finishPageWindow(
+            PageActivePhases.lifecycleBackground,
+            timestamp: timestamp,
+          );
+          _frameWindowCollector?.finishAppWindow(
+            PageActivePhases.lifecycleBackground,
+            timestamp: timestamp,
+          );
           unawaited(
             _memoryCollector?.recordSample(
                   trigger: TriggerValues.lifecycleState(state),
@@ -251,6 +287,7 @@ class MonitorBinding {
   }
 
   Future<void> dispose() async {
+    _frameWindowCollector?.dispose();
     try {
       await reporter.dispose();
     } catch (e) {
@@ -262,6 +299,11 @@ class MonitorBinding {
       } catch (e) {
         debugPrint("错误: JankMonitor dispose 失败: $e");
       }
+    }
+    try {
+      _frameTimingDispatcher?.dispose();
+    } catch (e) {
+      debugPrint("错误: FrameTimingDispatcher dispose 失败: $e");
     }
     try {
       _lifecycleManager?.dispose();
@@ -276,5 +318,22 @@ class MonitorBinding {
     if (identical(_instance, this)) {
       _instance = null;
     }
+  }
+
+  void _handlePageActivity(PageActivitySnapshot activity) {
+    _currentPage = activity.routeName;
+    if (activity.activePhase == PageActivePhases.enter ||
+        activity.activePhase == PageActivePhases.resume) {
+      _frameWindowCollector?.startPageWindow(activity);
+    } else {
+      _frameWindowCollector?.finishPageWindow(
+        activity.activePhase,
+        timestamp: activity.timestamp,
+      );
+    }
+    unawaited(
+      _memoryCollector?.recordPageActivitySample(activity: activity) ??
+          Future<void>.value(),
+    );
   }
 }

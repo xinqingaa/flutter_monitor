@@ -308,7 +308,12 @@ class _HomePageState extends State<HomePage>
             _section('Page And Route', [
               _button(
                 label: 'Push /detail',
-                onPressed: () => Navigator.pushNamed(context, '/detail'),
+                onPressed:
+                    () => Navigator.pushNamed(
+                      context,
+                      '/detail',
+                      arguments: const <String, Object?>{'depth': 1},
+                    ),
               ),
               _button(
                 label: 'Push /performance_test',

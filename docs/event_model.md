@@ -270,6 +270,8 @@ flowchart TB
 | `page.from` | string | queryable | 是 | 页面来源 route |
 | `page.to` | string | queryable | 是 | 页面离开后进入的 route |
 | `page.instance_id` | string | queryable | 是 | 单次页面实例 ID，用于区分同 route 多次进入 |
+| `page.active_window_id` | string | queryable | 是 | 单次页面活跃窗口 ID，用于区分同一页面实例多段前台可见时间 |
+| `page.active_phase` | string | safe | 是 | 页面活跃窗口阶段，例如 page.enter、page.covered、page.exit、page.resume、lifecycle.background、app.dispose |
 | `page.load_ms` | duration_ms | safe | 是 | 页面加载耗时，通常等于首次可渲染帧耗时 |
 | `http.method` | string | safe | 是 | GET/POST 等 |
 | `http.url.normalized` | string | queryable | 是 | 归一化 URL，不含 query |
@@ -293,6 +295,13 @@ flowchart TB
 | `frame.p50_ms` | duration_ms | safe | 是 | 帧耗时 P50 |
 | `frame.p90_ms` | duration_ms | safe | 是 | 帧耗时 P90 |
 | `frame.p99_ms` | duration_ms | safe | 是 | 帧耗时 P99 |
+| `frame.window_id` | string | queryable | 是 | 帧聚合窗口 ID；页面窗口应等于或关联 `page.active_window_id` |
+| `frame.window_type` | string | safe | 是 | 帧窗口类型，当前规划为 app/page |
+| `frame.window_phase` | string | safe | 是 | 帧窗口闭合阶段，例如 app.background、page.covered、page.exit |
+| `frame.sample_count` | number | safe | 是 | 窗口内参与统计的帧样本数 |
+| `frame.slow_count` | number | safe | 是 | 窗口内超过帧预算的慢帧数量 |
+| `frame.dropped_count` | number | safe | 是 | 基于帧耗时估算的 dropped frame 数量 |
+| `frame.refresh_rate` | number | safe | 是 | 当前窗口采用的刷新率，用于解释帧预算 |
 | `memory.rss_mb` | number | safe | 是 | 进程常驻内存 |
 | `memory.heap_used_mb` | number | safe | 否 | Dart/Flutter heap 使用 |
 | `memory.heap_capacity_mb` | number | safe | 否 | heap 容量 |
@@ -302,6 +311,8 @@ flowchart TB
 | `memory.growth_duration_ms` | duration_ms | safe | 是 | 观察窗口 |
 | `memory.pressure_level` | string | safe | 是 | none/moderate/critical/unknown |
 | `memory.sample_source` | string | safe | 是 | dart/native/system/unknown |
+| `memory.sample_phase` | string | safe | 是 | 内存采样阶段，例如 session.start、page.enter、page.covered、page.exit、page.resume、lifecycle.background |
+| `memory.sample_delay_ms` | duration_ms | safe | 是 | 采样相对触发点的延迟，用于解释异步或延迟采样 |
 | `app.exit_flush.success` | boolean | safe | 是 | 退出前 flush 是否成功 |
 | `native.signal` | string | safe | 是 | memory/crash/anr/oom/lifecycle |
 | `native.thread` | string | queryable | 否 | native 线程名 |
@@ -366,12 +377,43 @@ flowchart TB
 |---|---|
 | `manual` | 手动或测试触发 |
 | `session.start` | session 建立后的初始采样 |
+| `page.enter` | 页面活跃窗口开始时触发 |
+| `page.covered` | 当前页面被新页面覆盖、活跃窗口结束时触发 |
+| `page.exit` | 页面出栈、页面实例结束时触发 |
+| `page.resume` | 已存在页面重新成为当前可见页面时触发 |
+| `lifecycle.background` | App 进入后台、当前页面活跃窗口结束时触发 |
+| `app.dispose` | SDK 或 App 退出清理当前页面活跃窗口时触发 |
 | `jank.sequence` | 卡顿序列后触发的采样或增长检查 |
 | `lifecycle.paused` | 进入 paused 后触发的采样 |
 | `lifecycle.hidden` | 进入 hidden 后触发的采样 |
 | `lifecycle.resumed` | 回到 resumed 后触发的增长检查 |
 
 `memory.leak.suspect` 不是确定性泄漏结论。SDK、example、DevTools、Workbench 和服务端展示都只能使用“疑似泄漏”或“泄漏线索”表达；只有业务或外部工具提供额外证据时，才能在 payload 中附带该证据来源。
+
+### 页面实例与活跃窗口
+
+页面性能采集需要区分 route 名称、页面实例和页面活跃窗口，三者不能互相替代：
+
+| 概念 | 字段 | 语义 | 主要用途 |
+|---|---|---|---|
+| route 名称 | `context.route.name` | 页面类型或路由标识，例如 `/detail` | 查询、聚合、展示 |
+| 页面实例 | `page.instance_id` | 一次 route push 产生的页面实例，推荐由 route 名称和单调时间/ID 组成 | 区分同 route 多次进入，关联 page trace/load/stay |
+| 页面活跃窗口 | `page.active_window_id` | 某个页面实例处于前台可见、可归因性能的一段时间 | 关联页面级内存样本和帧聚合窗口 |
+
+同一时刻只有一个当前页面活跃窗口，但同一个页面实例可以拥有多段活跃窗口。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`；活跃窗口是 `A1.window1`、`B1.window1`、`B2.window1`、`C1.window1`、`A1.window2`。回到 A 时不应伪造成新的 A route 实例，但应开启新的 A 活跃窗口，用于单独统计恢复后这一段的内存和帧表现。
+
+页面 trace 仍由 `trace page.visit` 表达页面实例生命周期；`page.active_window_id` 只表达性能采集窗口，不替代 `traceId`、`spanId` 或 `page.instance_id`。页面级 `memory.sample` 和规划中的 `ui.frame.window` 应同时携带 `context.route.name`、`page.instance_id` 和 `page.active_window_id`：route 用于聚合，页面实例用于还原一次打开，活跃窗口用于解释用户实际看到页面这一段时间内的性能。
+
+页面活跃阶段推荐使用固定值：
+
+| 值 | 说明 |
+|---|---|
+| `page.enter` | 新页面实例进入并成为当前可见页面 |
+| `page.covered` | 当前页面被新页面覆盖，页面实例仍在栈中但不再可见 |
+| `page.exit` | 当前页面出栈，页面实例结束 |
+| `page.resume` | 栈中已有页面重新成为当前可见页面 |
+| `lifecycle.background` | App 进入后台，当前可见页面活跃窗口闭合 |
+| `app.dispose` | SDK dispose 或 App 退出时尽力闭合当前窗口 |
 
 ### 增强 Lifecycle 事件
 
