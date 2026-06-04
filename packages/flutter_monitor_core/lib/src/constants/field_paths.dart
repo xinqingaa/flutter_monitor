@@ -130,6 +130,11 @@ abstract final class FieldPaths {
   static const frameRefreshRate = 'frame.refresh_rate';
 
   static const memoryRssMb = 'memory.rss_mb';
+  static const memoryStartRssMb = 'memory.start_rss_mb';
+  static const memoryEndRssMb = 'memory.end_rss_mb';
+  static const memoryDeltaRssMb = 'memory.delta_rss_mb';
+  static const memoryEnterRssMb = 'memory.enter_rss_mb';
+  static const memoryExitRssMb = 'memory.exit_rss_mb';
   static const memoryHeapUsedMb = 'memory.heap_used_mb';
   static const memoryHeapCapacityMb = 'memory.heap_capacity_mb';
   static const memoryExternalMb = 'memory.external_mb';

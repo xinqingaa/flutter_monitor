@@ -1,14 +1,23 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
-import 'package:flutter_monitor_sdk/src/core/reporter.dart';
+import 'package:flutter_monitor_sdk/src/core/reporter.dart'
+    show PageActivitySnapshot;
 
 class FrameWindowCollector {
-  FrameWindowCollector(this._reporter);
+  FrameWindowCollector({
+    this.onAppWindowFinished,
+    this.onPageWindowFinished,
+    this.startupFrameTimingTimeout = const Duration(milliseconds: 250),
+  });
 
-  final Reporter _reporter;
+  final void Function(FrameStatsSnapshot snapshot)? onAppWindowFinished;
+  final void Function(FrameStatsSnapshot snapshot)? onPageWindowFinished;
+  final Duration startupFrameTimingTimeout;
   final Map<String, _FrameWindow> _windows = <String, _FrameWindow>{};
+  _PendingAppWindowFinish? _pendingAppWindowFinish;
 
   double get refreshRate {
     final views = SchedulerBinding.instance.platformDispatcher.views;
@@ -22,8 +31,7 @@ class FrameWindowCollector {
   void startAppWindow({DateTime? timestamp}) {
     if (_windows.containsKey(FrameWindowTypes.app)) return;
     _windows[FrameWindowTypes.app] = _FrameWindow(
-      id:
-          '${FrameWindowTypes.app}_${(timestamp ?? DateTime.now()).microsecondsSinceEpoch}',
+      id: '${FrameWindowTypes.app}_${(timestamp ?? DateTime.now()).microsecondsSinceEpoch}',
       type: FrameWindowTypes.app,
       startedAt: timestamp ?? DateTime.now(),
       refreshRate: refreshRate,
@@ -52,18 +60,42 @@ class FrameWindowCollector {
         window.add(durationMs);
       }
     }
+    _finishPendingAppWindow();
   }
 
   void finishPageWindow(String phase, {DateTime? timestamp}) {
     final window = _windows.remove(FrameWindowTypes.page);
     if (window == null) return;
-    _record(window, phase: phase, timestamp: timestamp);
+    final snapshot = _snapshot(window, phase: phase, timestamp: timestamp);
+    if (snapshot != null) onPageWindowFinished?.call(snapshot);
   }
 
   void finishAppWindow(String phase, {DateTime? timestamp}) {
+    _pendingAppWindowFinish?.complete();
+    _pendingAppWindowFinish = null;
     final window = _windows.remove(FrameWindowTypes.app);
     if (window == null) return;
-    _record(window, phase: phase, timestamp: timestamp);
+    final snapshot = _snapshot(window, phase: phase, timestamp: timestamp);
+    if (snapshot != null) onAppWindowFinished?.call(snapshot);
+  }
+
+  Future<void> finishAppWindowAfterNextTiming(
+    String phase, {
+    DateTime? timestamp,
+  }) {
+    final window = _windows[FrameWindowTypes.app];
+    if (window == null) return Future<void>.value();
+    if (window.sampleCount > 0) {
+      finishAppWindow(phase, timestamp: timestamp);
+      return Future<void>.value();
+    }
+    final existing = _pendingAppWindowFinish;
+    if (existing != null) return existing.done;
+
+    final pending = _PendingAppWindowFinish(phase: phase, timestamp: timestamp);
+    _pendingAppWindowFinish = pending;
+    pending.timer = Timer(startupFrameTimingTimeout, _finishPendingAppWindow);
+    return pending.done;
   }
 
   void dispose({DateTime? timestamp}) {
@@ -71,15 +103,23 @@ class FrameWindowCollector {
     finishAppWindow(PageActivePhases.appDispose, timestamp: timestamp);
   }
 
-  void _record(
+  void _finishPendingAppWindow() {
+    final pending = _pendingAppWindowFinish;
+    if (pending == null) return;
+    _pendingAppWindowFinish = null;
+    pending.complete();
+    finishAppWindow(pending.phase, timestamp: pending.timestamp);
+  }
+
+  FrameStatsSnapshot? _snapshot(
     _FrameWindow window, {
     required String phase,
     DateTime? timestamp,
   }) {
-    if (window.sampleCount == 0) return;
+    if (window.sampleCount == 0) return null;
     final endedAt = timestamp ?? DateTime.now();
     final percentiles = window.percentiles();
-    _reporter.recordFrameWindow(
+    return FrameStatsSnapshot(
       windowId: window.id,
       windowType: window.type,
       windowPhase: phase,
@@ -102,6 +142,98 @@ class FrameWindowCollector {
       startTime: window.startedAt,
       endTime: endedAt,
     );
+  }
+}
+
+class _PendingAppWindowFinish {
+  _PendingAppWindowFinish({required this.phase, this.timestamp});
+
+  final String phase;
+  final DateTime? timestamp;
+  final Completer<void> _completer = Completer<void>();
+  Timer? timer;
+
+  Future<void> get done => _completer.future;
+
+  void complete() {
+    timer?.cancel();
+    timer = null;
+    if (!_completer.isCompleted) {
+      _completer.complete();
+    }
+  }
+}
+
+class FrameStatsSnapshot {
+  const FrameStatsSnapshot({
+    required this.windowId,
+    required this.windowType,
+    required this.windowPhase,
+    required this.sampleCount,
+    required this.slowCount,
+    required this.droppedCount,
+    required this.refreshRate,
+    required this.frameMaxMs,
+    required this.frameAvgMs,
+    required this.frameBudgetMs,
+    this.frameFps,
+    this.frameStability,
+    this.frameP50Ms,
+    this.frameP90Ms,
+    this.frameP99Ms,
+    this.routeName,
+    this.traceId,
+    this.pageInstanceId,
+    this.pageActiveWindowId,
+    this.startTime,
+    this.endTime,
+  });
+
+  final String windowId;
+  final String windowType;
+  final String windowPhase;
+  final int sampleCount;
+  final int slowCount;
+  final int droppedCount;
+  final num refreshRate;
+  final num frameMaxMs;
+  final num frameAvgMs;
+  final num frameBudgetMs;
+  final num? frameFps;
+  final num? frameStability;
+  final num? frameP50Ms;
+  final num? frameP90Ms;
+  final num? frameP99Ms;
+  final String? routeName;
+  final String? traceId;
+  final String? pageInstanceId;
+  final String? pageActiveWindowId;
+  final DateTime? startTime;
+  final DateTime? endTime;
+
+  Map<String, Object?> toAttributes({bool includeWindowFields = false}) {
+    return <String, Object?>{
+      if (includeWindowFields) ...<String, Object?>{
+        FieldPaths.frameWindowId: windowId,
+        FieldPaths.frameWindowType: windowType,
+        FieldPaths.frameWindowPhase: windowPhase,
+      },
+      FieldPaths.frameSampleCount: sampleCount,
+      FieldPaths.frameSlowCount: slowCount,
+      FieldPaths.frameDroppedCount: droppedCount,
+      FieldPaths.frameRefreshRate: refreshRate,
+      FieldPaths.frameMaxMs: frameMaxMs,
+      FieldPaths.frameAvgMs: frameAvgMs,
+      FieldPaths.frameBudgetMs: frameBudgetMs,
+      if (frameFps != null) FieldPaths.frameFps: frameFps,
+      if (frameStability != null) FieldPaths.frameStability: frameStability,
+      if (frameP50Ms != null) FieldPaths.frameP50Ms: frameP50Ms,
+      if (frameP90Ms != null) FieldPaths.frameP90Ms: frameP90Ms,
+      if (frameP99Ms != null) FieldPaths.frameP99Ms: frameP99Ms,
+      if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
+      if (pageActiveWindowId != null)
+        FieldPaths.pageActiveWindowId: pageActiveWindowId,
+    };
   }
 }
 

@@ -54,6 +54,26 @@ void main() {
       FieldValueType.number,
     );
     expect(
+      registry.lookup(FieldPaths.memoryStartRssMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryEndRssMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryDeltaRssMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryEnterRssMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.memoryExitRssMb)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
       registry.lookup(FieldPaths.memoryNativeUsedMb)?.valueType,
       FieldValueType.number,
     );
@@ -162,10 +182,9 @@ void main() {
   });
 
   test('does not register deprecated duplicate fields', () {
-    final paths =
-        FieldRegistry.defaults().fields
-            .map((definition) => definition.path)
-            .toSet();
+    final paths = FieldRegistry.defaults().fields
+        .map((definition) => definition.path)
+        .toSet();
 
     expect(paths, isNot(contains('page.route')));
     expect(paths, isNot(contains('page.route.source')));
@@ -186,10 +205,9 @@ void main() {
   });
 
   test('registers every canonical FieldPaths value', () {
-    final paths =
-        FieldRegistry.defaults().fields
-            .map((definition) => definition.path)
-            .toSet();
+    final paths = FieldRegistry.defaults().fields
+        .map((definition) => definition.path)
+        .toSet();
 
     const canonicalPaths = <String>{
       FieldPaths.schemaVersion,
@@ -302,6 +320,11 @@ void main() {
       FieldPaths.frameDroppedCount,
       FieldPaths.frameRefreshRate,
       FieldPaths.memoryRssMb,
+      FieldPaths.memoryStartRssMb,
+      FieldPaths.memoryEndRssMb,
+      FieldPaths.memoryDeltaRssMb,
+      FieldPaths.memoryEnterRssMb,
+      FieldPaths.memoryExitRssMb,
       FieldPaths.memoryHeapUsedMb,
       FieldPaths.memoryHeapCapacityMb,
       FieldPaths.memoryExternalMb,

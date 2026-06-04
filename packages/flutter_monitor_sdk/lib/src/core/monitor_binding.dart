@@ -69,6 +69,18 @@ class MonitorBinding {
         performanceMonitor = PerformanceMonitor(
           reporter,
           startupTraceController: _startupTraceController,
+          onStartupFirstFrame: (timestamp) {
+            final collector = _frameWindowCollector;
+            if (collector == null) return Future<void>.value();
+            return collector
+                .finishAppWindowAfterNextTiming(
+                  StartupEndReasons.firstFrame,
+                  timestamp: timestamp,
+                )
+                .whenComplete(() {
+                  collector.startAppWindow(timestamp: timestamp);
+                });
+          },
         );
         // 将 App 启动时间传递给性能监控器，用于计算启动耗时。
         performanceMonitor.init(appStartTime);
@@ -92,8 +104,10 @@ class MonitorBinding {
 
     if (config.effectiveFrameConfig.enabled) {
       try {
-        _frameWindowCollector = FrameWindowCollector(reporter)
-          ..startAppWindow(timestamp: appStartTime);
+        _frameWindowCollector = FrameWindowCollector(
+          onAppWindowFinished: reporter.addStartupFrameStats,
+          onPageWindowFinished: reporter.addPageFrameStats,
+        )..startAppWindow(timestamp: appStartTime);
         _frameTimingDispatcher?.addListener(
           _frameWindowCollector!.recordTimings,
         );
@@ -242,10 +256,25 @@ class MonitorBinding {
           state == LifecycleStates.hidden) {
         if (state == LifecycleStates.resumed) {
           _frameWindowCollector?.startAppWindow(timestamp: timestamp);
+          reporter.beginStartupPerformance(
+            startTime: timestamp ?? DateTime.now(),
+          );
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            reporter.finishHotStartTrace(
-              endTime: DateTime.now(),
-              endReason: StartupEndReasons.firstFrame,
+            final now = DateTime.now();
+            final collector = _frameWindowCollector;
+            unawaited(
+              (collector?.finishAppWindowAfterNextTiming(
+                        StartupEndReasons.firstFrame,
+                        timestamp: now,
+                      ) ??
+                      Future<void>.value())
+                  .whenComplete(() {
+                    reporter.finishHotStartTrace(
+                      endTime: now,
+                      endReason: StartupEndReasons.firstFrame,
+                    );
+                    collector?.startAppWindow(timestamp: now);
+                  }),
             );
           });
           unawaited(
@@ -332,8 +361,7 @@ class MonitorBinding {
       );
     }
     unawaited(
-      _memoryCollector?.recordPageActivitySample(activity: activity) ??
-          Future<void>.value(),
+      Future<void>.sync(() => reporter.recordPageActivityMemory(activity)),
     );
   }
 }

@@ -2,10 +2,12 @@
 
 ## SDK 页面级内存窗口计划
 
+> 状态：已被当前主链路收口策略取代。基础 SDK 默认不再为页面切换输出独立 `memory.sample`，而是在 `page.visit` trace end 写入 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb`。本节保留为后续 diagnostic 页面内存曲线能力草案；恢复实施前必须重新评估事件量、性能影响和 Workbench 展示边界。
+
 ### 目标
 
 - 先聚焦 Flutter SDK 层，不把 native 作为页面内存诊断的前置依赖。
-- 页面入栈、首帧、出栈和出栈后一段时间都应产生可展示的 `memory.sample`，Workbench 能看到原始内存变化曲线。
+- diagnostic 模式可选择在页面入栈、首帧、出栈和出栈后一段时间产生可展示的 `memory.sample`，Workbench 能看到原始内存变化曲线；生产默认链路只写入页面 trace end 摘要。
 - `memory.growth` 和 `memory.leak.suspect` 只作为 SDK 基于样本生成的诊断结论，不能替代原始样本展示。
 - 所有页面内存采样必须异步执行。`didPush`、`didPop`、首帧回调和页面 trace 结束路径只能投递采样任务，不能等待采样完成，不能影响页面切换性能。
 - SDK 不主动触发 GC，不承担内存回收职责。
@@ -120,15 +122,15 @@
 
 ## SDK 页面与应用帧窗口计划
 
-> 状态：基础页面/App 帧窗口已经进入 SDK 方案；长停留 interval 切片和业务交互 frame window API 暂不开发，作为未来扩展评估。
+> 状态：基础页面/App 帧窗口已经收口到主链路方案。SDK 可以继续在内存中维护窗口聚合，但默认不输出独立 `ui.frame.window`；启动窗口摘要写入 `app.cold_start` / `app.hot_start` trace end，页面窗口摘要写入 `page.visit` trace end。长停留 interval 切片、独立 frame window envelope 和业务交互 frame window API 暂不开发，作为未来 diagnostic 扩展评估。
 
 ### 目标
 
 - 当前 SDK 只在连续慢帧达到阈值时生成 `ui.jank.sequence`，缺少正常情况下的 FPS、稳定性、分位数和页面维度帧表现。
-- 新增低频聚合型帧窗口事件，描述页面和应用在正常运行时的帧表现。
-- 帧窗口不逐帧上报，只在内存中聚合后输出摘要，避免高频事件和性能开销。
+- 新增低频聚合型帧窗口摘要，描述页面和应用在正常运行时的帧表现。
+- 帧窗口不逐帧上报，只在内存中聚合后写回主 trace 摘要，避免高频事件和性能开销。
 - 设备层只表达稳定能力，例如 `resource.device.refreshRate` 和 `resource.device.deviceTier`；帧表现主要落在页面和应用窗口。
-- 当前默认采集维度以路由和 lifecycle 边界为主：App 启动后开启 App window，页面 enter/resume 后开启 Page window，页面 covered/exit/background/dispose 时输出摘要。
+- 当前默认采集维度以路由和 lifecycle 边界为主：App 启动后开启 App window，页面 enter/resume 后开启 Page window，页面 covered/exit/background/dispose 时归集摘要，最终合并到启动或页面主 trace。
 - 长时间停留但不切路由的图表、TabBar、复杂滚动页面，后续通过 interval 切片和业务交互窗口补充，不在当前基础能力中强制定时采集。
 
 ### 事件与字段草案

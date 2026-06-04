@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
+import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
@@ -650,10 +652,9 @@ void main() {
       output.events
           .where((event) => event['name'] == 'app.lifecycle')
           .every(
-            (event) =>
-                !(event['payload'] as Map).containsKey(
-                  FieldPaths.payloadBreadcrumbs,
-                ),
+            (event) => !(event['payload'] as Map).containsKey(
+              FieldPaths.payloadBreadcrumbs,
+            ),
           ),
       isTrue,
     );
@@ -757,8 +758,8 @@ void main() {
         isFalse,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes'] as Map)[FieldPaths
-            .pageFirstFrameMs],
+        (pageFirstFrameEvents.last['attributes']
+            as Map)[FieldPaths.pageFirstFrameMs],
         isA<num>(),
       );
       expect(
@@ -944,16 +945,12 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/':
-              (_) => Builder(
-                builder:
-                    (context) => TextButton(
-                      onPressed:
-                          () =>
-                              Navigator.of(context).pushNamed('/complex_list'),
-                      child: const Text('complex'),
-                    ),
-              ),
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/complex_list'),
+              child: const Text('complex'),
+            ),
+          ),
           '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
         },
       ),
@@ -1020,31 +1017,26 @@ void main() {
         navigatorObservers: <NavigatorObserver>[routeObserver],
         initialRoute: '/',
         routes: <String, WidgetBuilder>{
-          '/':
-              (_) => Builder(
-                builder:
-                    (context) => TextButton(
-                      onPressed:
-                          () => Navigator.of(context).pushNamed('/detail'),
-                      child: const Text('detail'),
-                    ),
-              ),
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/detail'),
+              child: const Text('detail'),
+            ),
+          ),
           '/detail': (_) => const SizedBox(key: Key('detail-page')),
         },
       ),
     );
     await tester.pump();
-    final homeTraceId =
-        output.events.firstWhere(
-          (event) => event['name'] == 'page.visit',
-        )['traceId'];
+    final homeTraceId = output.events.firstWhere(
+      (event) => event['name'] == 'page.visit',
+    )['traceId'];
 
     await tester.tap(find.text('detail'));
     await tester.pumpAndSettle();
-    final detailTraceId =
-        output.events
-            .where((event) => event['name'] == 'page.visit')
-            .last['traceId'];
+    final detailTraceId = output.events
+        .where((event) => event['name'] == 'page.visit')
+        .last['traceId'];
 
     Navigator.of(tester.element(find.byKey(const Key('detail-page')))).pop();
     await tester.pumpAndSettle();
@@ -1329,6 +1321,371 @@ void main() {
     expect(attributes[FieldPaths.httpSuccess], isFalse);
     expect(attributes[FieldPaths.httpErrorType], HttpErrorTypes.httpStatus);
     expect(attributes[FieldPaths.responseSizeBytes], 256);
+  });
+
+  test('startup performance evidence is merged into cold start trace', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final appStartTime = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    final startup = StartupTraceController(
+      reporter: reporter,
+      appStartTime: appStartTime,
+    );
+
+    startup.startSdkInit();
+    reporter.addStartupFrameStats(
+      FrameStatsSnapshot(
+        windowId: 'app_1',
+        windowType: FrameWindowTypes.app,
+        windowPhase: StartupEndReasons.firstFrame,
+        sampleCount: 4,
+        slowCount: 1,
+        droppedCount: 2,
+        refreshRate: 60,
+        frameMaxMs: 42,
+        frameAvgMs: 20,
+        frameBudgetMs: 16.67,
+        frameFps: 50,
+        frameStability: 0.75,
+        frameP50Ms: 16,
+        frameP90Ms: 42,
+        frameP99Ms: 42,
+        startTime: appStartTime,
+        endTime: appStartTime.add(const Duration(milliseconds: 88)),
+      ),
+    );
+    startup.finishFirstFrame(
+      endTime: appStartTime.add(const Duration(milliseconds: 88)),
+    );
+
+    final coldStartEnd = output.events.lastWhere(
+      (event) => event['name'] == EventNames.appColdStart,
+    );
+    final attributes = coldStartEnd['attributes'] as Map;
+
+    expect(coldStartEnd['signalType'], SignalType.trace.toJson());
+    expect(coldStartEnd['status'], EventStatus.ok.toJson());
+    expect(attributes[FieldPaths.appStartType], StartTypes.cold);
+    expect(attributes[FieldPaths.appFirstFrameMs], 88);
+    expect(attributes[FieldPaths.frameSampleCount], 4);
+    expect(attributes[FieldPaths.frameSlowCount], 1);
+    expect(attributes[FieldPaths.frameDroppedCount], 2);
+    expect(attributes[FieldPaths.frameMaxMs], 42);
+    expect(attributes[FieldPaths.frameAvgMs], 20);
+    expect(attributes[FieldPaths.frameFps], 50);
+    expect(attributes[FieldPaths.frameStability], 0.75);
+    expect(attributes[FieldPaths.frameP90Ms], 42);
+    expect(attributes[FieldPaths.memoryStartRssMb], isA<num>());
+    expect(attributes[FieldPaths.memoryEndRssMb], isA<num>());
+    expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
+    expect(attributes.containsKey(FieldPaths.frameWindowId), isFalse);
+    expect(
+      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      isEmpty,
+    );
+    expect(
+      output.events.where((event) => event['name'] == EventNames.memorySample),
+      isEmpty,
+    );
+    expect(
+      SchemaValidator()
+          .validateJson(coldStartEnd.cast<String, Object?>())
+          .isValid,
+      isTrue,
+    );
+  });
+
+  test('startup performance evidence is merged into hot start trace', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(flushOnBackground: false),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final pausedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    final resumedAt = DateTime.parse('2026-05-25T12:05:00.000+08:00');
+
+    await reporter.handleLifecycleState('paused', timestamp: pausedAt);
+    await reporter.handleLifecycleState('resumed', timestamp: resumedAt);
+    reporter.beginStartupPerformance(startTime: resumedAt);
+    reporter.addStartupFrameStats(
+      FrameStatsSnapshot(
+        windowId: 'app_hot_1',
+        windowType: FrameWindowTypes.app,
+        windowPhase: StartupEndReasons.firstFrame,
+        sampleCount: 3,
+        slowCount: 0,
+        droppedCount: 0,
+        refreshRate: 120,
+        frameMaxMs: 8,
+        frameAvgMs: 7,
+        frameBudgetMs: 8.33,
+        frameFps: 120,
+        frameStability: 1,
+        startTime: resumedAt,
+        endTime: resumedAt.add(const Duration(milliseconds: 96)),
+      ),
+    );
+    reporter.finishHotStartTrace(
+      endTime: resumedAt.add(const Duration(milliseconds: 96)),
+    );
+
+    final hotStartEnd = output.events.lastWhere(
+      (event) =>
+          event['name'] == EventNames.appHotStart &&
+          event['status'] == EventStatus.ok.toJson(),
+    );
+    final attributes = hotStartEnd['attributes'] as Map;
+
+    expect(hotStartEnd['durationMs'], 96);
+    expect(attributes[FieldPaths.appStartType], StartTypes.hot);
+    expect(
+      attributes[FieldPaths.appStartEndReason],
+      StartupEndReasons.firstFrame,
+    );
+    expect(attributes[FieldPaths.appFirstFrameMs], 96);
+    expect(attributes[FieldPaths.frameSampleCount], 3);
+    expect(attributes[FieldPaths.frameRefreshRate], 120);
+    expect(attributes[FieldPaths.frameStability], 1);
+    expect(attributes[FieldPaths.memoryStartRssMb], isA<num>());
+    expect(attributes[FieldPaths.memoryEndRssMb], isA<num>());
+    expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
+    expect(attributes.containsKey(FieldPaths.frameWindowId), isFalse);
+    expect(
+      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      isEmpty,
+    );
+  });
+
+  test(
+    'app frame window waits for the next frame timing before finishing',
+    () async {
+      final snapshots = <FrameStatsSnapshot>[];
+      final collector = FrameWindowCollector(
+        startupFrameTimingTimeout: const Duration(seconds: 1),
+        onAppWindowFinished: snapshots.add,
+      );
+      final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+      final firstFrameAt = startedAt.add(const Duration(milliseconds: 16));
+
+      collector.startAppWindow(timestamp: startedAt);
+      final finished = collector.finishAppWindowAfterNextTiming(
+        StartupEndReasons.firstFrame,
+        timestamp: firstFrameAt,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(snapshots, isEmpty);
+
+      collector.recordTimings(<FrameTiming>[
+        FrameTiming(
+          vsyncStart: 0,
+          buildStart: 1000,
+          buildFinish: 4000,
+          rasterStart: 4000,
+          rasterFinish: 17000,
+          rasterFinishWallTime: 17000,
+        ),
+      ]);
+      await finished;
+
+      expect(snapshots, hasLength(1));
+      expect(snapshots.single.windowType, FrameWindowTypes.app);
+      expect(snapshots.single.windowPhase, StartupEndReasons.firstFrame);
+      expect(snapshots.single.sampleCount, 1);
+      expect(snapshots.single.frameAvgMs, 17);
+      expect(snapshots.single.endTime, firstFrameAt);
+    },
+  );
+
+  test('page performance evidence is merged into page visit trace', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    final pageInstanceId = reporter.startPageLoad(
+      '/detail',
+      previousRouteName: '/home',
+      startTime: startedAt,
+    )!;
+    reporter.finishPageFirstFrame(
+      '/detail',
+      pageInstanceId: pageInstanceId,
+      endTime: startedAt.add(const Duration(milliseconds: 32)),
+    );
+    reporter.addPageFrameStats(
+      FrameStatsSnapshot(
+        windowId: '${pageInstanceId}_window_1',
+        windowType: FrameWindowTypes.page,
+        windowPhase: PageActivePhases.exit,
+        sampleCount: 5,
+        slowCount: 2,
+        droppedCount: 3,
+        refreshRate: 60,
+        frameMaxMs: 50,
+        frameAvgMs: 22,
+        frameBudgetMs: 16.67,
+        frameFps: 45.45,
+        frameStability: 0.6,
+        frameP50Ms: 18,
+        frameP90Ms: 50,
+        frameP99Ms: 50,
+        routeName: '/detail',
+        pageInstanceId: pageInstanceId,
+        pageActiveWindowId: '${pageInstanceId}_window_1',
+        startTime: startedAt,
+        endTime: startedAt.add(const Duration(seconds: 1)),
+      ),
+    );
+    reporter.finishPageLoad(
+      '/detail',
+      pageInstanceId: pageInstanceId,
+      nextRouteName: '/home',
+      endTime: startedAt.add(const Duration(seconds: 1)),
+    );
+
+    final pageVisitEnd = output.events.lastWhere(
+      (event) =>
+          event['name'] == EventNames.pageVisit &&
+          (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+              EventPhases.end,
+    );
+    final attributes = pageVisitEnd['attributes'] as Map;
+
+    expect(pageVisitEnd['signalType'], SignalType.trace.toJson());
+    expect(attributes[FieldPaths.pageInstanceId], pageInstanceId);
+    expect(attributes[FieldPaths.pageFrom], '/home');
+    expect(attributes[FieldPaths.pageTo], '/home');
+    expect(attributes[FieldPaths.frameSampleCount], 5);
+    expect(attributes[FieldPaths.frameSlowCount], 2);
+    expect(attributes[FieldPaths.frameDroppedCount], 3);
+    expect(attributes[FieldPaths.frameMaxMs], 50);
+    expect(attributes[FieldPaths.frameAvgMs], 22);
+    expect(attributes[FieldPaths.frameP90Ms], 50);
+    expect(attributes[FieldPaths.memoryEnterRssMb], isA<num>());
+    expect(attributes[FieldPaths.memoryExitRssMb], isA<num>());
+    expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
+    expect(attributes.containsKey(FieldPaths.frameWindowId), isFalse);
+    expect(
+      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      isEmpty,
+    );
+    expect(
+      output.events.where((event) => event['name'] == EventNames.memorySample),
+      isEmpty,
+    );
+    expect(
+      SchemaValidator()
+          .validateJson(pageVisitEnd.cast<String, Object?>())
+          .isValid,
+      isTrue,
+    );
+  });
+
+  test('same route page instances keep separate performance evidence', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    final firstPageId = reporter.startPageLoad(
+      '/detail',
+      startTime: startedAt,
+    )!;
+    final secondPageId = reporter.startPageLoad(
+      '/detail',
+      previousRouteName: '/detail',
+      startTime: startedAt.add(const Duration(milliseconds: 1)),
+    )!;
+    reporter.addPageFrameStats(
+      FrameStatsSnapshot(
+        windowId: '${firstPageId}_window_1',
+        windowType: FrameWindowTypes.page,
+        windowPhase: PageActivePhases.covered,
+        sampleCount: 2,
+        slowCount: 0,
+        droppedCount: 0,
+        refreshRate: 60,
+        frameMaxMs: 12,
+        frameAvgMs: 10,
+        frameBudgetMs: 16.67,
+        pageInstanceId: firstPageId,
+      ),
+    );
+    reporter.addPageFrameStats(
+      FrameStatsSnapshot(
+        windowId: '${secondPageId}_window_1',
+        windowType: FrameWindowTypes.page,
+        windowPhase: PageActivePhases.exit,
+        sampleCount: 7,
+        slowCount: 3,
+        droppedCount: 4,
+        refreshRate: 60,
+        frameMaxMs: 60,
+        frameAvgMs: 30,
+        frameBudgetMs: 16.67,
+        pageInstanceId: secondPageId,
+      ),
+    );
+    reporter.finishPageLoad(
+      '/detail',
+      pageInstanceId: secondPageId,
+      endTime: startedAt.add(const Duration(seconds: 1)),
+      resumePrevious: false,
+    );
+    reporter.finishPageLoad(
+      '/detail',
+      pageInstanceId: firstPageId,
+      endTime: startedAt.add(const Duration(seconds: 2)),
+      resumePrevious: false,
+    );
+
+    final pageVisitEnds = output.events
+        .where(
+          (event) =>
+              event['name'] == EventNames.pageVisit &&
+              (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+                  EventPhases.end,
+        )
+        .toList(growable: false);
+    final firstEnd = pageVisitEnds.singleWhere(
+      (event) =>
+          (event['attributes'] as Map)[FieldPaths.pageInstanceId] ==
+          firstPageId,
+    );
+    final secondEnd = pageVisitEnds.singleWhere(
+      (event) =>
+          (event['attributes'] as Map)[FieldPaths.pageInstanceId] ==
+          secondPageId,
+    );
+    final firstAttributes = firstEnd['attributes'] as Map;
+    final secondAttributes = secondEnd['attributes'] as Map;
+
+    expect(firstPageId, isNot(secondPageId));
+    expect(firstAttributes[FieldPaths.frameSampleCount], 2);
+    expect(firstAttributes[FieldPaths.frameMaxMs], 12);
+    expect(secondAttributes[FieldPaths.frameSampleCount], 7);
+    expect(secondAttributes[FieldPaths.frameMaxMs], 60);
+    expect(
+      output.events.where((event) => event['name'] == EventNames.uiFrameWindow),
+      isEmpty,
+    );
   });
 
   test(
@@ -1714,6 +2071,7 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 300));
 
     final hotStartEnd = output.events.lastWhere(
       (event) => event['name'] == 'app.hot_start' && event['status'] == 'ok',

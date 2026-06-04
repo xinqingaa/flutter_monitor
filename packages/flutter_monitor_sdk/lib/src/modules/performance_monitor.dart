@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
@@ -66,8 +68,9 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
     final oldName = oldRoute?.settings.name;
     if (oldName != null && oldName.isNotEmpty) {
-      final oldPageInstanceId =
-          oldRoute == null ? null : _routePageInstances.remove(oldRoute);
+      final oldPageInstanceId = oldRoute == null
+          ? null
+          : _routePageInstances.remove(oldRoute);
       _reporter.finishPageLoad(
         oldName,
         nextRouteName: newRoute?.settings.name,
@@ -144,10 +147,9 @@ class MonitorDioInterceptor extends Interceptor {
       statusCode: response.statusCode,
       durationMs: duration.inMilliseconds,
       success: _isSuccessfulStatusCode(response.statusCode),
-      errorType:
-          _isSuccessfulStatusCode(response.statusCode)
-              ? null
-              : HttpErrorTypes.httpStatus,
+      errorType: _isSuccessfulStatusCode(response.statusCode)
+          ? null
+          : HttpErrorTypes.httpStatus,
       requestSizeBytes: _dioRequestSize(response.requestOptions),
       responseSizeBytes: _dioResponseSize(response),
       source: SignalSources.sdkDio,
@@ -175,8 +177,9 @@ class MonitorDioInterceptor extends Interceptor {
       error: err.message,
       errorType: err.type.name,
       requestSizeBytes: _dioRequestSize(err.requestOptions),
-      responseSizeBytes:
-          err.response == null ? null : _dioResponseSize(err.response!),
+      responseSizeBytes: err.response == null
+          ? null
+          : _dioResponseSize(err.response!),
       source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
@@ -225,12 +228,15 @@ class MonitorDioInterceptor extends Interceptor {
 class PerformanceMonitor {
   final Reporter _reporter;
   final StartupTraceController? _startupTraceController;
+  final Future<void> Function(DateTime timestamp)? _onStartupFirstFrame;
   late final MonitorRouteObserver routeObserver;
 
   PerformanceMonitor(
     this._reporter, {
     StartupTraceController? startupTraceController,
-  }) : _startupTraceController = startupTraceController {
+    Future<void> Function(DateTime timestamp)? onStartupFirstFrame,
+  }) : _startupTraceController = startupTraceController,
+       _onStartupFirstFrame = onStartupFirstFrame {
     routeObserver = MonitorRouteObserver(_reporter);
   }
 
@@ -238,7 +244,16 @@ class PerformanceMonitor {
     // 监听第一帧渲染完成
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final now = DateTime.now();
-      _startupTraceController?.finishFirstFrame(endTime: now);
+      final onStartupFirstFrame = _onStartupFirstFrame;
+      if (onStartupFirstFrame == null) {
+        _startupTraceController?.finishFirstFrame(endTime: now);
+        return;
+      }
+      unawaited(
+        onStartupFirstFrame(now).whenComplete(() {
+          _startupTraceController?.finishFirstFrame(endTime: now);
+        }),
+      );
     });
   }
 }

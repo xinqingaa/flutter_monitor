@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
@@ -40,6 +41,7 @@ class Reporter {
   final List<String> _pageInstanceStack = <String>[];
   final Map<String, int> _activeWindowCounters = <String, int>{};
   PageActivitySnapshot? _currentPageActivity;
+  _StartupPerfRecord? _startupPerfRecord;
 
   Reporter(this._config) {
     _init();
@@ -97,6 +99,37 @@ class Reporter {
         ),
       );
       debugPrint('Native monitor bridge unavailable: $error');
+    }
+  }
+
+  void beginStartupPerformance({required DateTime startTime}) {
+    _startupPerfRecord = _StartupPerfRecord(
+      startedAt: startTime,
+      startRssMb: captureRssMb(),
+    );
+  }
+
+  void addStartupFrameStats(FrameStatsSnapshot snapshot) {
+    if (_startupPerfRecord == null) return;
+    _startupPerfRecord = _startupPerfRecord!.addFrameStats(snapshot);
+  }
+
+  Map<String, Object?> finishStartupPerformance({num? memoryEndRssMb}) {
+    final attributes =
+        _startupPerfRecord
+            ?.copyWith(endRssMb: memoryEndRssMb)
+            .performanceAttributes() ??
+        const <String, Object?>{};
+    _startupPerfRecord = null;
+    return attributes;
+  }
+
+  num? captureRssMb() {
+    try {
+      if (kIsWeb) return null;
+      return ProcessInfo.currentRss / 1024 / 1024;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -388,6 +421,7 @@ class Reporter {
       pageInstanceId: pageInstanceId,
       startedAt: startedAt,
       previousRouteName: previousRouteName,
+      memoryEnterRssMb: captureRssMb(),
     );
     _pageInstanceStack.add(pageInstanceId);
     _traceManager.setActiveTrace(traceId: traceId);
@@ -414,10 +448,9 @@ class Reporter {
     DateTime? endTime,
     String? pageInstanceId,
   }) {
-    final record =
-        pageInstanceId == null
-            ? _activePageTraceForRoute(routeName)
-            : _pageTracesByInstanceId[pageInstanceId];
+    final record = pageInstanceId == null
+        ? _activePageTraceForRoute(routeName)
+        : _pageTracesByInstanceId[pageInstanceId];
     if (record == null || record.firstFrameReported) {
       return;
     }
@@ -481,20 +514,28 @@ class Reporter {
     bool resumePrevious = true,
   }) {
     final finishedAt = endTime ?? DateTime.now();
-    final record =
-        pageInstanceId == null
-            ? _activePageTraceForRoute(routeName)
-            : _pageTracesByInstanceId[pageInstanceId];
+    final record = pageInstanceId == null
+        ? _activePageTraceForRoute(routeName)
+        : _pageTracesByInstanceId[pageInstanceId];
     if (record == null) return;
-    _pageTracesByInstanceId.remove(record.pageInstanceId);
-    _pageInstanceStack.remove(record.pageInstanceId);
+    final completedRecord = record.copyWith(
+      nextRouteName: nextRouteName,
+      memoryExitRssMb: captureRssMb(),
+    );
     _closePageWindow(
       record.pageInstanceId,
       PageActivePhases.exit,
       timestamp: finishedAt,
     );
+    final recordWithStats =
+        _pageTracesByInstanceId[record.pageInstanceId] ?? completedRecord;
+    _pageTracesByInstanceId.remove(record.pageInstanceId);
+    _pageInstanceStack.remove(record.pageInstanceId);
     _finishPageTrace(
-      record.copyWith(nextRouteName: nextRouteName),
+      recordWithStats.copyWith(
+        nextRouteName: nextRouteName,
+        memoryExitRssMb: completedRecord.memoryExitRssMb,
+      ),
       endTime: finishedAt,
       payload: <String, Object?>{PayloadKeys.pageEndReason: endReason},
     );
@@ -510,14 +551,20 @@ class Reporter {
     if (_pageTracesByInstanceId.isEmpty) return;
     final finishedAt = endTime ?? DateTime.now();
     final activePages = _pageTracesByInstanceId.values.toList(growable: false);
-    final activePhase =
-        endReason == PageEndReasons.appDispose
-            ? PageActivePhases.appDispose
-            : PageActivePhases.lifecycleBackground;
+    final activePhase = endReason == PageEndReasons.appDispose
+        ? PageActivePhases.appDispose
+        : PageActivePhases.lifecycleBackground;
     _closeCurrentPageWindow(activePhase, timestamp: finishedAt);
+    final completedPages = activePages
+        .map((record) {
+          final recordWithStats =
+              _pageTracesByInstanceId[record.pageInstanceId] ?? record;
+          return recordWithStats.copyWith(memoryExitRssMb: captureRssMb());
+        })
+        .toList(growable: false);
     _pageTracesByInstanceId.clear();
     _pageInstanceStack.clear();
-    for (final record in activePages) {
+    for (final record in completedPages) {
       _finishPageTrace(
         record,
         endTime: finishedAt,
@@ -548,14 +595,13 @@ class Reporter {
         startTime ??
         finishedAt.subtract(Duration(milliseconds: durationMs.round()));
     final errorText = error ?? payload[PayloadKeys.error];
-    final effectiveErrorType =
-        success
-            ? null
-            : _canonicalHttpErrorType(
-              errorType: errorType,
-              statusCode: statusCode,
-              error: errorText is String ? errorText : null,
-            );
+    final effectiveErrorType = success
+        ? null
+        : _canonicalHttpErrorType(
+            errorType: errorType,
+            statusCode: statusCode,
+            error: errorText is String ? errorText : null,
+          );
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -850,14 +896,12 @@ class Reporter {
         name: EventNames.memoryPressure,
         signalType: SignalType.metric,
         timestamp: timestamp ?? DateTime.now(),
-        level:
-            level == MemoryPressureLevel.critical
-                ? EventLevel.error
-                : EventLevel.warning,
-        status:
-            level == MemoryPressureLevel.none
-                ? EventStatus.ok
-                : EventStatus.error,
+        level: level == MemoryPressureLevel.critical
+            ? EventLevel.error
+            : EventLevel.warning,
+        status: level == MemoryPressureLevel.none
+            ? EventStatus.ok
+            : EventStatus.error,
         priority: EventPriority.high,
         breadcrumbLimit: 5,
         attributes: <String, Object?>{
@@ -1188,10 +1232,12 @@ class Reporter {
     _pendingHotStartTraceId = null;
     final finishedAt = endTime ?? DateTime.now();
     final record = _traceManager.trace(traceId);
-    final durationMs =
-        record == null
-            ? null
-            : finishedAt.difference(record.startTime).inMilliseconds;
+    final durationMs = record == null
+        ? null
+        : finishedAt.difference(record.startTime).inMilliseconds;
+    final performanceAttributes = finishStartupPerformance(
+      memoryEndRssMb: captureRssMb(),
+    );
     return endTrace(
       traceId,
       endTime: finishedAt,
@@ -1204,6 +1250,7 @@ class Reporter {
           FieldPaths.appFirstFrameMs: durationMs,
         if (durationMs != null && endReason == StartupEndReasons.interactive)
           FieldPaths.appInteractiveMs: durationMs,
+        ...performanceAttributes,
       },
       payload: <String, Object?>{PayloadKeys.startupPhase: endReason},
     );
@@ -1308,18 +1355,19 @@ class Reporter {
         },
       );
     }
+    final traceAttributes = <String, Object?>{
+      FieldPaths.pageInstanceId: record.pageInstanceId,
+      if (record.previousRouteName != null)
+        FieldPaths.pageFrom: record.previousRouteName,
+      if (record.nextRouteName != null) FieldPaths.pageTo: record.nextRouteName,
+      ...record.performanceAttributes(),
+    };
     endTrace(
       record.traceId,
       endTime: finishedAt,
       status: status,
       includeBreadcrumbs: false,
-      attributes: <String, Object?>{
-        FieldPaths.pageInstanceId: record.pageInstanceId,
-        if (record.previousRouteName != null)
-          FieldPaths.pageFrom: record.previousRouteName,
-        if (record.nextRouteName != null)
-          FieldPaths.pageTo: record.nextRouteName,
-      },
+      attributes: traceAttributes,
       payload: <String, Object?>{
         PayloadKeys.routeName: record.routeName,
         if (record.previousRouteName != null)
@@ -1408,8 +1456,9 @@ class Reporter {
   }
 
   void _activatePageTrace(String? routeName) {
-    final record =
-        routeName == null ? null : _activePageTraceForRoute(routeName);
+    final record = routeName == null
+        ? null
+        : _activePageTraceForRoute(routeName);
     _traceManager.setActiveTrace(traceId: record?.traceId);
   }
 
@@ -1465,6 +1514,33 @@ class Reporter {
     );
     _currentPageActivity = snapshot;
     onPageActivity?.call(snapshot);
+  }
+
+  void addPageFrameStats(FrameStatsSnapshot snapshot) {
+    final pageInstanceId = snapshot.pageInstanceId;
+    if (pageInstanceId == null) return;
+    final record = _pageTracesByInstanceId[pageInstanceId];
+    if (record == null) return;
+    _pageTracesByInstanceId[pageInstanceId] = record.copyWith(
+      frameStats: record.frameStats.add(snapshot),
+    );
+  }
+
+  void recordPageActivityMemory(PageActivitySnapshot activity) {
+    final record = _pageTracesByInstanceId[activity.pageInstanceId];
+    if (record == null) return;
+    final rssMb = captureRssMb();
+    if (rssMb == null) return;
+    _pageTracesByInstanceId[activity.pageInstanceId] =
+        switch (activity.activePhase) {
+          PageActivePhases.enter => record.copyWith(memoryEnterRssMb: rssMb),
+          PageActivePhases.exit ||
+          PageActivePhases.appDispose ||
+          PageActivePhases.lifecycleBackground => record.copyWith(
+            memoryExitRssMb: rssMb,
+          ),
+          _ => record,
+        };
   }
 
   void _closeCurrentPageWindow(String phase, {DateTime? timestamp}) {
@@ -1626,6 +1702,9 @@ class _PageTraceRecord {
     required this.startedAt,
     this.previousRouteName,
     this.nextRouteName,
+    this.memoryEnterRssMb,
+    this.memoryExitRssMb,
+    this.frameStats = const _FrameStatsAggregate(),
     this.firstFrameReported = false,
     this.loadTraceFinished = false,
   });
@@ -1637,11 +1716,17 @@ class _PageTraceRecord {
   final DateTime startedAt;
   final String? previousRouteName;
   final String? nextRouteName;
+  final num? memoryEnterRssMb;
+  final num? memoryExitRssMb;
+  final _FrameStatsAggregate frameStats;
   final bool firstFrameReported;
   final bool loadTraceFinished;
 
   _PageTraceRecord copyWith({
     String? nextRouteName,
+    num? memoryEnterRssMb,
+    num? memoryExitRssMb,
+    _FrameStatsAggregate? frameStats,
     bool? firstFrameReported,
     bool? loadTraceFinished,
   }) {
@@ -1653,8 +1738,134 @@ class _PageTraceRecord {
       startedAt: startedAt,
       previousRouteName: previousRouteName,
       nextRouteName: nextRouteName ?? this.nextRouteName,
+      memoryEnterRssMb: memoryEnterRssMb ?? this.memoryEnterRssMb,
+      memoryExitRssMb: memoryExitRssMb ?? this.memoryExitRssMb,
+      frameStats: frameStats ?? this.frameStats,
       firstFrameReported: firstFrameReported ?? this.firstFrameReported,
       loadTraceFinished: loadTraceFinished ?? this.loadTraceFinished,
     );
+  }
+
+  Map<String, Object?> performanceAttributes() {
+    final memoryDelta = memoryEnterRssMb == null || memoryExitRssMb == null
+        ? null
+        : memoryExitRssMb! - memoryEnterRssMb!;
+    return <String, Object?>{
+      ...frameStats.toAttributes(),
+      if (memoryEnterRssMb != null)
+        FieldPaths.memoryEnterRssMb: memoryEnterRssMb,
+      if (memoryExitRssMb != null) FieldPaths.memoryExitRssMb: memoryExitRssMb,
+      if (memoryDelta != null) FieldPaths.memoryDeltaRssMb: memoryDelta,
+    };
+  }
+}
+
+class _StartupPerfRecord {
+  const _StartupPerfRecord({
+    this.startedAt,
+    this.startRssMb,
+    this.endRssMb,
+    this.frameStats = const _FrameStatsAggregate(),
+  });
+
+  final DateTime? startedAt;
+  final num? startRssMb;
+  final num? endRssMb;
+  final _FrameStatsAggregate frameStats;
+
+  _StartupPerfRecord addFrameStats(FrameStatsSnapshot snapshot) {
+    return copyWith(frameStats: frameStats.add(snapshot));
+  }
+
+  _StartupPerfRecord copyWith({
+    DateTime? startedAt,
+    num? startRssMb,
+    num? endRssMb,
+    _FrameStatsAggregate? frameStats,
+  }) {
+    return _StartupPerfRecord(
+      startedAt: startedAt ?? this.startedAt,
+      startRssMb: startRssMb ?? this.startRssMb,
+      endRssMb: endRssMb ?? this.endRssMb,
+      frameStats: frameStats ?? this.frameStats,
+    );
+  }
+
+  Map<String, Object?> performanceAttributes() {
+    final memoryDelta = startRssMb == null || endRssMb == null
+        ? null
+        : endRssMb! - startRssMb!;
+    return <String, Object?>{
+      ...frameStats.toAttributes(),
+      if (startRssMb != null) FieldPaths.memoryStartRssMb: startRssMb,
+      if (endRssMb != null) FieldPaths.memoryEndRssMb: endRssMb,
+      if (memoryDelta != null) FieldPaths.memoryDeltaRssMb: memoryDelta,
+    };
+  }
+}
+
+class _FrameStatsAggregate {
+  const _FrameStatsAggregate({
+    this.sampleCount = 0,
+    this.slowCount = 0,
+    this.droppedCount = 0,
+    this.refreshRate,
+    this.frameBudgetMs,
+    this.maxMs = 0,
+    this.totalMs = 0,
+    this.p50Ms,
+    this.p90Ms,
+    this.p99Ms,
+  });
+
+  final int sampleCount;
+  final int slowCount;
+  final int droppedCount;
+  final num? refreshRate;
+  final num? frameBudgetMs;
+  final num maxMs;
+  final num totalMs;
+  final num? p50Ms;
+  final num? p90Ms;
+  final num? p99Ms;
+
+  _FrameStatsAggregate add(FrameStatsSnapshot snapshot) {
+    final nextSampleCount = sampleCount + snapshot.sampleCount;
+    return _FrameStatsAggregate(
+      sampleCount: nextSampleCount,
+      slowCount: slowCount + snapshot.slowCount,
+      droppedCount: droppedCount + snapshot.droppedCount,
+      refreshRate: snapshot.refreshRate,
+      frameBudgetMs: snapshot.frameBudgetMs,
+      maxMs: snapshot.frameMaxMs > maxMs ? snapshot.frameMaxMs : maxMs,
+      totalMs: totalMs + snapshot.frameAvgMs * snapshot.sampleCount,
+      p50Ms: snapshot.frameP50Ms ?? p50Ms,
+      p90Ms: snapshot.frameP90Ms ?? p90Ms,
+      p99Ms: snapshot.frameP99Ms ?? p99Ms,
+    );
+  }
+
+  Map<String, Object?> toAttributes() {
+    if (sampleCount == 0) return const <String, Object?>{};
+    final avgMs = totalMs / sampleCount;
+    final fps = avgMs <= 0 || refreshRate == null
+        ? refreshRate
+        : refreshRate! < 1000 / avgMs
+        ? refreshRate
+        : 1000 / avgMs;
+    return <String, Object?>{
+      FieldPaths.frameSampleCount: sampleCount,
+      FieldPaths.frameSlowCount: slowCount,
+      FieldPaths.frameDroppedCount: droppedCount,
+      if (refreshRate != null) FieldPaths.frameRefreshRate: refreshRate,
+      FieldPaths.frameMaxMs: maxMs,
+      FieldPaths.frameAvgMs: avgMs,
+      if (frameBudgetMs != null) FieldPaths.frameBudgetMs: frameBudgetMs,
+      if (fps != null) FieldPaths.frameFps: fps,
+      FieldPaths.frameStability: 1 - slowCount / sampleCount,
+      if (p50Ms != null) FieldPaths.frameP50Ms: p50Ms,
+      if (p90Ms != null) FieldPaths.frameP90Ms: p90Ms,
+      if (p99Ms != null) FieldPaths.frameP99Ms: p99Ms,
+    };
   }
 }

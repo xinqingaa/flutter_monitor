@@ -19,6 +19,7 @@ class StartupTraceController {
 
   void startSdkInit() {
     _ensureColdStartTrace();
+    _reporter.beginStartupPerformance(startTime: _appStartTime);
     final startedAt = DateTime.now();
     _sdkInitSpanStartTime = startedAt;
     _sdkInitSpanId = _reporter.startSpan(
@@ -85,6 +86,9 @@ class StartupTraceController {
       },
     );
 
+    final performanceAttributes = _reporter.finishStartupPerformance(
+      memoryEndRssMb: _reporter.captureRssMb(),
+    );
     _reporter.endTrace(
       traceId,
       endTime: endTime,
@@ -92,6 +96,7 @@ class StartupTraceController {
       attributes: <String, Object?>{
         FieldPaths.appStartType: StartTypes.cold,
         FieldPaths.appFirstFrameMs: durationMs,
+        ...performanceAttributes,
       },
       payload: const <String, Object?>{
         PayloadKeys.startupPhase: StartupPhases.coldStart,

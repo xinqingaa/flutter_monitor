@@ -152,6 +152,7 @@ Native 增强来源：
 - 热启动 trace 应关联恢复后的 session 或当前 session activity window。
 - 页面首屏相关 span 可作为启动 trace 和首个 page trace 的关联点。
 - 启动期间的 HTTP、错误、卡顿、内存采样应关联 active startup trace。
+- 基础 SDK 默认把启动窗口帧摘要和 RSS 起止值合并到 `app.cold_start` / `app.hot_start` trace end，不再为启动帧或启动内存额外生成独立 trace。
 
 ### 字段映射
 
@@ -165,6 +166,19 @@ Native 增强来源：
 - `sdk.init.duration_ms`
 - `context.lifecycle.previousState`
 - `native.start.elapsed_ms`
+- `frame.sample_count`
+- `frame.slow_count`
+- `frame.dropped_count`
+- `frame.refresh_rate`
+- `frame.max_ms`
+- `frame.avg_ms`
+- `frame.budget_ms`
+- `frame.fps`
+- `frame.stability`
+- `frame.p50_ms` / `frame.p90_ms` / `frame.p99_ms`
+- `memory.start_rss_mb`
+- `memory.end_rss_mb`
+- `memory.delta_rss_mb`
 
 ### 限制与降级
 
@@ -208,7 +222,7 @@ Native 增强来源：
 - route push 创建或更新当前 route context。
 - `trace page.visit` 表达一次页面实例的生命周期，`span page.load` 表达页面加载阶段。
 - 页面性能采集应额外维护页面活跃窗口：同一时刻只有一个当前活跃窗口，但同一页面实例可能被覆盖后再次恢复，因此可能拥有多段活跃窗口。
-- 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace；页面级内存和帧窗口还应携带当前 `page.active_window_id`。
+- 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。基础 SDK 默认把页面活跃窗口帧摘要和进入/退出 RSS 合并到 `page.visit` trace end；诊断模式如需输出独立页面 `memory.sample` 或 `ui.frame.window`，还应携带当前 `page.active_window_id`。
 - route pop/replace/page stay 应结束页面实例；route push 会结束旧页面活跃窗口并开启新页面活跃窗口。
 - paused/hidden 不结束页面实例，但应闭合当前页面活跃窗口并尽力 flush 页面级性能窗口；detached、SDK dispose 或 app exiting flush 应尽力结束活跃页面实例，并通过 payload 标明结束原因。
 
@@ -270,6 +284,19 @@ route 实例:
 - `page.load_ms`
 - `page.first_frame_ms`
 - `page.interactive_ms`（预留；仅在明确采集页面可交互点时填写）
+- `frame.sample_count`
+- `frame.slow_count`
+- `frame.dropped_count`
+- `frame.refresh_rate`
+- `frame.max_ms`
+- `frame.avg_ms`
+- `frame.budget_ms`
+- `frame.fps`
+- `frame.stability`
+- `frame.p50_ms` / `frame.p90_ms` / `frame.p99_ms`
+- `memory.enter_rss_mb`
+- `memory.exit_rss_mb`
+- `memory.delta_rss_mb`
 - `payload.page.end_reason`
 
 页面停留时长使用 `metric page.stay` 的 `durationMs`，不再使用独立 attributes 字段。
@@ -456,7 +483,7 @@ route 实例:
 ### 生成事件
 
 - `metric ui.jank.sequence`
-- `metric ui.frame.window`（规划；聚合帧窗口，表示正常 App / 页面帧表现摘要）
+- `metric ui.frame.window`（诊断/手动 API；基础 SDK 默认把 App / 页面帧表现摘要合并到启动或页面主 trace end）
 - 可选 breadcrumb：`ui.jank.sequence`
 - 可选 span：关键 trace 内的 `ui.render_block`
 
@@ -465,7 +492,8 @@ route 实例:
 - 卡顿应关联当前 `sessionId`、`context.route.*` / `context.module.*`、active page trace 或 action trace。
 - 卡顿事件应携带裁剪后的相关 breadcrumbs，优先选择同 trace / 同 route 足迹。
 - 卡顿前后的 HTTP、memory、native signals 可用于定位原因。
-- `ui.frame.window` 应关联当前 session；页面窗口还应携带 `traceId`、`page.instance_id` 和 `page.active_window_id`。它是性能摘要，不应被 Workbench 或服务端默认等同为卡顿问题。
+- 默认链路不再输出独立 `ui.frame.window` 事件；启动窗口帧摘要合并到 `app.cold_start` / `app.hot_start` end，页面窗口帧摘要合并到 `page.visit` end。
+- 诊断模式或手动 API 输出的 `ui.frame.window` 应关联当前 session；页面窗口还应携带 `traceId`、`page.instance_id` 和 `page.active_window_id`。它是性能摘要，不应被 Workbench 或服务端默认等同为卡顿问题。
 
 ### 字段映射
 
@@ -500,13 +528,15 @@ route 实例:
 
 ### App 与页面帧窗口策略
 
-帧窗口采集用于补充正常情况下的 App 和页面帧表现，不替代 `ui.jank.sequence`。推荐通过统一 frame timing 入口同时驱动 jank detector 和 frame window collector，避免多个模块各自注册 `addTimingsCallback` 后产生口径差异。
+帧窗口采集用于补充正常情况下的 App 和页面帧表现，不替代 `ui.jank.sequence`。推荐通过统一 frame timing 入口同时驱动 jank detector 和 frame window collector，避免多个模块各自注册 `addTimingsCallback` 后产生口径差异。基础 SDK 默认只保留窗口聚合状态，并在主链路闭合时把摘要写入对应 trace end。
 
 默认策略应保持低事件量：
 
 - App 前台窗口在 App 进入前台时开始，在 background、detached 或 SDK dispose 时 flush。
 - 页面窗口在 `page.active_window_id` 开启时开始，在 `page.covered`、`page.exit`、`lifecycle.background` 或 `app.dispose` 时 flush。
+- 启动窗口在首帧闭合时把摘要写入 `app.cold_start` / `app.hot_start` trace end；页面窗口在页面实例闭合时把已累计摘要写入 `page.visit` trace end。
 - 默认不按帧上报，也不默认每 10s/30s 周期 flush 页面窗口；长停留页面周期 flush 可作为 diagnostic 配置。
+- 默认不为 App/page 窗口输出独立 `ui.frame.window` envelope；该事件只作为诊断模式或手动 API 能力保留。
 - callback 内只做低成本聚合，例如 count、sum、max、slow count、dropped count 和有界样本保留；不得构建 envelope、执行 IO 或保存无界逐帧数据。
 
 窗口指标建议使用同一口径：
@@ -545,7 +575,7 @@ Native 层：
 
 ### 生成事件
 
-- `metric memory.sample`
+- `metric memory.sample`（session/lifecycle/jank/native 等低频诊断采样；页面切换默认不再额外输出）
 - `metric memory.growth`
 - `metric memory.pressure`
 - `metric memory.leak.suspect`
@@ -555,7 +585,7 @@ Native 层：
 ### 链路关联
 
 - memory sample 应关联当前 `sessionId` 和 `context.route.*` / `context.module.*`。
-- 页面切换采样应关联当前 `traceId`、`page.instance_id` 和 `page.active_window_id`；页面进入、覆盖、出栈、恢复和后台切换都应使用固定 `memory.sample_phase` 表达触发点。
+- 页面切换默认只读取进入/退出 RSS 并合并到 `page.visit` trace end，不额外输出页面 `memory.sample` envelope。诊断模式如需输出页面采样点，应关联当前 `traceId`、`page.instance_id` 和 `page.active_window_id`；页面进入、覆盖、出栈、恢复和后台切换都应使用固定 `memory.sample_phase` 表达触发点。
 - 页面退出后持续增长可关联上一页面活跃窗口，但缺少足够证据时不得生成确定性泄漏结论。
 - memory pressure 应进入统一 metric 或 error 链路，并可被保存到 recent breadcrumbs 快照中帮助解释后续卡顿、错误或 OOM。
 - native memory 通过 bridge 进入同一 pipeline。
@@ -565,6 +595,11 @@ Native 层：
 推荐字段：
 
 - `memory.rss_mb`
+- `memory.start_rss_mb`
+- `memory.end_rss_mb`
+- `memory.enter_rss_mb`
+- `memory.exit_rss_mb`
+- `memory.delta_rss_mb`
 - `memory.heap_used_mb`
 - `memory.heap_capacity_mb`
 - `memory.external_mb`

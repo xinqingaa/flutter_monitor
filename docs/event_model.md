@@ -303,6 +303,11 @@ flowchart TB
 | `frame.dropped_count` | number | safe | 是 | 基于帧耗时估算的 dropped frame 数量 |
 | `frame.refresh_rate` | number | safe | 是 | 当前窗口采用的刷新率，用于解释帧预算 |
 | `memory.rss_mb` | number | safe | 是 | 进程常驻内存 |
+| `memory.start_rss_mb` | number | safe | 是 | trace 起点进程 RSS，当前用于启动性能证据 |
+| `memory.end_rss_mb` | number | safe | 是 | trace 终点进程 RSS，当前用于启动性能证据 |
+| `memory.enter_rss_mb` | number | safe | 是 | 页面进入时进程 RSS，当前用于页面性能证据 |
+| `memory.exit_rss_mb` | number | safe | 是 | 页面离开时进程 RSS，当前用于页面性能证据 |
+| `memory.delta_rss_mb` | number | safe | 是 | 同一 trace/window 内 RSS 差值，只表示增长线索，不表示确定泄漏 |
 | `memory.heap_used_mb` | number | safe | 否 | Dart/Flutter heap 使用 |
 | `memory.heap_capacity_mb` | number | safe | 否 | heap 容量 |
 | `memory.external_mb` | number | safe | 否 | external memory |
@@ -333,6 +338,8 @@ flowchart TB
 ### 内存事件
 
 内存事件用于解释页面慢、卡顿、错误、OOM 线索和资源增长趋势。Flutter/Dart 层只能上报实际可获得的字段；拿不到的 RSS、native memory、heap capacity 等字段必须省略，或在上下文中标记 `context.missingReason = platform_limited`，不得伪造。
+
+基础 SDK 的启动和页面性能证据不应再默认拆成额外 `memory.sample` 或 `ui.frame.window` 主时间线事件。启动 RSS 使用 `memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` 合并到 `app.cold_start` / `app.hot_start` trace end；页面 RSS 使用 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` 合并到对应 `page.visit` trace end。独立 `memory.sample` 仍用于 session/lifecycle/jank/native 等低频诊断采样，不作为页面切换默认证据形态。
 
 | name | signalType | status | priority 建议 | 必须/条件字段 | 说明 |
 |---|---|---|---|---|---|
@@ -402,7 +409,7 @@ flowchart TB
 
 同一时刻只有一个当前页面活跃窗口，但同一个页面实例可以拥有多段活跃窗口。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`；活跃窗口是 `A1.window1`、`B1.window1`、`B2.window1`、`C1.window1`、`A1.window2`。回到 A 时不应伪造成新的 A route 实例，但应开启新的 A 活跃窗口，用于单独统计恢复后这一段的内存和帧表现。
 
-页面 trace 仍由 `trace page.visit` 表达页面实例生命周期；`page.active_window_id` 只表达性能采集窗口，不替代 `traceId`、`spanId` 或 `page.instance_id`。页面级 `memory.sample` 和规划中的 `ui.frame.window` 应同时携带 `context.route.name`、`page.instance_id` 和 `page.active_window_id`：route 用于聚合，页面实例用于还原一次打开，活跃窗口用于解释用户实际看到页面这一段时间内的性能。
+页面 trace 仍由 `trace page.visit` 表达页面实例生命周期；`page.active_window_id` 只表达性能采集窗口，不替代 `traceId`、`spanId` 或 `page.instance_id`。基础 SDK 默认把页面活跃窗口的帧摘要和页面进入/退出 RSS 合并到 `page.visit` trace end：route 用于聚合，页面实例用于还原一次打开，活跃窗口用于解释用户实际看到页面这一段时间内的性能。诊断模式或手动 API 如需保留独立 `memory.sample` / `ui.frame.window`，也必须同时携带 `context.route.name`、`page.instance_id` 和 `page.active_window_id`，不得只靠 routeName 归因。
 
 页面活跃阶段推荐使用固定值：
 
@@ -954,12 +961,12 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 | 信号 | 推荐事件 | 关键字段 |
 |---|---|---|
-| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs` |
-| 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs` |
+| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs`、`frame.*` 摘要、`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` |
+| 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
 | 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
-| 卡顿 | `metric ui.jank.sequence` | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
-| 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect` | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
+| 卡顿 | `metric ui.jank.sequence`；诊断模式可输出 `metric ui.frame.window` | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
+| 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect`；页面/启动边界 RSS 默认合并到主 trace | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
 | 生命周期 | `breadcrumb app.lifecycle`、`metric app.foreground_duration`、`metric app.background_duration`、`trace app.hot_start`、`sdk.lifecycle.flush` | `context.lifecycle.*`、`durationMs`、`app.start.type`、`app.exit_flush.success` |
 | Native | `metric native.memory.sample`、`metric native.memory.pressure`、`breadcrumb native.lifecycle`、`breadcrumb native.warning`、`error native.oom`、`error native.anr`、`error native.crash` | `context.native.*`、`native.signal`、`memory.native_used_mb`、`memory.pressure_level`、`payload.native` |
 | 错误 | `error error.flutter`、`error error.dart`、`error native.crash`、`error native.oom`、`error native.anr` | `error.type`、`error.mechanism`、`error.handled`、`error.fatal`、`error.thread`、`payload.error.*`、`payload.breadcrumbs` |
@@ -1021,7 +1028,19 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
       },
       "attributes": {
         "app.start.type": "cold",
-        "app.first_frame_ms": 640
+        "app.first_frame_ms": 640,
+        "frame.sample_count": 42,
+        "frame.slow_count": 3,
+        "frame.dropped_count": 4,
+        "frame.refresh_rate": 120,
+        "frame.max_ms": 34,
+        "frame.avg_ms": 12.8,
+        "frame.budget_ms": 8.33,
+        "frame.fps": 78.1,
+        "frame.stability": 0.93,
+        "memory.start_rss_mb": 180.5,
+        "memory.end_rss_mb": 214.25,
+        "memory.delta_rss_mb": 33.75
       },
       "payload": {}
     },
@@ -1182,21 +1201,40 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
     },
     {
       "schemaVersion": "1.0",
-      "eventId": "evt_memory",
+      "eventId": "evt_page_visit_product_end",
       "timestamp": "2026-05-24T12:00:05.000+08:00",
-      "signalType": "metric",
-      "name": "memory.sample",
+      "startTime": "2026-05-24T12:00:02.000+08:00",
+      "endTime": "2026-05-24T12:00:05.000+08:00",
+      "durationMs": 3000,
+      "signalType": "trace",
+      "name": "page.visit",
       "level": "info",
       "status": "ok",
-      "priority": "low",
+      "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_page_product",
       "spanId": null,
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/product/detail"}, "module": {"name": "product", "scene": "detail"}},
-      "attributes": {"memory.rss_mb": 248.5, "memory.heap_used_mb": 82.1, "memory.external_mb": 24.0, "memory.native_used_mb": 91.2, "memory.sample_source": "native"},
-      "payload": {}
+      "attributes": {
+        "event.phase": "end",
+        "page.instance_id": "/product/detail_001",
+        "page.from": "/home",
+        "frame.sample_count": 180,
+        "frame.slow_count": 9,
+        "frame.dropped_count": 14,
+        "frame.refresh_rate": 60,
+        "frame.max_ms": 48,
+        "frame.avg_ms": 17.2,
+        "frame.budget_ms": 16.67,
+        "frame.fps": 58.1,
+        "frame.stability": 0.95,
+        "memory.enter_rss_mb": 214.25,
+        "memory.exit_rss_mb": 248.5,
+        "memory.delta_rss_mb": 34.25
+      },
+      "payload": {"page.end_reason": "route_pop"}
     },
     {
       "schemaVersion": "1.0",

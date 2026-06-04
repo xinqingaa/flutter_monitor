@@ -684,6 +684,36 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.memoryStartRssMb,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.memoryEndRssMb,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.memoryDeltaRssMb,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.memoryEnterRssMb,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.memoryExitRssMb,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.memoryHeapUsedMb,
     valueType: FieldValueType.number,
     privacyLevel: PrivacyLevel.safe,
