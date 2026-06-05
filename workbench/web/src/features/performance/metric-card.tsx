@@ -94,18 +94,18 @@ function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
         hintSuffix="当前 SDK 的 app.cold_start 以首帧为结束点，app.first_frame_ms 是同一链路的终点口径。"
       >
         <EvidenceMetrics
-          frameField={'app.cold_start end · attributes["frame.fps"]'}
           rssField={'app.cold_start end · attributes["memory.delta_rss_mb"]'}
           averages={coldAverages}
           sourceLabel="冷启动主链路 trace end"
+          showFrame={false}
         />
       </DurationGroup>
       <DurationGroup label="热重启" source="app.hot_start.durationMs" summary={summary?.hotResume} compact>
         <EvidenceMetrics
-          frameField={'app.hot_start end · attributes["frame.fps"]'}
           rssField={'app.hot_start end · attributes["memory.delta_rss_mb"]'}
           averages={hotAverages}
           sourceLabel="热重启主链路 trace end"
+          showFrame={false}
         />
       </DurationGroup>
       <DurationGroup label="后台间隔" source="app.background_duration.durationMs" summary={summary?.backgroundInterval} compact />
@@ -126,7 +126,7 @@ function PagesSummary({ summary }: { summary?: PagePerformanceSummary }) {
           sourceLabel="页面主链路 page.visit end"
         />
       </DurationGroup>
-      <DurationGroup label="页面首帧" source={'page.first_frame · attributes["page.first_frame_ms"]'} summary={summary?.firstFrame} compact />
+      <DurationGroup label="页面首帧" source={'page.load · attributes["page.first_frame_ms"]'} summary={summary?.firstFrame} compact />
       <DurationGroup label="页面停留" source="page.stay.durationMs · 单独展示，不计入加载耗时" summary={summary?.stay} compact />
     </div>
   );
@@ -237,20 +237,24 @@ function EvidenceMetrics({
   frameField,
   rssField,
   sourceLabel,
+  showFrame = true,
 }: {
   averages: { avgFps?: number; avgRssDeltaMb?: number; fpsCount: number; rssCount: number };
-  frameField: string;
+  frameField?: string;
   rssField: string;
   sourceLabel: string;
+  showFrame?: boolean;
 }) {
   return (
     <>
-      <MetricPlainWithHint
-        label="平均帧数"
-        value={formatFps(averages.avgFps)}
-        field={frameField}
-        hint={`对${sourceLabel}上的 frame.fps 做算术平均。样本数：${averages.fpsCount}。`}
-      />
+      {showFrame ? (
+        <MetricPlainWithHint
+          label="平均帧数"
+          value={formatFps(averages.avgFps)}
+          field={frameField ?? 'attributes["frame.fps"]'}
+          hint={`对${sourceLabel}上的 frame.fps 做算术平均。样本数：${averages.fpsCount}。`}
+        />
+      ) : null}
       <MetricPlainWithHint
         label="平均内存"
         value={formatRssDelta(averages.avgRssDeltaMb)}

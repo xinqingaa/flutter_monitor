@@ -24,15 +24,25 @@ export function routeGroupKey(source: RouteDisplaySource | undefined): string {
   return routeGroupName(source);
 }
 
-export function pageInstanceId(source: RouteDisplaySource | undefined): string | undefined {
-  return readString(source, 'attributes.page.instance_id');
+export function routeFullName(source: RouteDisplaySource | undefined): string | undefined {
+  return firstString(
+    readString(source, 'context.route.fullName'),
+    readString(source, 'context.route.full_name'),
+    readString(source, 'attributes.page.route_full_name'),
+    readString(source, 'attributes.page.full_route'),
+    readString(source, 'payload.route.fullName'),
+    readString(source, 'payload.route.full_name'),
+    readString(source, 'payload.route.name'),
+    readString(source, 'payload.route_name'),
+  );
 }
 
-export function routeInstanceDisplayName(source: RouteDisplaySource | undefined): string {
-  const group = routeGroupName(source);
-  const concrete = concreteRouteName(source, group);
-  if (concrete) return concrete;
-  return pageInstanceId(source) ?? group;
+export function routeDisplayName(source: RouteDisplaySource | undefined): string {
+  return routeFullName(source) ?? routeGroupName(source);
+}
+
+export function pageInstanceId(source: RouteDisplaySource | undefined): string | undefined {
+  return readString(source, 'attributes.page.instance_id');
 }
 
 export function concreteRouteName(source: RouteDisplaySource | undefined, groupRoute = routeGroupName(source)): string | undefined {

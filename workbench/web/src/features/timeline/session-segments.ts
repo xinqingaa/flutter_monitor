@@ -1,6 +1,7 @@
 import type { MonitorEvent } from '../../shared/datasource/types';
-import { eventKind, issueLabels, routeOf } from '../../shared/event-model/accessors';
+import { eventKind, issueLabels } from '../../shared/event-model/accessors';
 import { isNativeLifecycleEvent, isNativeMemoryEvent } from '../../shared/event-model/native';
+import { routeDisplayName } from '../../shared/event-model/route-display';
 import { formatDuration } from '../../shared/formatting/format';
 import {
   extractFrameEvidence,
@@ -8,7 +9,6 @@ import {
   formatFrameMs,
   formatFps,
   formatRssDelta,
-  formatSlowSample,
   formatStability,
   isPageVisitEnd,
   isStartupTraceEnd,
@@ -22,7 +22,6 @@ export interface TimelineSegment {
   kind: SegmentKind;
   title: string;
   route?: string;
-  pageInstanceId?: string;
   events: MonitorEvent[];
   nodes: MonitorEvent[];
   spans: MonitorEvent[];
@@ -163,7 +162,6 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
     id: `${index}-${first?.eventId ?? 'segment'}`,
     kind,
     route,
-    pageInstanceId: kind === 'page' ? pageInstanceIdForSegment(events) : undefined,
     title: segmentTitle(kind, events, route),
     events,
     nodes,
@@ -186,14 +184,6 @@ function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string |
   if (kind === 'startup') return '启动';
   if (kind === 'page') return route ?? '页面';
   return route ? `页面活动 ${route}` : '会话活动';
-}
-
-function pageInstanceIdForSegment(events: MonitorEvent[]): string | undefined {
-  for (const event of events) {
-    const instanceId = event.attributes?.['page.instance_id'];
-    if (typeof instanceId === 'string' && instanceId.length > 0) return instanceId;
-  }
-  return undefined;
 }
 
 function segmentDurationLabel(
@@ -267,12 +257,9 @@ function performanceSummaryItems(kind: SegmentKind, events: MonitorEvent[]): str
   if (kind === 'startup') {
     const startup = [...events].reverse().find(isStartupTraceEnd);
     if (!startup) return [];
-    const frame = extractFrameEvidence(startup);
     const rss = extractRssEvidence(startup, 'startup');
     return [
       startup.durationMs !== undefined ? `启动 ${formatDuration(startup.durationMs)}` : undefined,
-      frame.fps !== undefined || frame.stability !== undefined ? `${formatFps(frame.fps)} / ${formatStability(frame.stability)}` : undefined,
-      frame.slowCount !== undefined || frame.sampleCount !== undefined ? `慢帧 ${formatSlowSample(frame)}` : undefined,
       rss.deltaRssMb !== undefined ? `RSS 变化 ${formatRssDelta(rss.deltaRssMb)}` : undefined,
     ].filter(isString);
   }
@@ -314,7 +301,7 @@ function isPageEntry(event: MonitorEvent): boolean {
 
 function isPageTimelineEvent(event: MonitorEvent): boolean {
   return event.name === 'route.push' || event.name === 'page.visit' || event.name === 'page.load' ||
-    event.name === 'page.first_frame' || event.name === 'page.view' || event.name === 'page.stay';
+    event.name === 'page.view' || event.name === 'page.stay';
 }
 
 function isInitialStartupEvent(
@@ -323,12 +310,12 @@ function isInitialStartupEvent(
 ): boolean {
   if (event.name === 'app.hot_start') return false;
   if (state.initialStartupClosed) return false;
-  if (event.name === 'app.cold_start' || event.name === 'app.first_frame' || event.name === 'sdk.init') return true;
+  if (event.name === 'app.cold_start' || event.name === 'sdk.init') return true;
   return !state.seenPageEntry && event.name === 'memory.sample';
 }
 
 function realRoute(event: MonitorEvent): string | undefined {
-  const route = routeOf(event);
+  const route = routeDisplayName(event);
   return route && route !== '-' ? route : undefined;
 }
 
@@ -370,7 +357,6 @@ function timelinePriority(event: MonitorEvent): number {
   if (event.name === 'route.push') return 20;
   if (event.name === 'page.view') return 30;
   if (event.name === 'page.load') return 40;
-  if (event.name === 'page.first_frame') return 50;
   if (event.name === 'page.stay') return 80;
   if (event.name === 'page.visit' && phase === 'end') return 90;
   if (event.name === 'http.client') return 55;

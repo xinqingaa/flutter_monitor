@@ -109,7 +109,7 @@ function isMemoryGrowthIssue(event: MonitorEvent): boolean {
 }
 
 function isSlowPagePerformanceEvent(event: MonitorEvent): boolean {
-  if (event.name !== 'page.load' && event.name !== 'page.first_frame') return false;
+  if (event.name !== 'page.load') return false;
   const loadMs = readPath(event, ['attributes', 'page.load_ms']);
   const firstFrameMs = readPath(event, ['attributes', 'page.first_frame_ms']);
   const duration = typeof loadMs === 'number'

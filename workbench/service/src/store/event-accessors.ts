@@ -186,7 +186,7 @@ function isSlowStartupEvent(event: MonitorEvent): boolean {
 
 function isSlowPageEvent(event: MonitorEvent): boolean {
   const name = nameOf(event);
-  if (name !== 'page.load' && name !== 'page.first_frame') return false;
+  if (name !== 'page.load') return false;
   const loadMs = readPath(event, ['attributes', 'page.load_ms']);
   const firstFrameMs = readPath(event, ['attributes', 'page.first_frame_ms']);
   const duration = typeof loadMs === 'number'

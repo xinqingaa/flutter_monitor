@@ -319,14 +319,14 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 | 字段 | 来源 / 计算口径 |
 |---|---|
 | `coldStart` | `name=app.cold_start` 的 `durationMs`。当前 SDK 口径下它表示“冷启动到首帧”的累计耗时。 |
-| `firstFrame` | `name=app.first_frame` 的 `attributes["app.first_frame_ms"]`，缺失时降级到 `durationMs`。它是冷启动 trace 的首帧终点口径，通常与 `coldStart` 同值，不应在图表中作为独立阶段重复叠加。 |
 | `sdkInit` | `name=sdk.init` 的 `attributes["sdk.init.duration_ms"]`，缺失时降级到 `durationMs`。 |
 | `backgroundInterval` | `name=app.background_duration` 的 `durationMs`。它表示后台停留间隔，只作为 lifecycle 和恢复上下文，不进入热重启耗时统计。 |
 | `hotResume` | `name=app.hot_start` 的 `durationMs`，且 `attributes["app.start.type"] = "hot"`。`attributes["app.start.end_reason"]` 说明闭合口径，例如 `first_frame` 或 `interactive`。旧 SDK 数据如果只有 `durationMs = 0` 或仅在 payload 中带 `background_duration_ms`，应标记为 `sdk_hot_resume_duration_missing`。 |
 
 Workbench 启动详情页按这个口径展示：
 
-- `启动阶段散点`：不连线、不做时间桶聚合；每个点对应一条启动链路里的已采集指标，包括冷启动到首帧、SDK 初始化和首帧前其他耗时。
+- `启动阶段散点`：不连线、不做时间桶聚合；每个点对应一条启动链路里的已采集指标，包括冷启动到首帧、热重启和 SDK 初始化。
+- `启动内存变化`：只从 `app.cold_start` / `app.hot_start` trace end 读取 `memory.start_rss_mb`、`memory.end_rss_mb` 和 `memory.delta_rss_mb`。启动不展示 FPS 或帧稳定性。
 - `后台间隔`：单独展示 `app.background_duration.durationMs`，不与毫秒级启动耗时混轴。
 - `热重启耗时`：只展示 `app.hot_start.durationMs`，不回退到 `app.background_duration`，避免把后台停留间隔伪装成热重启性能。
 
@@ -335,11 +335,13 @@ Workbench 启动详情页按这个口径展示：
 | 字段 | 来源 / 计算口径 |
 |---|---|
 | `load` | `name=page.load` 的 `attributes["page.load_ms"]`，缺失时降级到 `durationMs`。 |
-| `firstFrame` | `name=page.first_frame` 的 `attributes["page.first_frame_ms"]`，缺失时降级到 `durationMs`。 |
+| `firstFrame` | `name=page.load` 的 `attributes["page.first_frame_ms"]`，缺失时降级到 `durationMs`。它是页面加载链路上的首帧字段，不是独立事件。 |
 | `stay` | `name=page.stay` 的 `durationMs`。 |
 | `routeSummaries` | 按 `context.route.name` 分组的页面加载摘要。停留时长不混入加载摘要。 |
 
 `pages.events` 会额外返回 `name=page.visit`、`attributes["event.phase"]="end"` 且 `status != "unknown"` 的 trace end 记录。页面帧表现和 RSS 变化只从这条页面主链路结束事件读取，包括 `frame.fps`、`frame.stability`、`frame.max_ms`、`frame.sample_count`、`frame.slow_count`、`memory.enter_rss_mb`、`memory.exit_rss_mb` 和 `memory.delta_rss_mb`。Workbench service 不生成 `ui.frame.window`、`page.active_window_id`、`memory.sample_delay_ms` 等旧迁移字段。
+
+Workbench Web 展示 route 时优先读取 `context.route.fullName`，再回退到 `context.route.name`。`page.instance_id` 只用于内部合并和 Inspector/raw JSON 诊断，不作为页面性能概览、图表坐标轴或会话链路区段标题的默认展示名。
 
 `http` 额外字段：
 

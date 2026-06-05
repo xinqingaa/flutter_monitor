@@ -28,7 +28,7 @@ export function PagesRoute() {
     <PerformanceDetailPage
       kind="pages"
       title="页面性能"
-      description="页面页只读取 page.load、page.first_frame 和 page.stay，不把 route.push 计入性能耗时。"
+      description="页面页读取 page.load 的加载/首帧字段、page.stay 和 page.visit end 的帧数/RSS，不把 route.push 计入性能耗时。"
       icon={Gauge}
       metric={query.data?.pages}
       emphasis="页面打开"

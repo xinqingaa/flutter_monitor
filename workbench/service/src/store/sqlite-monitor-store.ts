@@ -860,7 +860,6 @@ function isStartupEvent(event: MonitorEvent): boolean {
     name === 'app.cold_start' ||
     name === 'app.hot_start' ||
     name === 'app.background_duration' ||
-    name === 'app.first_frame' ||
     name === 'sdk.init' ||
     name.includes('startup')
   );
@@ -871,7 +870,6 @@ function isPageEvent(event: MonitorEvent): boolean {
   const phase = stringAttribute(event, 'event.phase');
   return statusOf(event) !== 'unknown' && (
     name === 'page.load' ||
-    name === 'page.first_frame' ||
     name === 'page.stay' ||
     (name === 'page.visit' && phase === 'end')
   );
@@ -888,7 +886,6 @@ function summarizeStartup(
 ): StartupPerformanceSummary {
   const base = summarizeMetric(startupEvents, limit);
   const coldStarts = startupEvents.filter((event) => nameOf(event) === 'app.cold_start');
-  const firstFrames = startupEvents.filter((event) => nameOf(event) === 'app.first_frame');
   const sdkInit = startupEvents.filter((event) => nameOf(event) === 'sdk.init');
   const backgroundDurationEvents = allEvents.filter((event) => nameOf(event) === 'app.background_duration');
   const hotResumeEvents = startupEvents.filter((event) => (
@@ -905,11 +902,6 @@ function summarizeStartup(
   return {
     ...base,
     coldStart: summarizeDuration(coldStarts, 'durationMs', durationOf),
-    firstFrame: summarizeDuration(
-      firstFrames,
-      'attributes["app.first_frame_ms"]',
-      (event) => numericAttribute(event, 'app.first_frame_ms') ?? durationOf(event),
-    ),
     sdkInit: summarizeDuration(
       sdkInit,
       'attributes["sdk.init.duration_ms"]',
@@ -933,7 +925,6 @@ function summarizeStartup(
 function summarizePages(events: MonitorEvent[], limit: number): PagePerformanceSummary {
   const base = summarizeMetric(events, limit);
   const pageLoads = events.filter((event) => nameOf(event) === 'page.load');
-  const firstFrames = events.filter((event) => nameOf(event) === 'page.first_frame');
   const pageStay = events.filter((event) => nameOf(event) === 'page.stay');
 
   return {
@@ -944,7 +935,7 @@ function summarizePages(events: MonitorEvent[], limit: number): PagePerformanceS
       (event) => numericAttribute(event, 'page.load_ms') ?? durationOf(event),
     ),
     firstFrame: summarizeDuration(
-      firstFrames,
+      pageLoads,
       'attributes["page.first_frame_ms"]',
       (event) => numericAttribute(event, 'page.first_frame_ms') ?? durationOf(event),
     ),

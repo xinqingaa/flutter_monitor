@@ -101,8 +101,6 @@ export interface MetricGroupSummary {
 export interface StartupPerformanceSummary extends PerformanceMetricSummary {
   /** Current SDK semantics: app.cold_start.durationMs is cumulative cold-start-to-first-frame duration. */
   coldStart: DurationSummary;
-  /** app.first_frame_ms marks the same cold-start first-frame endpoint and may equal coldStart. */
-  firstFrame: DurationSummary;
   sdkInit: DurationSummary;
   /** Lifecycle background interval, not hot resume rendering duration. */
   backgroundInterval: DurationSummary;

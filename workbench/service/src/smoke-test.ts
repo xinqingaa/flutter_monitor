@@ -67,9 +67,9 @@ try {
     assert.equal(data.http.count, 1);
     assert.equal(data.http.errorCount, 1);
     assert.equal(data.pages.count, 1);
-    assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_start' && event.attributes['frame.fps'] === 58), true);
+    assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_start' && event.attributes['frame.fps'] === undefined), true);
     assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_hot' && event.attributes['memory.delta_rss_mb'] === 4.5), true);
-    assert.equal(data.pages.events.some((event: any) => event.eventId === 'evt_smoke_page_visit' && event.name === 'page.visit'), true);
+    assert.equal(data.pages.events.some((event: any) => event.eventId === 'evt_smoke_page_visit' && event.name === 'page.visit' && event.attributes['frame.fps'] === 54), true);
     const serialized = JSON.stringify(data);
     assert.equal(serialized.includes('ui.frame.window'), false);
     assert.equal(serialized.includes('page.active_window_id'), false);
@@ -159,12 +159,6 @@ async function postEvents(): Promise<void> {
             'app.start.type': 'cold',
             'app.start.end_reason': 'first_frame',
             'app.first_frame_ms': 1000,
-            'frame.sample_count': 60,
-            'frame.slow_count': 2,
-            'frame.dropped_count': 1,
-            'frame.fps': 58,
-            'frame.stability': 0.96,
-            'frame.max_ms': 24,
             'memory.start_rss_mb': 101,
             'memory.end_rss_mb': 112.5,
             'memory.delta_rss_mb': 11.5,
@@ -191,12 +185,6 @@ async function postEvents(): Promise<void> {
             'event.phase': 'end',
             'app.start.type': 'hot',
             'app.start.end_reason': 'first_frame',
-            'frame.sample_count': 18,
-            'frame.slow_count': 0,
-            'frame.dropped_count': 0,
-            'frame.fps': 60,
-            'frame.stability': 1,
-            'frame.max_ms': 17,
             'memory.start_rss_mb': 112.5,
             'memory.end_rss_mb': 117,
             'memory.delta_rss_mb': 4.5,

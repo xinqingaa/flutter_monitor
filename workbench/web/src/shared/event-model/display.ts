@@ -5,7 +5,7 @@ import { formatDuration } from '../formatting/format';
 import { eventKind } from './accessors';
 import { readCanonicalPath, readStringPath } from './field-path';
 import { nativeActivity, nativeCallback, nativeRawState, nativeTrimLevel, nativeTrimLevelName } from './native';
-import { routeGroupName } from './route-display';
+import { routeDisplayName, routeFullName, routeGroupName } from './route-display';
 
 export interface DisplayField {
   path: string;
@@ -51,7 +51,8 @@ export function eventDisplay(event: MonitorEvent): EventDisplayModel {
   const primaryFields: DisplayField[] = [];
   const secondaryFields: DisplayField[] = [];
 
-  pushField(event, primaryFields, 'context.route.name', { skipDash: true });
+  pushField(event, primaryFields, 'context.route.fullName', { skipDash: true });
+  pushField(event, secondaryFields, 'context.route.name', { skipDash: true });
   collectNameFields(event, primaryFields, secondaryFields);
 
   return {
@@ -94,7 +95,7 @@ export function eventDisplay(event: MonitorEvent): EventDisplayModel {
 export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   const name = event.name ?? '';
   const kind = eventKind(event);
-  const route = readStringPath(event, 'context.route.name');
+  const route = routeDisplayName(event);
   const duration = typeof event.durationMs === 'number' ? formatDuration(event.durationMs) : undefined;
   const status = event.status;
   const phase = readStringPath(event, 'attributes.event.phase');
@@ -107,17 +108,13 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   if (name === 'app.cold_start' || name === 'app.hot_start') {
     const startType = readStringPath(event, 'attributes.app.start.type');
     const firstFrame = formatNumberMetric(event, 'attributes.app.first_frame_ms', 'ms');
-    const perfItems = tracePerformanceSummaryItems(event);
+    const rssDelta = formatSignedNumberMetric(event, 'attributes.memory.delta_rss_mb', 'MB', 1);
     return {
       ...base,
       title: name === 'app.hot_start' || startType === 'hot' ? '热重启' : '冷启动',
       durationLabel: duration ?? firstFrame,
-      summaryItems: compactItems(...perfItems, route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
+      summaryItems: compactItems(rssDelta ? `RSS 变化 ${rssDelta}` : undefined, route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
     };
-  }
-
-  if (name === 'app.first_frame') {
-    return { ...base, title: '启动首帧', durationLabel: duration, summaryItems: compactItems(route ? `页面 ${route}` : undefined) };
   }
 
   if (name === 'sdk.init') {
@@ -127,21 +124,21 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
 
   if (name === 'page.visit') {
     const phase = readStringPath(event, 'attributes.event.phase');
-    const routeName = routeGroupName(event);
+    const routeName = routeDisplayName(event);
     if (phase === 'end') {
-      const to = readStringPath(event, 'attributes.page.to');
+      const to = readStringPath(event, 'attributes.page.to_full_name') ?? readStringPath(event, 'attributes.page.to');
       const reason = readStringPath(event, 'payload.page.end_reason');
       const perfItems = tracePerformanceSummaryItems(event);
       const verb = reason === 'route_pop' && to ? `返回 ${to}` : routeName ? `离开页面 ${routeName}` : '离开页面';
       return { ...base, title: verb, durationLabel: duration, summaryItems: compactItems(...perfItems, routeName ? `页面 ${routeName}` : undefined) };
     }
-    const from = readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
+    const from = readStringPath(event, 'attributes.page.from_full_name') ?? readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
     return { ...base, title: routeName ? `进入页面 ${routeName}` : '进入页面', summaryItems: compactItems(from ? `来源 ${from}` : undefined) };
   }
 
   if (name === 'route.push') {
-    const from = readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
-    const to = readStringPath(event, 'attributes.page.to') ?? readStringPath(event, 'payload.route.name') ?? route;
+    const from = readStringPath(event, 'attributes.page.from_full_name') ?? readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
+    const to = readStringPath(event, 'attributes.page.to_full_name') ?? readStringPath(event, 'attributes.page.to') ?? routeFullName(event) ?? readStringPath(event, 'payload.route.name') ?? route;
     return {
       ...base,
       title: to ? (from ? `从 ${from} 进入 ${to}` : `路由切换到 ${to}`) : '路由切换',
@@ -157,13 +154,8 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
       ...base,
       title: '页面加载',
       durationLabel: load ?? duration,
-      summaryItems: compactItems(route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
+    summaryItems: compactItems(route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
     };
-  }
-
-  if (name === 'page.first_frame') {
-    const firstFrame = formatNumberMetric(event, 'attributes.page.first_frame_ms', 'ms');
-    return { ...base, title: '页面首帧', durationLabel: firstFrame ?? duration, summaryItems: compactItems(route ? `页面 ${route}` : undefined) };
   }
 
   if (name === 'page.view') {
@@ -518,7 +510,9 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.page.interactive_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.page.instance_id');
     pushField(event, secondary, 'attributes.page.from');
+    pushField(event, secondary, 'attributes.page.from_full_name');
     pushField(event, secondary, 'attributes.page.to');
+    pushField(event, secondary, 'attributes.page.to_full_name');
     pushFrameFields(event, secondary);
     pushField(event, secondary, 'attributes.memory.enter_rss_mb', { unit: 'MB', digits: 1 });
     pushField(event, secondary, 'attributes.memory.exit_rss_mb', { unit: 'MB', digits: 1 });
@@ -526,14 +520,13 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     return;
   }
 
-  if (name === 'app.cold_start' || name === 'app.hot_start' || name === 'app.first_frame' || name === 'sdk.init') {
+  if (name === 'app.cold_start' || name === 'app.hot_start' || name === 'sdk.init') {
     pushField(event, primary, 'attributes.app.start.type');
     pushField(event, primary, 'attributes.app.start.end_reason');
     pushField(event, secondary, 'attributes.app.first_frame_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.app.interactive_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.sdk.init.duration_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.native.start.elapsed_ms', { unit: 'ms' });
-    pushFrameFields(event, secondary);
     pushField(event, secondary, 'attributes.memory.start_rss_mb', { unit: 'MB', digits: 1 });
     pushField(event, secondary, 'attributes.memory.end_rss_mb', { unit: 'MB', digits: 1 });
     pushField(event, secondary, 'attributes.memory.delta_rss_mb', { unit: 'MB', digits: 1 });
@@ -699,12 +692,10 @@ function nameDescription(name: string): string | undefined {
   const labels: Record<string, string> = {
     'app.cold_start': '冷启动',
     'app.hot_start': '热重启',
-    'app.first_frame': '启动首帧',
     'sdk.init': 'SDK 初始化',
     'page.visit': '页面访问',
     'route.push': '路由切换',
     'page.load': '页面加载',
-    'page.first_frame': '页面首帧',
     'page.view': '页面访问足迹',
     'app.lifecycle': '生命周期变化',
     'app.foreground_duration': '前台停留时间',

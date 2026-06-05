@@ -38,7 +38,7 @@ import {
 import type { WorkbenchChartOption } from './echarts-panel';
 import { PerformanceTabs } from './performance-tabs';
 import { nativeAvailable } from '../../shared/event-model/native';
-import { pageInstanceId, routeGroupKey, routeGroupName, routeInstanceDisplayName } from '../../shared/event-model/route-display';
+import { pageInstanceId, routeDisplayName, routeGroupKey, routeGroupName } from '../../shared/event-model/route-display';
 import {
   extractFrameEvidence,
   extractRssEvidence,
@@ -140,8 +140,8 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
     return {
       label: '启动证据',
       count: evidenceCount,
-      field: 'app.cold_start/app.hot_start end · durationMs / frame.* / memory.start/end/delta_rss_mb',
-      hint: '启动耗时、帧表现和 RSS 证据均来自同一个启动 trace end；sdk.init 和 app.first_frame 只作为阶段补充展示。',
+      field: 'app.cold_start/app.hot_start end · durationMs / app.first_frame_ms / memory.start/end/delta_rss_mb',
+      hint: '启动耗时和 RSS 证据来自同一个启动 trace end；帧表现统一在页面 page.visit end 中查看。',
     };
   }
   if (kind === 'pages') {
@@ -150,7 +150,7 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
       label: '页面证据',
       count: pages?.events.filter(isPageVisitEnd).length ?? 0,
       field: 'page.visit end · frame.* / memory.enter/exit/delta_rss_mb',
-      hint: '页面帧表现和 RSS 变化来自 page.visit end；页面加载、首帧和停留按 page.instance_id + traceId 合并进同一页面实例。',
+      hint: '页面帧表现和 RSS 变化来自 page.visit end；页面加载、首帧和停留按同一页面链路合并，UI 默认展示完整 route。',
     };
   }
   if (kind === 'jank') {
@@ -203,16 +203,11 @@ function StartupContent({ events, metric }: { events: PerformanceMetricEvent[]; 
     attrNumber(event, 'sdk.init.duration_ms') !== undefined ||
     hasDuration(event)
   )));
-  const firstFrame = chronological(events.filter((event) => event.name === 'app.first_frame' && (
-    attrNumber(event, 'app.first_frame_ms') !== undefined ||
-    hasDuration(event)
-  )));
-  const records = buildStartupRecords([...coldStarts, ...backgroundIntervals, ...hotResumes, ...sdkInit, ...firstFrame]);
+  const records = buildStartupRecords([...coldStarts, ...backgroundIntervals, ...hotResumes, ...sdkInit]);
 
   return (
     <div className="grid gap-2">
       <StartupScatterChart records={records} />
-      <StartupFrameChart records={records} />
       <StartupMemoryChart records={records} />
       <BackgroundIntervalChart events={backgroundIntervals} />
       <StartupFieldCard metric={metric} records={records} />
@@ -273,9 +268,9 @@ function PagesContent({ events, metric: _metric }: { events: PerformanceMetricEv
         onLocalRouteChange={setStayRouteKey}
       />
       <PageRecordTable
-        title={recordsScope.selectedRoute ? `${recordsScope.selectedRoute.route} 页面实例` : '页面记录'}
-        description={recordsScope.selectedRoute ? '当前 route 下的页面实例；缺少业务级完整 route 时使用 SDK page.instance_id 定位。' : '页面实例记录；上方图表和 route 汇总默认按 route 聚合，缺少业务级完整 route 时使用 SDK page.instance_id 定位实例。'}
-        source={'page.visit end / traceId / attributes["page.instance_id"] / page.load_ms / page.first_frame_ms / frame.* / memory.enter/exit/delta_rss_mb'}
+        title={recordsScope.selectedRoute ? `${recordsScope.selectedRoute.route} 页面记录` : '页面记录'}
+        description={recordsScope.selectedRoute ? '当前 route 下的页面记录；主界面展示完整 route，诊断标识仅在 Inspector 和 raw JSON 中查看。' : '页面记录；上方图表和 route 汇总默认按 route 聚合，明细展示完整 route。'}
+        source={'page.visit end / traceId / page.load_ms / page.first_frame_ms / frame.* / memory.enter/exit/delta_rss_mb'}
         records={recordsScope.records}
         routeRows={routeRows}
         globalRouteKey={globalRouteKey}
@@ -291,14 +286,11 @@ type PageRecord = {
   routeKey: string;
   route: string;
   displayName: string;
-  instanceDisplayName: string;
   timestamp?: string;
   sessionId?: string;
   traceId?: string;
-  pageInstanceId?: string;
   visitEventId?: string;
   loadEventId?: string;
-  firstFrameEventId?: string;
   stayEventId?: string;
   loadMs?: number;
   firstFrameMs?: number;
@@ -341,7 +333,6 @@ type PageChartDatum = {
   timestamp?: string;
   sessionId?: string;
   traceId?: string;
-  pageInstanceId?: string;
   loadSampleCount?: number;
   firstFrameSampleCount?: number;
   staySampleCount?: number;
@@ -372,7 +363,6 @@ type StartupRecord = {
   traceId?: string;
   route?: string;
   coldStartEventId?: string;
-  firstFrameEventId?: string;
   sdkInitEventId?: string;
   backgroundEventId?: string;
   hotResumeEventId?: string;
@@ -381,7 +371,6 @@ type StartupRecord = {
   sdkInitMs?: number;
   backgroundIntervalMs?: number;
   hotResumeMs?: number;
-  frame: FrameEvidence;
   rss: RssEvidence;
   completedAt?: string;
   nativeAvailable?: boolean;
@@ -521,7 +510,7 @@ function PagePerformanceMatrix({
   return (
     <EchartsPanel
       title="页面性能矩阵"
-      description={scope.selectedRoute ? '当前页面范围展示页面实例；缺少业务完整 route 时显示 page.instance_id。' : '默认按 route 汇总加载耗时和首帧耗时；点击 route 可设置本图页面筛选。'}
+      description={scope.selectedRoute ? '当前页面范围展示每次访问记录；优先展示完整 route。' : '默认按 route 汇总加载耗时和首帧耗时；点击 route 可设置本图页面筛选。'}
       source={'context.route.name / durationMs / attributes["page.load_ms"] / attributes["page.first_frame_ms"]'}
       option={option}
       empty={records.length === 0 || scope.rows.length === 0}
@@ -583,8 +572,8 @@ function PageFramePanel({
   return (
     <EchartsPanel
       title="页面帧表现"
-      description={scope.selectedRoute ? '当前页面范围展示页面实例；缺少业务完整 route 时显示 page.instance_id。' : '默认按 route 聚合展示 FPS、稳定性和最大帧；点击 route 可设置本图页面筛选。'}
-      source={'page.visit end · attributes["page.instance_id"] / attributes["frame.fps"] / attributes["frame.stability"] / attributes["frame.max_ms"]'}
+      description={scope.selectedRoute ? '当前页面范围展示每次访问记录；优先展示完整 route。' : '默认按 route 聚合展示 FPS、稳定性和最大帧；点击 route 可设置本图页面筛选。'}
+      source={'page.visit end · attributes["frame.fps"] / attributes["frame.stability"] / attributes["frame.max_ms"]'}
       option={pageFrameOption(evidenceRows, scope.mode)}
       empty={records.length === 0 || evidenceRows.length === 0}
       height={320}
@@ -616,7 +605,7 @@ function PageMemoryPanel({
   return (
     <EchartsPanel
       title="页面内存变化"
-      description={scope.selectedRoute ? '当前页面范围展示页面实例；缺少业务完整 route 时显示 page.instance_id。' : '默认按 route 聚合展示进入 RSS、退出 RSS 和 RSS 变化；点击 route 可设置本图页面筛选。'}
+      description={scope.selectedRoute ? '当前页面范围展示每次访问记录；优先展示完整 route。' : '默认按 route 聚合展示进入 RSS、退出 RSS 和 RSS 变化；点击 route 可设置本图页面筛选。'}
       source={'page.visit end · attributes["memory.enter_rss_mb"] / attributes["memory.exit_rss_mb"] / attributes["memory.delta_rss_mb"]'}
       option={pageMemoryOption(evidenceRows, scope.mode)}
       empty={records.length === 0 || evidenceRows.length === 0}
@@ -702,13 +691,13 @@ function PageRecordTable({
 }
 
 function PageRecordRow({ record }: { record: PageRecord }) {
-  const eventId = record.visitEventId ?? record.loadEventId ?? record.firstFrameEventId ?? record.stayEventId;
+  const eventId = record.visitEventId ?? record.loadEventId ?? record.stayEventId;
   return (
     <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
       <div className="min-w-0">
-        <strong className="block truncate text-zinc-950">{record.instanceDisplayName}</strong>
+        <strong className="block truncate text-zinc-950">{record.displayName}</strong>
         <div className="mt-0.5 truncate text-zinc-500">
-          {record.route} · {record.pageInstanceId ?? '-'} · {record.traceId ?? '-'} · {record.from ?? '-'} → {record.to ?? '-'}
+          {record.route} · {record.traceId ?? '-'} · {record.from ?? '-'} → {record.to ?? '-'}
         </div>
       </div>
       <span className="text-zinc-500 tabular-nums">{formatDateTime(record.timestamp)}</span>
@@ -751,7 +740,7 @@ function StartupScatterChart({ records }: { records: StartupRecord[] }) {
   return (
     <EchartsPanel
       title="启动阶段散点"
-      description="不连线、不做时间桶聚合；每个点对应一条冷启动或热重启链路里的已采集指标。"
+      description="不连线、不做时间桶聚合；每个点对应一条冷启动或热重启链路里的启动总耗时或 SDK 初始化耗时。"
       source={'app.cold_start.durationMs / app.hot_start.durationMs / attributes["app.first_frame_ms"] / attributes["sdk.init.duration_ms"]'}
       option={option}
       empty={startupRecords.length === 0}
@@ -770,20 +759,6 @@ function BackgroundIntervalChart({ events }: { events: PerformanceMetricEvent[] 
       option={option}
       empty={events.length === 0}
       height={280}
-    />
-  );
-}
-
-function StartupFrameChart({ records }: { records: StartupRecord[] }) {
-  const evidenceRecords = records.filter((record) => hasFrameEvidence(record.frame));
-  return (
-    <EchartsPanel
-      title="启动帧表现"
-      description="按启动 trace end 展示 FPS、稳定性和最大帧；冷启动和热重启分开标记。"
-      source={'app.cold_start/app.hot_start end · attributes["frame.fps"] / attributes["frame.stability"] / attributes["frame.max_ms"]'}
-      option={startupFrameOption(evidenceRecords)}
-      empty={evidenceRecords.length === 0}
-      height={320}
     />
   );
 }
@@ -808,13 +783,13 @@ function StartupFieldCard({ metric, records }: { metric?: StartupPerformanceSumm
     <Card>
       <CardHeader>
         <CardTitle>启动口径</CardTitle>
-        <CardDescription>启动耗时、帧表现和 RSS 证据均来自同一个启动 trace end；后台间隔是 lifecycle 信息，不和毫秒级启动耗时混轴。</CardDescription>
+        <CardDescription>启动耗时和 RSS 证据来自同一个启动 trace end；后台间隔是 lifecycle 信息，不和毫秒级启动耗时混轴。帧表现统一在页面性能中查看。</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-2 text-sm text-zinc-600 md:grid-cols-3">
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="text-xs font-medium text-zinc-500">冷启动</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-950">{formatDuration(metric?.coldStart.latestMs)}</div>
-          <div className="mt-1 text-xs leading-relaxed">来源：`app.cold_start.durationMs`。当前 SDK 的 `app.first_frame_ms` 与它同口径，用于确认首帧终点。</div>
+          <div className="mt-1 text-xs leading-relaxed">来源：`app.cold_start.durationMs`。当前 SDK 的 `app.first_frame_ms` 是同一链路上的首帧终点字段。</div>
         </div>
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="text-xs font-medium text-zinc-500">后台间隔</div>
@@ -848,7 +823,7 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
       <CardHeader className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <CardTitle className="inline-flex items-center gap-2"><ListTree className="size-4" />启动记录</CardTitle>
-          <CardDescription>按 trace 合并冷启动、SDK 初始化和首帧终点；后台间隔和热重启分别作为独立记录展示。</CardDescription>
+          <CardDescription>按 trace 合并冷启动、SDK 初始化和首帧终点字段；后台间隔和热重启分别作为独立记录展示。启动记录不展示 FPS。</CardDescription>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -867,17 +842,13 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
             <EmptyState title="暂无记录" description="当前筛选范围内还没有启动链路记录。" />
           </div>
         ) : (
-          <div className="min-w-[1500px]">
-            <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_5rem] gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
+          <div className="min-w-[1040px]">
+            <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_7rem_7rem_7rem_7rem_7rem_7rem_5rem] gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
               <span>链路</span>
               <span>时间</span>
               <span className="text-right">冷启动</span>
               <span className="text-right">SDK 初始化</span>
               <span className="text-right">首帧</span>
-              <span className="text-right">FPS</span>
-              <span className="text-right">稳定性</span>
-              <span className="text-right">最大帧</span>
-              <span className="text-right">慢帧/样本</span>
               <span className="text-right">RSS 起点</span>
               <span className="text-right">RSS 终点</span>
               <span className="text-right">RSS Δ</span>
@@ -896,10 +867,10 @@ function StartupRecordTable({ records }: { records: StartupRecord[] }) {
 }
 
 function StartupRecordRow({ record }: { record: StartupRecord }) {
-  const eventId = record.hotResumeEventId ?? record.backgroundEventId ?? record.coldStartEventId ?? record.firstFrameEventId ?? record.sdkInitEventId;
+  const eventId = record.hotResumeEventId ?? record.backgroundEventId ?? record.coldStartEventId ?? record.sdkInitEventId;
   const typeLabel = record.kind === 'background' ? '后台间隔' : record.kind === 'hot' ? '热重启' : '冷启动';
   return (
-    <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_7rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
+    <div className="grid grid-cols-[minmax(14rem,1.5fr)_9rem_7rem_7rem_7rem_7rem_7rem_7rem_5rem] items-center gap-3 px-3 py-2 text-xs hover:bg-teal-50">
       <div className="min-w-0">
         <strong className="block truncate text-zinc-950">{typeLabel}</strong>
         <div className="mt-0.5 truncate text-zinc-500">
@@ -909,11 +880,7 @@ function StartupRecordRow({ record }: { record: StartupRecord }) {
       <span className="text-zinc-500 tabular-nums">{formatDateTime(record.timestamp)}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatDuration(startupTotalMs(record))}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatDuration(record.sdkInitMs)}</span>
-      <span className="text-right text-zinc-600 tabular-nums">{formatDuration(startupOtherMs(record))}</span>
-      <span className="text-right text-zinc-600 tabular-nums">{formatFps(record.frame.fps)}</span>
-      <span className="text-right text-zinc-600 tabular-nums">{formatStability(record.frame.stability)}</span>
-      <span className="text-right text-zinc-600 tabular-nums">{formatFrameMs(record.frame.maxMs)}</span>
-      <span className="text-right text-zinc-600 tabular-nums">{formatSlowSample(record.frame)}</span>
+      <span className="text-right text-zinc-600 tabular-nums">{formatDuration(startupFirstFrameMs(record))}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatRssMb(record.rss.startRssMb)}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatRssMb(record.rss.endRssMb)}</span>
       <span className="text-right text-zinc-600 tabular-nums">{formatRssDelta(record.rss.deltaRssMb)}</span>
@@ -1174,27 +1141,25 @@ function buildPageRecords(events: PerformanceMetricEvent[]): PageRecord[] {
   const pageEvents = chronological(events.filter((event) => (
     isPageVisitEnd(event) ||
     event.name === 'page.load' ||
-    event.name === 'page.first_frame' ||
     event.name === 'page.stay'
   )));
 
   for (const event of pageEvents) {
     const route = routeGroupName(event);
     const routeKey = routeGroupKey(event);
+    const displayRoute = routeDisplayName(event);
     const instanceId = pageInstanceId(event);
     const key = pageRecordKey(event, route, instanceId, standaloneCounters);
     const record = records.get(key) ?? {
       key,
       routeKey,
       route,
-      displayName: route,
-      instanceDisplayName: routeInstanceDisplayName(event),
+      displayName: displayRoute,
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       traceId: event.traceId,
-      pageInstanceId: instanceId,
-      from: attrString(event, 'page.from'),
-      to: attrString(event, 'page.to'),
+      from: attrString(event, 'page.from_full_name') ?? attrString(event, 'page.from'),
+      to: attrString(event, 'page.to_full_name') ?? attrString(event, 'page.to'),
       frame: {},
       rss: {},
     };
@@ -1202,10 +1167,9 @@ function buildPageRecords(events: PerformanceMetricEvent[]): PageRecord[] {
     record.timestamp = earliestTimestamp(record.timestamp, event.timestamp);
     record.sessionId = record.sessionId ?? event.sessionId;
     record.traceId = record.traceId ?? event.traceId;
-    record.pageInstanceId = record.pageInstanceId ?? instanceId;
-    record.instanceDisplayName = preferInstanceDisplayName(record.instanceDisplayName, routeInstanceDisplayName(event), route);
-    record.from = record.from ?? attrString(event, 'page.from');
-    record.to = record.to ?? attrString(event, 'page.to');
+    record.displayName = preferInstanceDisplayName(record.displayName, displayRoute, route);
+    record.from = record.from ?? attrString(event, 'page.from_full_name') ?? attrString(event, 'page.from');
+    record.to = record.to ?? attrString(event, 'page.to_full_name') ?? attrString(event, 'page.to');
 
     if (isPageVisitEnd(event)) {
       record.visitEventId = event.eventId;
@@ -1216,9 +1180,6 @@ function buildPageRecords(events: PerformanceMetricEvent[]): PageRecord[] {
     if (event.name === 'page.load') {
       record.loadEventId = event.eventId;
       record.loadMs = event.durationMs ?? attrNumber(event, 'page.load_ms');
-    }
-    if (event.name === 'page.first_frame') {
-      record.firstFrameEventId = event.eventId;
       record.firstFrameMs = attrNumber(event, 'page.first_frame_ms') ?? event.durationMs;
     }
     if (event.name === 'page.stay') {
@@ -1381,12 +1342,11 @@ function pageRecordDatum(record: PageRecord): PageChartDatum {
   return {
     key: record.key,
     routeKey: record.routeKey,
-    label: record.instanceDisplayName,
+    label: record.displayName,
     route: record.route,
     timestamp: record.timestamp,
     sessionId: record.sessionId,
     traceId: record.traceId,
-    pageInstanceId: record.pageInstanceId,
     loadSampleCount: record.loadMs === undefined ? 0 : 1,
     firstFrameSampleCount: record.firstFrameMs === undefined ? 0 : 1,
     staySampleCount: record.stayMs === undefined ? 0 : 1,
@@ -1413,14 +1373,13 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
     const key = isBackgroundInterval
       ? fallbackKey
       : event.traceId ?? fallbackKey;
-    const record = records.get(key) ?? {
+    const record: StartupRecord = records.get(key) ?? {
       key,
       kind: isBackgroundInterval ? 'background' : isHotResume ? 'hot' : 'cold',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       traceId: event.traceId,
       route: event.route,
-      frame: {},
       rss: {},
     };
 
@@ -1437,14 +1396,8 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.firstFrameMs = record.firstFrameMs ?? attrNumber(event, 'app.first_frame_ms');
       record.completedAt = event.timestamp ?? record.completedAt;
       if (isStartupTraceEnd(event)) {
-        record.frame = mergeFrameEvidence(record.frame, extractFrameEvidence(event));
         record.rss = mergeRssEvidence(record.rss, extractRssEvidence(event, 'startup'));
       }
-    }
-    if (event.name === 'app.first_frame') {
-      record.firstFrameEventId = event.eventId;
-      record.firstFrameMs = attrNumber(event, 'app.first_frame_ms') ?? event.durationMs;
-      record.completedAt = record.completedAt ?? event.timestamp;
     }
     if (event.name === 'sdk.init') {
       record.sdkInitEventId = event.eventId;
@@ -1460,7 +1413,6 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.hotResumeMs = event.durationMs;
       record.completedAt = event.timestamp ?? record.completedAt;
       if (isStartupTraceEnd(event)) {
-        record.frame = mergeFrameEvidence(record.frame, extractFrameEvidence(event));
         record.rss = mergeRssEvidence(record.rss, extractRssEvidence(event, 'startup'));
       }
     }
@@ -1475,7 +1427,6 @@ function buildStartupRecords(events: PerformanceMetricEvent[]): StartupRecord[] 
       record.sdkInitMs,
       record.backgroundIntervalMs,
       record.hotResumeMs,
-      hasFrameEvidence(record.frame) ? 1 : undefined,
       hasRssEvidence(record.rss) ? 1 : undefined,
     ].some((value) => typeof value === 'number'))
     .sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
@@ -1515,20 +1466,17 @@ function isCompletedHttpEvent(event: PerformanceMetricEvent): boolean {
 }
 
 function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | undefined {
-  const rows = ['冷启动', '热重启', '首帧', 'SDK 初始化'];
+  const rows = ['冷启动', '热重启', 'SDK 初始化'];
   const totalPoints = records
     .map((record, index) => startupScatterPoint(record, index, '冷启动', startupTotalMs(record)))
     .filter(isStartupScatterPoint);
   const hotPoints = records
     .map((record, index) => startupScatterPoint(record, index, '热重启', record.hotResumeMs))
     .filter(isStartupScatterPoint);
-  const otherPoints = records
-    .map((record, index) => startupScatterPoint(record, index, '首帧', startupOtherMs(record)))
-    .filter(isStartupScatterPoint);
   const sdkPoints = records
     .map((record, index) => startupScatterPoint(record, index, 'SDK 初始化', record.sdkInitMs))
     .filter(isStartupScatterPoint);
-  const allPoints = [...totalPoints, ...hotPoints, ...otherPoints, ...sdkPoints];
+  const allPoints = [...totalPoints, ...hotPoints, ...sdkPoints];
   if (allPoints.length === 0) return undefined;
 
   return {
@@ -1577,72 +1525,11 @@ function startupScatterOption(records: StartupRecord[]): WorkbenchChartOption | 
         data: hotPoints as never[],
       },
       {
-        name: '首帧',
-        type: 'scatter',
-        symbolSize: 10,
-        data: otherPoints as never[],
-      },
-      {
         name: 'SDK 初始化',
         type: 'scatter',
         symbolSize: 10,
         data: sdkPoints as never[],
       },
-    ],
-  };
-}
-
-function startupFrameOption(records: StartupRecord[]): WorkbenchChartOption | undefined {
-  if (records.length === 0) return undefined;
-  return {
-    color: ['#0f766e', '#2563eb', '#d97706'],
-    legend: { top: 0, textStyle: { color: '#52525b' } },
-    grid: { left: 64, right: 28, top: 48, bottom: records.length > 8 ? 72 : 48 },
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params) => {
-        const items = Array.isArray(params) ? params : [params];
-        const index = typeof items[0]?.dataIndex === 'number' ? items[0].dataIndex : 0;
-        const record = records[index];
-        if (!record) return '';
-        return [
-          record.kind === 'hot' ? '热重启' : '冷启动',
-          `时间：${formatFullDateTime(startupRecordTime(record))}`,
-          `FPS：${formatFps(record.frame.fps)}`,
-          `稳定性：${formatStability(record.frame.stability)}`,
-          `最大帧：${formatFrameMs(record.frame.maxMs)}`,
-          `慢帧/样本：${formatSlowSample(record.frame)}`,
-          record.traceId ? `Trace：${record.traceId}` : undefined,
-        ].filter(Boolean).join('<br />');
-      },
-    },
-    xAxis: {
-      type: 'category',
-      data: records.map((record) => startupAxisLabel(record)),
-      axisLabel: { color: '#71717a', hideOverlap: true },
-      axisLine: { lineStyle: { color: '#d4d4d8' } },
-    },
-    yAxis: [
-      {
-        type: 'value',
-        name: 'FPS / ms',
-        axisLabel: { color: '#71717a' },
-        splitLine: { lineStyle: { color: '#f4f4f5' } },
-      },
-      {
-        type: 'value',
-        name: '稳定性',
-        min: 0,
-        max: 1,
-        axisLabel: { color: '#71717a', formatter: (value: number) => formatStability(value) },
-        splitLine: { show: false },
-      },
-    ],
-    dataZoom: records.length > 12 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 24 }] : undefined,
-    series: [
-      { name: 'FPS', type: 'line', smooth: true, symbolSize: 8, data: records.map((record) => record.frame.fps) },
-      { name: '稳定性', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 8, data: records.map((record) => record.frame.stability) },
-      { name: '最大帧', type: 'bar', data: records.map((record) => record.frame.maxMs), barMaxWidth: 28 },
     ],
   };
 }
@@ -1673,7 +1560,7 @@ function pageFrameOption(records: PageChartDatum[], mode: PageScope['mode']): Wo
         if (!record) return '';
         return [
           record.label,
-          mode === 'route' ? `访问记录：${record.visits ?? 0}` : `实例：${record.pageInstanceId ?? record.traceId ?? '-'}`,
+          mode === 'route' ? `访问记录：${record.visits ?? 0}` : record.traceId ? `Trace：${record.traceId}` : undefined,
           `FPS：${formatFps(record.frame.fps)}`,
           `稳定性：${formatStability(record.frame.stability)}`,
           `最大帧：${formatFrameMs(record.frame.maxMs)}`,
@@ -1720,7 +1607,7 @@ function pageMemoryOption(records: PageChartDatum[], mode: PageScope['mode']): W
     (record) => record.timestamp,
     (record) => record.label,
     (record) => record.rss,
-    (record) => mode === 'route' ? `${record.visits ?? 0} 次访问` : record.pageInstanceId ?? record.traceId,
+    (record) => mode === 'route' ? `${record.visits ?? 0} 次访问` : record.traceId,
   );
 }
 
@@ -1902,7 +1789,7 @@ function pageMatrixOption(rows: PageChartDatum[], mode: PageScope['mode']): Work
         if (!row) return '';
         return [
           row.label,
-          mode === 'route' ? `访问记录：${row.visits ?? 0}` : `实例：${row.pageInstanceId ?? row.traceId ?? '-'}`,
+          mode === 'route' ? `访问记录：${row.visits ?? 0}` : row.traceId ? `Trace：${row.traceId}` : undefined,
           `加载平均：${formatDuration(row.averageLoadMs)} · 样本 ${row.loadSampleCount} · 最慢 ${formatDuration(row.maxLoadMs)}`,
           `首帧平均：${formatDuration(row.averageFirstFrameMs)} · 样本 ${row.firstFrameSampleCount} · 最慢 ${formatDuration(row.maxFirstFrameMs)}`,
           '来源：context.route.name / durationMs / page.load_ms / page.first_frame_ms',
@@ -1947,7 +1834,7 @@ function pageMatrixOption(rows: PageChartDatum[], mode: PageScope['mode']): Work
 function pageStayOption(records: PageRecord[]): WorkbenchChartOption | undefined {
   const drawable = records.filter((record) => typeof record.stayMs === 'number' && Number.isFinite(record.stayMs));
   if (drawable.length === 0) return undefined;
-  const xLabels = drawable.map((record) => memoryAxisLabel(record.instanceDisplayName, record.timestamp));
+  const xLabels = drawable.map((record) => memoryAxisLabel(record.displayName, record.timestamp));
   return {
     color: ['#d97706'],
     legend: {
@@ -1963,7 +1850,7 @@ function pageStayOption(records: PageRecord[]): WorkbenchChartOption | undefined
         const record = drawable[index];
         if (!record) return '';
         return [
-          record.instanceDisplayName,
+          record.displayName,
           `时间：${formatFullDateTime(record.timestamp)}`,
           `停留：${formatDuration(record.stayMs)}`,
           record.sessionId ? `Session：${record.sessionId}` : undefined,
@@ -2100,11 +1987,8 @@ function startupPointMeta(params: unknown): StartupScatterPoint | undefined {
   return point as StartupScatterPoint;
 }
 
-function startupOtherMs(record: StartupRecord): number | undefined {
-  const total = startupTotalMs(record);
-  if (typeof total !== 'number') return undefined;
-  if (typeof record.sdkInitMs !== 'number') return undefined;
-  return Math.max(0, total - record.sdkInitMs);
+function startupFirstFrameMs(record: StartupRecord): number | undefined {
+  return record.firstFrameMs ?? record.coldStartToFirstFrameMs ?? record.hotResumeMs;
 }
 
 function mergeFrameEvidence(current: FrameEvidence, next: FrameEvidence): FrameEvidence {
@@ -2130,7 +2014,7 @@ function mergeRssEvidence(current: RssEvidence, next: RssEvidence): RssEvidence 
 }
 
 function pageAxisLabel(record: PageRecord): string {
-  return record.instanceDisplayName;
+  return record.displayName;
 }
 
 function routePointLabel(event: PerformanceMetricEvent): string {

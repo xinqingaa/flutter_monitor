@@ -128,11 +128,6 @@ function SegmentView({
           <span className="min-w-0">
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">{heading}</span>
-              {segment.pageInstanceId ? (
-                <span className="max-w-[18rem] shrink truncate rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-500">
-                 {segment.pageInstanceId}
-                </span>
-              ) : null}
               <span className="shrink-0 text-xs text-zinc-400">{segment.nodeCount} 个节点</span>
             </span>
             <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-zinc-500">

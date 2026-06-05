@@ -297,7 +297,7 @@ Timeline 应从事件表格逐步升级为可视化链路：
 
 ```text
 ▼ 启动 ──────────── 1.24s ⚠        [展开瀑布]
-  ● sdk.init 120ms · app.first_frame 980ms
+  ● sdk.init 120ms · app.cold_start 980ms
 ▼ /home 进入 ─────── 停留 8.2s      [展开瀑布]
   ● page.load 320ms
   ● http /api/feed 812ms ⚠ 500
@@ -315,14 +315,14 @@ Timeline 应从事件表格逐步升级为可视化链路：
 
 Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view model，不是 SDK、core 或 service 协议字段。Workbench 不跨区段复制 route push/pop 事件，也不伪造前后页面节点；事件仍按 raw JSON 所属 `context.route.name`、`traceId`、`startTime/endTime/timestamp` 展示。
 
-- `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init`、`app.first_frame` 和启动完成前的启动期 `memory.sample`。
+- `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init` 和启动完成前的启动期 `memory.sample`。`app.first_frame_ms` 是启动 trace 上的字段，不作为独立 timeline 事件展示。
 - `页面 ${route}`：只由明确页面进入证据开启，即 `page.visit` 的 `event.phase=start` 或 `route.push`。例如 `/detail` 的进入证据如果出现在 raw JSON 的 `/detail` 事件上，就展示在 `/detail` 区段内，不复制到上一个 `/` 区段。
 - `页面活动 ${route}`：当前 route 上的非页面进入事件窗口，包括 HTTP、错误、业务足迹、内存、生命周期、热重启和 SDK 自监控等。区段标题保持中性，具体问题类型放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
 - `会话活动`：缺少 route 上下文的非页面事件窗口。
 
-页面离开与停留的展示按语义区分：`page.visit end` 是页面离开动作，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时读取 `page.load` 和 `page.first_frame`；页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`，并用 `page.instance_id + traceId` 区分同 route 的多次进入。
+页面离开与停留的展示按语义区分：`page.visit end` 是页面离开动作，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时和首帧耗时读取 `page.load` 上的 `page.load_ms` / `page.first_frame_ms`；页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`。同 route 多次进入时，Workbench 内部可用 `page.instance_id + traceId` 合并事件，但主界面优先展示 `context.route.fullName`，实例 id 只在 Inspector/raw JSON 诊断中出现。
 
-启动和页面性能证据都来自主链路 trace end：启动读取 `app.cold_start` / `app.hot_start` end 上的 `frame.*` 与 `memory.start/end/delta_rss_mb`，页面读取 `page.visit` end 上的 `frame.*` 与 `memory.enter/exit/delta_rss_mb`。Workbench 不展示独立 `ui.frame.window`、页面 activity `memory.sample` 或迁移期过滤字段作为新增性能口径。
+启动和页面性能证据都来自主链路：启动读取 `app.cold_start` / `app.hot_start` end 上的 `memory.start/end/delta_rss_mb`，不再展示启动 FPS 或启动帧稳定性；页面读取 `page.visit` end 上的 `frame.*` 与 `memory.enter/exit/delta_rss_mb`。Workbench 不展示独立 `ui.frame.window`、页面 activity `memory.sample` 或迁移期过滤字段作为新增性能口径。
 
 ### Memory 展示口径
 
