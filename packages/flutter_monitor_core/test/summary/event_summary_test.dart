@@ -104,7 +104,9 @@ void main() {
         status: EventStatus.error,
         sessionId: 'ses_1',
         traceId: 'trace_1',
-        context: const MonitorContext(route: RouteContext(name: '/detail')),
+        context: const MonitorContext(
+          route: RouteContext(name: '/detail', fullName: '/detail?id=1'),
+        ),
         attributes: const <String, Object?>{
           FieldPaths.eventPhase: 'instant',
           FieldPaths.errorMechanism: 'flutter',
@@ -127,7 +129,7 @@ void main() {
         '[FM] kind=error name=error.flutter status=error phase=instant '
         'mechanism=flutter '
         'message="NoSuchMethodError: The method \'hello\' was called on null." '
-        'route=/detail breadcrumbs=3 session=ses_1 trace=trace_1 '
+        'route="/detail?id=1" breadcrumbs=3 session=ses_1 trace=trace_1 '
         'event=evt_error',
       );
     });

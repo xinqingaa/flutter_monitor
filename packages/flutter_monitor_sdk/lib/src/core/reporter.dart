@@ -108,11 +108,6 @@ class Reporter {
     );
   }
 
-  void addStartupFrameStats(FrameStatsSnapshot snapshot) {
-    if (_startupPerfRecord == null) return;
-    _startupPerfRecord = _startupPerfRecord!.addFrameStats(snapshot);
-  }
-
   Map<String, Object?> finishStartupPerformance({num? memoryEndRssMb}) {
     final attributes =
         _startupPerfRecord
@@ -362,20 +357,31 @@ class Reporter {
 
   String? startPageLoad(
     String routeName, {
+    String? routeFullName,
     String? previousRouteName,
+    String? previousRouteFullName,
     DateTime? startTime,
   }) {
     if (routeName.isEmpty) return null;
     final startedAt = startTime ?? DateTime.now();
+    final effectiveRouteFullName = _effectiveRouteFullName(
+      routeName,
+      routeFullName,
+    );
+    final effectivePreviousRouteFullName = previousRouteName == null
+        ? null
+        : _effectiveRouteFullName(previousRouteName, previousRouteFullName);
     final pageInstanceId = '${routeName}_${startedAt.microsecondsSinceEpoch}';
     _closeCurrentPageWindow(PageActivePhases.covered, timestamp: startedAt);
-    setCurrentRoute(routeName);
+    setCurrentRoute(routeName, fullName: effectiveRouteFullName);
     final traceId = startTrace(
       EventNames.pageVisit,
       startTime: startedAt,
       attributes: <String, Object?>{
         FieldPaths.pageInstanceId: pageInstanceId,
         if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
+        if (effectivePreviousRouteFullName != null)
+          FieldPaths.pageFromFullName: effectivePreviousRouteFullName,
       },
       payload: <String, Object?>{
         PayloadKeys.routeName: routeName,
@@ -392,6 +398,8 @@ class Reporter {
       attributes: <String, Object?>{
         FieldPaths.pageInstanceId: pageInstanceId,
         if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
+        if (effectivePreviousRouteFullName != null)
+          FieldPaths.pageFromFullName: effectivePreviousRouteFullName,
       },
       payload: <String, Object?>{
         PayloadKeys.routeName: routeName,
@@ -406,6 +414,8 @@ class Reporter {
       attributes: <String, Object?>{
         FieldPaths.pageInstanceId: pageInstanceId,
         if (previousRouteName != null) FieldPaths.pageFrom: previousRouteName,
+        if (effectivePreviousRouteFullName != null)
+          FieldPaths.pageFromFullName: effectivePreviousRouteFullName,
       },
       payload: <String, Object?>{
         PayloadKeys.routeName: routeName,
@@ -415,11 +425,13 @@ class Reporter {
     );
     _pageTracesByInstanceId[pageInstanceId] = _PageTraceRecord(
       routeName: routeName,
+      routeFullName: effectiveRouteFullName,
       traceId: traceId,
       loadSpanId: loadSpanId,
       pageInstanceId: pageInstanceId,
       startedAt: startedAt,
       previousRouteName: previousRouteName,
+      previousRouteFullName: effectivePreviousRouteFullName,
       memoryEnterRssMb: captureRssMb(),
     );
     _pageInstanceStack.add(pageInstanceId);
@@ -432,9 +444,13 @@ class Reporter {
     return pageInstanceId;
   }
 
-  PipelineResult recordPageView(String routeName) {
+  PipelineResult recordPageView(String routeName, {String? routeFullName}) {
     return addBreadcrumb(
       EventNames.pageView,
+      attributes: <String, Object?>{
+        if (routeFullName != null && routeFullName.isNotEmpty)
+          FieldPaths.contextRouteFullName: routeFullName,
+      },
       payload: <String, Object?>{
         PayloadKeys.type: EventNames.pageView,
         PayloadKeys.page: routeName,
@@ -455,29 +471,6 @@ class Reporter {
     }
     final finishedAt = endTime ?? DateTime.now();
     final durationMs = finishedAt.difference(record.startedAt).inMilliseconds;
-    final spanId = startSpan(
-      EventNames.pageFirstFrame,
-      traceId: record.traceId,
-      startTime: record.startedAt,
-      attributes: <String, Object?>{
-        FieldPaths.pageInstanceId: record.pageInstanceId,
-        if (record.previousRouteName != null)
-          FieldPaths.pageFrom: record.previousRouteName,
-      },
-      payload: <String, Object?>{PayloadKeys.routeName: record.routeName},
-    );
-    endSpan(
-      spanId,
-      endTime: finishedAt,
-      includeBreadcrumbs: false,
-      attributes: <String, Object?>{
-        FieldPaths.pageInstanceId: record.pageInstanceId,
-        FieldPaths.pageFirstFrameMs: durationMs,
-        if (record.previousRouteName != null)
-          FieldPaths.pageFrom: record.previousRouteName,
-      },
-      payload: <String, Object?>{PayloadKeys.routeName: record.routeName},
-    );
     if (!record.loadTraceFinished) {
       endSpan(
         record.loadSpanId,
@@ -489,6 +482,8 @@ class Reporter {
           FieldPaths.pageLoadMs: durationMs,
           if (record.previousRouteName != null)
             FieldPaths.pageFrom: record.previousRouteName,
+          if (record.previousRouteFullName != null)
+            FieldPaths.pageFromFullName: record.previousRouteFullName,
         },
         payload: <String, Object?>{PayloadKeys.routeName: record.routeName},
       );
@@ -507,6 +502,7 @@ class Reporter {
   void finishPageLoad(
     String routeName, {
     String? nextRouteName,
+    String? nextRouteFullName,
     DateTime? endTime,
     String? pageInstanceId,
     String endReason = PageEndReasons.routePop,
@@ -517,8 +513,12 @@ class Reporter {
         ? _activePageTraceForRoute(routeName)
         : _pageTracesByInstanceId[pageInstanceId];
     if (record == null) return;
+    final effectiveNextRouteFullName = nextRouteName == null
+        ? null
+        : _effectiveRouteFullName(nextRouteName, nextRouteFullName);
     final completedRecord = record.copyWith(
       nextRouteName: nextRouteName,
+      nextRouteFullName: effectiveNextRouteFullName,
       memoryExitRssMb: captureRssMb(),
     );
     _closePageWindow(
@@ -533,6 +533,7 @@ class Reporter {
     _finishPageTrace(
       recordWithStats.copyWith(
         nextRouteName: nextRouteName,
+        nextRouteFullName: effectiveNextRouteFullName,
         memoryExitRssMb: completedRecord.memoryExitRssMb,
       ),
       endTime: finishedAt,
@@ -1214,8 +1215,8 @@ class Reporter {
     debugPrint("✅ 自定义数据已清除");
   }
 
-  void setCurrentRoute(String? routeName) {
-    _contextManager.setRouteName(routeName);
+  void setCurrentRoute(String? routeName, {String? fullName}) {
+    _contextManager.setRouteName(routeName, fullName: fullName);
   }
 
   void activatePageTrace(String? routeName) {
@@ -1272,8 +1273,12 @@ class Reporter {
           FieldPaths.pageInstanceId: record.pageInstanceId,
           if (record.previousRouteName != null)
             FieldPaths.pageFrom: record.previousRouteName,
+          if (record.previousRouteFullName != null)
+            FieldPaths.pageFromFullName: record.previousRouteFullName,
           if (record.nextRouteName != null)
             FieldPaths.pageTo: record.nextRouteName,
+          if (record.nextRouteFullName != null)
+            FieldPaths.pageToFullName: record.nextRouteFullName,
         },
         payload: <String, Object?>{
           PayloadKeys.routeName: record.routeName,
@@ -1287,7 +1292,11 @@ class Reporter {
       FieldPaths.pageInstanceId: record.pageInstanceId,
       if (record.previousRouteName != null)
         FieldPaths.pageFrom: record.previousRouteName,
+      if (record.previousRouteFullName != null)
+        FieldPaths.pageFromFullName: record.previousRouteFullName,
       if (record.nextRouteName != null) FieldPaths.pageTo: record.nextRouteName,
+      if (record.nextRouteFullName != null)
+        FieldPaths.pageToFullName: record.nextRouteFullName,
       ...record.performanceAttributes(),
     };
     endTrace(
@@ -1318,8 +1327,12 @@ class Reporter {
           FieldPaths.pageInstanceId: record.pageInstanceId,
           if (record.previousRouteName != null)
             FieldPaths.pageFrom: record.previousRouteName,
+          if (record.previousRouteFullName != null)
+            FieldPaths.pageFromFullName: record.previousRouteFullName,
           if (record.nextRouteName != null)
             FieldPaths.pageTo: record.nextRouteName,
+          if (record.nextRouteFullName != null)
+            FieldPaths.pageToFullName: record.nextRouteFullName,
         },
         payload: <String, Object?>{
           PayloadKeys.type: EventNames.pageStay,
@@ -1412,7 +1425,7 @@ class Reporter {
       _traceManager.setActiveTrace(traceId: null);
       return;
     }
-    setCurrentRoute(record.routeName);
+    setCurrentRoute(record.routeName, fullName: record.routeFullName);
     _traceManager.setActiveTrace(traceId: record.traceId);
     _openPageWindow(
       record.pageInstanceId,
@@ -1431,6 +1444,7 @@ class Reporter {
     final openedAt = timestamp ?? DateTime.now();
     final snapshot = PageActivitySnapshot(
       routeName: record.routeName,
+      routeFullName: record.routeFullName,
       traceId: record.traceId,
       pageInstanceId: record.pageInstanceId,
       activePhase: phase,
@@ -1494,6 +1508,11 @@ class Reporter {
       return uri.path.isEmpty ? '/' : uri.path;
     }
     return rawUrl.split('?').first;
+  }
+
+  String _effectiveRouteFullName(String routeName, String? routeFullName) {
+    final trimmed = routeFullName?.trim();
+    return trimmed == null || trimmed.isEmpty ? routeName : trimmed;
   }
 
   String _canonicalHttpErrorType({
@@ -1591,6 +1610,7 @@ class Reporter {
 class PageActivitySnapshot {
   const PageActivitySnapshot({
     required this.routeName,
+    required this.routeFullName,
     required this.traceId,
     required this.pageInstanceId,
     required this.activePhase,
@@ -1598,6 +1618,7 @@ class PageActivitySnapshot {
   });
 
   final String routeName;
+  final String routeFullName;
   final String traceId;
   final String pageInstanceId;
   final String activePhase;
@@ -1606,6 +1627,7 @@ class PageActivitySnapshot {
   PageActivitySnapshot copyWith({String? activePhase, DateTime? timestamp}) {
     return PageActivitySnapshot(
       routeName: routeName,
+      routeFullName: routeFullName,
       traceId: traceId,
       pageInstanceId: pageInstanceId,
       activePhase: activePhase ?? this.activePhase,
@@ -1617,12 +1639,15 @@ class PageActivitySnapshot {
 class _PageTraceRecord {
   const _PageTraceRecord({
     required this.routeName,
+    required this.routeFullName,
     required this.traceId,
     required this.loadSpanId,
     required this.pageInstanceId,
     required this.startedAt,
     this.previousRouteName,
+    this.previousRouteFullName,
     this.nextRouteName,
+    this.nextRouteFullName,
     this.memoryEnterRssMb,
     this.memoryExitRssMb,
     this.frameStats = const _FrameStatsAggregate(),
@@ -1631,12 +1656,15 @@ class _PageTraceRecord {
   });
 
   final String routeName;
+  final String routeFullName;
   final String traceId;
   final String loadSpanId;
   final String pageInstanceId;
   final DateTime startedAt;
   final String? previousRouteName;
+  final String? previousRouteFullName;
   final String? nextRouteName;
+  final String? nextRouteFullName;
   final num? memoryEnterRssMb;
   final num? memoryExitRssMb;
   final _FrameStatsAggregate frameStats;
@@ -1645,6 +1673,7 @@ class _PageTraceRecord {
 
   _PageTraceRecord copyWith({
     String? nextRouteName,
+    String? nextRouteFullName,
     num? memoryEnterRssMb,
     num? memoryExitRssMb,
     _FrameStatsAggregate? frameStats,
@@ -1653,12 +1682,15 @@ class _PageTraceRecord {
   }) {
     return _PageTraceRecord(
       routeName: routeName,
+      routeFullName: routeFullName,
       traceId: traceId,
       loadSpanId: loadSpanId,
       pageInstanceId: pageInstanceId,
       startedAt: startedAt,
       previousRouteName: previousRouteName,
+      previousRouteFullName: previousRouteFullName,
       nextRouteName: nextRouteName ?? this.nextRouteName,
+      nextRouteFullName: nextRouteFullName ?? this.nextRouteFullName,
       memoryEnterRssMb: memoryEnterRssMb ?? this.memoryEnterRssMb,
       memoryExitRssMb: memoryExitRssMb ?? this.memoryExitRssMb,
       frameStats: frameStats ?? this.frameStats,
@@ -1682,33 +1714,21 @@ class _PageTraceRecord {
 }
 
 class _StartupPerfRecord {
-  const _StartupPerfRecord({
-    this.startedAt,
-    this.startRssMb,
-    this.endRssMb,
-    this.frameStats = const _FrameStatsAggregate(),
-  });
+  const _StartupPerfRecord({this.startedAt, this.startRssMb, this.endRssMb});
 
   final DateTime? startedAt;
   final num? startRssMb;
   final num? endRssMb;
-  final _FrameStatsAggregate frameStats;
-
-  _StartupPerfRecord addFrameStats(FrameStatsSnapshot snapshot) {
-    return copyWith(frameStats: frameStats.add(snapshot));
-  }
 
   _StartupPerfRecord copyWith({
     DateTime? startedAt,
     num? startRssMb,
     num? endRssMb,
-    _FrameStatsAggregate? frameStats,
   }) {
     return _StartupPerfRecord(
       startedAt: startedAt ?? this.startedAt,
       startRssMb: startRssMb ?? this.startRssMb,
       endRssMb: endRssMb ?? this.endRssMb,
-      frameStats: frameStats ?? this.frameStats,
     );
   }
 
@@ -1717,7 +1737,6 @@ class _StartupPerfRecord {
         ? null
         : endRssMb! - startRssMb!;
     return <String, Object?>{
-      ...frameStats.toAttributes(),
       if (startRssMb != null) FieldPaths.memoryStartRssMb: startRssMb,
       if (endRssMb != null) FieldPaths.memoryEndRssMb: endRssMb,
       if (memoryDelta != null) FieldPaths.memoryDeltaRssMb: memoryDelta,

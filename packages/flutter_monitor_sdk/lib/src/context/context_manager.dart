@@ -15,6 +15,7 @@ class ContextManager {
   UserInfo? _runtimeUserInfo;
   Map<String, Object?>? _runtimeCustomData;
   String? _currentRouteName;
+  String? _currentRouteFullName;
   String? _currentModuleName;
   String? _currentScene;
   String? _lifecycleState;
@@ -48,38 +49,36 @@ class ContextManager {
     return ContextSnapshot(
       resource: _buildResource(),
       context: MonitorContext(
-        user:
-            userInfo == null
-                ? null
-                : UserContext(
-                  userId: userInfo.userId,
-                  userType: userInfo.userType,
-                  userTags: userInfo.userTags,
-                ),
-        route:
-            _currentRouteName == null
-                ? null
-                : RouteContext(
-                  name: _currentRouteName,
-                  stack: <String>[_currentRouteName!],
-                  source: PlatformSignalSources.flutter,
-                ),
-        module:
-            _currentModuleName == null && _currentScene == null
-                ? null
-                : ModuleContext(name: _currentModuleName, scene: _currentScene),
-        lifecycle:
-            _lifecycleState == null
-                ? null
-                : LifecycleContext(
-                  state: _lifecycleState,
-                  previousState: _previousLifecycleState,
-                  isForeground: _lifecycleState == LifecycleStates.resumed,
-                ),
+        user: userInfo == null
+            ? null
+            : UserContext(
+                userId: userInfo.userId,
+                userType: userInfo.userType,
+                userTags: userInfo.userTags,
+              ),
+        route: _currentRouteName == null
+            ? null
+            : RouteContext(
+                name: _currentRouteName,
+                fullName: _currentRouteFullName,
+                stack: <String>[_currentRouteFullName ?? _currentRouteName!],
+                source: PlatformSignalSources.flutter,
+              ),
+        module: _currentModuleName == null && _currentScene == null
+            ? null
+            : ModuleContext(name: _currentModuleName, scene: _currentScene),
+        lifecycle: _lifecycleState == null
+            ? null
+            : LifecycleContext(
+                state: _lifecycleState,
+                previousState: _previousLifecycleState,
+                isForeground: _lifecycleState == LifecycleStates.resumed,
+              ),
         native: _buildNativeContext(),
         missing: !hasContext,
-        missingReason:
-            hasContext ? null : ContextMissingReasons.sdkBootstrapIncomplete,
+        missingReason: hasContext
+            ? null
+            : ContextMissingReasons.sdkBootstrapIncomplete,
       ),
       customData: effectiveCustomData,
       userProperties: userInfo?.userProperties?.cast<String, Object?>(),
@@ -106,9 +105,12 @@ class ContextManager {
     _runtimeCustomData = null;
   }
 
-  void setRouteName(String? routeName) {
+  void setRouteName(String? routeName, {String? fullName}) {
     if (routeName == null || routeName.isEmpty) return;
     _currentRouteName = routeName;
+    _currentRouteFullName = fullName == null || fullName.isEmpty
+        ? routeName
+        : fullName;
   }
 
   void setModule({String? name, String? scene}) {

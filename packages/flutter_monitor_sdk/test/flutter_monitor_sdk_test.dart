@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
@@ -434,6 +433,36 @@ void main() {
     expect(SchemaValidator().validate(envelope).isValid, isTrue);
   });
 
+  test(
+    'envelope builder keeps route name and full name aligned on override',
+    () {
+      final envelope = EnvelopeBuilder().build(
+        signal: RawSignal(
+          source: 'test',
+          name: EventNames.memorySample,
+          signalType: SignalType.metric,
+          timestamp: DateTime.parse('2026-05-25T12:00:00.000+08:00'),
+          contextRouteName: '/home',
+        ),
+        contextSnapshot: const ContextSnapshot(
+          resource: MonitorResource.empty(),
+          context: MonitorContext(
+            route: RouteContext(
+              name: '/detail',
+              fullName: '/detail?id=1',
+              stack: ['/detail?id=1'],
+            ),
+          ),
+        ),
+        traceSnapshot: const TraceSnapshot(sessionId: 'ses_test'),
+      );
+
+      expect(envelope.context.route?.name, '/home');
+      expect(envelope.context.route?.fullName, '/home');
+      expect(envelope.context.route?.stack, ['/home']);
+    },
+  );
+
   test('trace and span runtime APIs emit first-class envelope events', () {
     final output = RecordingOutput();
     final reporter = Reporter(
@@ -692,7 +721,7 @@ void main() {
   });
 
   testWidgets(
-    'route observer emits page load trace and page first frame span',
+    'route observer emits page load trace with first frame evidence',
     (tester) async {
       final output = RecordingOutput();
       final reporter = Reporter(
@@ -731,7 +760,7 @@ void main() {
       expect(pageVisitEvents, hasLength(1));
       expect(pageLoadEvents, hasLength(2));
       expect(routePushEvents, hasLength(1));
-      expect(pageFirstFrameEvents, hasLength(2));
+      expect(pageFirstFrameEvents, isEmpty);
 
       final pageTraceId = pageVisitEvents.first['traceId'];
       expect(pageView['traceId'], pageTraceId);
@@ -748,22 +777,17 @@ void main() {
         isTrue,
       );
       expect(
-        pageFirstFrameEvents.every((event) => event['traceId'] == pageTraceId),
-        isTrue,
-      );
-      expect(
-        (pageFirstFrameEvents.first['attributes'] as Map).containsKey(
+        (pageLoadEvents.first['attributes'] as Map).containsKey(
           FieldPaths.pageFirstFrameMs,
         ),
         isFalse,
       );
       expect(
-        (pageFirstFrameEvents.last['attributes']
-            as Map)[FieldPaths.pageFirstFrameMs],
+        (pageLoadEvents.last['attributes'] as Map)[FieldPaths.pageFirstFrameMs],
         isA<num>(),
       );
       expect(
-        (pageFirstFrameEvents.last['payload'] as Map).containsKey(
+        (pageLoadEvents.last['payload'] as Map).containsKey(
           FieldPaths.payloadBreadcrumbs,
         ),
         isFalse,
@@ -866,6 +890,124 @@ void main() {
       (pageStayEvents.first['attributes'] as Map)[FieldPaths.pageTo],
       '/detail',
     );
+  });
+
+  test('page traces keep route name and full route name dimensions', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final t0 = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+
+    final homeId = reporter.startPageLoad(
+      '/',
+      routeFullName: '/',
+      startTime: t0,
+    );
+    reporter.finishPageFirstFrame(
+      '/',
+      pageInstanceId: homeId,
+      endTime: t0.add(const Duration(milliseconds: 16)),
+    );
+    final detailId = reporter.startPageLoad(
+      '/detail',
+      routeFullName: '/detail?id=1',
+      previousRouteName: '/',
+      previousRouteFullName: '/',
+      startTime: t0.add(const Duration(seconds: 1)),
+    );
+    reporter.finishPageFirstFrame(
+      '/detail',
+      pageInstanceId: detailId,
+      endTime: t0.add(const Duration(seconds: 1, milliseconds: 32)),
+    );
+    reporter.finishPageLoad(
+      '/detail',
+      pageInstanceId: detailId,
+      nextRouteName: '/',
+      nextRouteFullName: '/',
+      endTime: t0.add(const Duration(seconds: 2)),
+    );
+
+    final detailLoadEnd = output.events.singleWhere(
+      (event) =>
+          event['name'] == EventNames.pageLoad &&
+          (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+              EventPhases.end &&
+          ((event['context'] as Map)['route'] as Map)['name'] == '/detail',
+    );
+    final detailVisitEnd = output.events.singleWhere(
+      (event) =>
+          event['name'] == EventNames.pageVisit &&
+          (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+              EventPhases.end &&
+          ((event['context'] as Map)['route'] as Map)['name'] == '/detail',
+    );
+    final loadAttributes = detailLoadEnd['attributes'] as Map;
+    final visitAttributes = detailVisitEnd['attributes'] as Map;
+    final route = (detailVisitEnd['context'] as Map)['route'] as Map;
+
+    expect(route['name'], '/detail');
+    expect(route['fullName'], '/detail?id=1');
+    expect(loadAttributes[FieldPaths.pageFrom], '/');
+    expect(loadAttributes[FieldPaths.pageFromFullName], '/');
+    expect(visitAttributes[FieldPaths.pageTo], '/');
+    expect(visitAttributes[FieldPaths.pageToFullName], '/');
+    expect(visitAttributes[FieldPaths.pageInstanceId], detailId);
+  });
+
+  testWidgets('route observer builds full route names from arguments', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final routeObserver = MonitorRouteObserver(reporter);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[routeObserver],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed(
+                '/detail',
+                arguments: const <String, Object?>{'tab': 'info', 'id': 1},
+              ),
+              child: const Text('detail'),
+            ),
+          ),
+          '/detail': (_) => const SizedBox(key: Key('detail-page')),
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('detail'));
+    await tester.pumpAndSettle();
+
+    final detailVisitStart = output.events.singleWhere(
+      (event) =>
+          event['name'] == EventNames.pageVisit &&
+          (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+              EventPhases.start &&
+          ((event['context'] as Map)['route'] as Map)['name'] == '/detail',
+    );
+    final route = (detailVisitStart['context'] as Map)['route'] as Map;
+    final attributes = detailVisitStart['attributes'] as Map;
+
+    expect(route['name'], '/detail');
+    expect(route['fullName'], '/detail?id=1&tab=info');
+    expect(attributes[FieldPaths.pageFrom], '/');
+    expect(attributes[FieldPaths.pageFromFullName], '/');
   });
 
   test(
@@ -978,7 +1120,7 @@ void main() {
         .toList(growable: false);
 
     expect(complexLoadEvents, hasLength(2));
-    expect(complexFirstFrameEvents, hasLength(2));
+    expect(complexFirstFrameEvents, isEmpty);
     expect(complexLoadEvents.last['status'], 'ok');
     expect(
       (complexLoadEvents.last['attributes'] as Map)[FieldPaths.pageLoadMs],
@@ -1323,7 +1465,7 @@ void main() {
     expect(attributes[FieldPaths.responseSizeBytes], 256);
   });
 
-  test('startup performance evidence is merged into cold start trace', () {
+  test('startup memory evidence is merged into cold start trace', () {
     final output = RecordingOutput();
     final reporter = Reporter(
       MonitorConfig(
@@ -1338,26 +1480,6 @@ void main() {
     );
 
     startup.startSdkInit();
-    reporter.addStartupFrameStats(
-      FrameStatsSnapshot(
-        windowType: appFrameWindowType,
-        windowPhase: StartupEndReasons.firstFrame,
-        sampleCount: 4,
-        slowCount: 1,
-        droppedCount: 2,
-        refreshRate: 60,
-        frameMaxMs: 42,
-        frameAvgMs: 20,
-        frameBudgetMs: 16.67,
-        frameFps: 50,
-        frameStability: 0.75,
-        frameP50Ms: 16,
-        frameP90Ms: 42,
-        frameP99Ms: 42,
-        startTime: appStartTime,
-        endTime: appStartTime.add(const Duration(milliseconds: 88)),
-      ),
-    );
     startup.finishFirstFrame(
       endTime: appStartTime.add(const Duration(milliseconds: 88)),
     );
@@ -1371,14 +1493,9 @@ void main() {
     expect(coldStartEnd['status'], EventStatus.ok.toJson());
     expect(attributes[FieldPaths.appStartType], StartTypes.cold);
     expect(attributes[FieldPaths.appFirstFrameMs], 88);
-    expect(attributes[FieldPaths.frameSampleCount], 4);
-    expect(attributes[FieldPaths.frameSlowCount], 1);
-    expect(attributes[FieldPaths.frameDroppedCount], 2);
-    expect(attributes[FieldPaths.frameMaxMs], 42);
-    expect(attributes[FieldPaths.frameAvgMs], 20);
-    expect(attributes[FieldPaths.frameFps], 50);
-    expect(attributes[FieldPaths.frameStability], 0.75);
-    expect(attributes[FieldPaths.frameP90Ms], 42);
+    expect(attributes.containsKey(FieldPaths.frameSampleCount), isFalse);
+    expect(attributes.containsKey(FieldPaths.frameFps), isFalse);
+    expect(attributes.containsKey(FieldPaths.frameStability), isFalse);
     expect(attributes[FieldPaths.memoryStartRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryEndRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
@@ -1398,7 +1515,7 @@ void main() {
     );
   });
 
-  test('startup performance evidence is merged into hot start trace', () async {
+  test('startup memory evidence is merged into hot start trace', () async {
     final output = RecordingOutput();
     final reporter = Reporter(
       MonitorConfig(
@@ -1413,23 +1530,6 @@ void main() {
     await reporter.handleLifecycleState('paused', timestamp: pausedAt);
     await reporter.handleLifecycleState('resumed', timestamp: resumedAt);
     reporter.beginStartupPerformance(startTime: resumedAt);
-    reporter.addStartupFrameStats(
-      FrameStatsSnapshot(
-        windowType: appFrameWindowType,
-        windowPhase: StartupEndReasons.firstFrame,
-        sampleCount: 3,
-        slowCount: 0,
-        droppedCount: 0,
-        refreshRate: 120,
-        frameMaxMs: 8,
-        frameAvgMs: 7,
-        frameBudgetMs: 8.33,
-        frameFps: 120,
-        frameStability: 1,
-        startTime: resumedAt,
-        endTime: resumedAt.add(const Duration(milliseconds: 96)),
-      ),
-    );
     reporter.finishHotStartTrace(
       endTime: resumedAt.add(const Duration(milliseconds: 96)),
     );
@@ -1448,9 +1548,9 @@ void main() {
       StartupEndReasons.firstFrame,
     );
     expect(attributes[FieldPaths.appFirstFrameMs], 96);
-    expect(attributes[FieldPaths.frameSampleCount], 3);
-    expect(attributes[FieldPaths.frameRefreshRate], 120);
-    expect(attributes[FieldPaths.frameStability], 1);
+    expect(attributes.containsKey(FieldPaths.frameSampleCount), isFalse);
+    expect(attributes.containsKey(FieldPaths.frameFps), isFalse);
+    expect(attributes.containsKey(FieldPaths.frameStability), isFalse);
     expect(attributes[FieldPaths.memoryStartRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryEndRssMb], isA<num>());
     expect(attributes[FieldPaths.memoryDeltaRssMb], isA<num>());
@@ -1459,47 +1559,6 @@ void main() {
       isEmpty,
     );
   });
-
-  test(
-    'app frame window waits for the next frame timing before finishing',
-    () async {
-      final snapshots = <FrameStatsSnapshot>[];
-      final collector = FrameWindowCollector(
-        startupFrameTimingTimeout: const Duration(seconds: 1),
-        onAppWindowFinished: snapshots.add,
-      );
-      final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
-      final firstFrameAt = startedAt.add(const Duration(milliseconds: 16));
-
-      collector.startAppWindow(timestamp: startedAt);
-      final finished = collector.finishAppWindowAfterNextTiming(
-        StartupEndReasons.firstFrame,
-        timestamp: firstFrameAt,
-      );
-      await Future<void>.delayed(Duration.zero);
-
-      expect(snapshots, isEmpty);
-
-      collector.recordTimings(<FrameTiming>[
-        FrameTiming(
-          vsyncStart: 0,
-          buildStart: 1000,
-          buildFinish: 4000,
-          rasterStart: 4000,
-          rasterFinish: 17000,
-          rasterFinishWallTime: 17000,
-        ),
-      ]);
-      await finished;
-
-      expect(snapshots, hasLength(1));
-      expect(snapshots.single.windowType, appFrameWindowType);
-      expect(snapshots.single.windowPhase, StartupEndReasons.firstFrame);
-      expect(snapshots.single.sampleCount, 1);
-      expect(snapshots.single.frameAvgMs, 17);
-      expect(snapshots.single.endTime, firstFrameAt);
-    },
-  );
 
   test('page performance evidence is merged into page visit trace', () {
     final output = RecordingOutput();
@@ -1816,7 +1875,7 @@ void main() {
       lessThan(names.indexOf('page.view')),
     );
     expect(coldStartEvents, hasLength(2));
-    expect(firstFrameSpans, hasLength(2));
+    expect(firstFrameSpans, isEmpty);
     expect(coldStartEvents.first['signalType'], 'trace');
     expect(coldStartEvents.first['status'], 'unknown');
     expect(
@@ -1836,14 +1895,6 @@ void main() {
     expect(
       (coldStartEvents.last['attributes'] as Map)[FieldPaths.appFirstFrameMs],
       isA<num>(),
-    );
-    expect(
-      (firstFrameSpans.first['attributes'] as Map)[FieldPaths.eventPhase],
-      'start',
-    );
-    expect(
-      (firstFrameSpans.last['attributes'] as Map)[FieldPaths.eventPhase],
-      'end',
     );
   });
 

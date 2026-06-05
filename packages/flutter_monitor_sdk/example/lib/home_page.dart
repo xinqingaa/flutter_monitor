@@ -54,12 +54,11 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _monitoredHttpClient = FlutterMonitorSDK.httpClient;
-    _memoryJankController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..addListener(() {
-      setState(() {});
-    });
+    _memoryJankController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..addListener(() {
+            setState(() {});
+          });
     FlutterMonitorSDK.setModule(name: 'example', scene: 'home');
   }
 
@@ -209,17 +208,16 @@ class _HomePageState extends State<HomePage>
   void _triggerLayoutOverflow() {
     showDialog(
       context: context,
-      builder:
-          (context) => const AlertDialog(
-            title: Text('Layout Overflow'),
-            content: Row(
-              children: [
-                Text(
-                  'This long text intentionally overflows the dialog width and is captured by FlutterError.',
-                ),
-              ],
+      builder: (context) => const AlertDialog(
+        title: Text('Layout Overflow'),
+        content: Row(
+          children: [
+            Text(
+              'This long text intentionally overflows the dialog width and is captured by FlutterError.',
             ),
-          ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -307,18 +305,25 @@ class _HomePageState extends State<HomePage>
           children: [
             _section('Page And Route', [
               _button(
-                label: 'Push /detail',
-                onPressed:
-                    () => Navigator.pushNamed(
-                      context,
-                      '/detail',
-                      arguments: const <String, Object?>{'depth': 1},
-                    ),
+                label: 'Push /detail?id=1',
+                onPressed: () => Navigator.pushNamed(
+                  context,
+                  '/detail',
+                  arguments: const <String, Object?>{'id': 1},
+                ),
+              ),
+              _button(
+                label: 'Push /detail?id=2',
+                onPressed: () => Navigator.pushNamed(
+                  context,
+                  '/detail',
+                  arguments: const <String, Object?>{'id': 2},
+                ),
               ),
               _button(
                 label: 'Push /performance_test',
-                onPressed:
-                    () => Navigator.pushNamed(context, '/performance_test'),
+                onPressed: () =>
+                    Navigator.pushNamed(context, '/performance_test'),
               ),
               _button(
                 label: 'Push /complex_list',
@@ -330,45 +335,41 @@ class _HomePageState extends State<HomePage>
                 label: 'Dio 200 GitHub user',
                 action: _ScenarioAction.dioSuccess,
                 color: Colors.green,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.dioSuccess,
-                      run: () => _runDio(_githubUserUri),
-                      done: 'Dio success scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.dioSuccess,
+                  run: () => _runDio(_githubUserUri),
+                  done: 'Dio success scenario finished.',
+                ),
               ),
               _button(
                 label: 'Dio 404 GitHub path',
                 action: _ScenarioAction.dioFailure,
                 color: Colors.green.shade200,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.dioFailure,
-                      run: () => _runDio(_githubFailureUri),
-                      done: 'Dio failure scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.dioFailure,
+                  run: () => _runDio(_githubFailureUri),
+                  done: 'Dio failure scenario finished.',
+                ),
               ),
               _button(
                 label: 'Dio slow local request',
                 action: _ScenarioAction.dioSlow,
                 color: Colors.lightGreen,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.dioSlow,
-                      run: () => _runDio(_localSlowUri),
-                      done: 'Dio slow scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.dioSlow,
+                  run: () => _runDio(_localSlowUri),
+                  done: 'Dio slow scenario finished.',
+                ),
               ),
               _button(
                 label: 'Dio timeout',
                 action: _ScenarioAction.dioTimeout,
                 color: Colors.red.shade200,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.dioTimeout,
-                      run: () => _runDio(_timeoutUri),
-                      done: 'Dio timeout scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.dioTimeout,
+                  run: () => _runDio(_timeoutUri),
+                  done: 'Dio timeout scenario finished.',
+                ),
               ),
             ]),
             _section('HTTP: package:http', [
@@ -376,48 +377,42 @@ class _HomePageState extends State<HomePage>
                 label: 'http 200 GitHub user',
                 action: _ScenarioAction.httpSuccess,
                 color: Colors.teal,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.httpSuccess,
-                      run: () => _runHttp(_githubUserUri),
-                      done: 'http success scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.httpSuccess,
+                  run: () => _runHttp(_githubUserUri),
+                  done: 'http success scenario finished.',
+                ),
               ),
               _button(
                 label: 'http 404 GitHub path',
                 action: _ScenarioAction.httpFailure,
                 color: Colors.teal.shade200,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.httpFailure,
-                      run: () => _runHttp(_githubFailureUri),
-                      done: 'http failure scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.httpFailure,
+                  run: () => _runHttp(_githubFailureUri),
+                  done: 'http failure scenario finished.',
+                ),
               ),
               _button(
                 label: 'http slow local request',
                 action: _ScenarioAction.httpSlow,
                 color: Colors.cyan,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.httpSlow,
-                      run: () => _runHttp(_localSlowUri),
-                      done: 'http slow scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.httpSlow,
+                  run: () => _runHttp(_localSlowUri),
+                  done: 'http slow scenario finished.',
+                ),
               ),
               _button(
                 label: 'http timeout',
                 action: _ScenarioAction.httpTimeout,
                 color: Colors.red.shade100,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.httpTimeout,
-                      run:
-                          () => _runHttp(
-                            _timeoutUri,
-                          ).timeout(const Duration(seconds: 2)),
-                      done: 'http timeout scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.httpTimeout,
+                  run: () =>
+                      _runHttp(_timeoutUri).timeout(const Duration(seconds: 2)),
+                  done: 'http timeout scenario finished.',
+                ),
               ),
             ]),
             _section('Jank', [const JankTriggerButton()]),
@@ -447,21 +442,19 @@ class _HomePageState extends State<HomePage>
               _button(
                 label: 'Release retained memory ($_retainedMemoryMb MB)',
                 color: Colors.indigo.shade50,
-                onPressed:
-                    _retainedMemoryChunks.isEmpty
-                        ? null
-                        : _releaseRetainedMemory,
+                onPressed: _retainedMemoryChunks.isEmpty
+                    ? null
+                    : _releaseRetainedMemory,
               ),
               _button(
                 label: 'Allocate during pause/resume',
                 action: _ScenarioAction.memoryBackgroundGrowth,
                 color: Colors.blueGrey.shade100,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.memoryBackgroundGrowth,
-                      run: _simulateBackgroundMemoryGrowth,
-                      done: 'Memory growth scenario finished.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.memoryBackgroundGrowth,
+                  run: _simulateBackgroundMemoryGrowth,
+                  done: 'Memory growth scenario finished.',
+                ),
               ),
               if (kDebugMode)
                 _button(
@@ -494,12 +487,11 @@ class _HomePageState extends State<HomePage>
                 label: 'Track checkout action',
                 action: _ScenarioAction.checkoutAction,
                 color: Colors.purple.shade100,
-                onPressed:
-                    () => _runScenario(
-                      _ScenarioAction.checkoutAction,
-                      run: _runCheckoutAction,
-                      done: 'Checkout action tracked.',
-                    ),
+                onPressed: () => _runScenario(
+                  _ScenarioAction.checkoutAction,
+                  run: _runCheckoutAction,
+                  done: 'Checkout action tracked.',
+                ),
               ),
             ]),
           ],
@@ -523,12 +515,11 @@ class _JankTriggerButtonState extends State<JankTriggerButton>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..addListener(() {
-      setState(() {});
-    });
+    _controller =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..addListener(() {
+            setState(() {});
+          });
   }
 
   @override
@@ -548,17 +539,16 @@ class _JankTriggerButtonState extends State<JankTriggerButton>
       style: ElevatedButton.styleFrom(
         backgroundColor: _controller.isAnimating ? Colors.grey : Colors.red,
       ),
-      onPressed:
-          _controller.isAnimating
-              ? null
-              : () {
-                FlutterMonitorSDK.track(
-                  action: 'ui.tap.trigger_jank',
-                  result: MonitorTrackResult.started,
-                  target: 'trigger_jank_button',
-                );
-                _controller.forward(from: 0);
-              },
+      onPressed: _controller.isAnimating
+          ? null
+          : () {
+              FlutterMonitorSDK.track(
+                action: 'ui.tap.trigger_jank',
+                result: MonitorTrackResult.started,
+                target: 'trigger_jank_button',
+              );
+              _controller.forward(from: 0);
+            },
       child: const Text('Trigger continuous 45ms frame jank'),
     );
   }

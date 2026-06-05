@@ -7,14 +7,14 @@
 ### 启动性能证据
 
 - 冷启动和热启动分别由 `app.cold_start`、`app.hot_start` 表达，二者是互斥关系。
-- 启动首帧或恢复首帧闭合 trace 时，同时写入帧摘要字段：`frame.sample_count`、`frame.slow_count`、`frame.dropped_count`、`frame.refresh_rate`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms`。
+- 启动首帧或恢复首帧闭合 trace 时，不写入帧摘要字段；帧数、FPS、稳定性和慢帧统一由页面 `page.visit` trace end 表达。
 - 启动 trace end 同时写入 RSS 证据：`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb`。
-- SDK 只在内存中聚合启动帧窗口，启动性能证据统一落在启动 trace end。
+- SDK 不维护启动帧窗口，启动性能证据统一落在启动 trace end。
 
 ### 页面性能证据
 
 - 页面实例由 `page.instance_id` 区分，同一个 `routeName` 连续多次 push 时必须生成不同实例。
-- 页面 trace 由 `page.visit` 表达，页面首帧由 `page.first_frame` / `page.load` 表达。
+- 页面 trace 由 `page.visit` 表达，页面首帧作为 `page.load` end 上的 `page.first_frame_ms` 观测字段表达，不再生成独立 `page.first_frame` span。
 - 页面关闭或被最终结束时，`page.visit` trace end 写入同一页面实例累计到的帧摘要字段。
 - 页面进入和退出时读取 RSS，`page.visit` trace end 写入 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb`。
 - 页面切换性能证据统一落在页面 trace end。
@@ -30,7 +30,7 @@
 ## Workbench 适配 TODO
 
 - Session timeline 以 `app.cold_start` / `app.hot_start`、`page.visit`、`http.client`、`ui.jank.sequence`、error、lifecycle 为主轴展示。
-- 启动详情直接读取启动 trace end 的 `frame.*` 和 `memory.start/end/delta_rss_mb`。
+- 启动详情直接读取启动 trace end 的启动耗时和 `memory.start/end/delta_rss_mb`，不展示启动 FPS。
 - 页面详情直接读取 `page.visit` trace end 的 `frame.*` 和 `memory.enter/exit/delta_rss_mb`。
 - 同 route 多实例展示必须使用 `page.instance_id`，不能只按 routeName 合并。
 - Raw JSON 回查应能证明页面切换性能证据已经写入对应 `page.visit` trace end。

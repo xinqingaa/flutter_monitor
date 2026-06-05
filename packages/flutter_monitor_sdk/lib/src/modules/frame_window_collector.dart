@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/scheduler.dart';
@@ -6,21 +5,13 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart'
     show PageActivitySnapshot;
 
-const appFrameWindowType = 'app';
 const pageFrameWindowType = 'page';
 
 class FrameWindowCollector {
-  FrameWindowCollector({
-    this.onAppWindowFinished,
-    this.onPageWindowFinished,
-    this.startupFrameTimingTimeout = const Duration(milliseconds: 250),
-  });
+  FrameWindowCollector({this.onPageWindowFinished});
 
-  final void Function(FrameStatsSnapshot snapshot)? onAppWindowFinished;
   final void Function(FrameStatsSnapshot snapshot)? onPageWindowFinished;
-  final Duration startupFrameTimingTimeout;
   final Map<String, _FrameWindow> _windows = <String, _FrameWindow>{};
-  _PendingAppWindowFinish? _pendingAppWindowFinish;
 
   double get refreshRate {
     final views = SchedulerBinding.instance.platformDispatcher.views;
@@ -30,15 +21,6 @@ class FrameWindowCollector {
   }
 
   double get frameBudgetMs => 1000 / refreshRate;
-
-  void startAppWindow({DateTime? timestamp}) {
-    if (_windows.containsKey(appFrameWindowType)) return;
-    _windows[appFrameWindowType] = _FrameWindow(
-      type: appFrameWindowType,
-      startedAt: timestamp ?? DateTime.now(),
-      refreshRate: refreshRate,
-    );
-  }
 
   void startPageWindow(PageActivitySnapshot activity) {
     if (_windows.containsKey(pageFrameWindowType)) return;
@@ -60,7 +42,6 @@ class FrameWindowCollector {
         window.add(durationMs);
       }
     }
-    _finishPendingAppWindow();
   }
 
   void finishPageWindow(String phase, {DateTime? timestamp}) {
@@ -70,45 +51,8 @@ class FrameWindowCollector {
     if (snapshot != null) onPageWindowFinished?.call(snapshot);
   }
 
-  void finishAppWindow(String phase, {DateTime? timestamp}) {
-    _pendingAppWindowFinish?.complete();
-    _pendingAppWindowFinish = null;
-    final window = _windows.remove(appFrameWindowType);
-    if (window == null) return;
-    final snapshot = _snapshot(window, phase: phase, timestamp: timestamp);
-    if (snapshot != null) onAppWindowFinished?.call(snapshot);
-  }
-
-  Future<void> finishAppWindowAfterNextTiming(
-    String phase, {
-    DateTime? timestamp,
-  }) {
-    final window = _windows[appFrameWindowType];
-    if (window == null) return Future<void>.value();
-    if (window.sampleCount > 0) {
-      finishAppWindow(phase, timestamp: timestamp);
-      return Future<void>.value();
-    }
-    final existing = _pendingAppWindowFinish;
-    if (existing != null) return existing.done;
-
-    final pending = _PendingAppWindowFinish(phase: phase, timestamp: timestamp);
-    _pendingAppWindowFinish = pending;
-    pending.timer = Timer(startupFrameTimingTimeout, _finishPendingAppWindow);
-    return pending.done;
-  }
-
   void dispose({DateTime? timestamp}) {
     finishPageWindow(PageActivePhases.appDispose, timestamp: timestamp);
-    finishAppWindow(PageActivePhases.appDispose, timestamp: timestamp);
-  }
-
-  void _finishPendingAppWindow() {
-    final pending = _pendingAppWindowFinish;
-    if (pending == null) return;
-    _pendingAppWindowFinish = null;
-    pending.complete();
-    finishAppWindow(pending.phase, timestamp: pending.timestamp);
   }
 
   FrameStatsSnapshot? _snapshot(
@@ -140,25 +84,6 @@ class FrameWindowCollector {
       startTime: window.startedAt,
       endTime: endedAt,
     );
-  }
-}
-
-class _PendingAppWindowFinish {
-  _PendingAppWindowFinish({required this.phase, this.timestamp});
-
-  final String phase;
-  final DateTime? timestamp;
-  final Completer<void> _completer = Completer<void>();
-  Timer? timer;
-
-  Future<void> get done => _completer.future;
-
-  void complete() {
-    timer?.cancel();
-    timer = null;
-    if (!_completer.isCompleted) {
-      _completer.complete();
-    }
   }
 }
 

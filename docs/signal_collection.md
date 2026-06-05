@@ -142,7 +142,6 @@ Native 增强来源：
 - `trace app.cold_start`
 - `trace app.hot_start`
 - `span sdk.init`
-- `span app.first_frame`
 - `span app.interactive`（预留；基础 SDK 当前不自动生成，需业务或 native 明确提供可交互点后再启用）
 - `breadcrumb app.lifecycle`
 
@@ -150,9 +149,9 @@ Native 增强来源：
 
 - 冷启动 trace 应归属于当前 session。
 - 热启动 trace 应关联恢复后的 session 或当前 session activity window。
-- 页面首屏相关 span 可作为启动 trace 和首个 page trace 的关联点。
+- 启动首帧是 `app.cold_start` / `app.hot_start` trace end 上的观测字段，不再生成独立 `app.first_frame` span。
 - 启动期间的 HTTP、错误、卡顿、内存采样应关联 active startup trace。
-- 基础 SDK 默认把启动窗口帧摘要和 RSS 起止值合并到 `app.cold_start` / `app.hot_start` trace end，不再为启动帧或启动内存额外生成独立 trace。
+- 基础 SDK 默认把 RSS 起止值合并到 `app.cold_start` / `app.hot_start` trace end，不再采集启动帧摘要，也不为启动内存额外生成独立 trace。FPS、稳定性和慢帧等帧表现统一由页面 `page.visit` trace end 表达。
 
 ### 字段映射
 
@@ -166,16 +165,6 @@ Native 增强来源：
 - `sdk.init.duration_ms`
 - `context.lifecycle.previousState`
 - `native.start.elapsed_ms`
-- `frame.sample_count`
-- `frame.slow_count`
-- `frame.dropped_count`
-- `frame.refresh_rate`
-- `frame.max_ms`
-- `frame.avg_ms`
-- `frame.budget_ms`
-- `frame.fps`
-- `frame.stability`
-- `frame.p50_ms` / `frame.p90_ms` / `frame.p99_ms`
 - `memory.start_rss_mb`
 - `memory.end_rss_mb`
 - `memory.delta_rss_mb`
@@ -212,7 +201,6 @@ Native 增强来源：
 - `trace page.visit`
 - `span route.push`
 - `span page.load`
-- `span page.first_frame`
 - `span page.interactive`（预留；基础 SDK 当前不自动生成）
 - `metric page.stay`
 - `breadcrumb page.view`
@@ -228,12 +216,13 @@ Native 增强来源：
 
 ### 页面实例与可见阶段编排
 
-页面链路使用两类稳定标识：
+页面链路使用三类稳定标识：
 
 - `context.route.name`：route 类型，用于查询和聚合，例如 `/detail`。
+- `context.route.fullName`：带 route 参数的业务可读完整路由，用于展示和定位，例如 `/detail?id=1`。
 - `page.instance_id`：一次 route push 产生的页面实例，用于还原一次打开过程。SDK 推荐使用 route name 加单调时间或 ID，例如 `/detail_1780364621916721`。
 
-`page.instance_id` 不应由 Workbench 或服务端补写；它是 SDK 采集事实的一部分。SDK 内部如果已经生成 `page.instance_id`，页面 trace、首帧、停留、页面级内存和帧聚合都应优先围绕该实例 ID 关联。route name 可以作为查找当前栈顶页面的辅助索引，但不应作为同 route 多实例场景下的唯一事实主键。
+`page.instance_id` 不应由 Workbench 或服务端补写；它是 SDK 采集事实的一部分。SDK 内部如果已经生成 `page.instance_id`，页面 trace、加载、停留、页面级内存和帧聚合都应优先围绕该实例 ID 关联。route name 可以作为查找当前栈顶页面的辅助索引，但不应作为同 route 多实例场景下的唯一事实主键。Workbench 和服务端展示应优先使用 `context.route.fullName`，没有完整路由时回退到 `context.route.name`。
 
 以 `A -> B(id=1) -> B(id=2) -> C -> A` 为例：
 
@@ -272,13 +261,16 @@ route 实例:
 推荐字段：
 
 - `context.route.name`
+- `context.route.fullName`
 - `context.route.source`
 - `context.module.name`
 - `context.module.scene`
 - `page.instance_id`
 - `page.active_phase`
 - `page.from`
+- `page.from_full_name`
 - `page.to`
+- `page.to_full_name`
 - `page.load_ms`
 - `page.first_frame_ms`
 - `page.interactive_ms`（预留；仅在明确采集页面可交互点时填写）
@@ -298,7 +290,7 @@ route 实例:
 - `payload.page.end_reason`
 
 页面停留时长使用 `metric page.stay` 的 `durationMs`，不再使用独立 attributes 字段。
-`page.first_frame_ms` 只应出现在 `page.first_frame` end 事件和以首帧闭合的 `page.load` end 事件上，不应出现在 start 事件上。
+`page.first_frame_ms` 只应出现在以首帧闭合的 `page.load` end 事件上，不应出现在 start 事件上。基础 SDK 不再生成独立 `page.first_frame` span；首帧是页面加载阶段的观测点，不是第二条重复阶段事件。
 `payload.page.end_reason` 当前标准值包括 `route_pop`、`route_replace`、`lifecycle.detached` 和 `app.dispose`。
 
 ### 限制与降级
@@ -489,7 +481,7 @@ route 实例:
 - 卡顿应关联当前 `sessionId`、`context.route.*` / `context.module.*`、active page trace 或 action trace。
 - 卡顿事件应携带裁剪后的相关 breadcrumbs，优先选择同 trace / 同 route 足迹。
 - 卡顿前后的 HTTP、memory、native signals 可用于定位原因。
-- 启动帧摘要写入 `app.cold_start` / `app.hot_start` end，页面帧摘要写入 `page.visit` end。
+- 页面帧摘要写入 `page.visit` end。启动 trace 不承载 FPS、稳定性或慢帧摘要，启动性能以耗时和 RSS 证据为准。
 
 ### 字段映射
 

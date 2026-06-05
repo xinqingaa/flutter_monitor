@@ -74,12 +74,10 @@ SDK 应将关键 trace/span 写入 Flutter Timeline。
 
 - `app.cold_start`
 - `app.hot_start`
-- `app.first_frame`
 - `app.interactive`（预留；基础 SDK 当前不自动生成）
 - `route.push` / `route.pop`
 - `page.visit`
 - `page.load`
-- `page.first_frame`
 - `http.client`
 - `custom.trace` / `custom.step`
 - `ui.jank.sequence`

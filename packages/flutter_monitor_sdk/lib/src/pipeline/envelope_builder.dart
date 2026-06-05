@@ -60,38 +60,46 @@ class EnvelopeBuilder {
   MonitorContext _mergeContext(MonitorContext context, RawSignal signal) {
     if (signal.nativeContext == null &&
         signal.contextRouteName == null &&
+        signal.contextRouteFullName == null &&
         signal.contextMissing == null &&
         signal.contextMissingReason == null) {
       return context;
     }
     final nativeSnapshot = signal.nativeContext;
+    final routeOverride =
+        signal.contextRouteName != null || signal.contextRouteFullName != null;
+    final routeName = signal.contextRouteName ?? context.route?.name;
+    final routeFullName =
+        signal.contextRouteFullName ??
+        (signal.contextRouteName == null ? context.route?.fullName : routeName);
     return MonitorContext(
       user: context.user,
-      route:
-          signal.contextRouteName == null
-              ? context.route
-              : RouteContext(
-                name: signal.contextRouteName,
-                stack: context.route?.stack,
-                source: context.route?.source,
-              ),
+      route: !routeOverride
+          ? context.route
+          : RouteContext(
+              name: routeName,
+              fullName: routeFullName,
+              stack: routeFullName == null
+                  ? context.route?.stack
+                  : <String>[routeFullName],
+              source: context.route?.source,
+            ),
       module: context.module,
       network: context.network,
       release: context.release,
       lifecycle: context.lifecycle,
-      native:
-          nativeSnapshot == null
-              ? context.native
-              : NativeRuntimeContext(
-                available: nativeSnapshot.available,
-                platform: nativeSnapshot.platform ?? context.native?.platform,
-                processId: nativeSnapshot.processId,
-                bridgeVersion: nativeSnapshot.bridgeVersion,
-                signalSource:
-                    nativeSnapshot.signalSource ??
-                    context.native?.signalSource ??
-                    PlatformSignalSources.native,
-              ),
+      native: nativeSnapshot == null
+          ? context.native
+          : NativeRuntimeContext(
+              available: nativeSnapshot.available,
+              platform: nativeSnapshot.platform ?? context.native?.platform,
+              processId: nativeSnapshot.processId,
+              bridgeVersion: nativeSnapshot.bridgeVersion,
+              signalSource:
+                  nativeSnapshot.signalSource ??
+                  context.native?.signalSource ??
+                  PlatformSignalSources.native,
+            ),
       missing: signal.contextMissing ?? context.missing,
       missingReason: signal.contextMissingReason ?? context.missingReason,
     );

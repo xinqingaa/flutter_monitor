@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:example/home_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_monitor_native/flutter_monitor_native.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 import 'complex_list_page.dart';
 import 'detail_page.dart';
@@ -93,7 +92,6 @@ void main() async {
     appInfo: appInfo,
     jankConfig: JankConfig.lenient(),
     outputs: monitorOutputs,
-    nativeBridge: FlutterMonitorNative().createBridge(),
   );
 
   // 或者使用完整配置（可选）

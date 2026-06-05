@@ -25,7 +25,8 @@ void main() {
       context: const MonitorContext(
         route: RouteContext(
           name: '/product/detail',
-          stack: ['/home', '/product/detail'],
+          fullName: '/product/detail?id=42',
+          stack: ['/home', '/product/detail?id=42'],
         ),
         module: ModuleContext(name: 'product', scene: 'detail'),
         release: ReleaseContext(
@@ -63,7 +64,8 @@ void main() {
     expect(parsed.signalType, SignalType.span);
     expect(parsed.priority, EventPriority.high);
     expect(parsed.resource.app?.appVersion, '1.2.3');
-    expect(parsed.context.route?.stack, ['/home', '/product/detail']);
+    expect(parsed.context.route?.fullName, '/product/detail?id=42');
+    expect(parsed.context.route?.stack, ['/home', '/product/detail?id=42']);
     expect(parsed.context.release?.featureFlags, ['new_product_detail']);
     expect(
       parsed.context.release?.experiments?['product_detail_v2'],

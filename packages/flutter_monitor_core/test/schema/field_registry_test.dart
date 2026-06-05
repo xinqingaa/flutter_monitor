@@ -14,6 +14,11 @@ void main() {
       FieldValueType.string,
     );
     expect(
+      registry.lookup(FieldPaths.contextRouteFullName)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(registry.lookup(FieldPaths.contextRouteFullName)?.indexed, isTrue);
+    expect(
       registry.lookup(FieldPaths.resourceDeviceDeviceTier)?.privacyLevel,
       PrivacyLevel.safe,
     );
@@ -245,6 +250,7 @@ void main() {
       FieldPaths.contextUserUserTags,
       FieldPaths.contextUserCohort,
       FieldPaths.contextRouteName,
+      FieldPaths.contextRouteFullName,
       FieldPaths.contextRouteStack,
       FieldPaths.contextRouteSource,
       FieldPaths.contextModuleName,
@@ -273,7 +279,9 @@ void main() {
       FieldPaths.pageFirstFrameMs,
       FieldPaths.pageInteractiveMs,
       FieldPaths.pageFrom,
+      FieldPaths.pageFromFullName,
       FieldPaths.pageTo,
+      FieldPaths.pageToFullName,
       FieldPaths.pageInstanceId,
       FieldPaths.pageActivePhase,
       FieldPaths.pageLoadMs,

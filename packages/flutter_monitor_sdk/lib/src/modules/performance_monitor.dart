@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
@@ -11,6 +9,8 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
   final Reporter _reporter;
   final Map<Route<dynamic>, String> _routePageInstances =
       <Route<dynamic>, String>{};
+  final Map<Route<dynamic>, _RouteDescriptor> _routeDescriptors =
+      <Route<dynamic>, _RouteDescriptor>{};
   void Function(String?)? onPageRoutePushed; // 用于通知外部页面已切换
 
   MonitorRouteObserver(this._reporter);
@@ -19,22 +19,25 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
     if (route is PageRoute && route.settings.name != null) {
-      final pageName = route.settings.name!;
-      if (pageName.isNotEmpty) {
+      final page = _describeRoute(route);
+      if (page != null) {
         final now = DateTime.now();
-        final previousPageName = previousRoute?.settings.name;
+        final previousPage = _describeRoute(previousRoute);
         final pageInstanceId = _reporter.startPageLoad(
-          pageName,
-          previousRouteName: previousPageName,
+          page.name,
+          routeFullName: page.fullName,
+          previousRouteName: previousPage?.name,
+          previousRouteFullName: previousPage?.fullName,
           startTime: now,
         );
         if (pageInstanceId != null) {
           _routePageInstances[route] = pageInstanceId;
+          _routeDescriptors[route] = page;
         }
-        onPageRoutePushed?.call(pageName); // 触发回调
-        _reporter.recordPageView(pageName);
+        onPageRoutePushed?.call(page.name); // 触发回调
+        _reporter.recordPageView(page.name, routeFullName: page.fullName);
         _schedulePageFirstFrameFallback(
-          pageName,
+          page.name,
           pageInstanceId: pageInstanceId,
         );
       }
@@ -45,19 +48,24 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
     if (route is PageRoute && route.settings.name != null) {
-      final pageName = route.settings.name!;
-      if (pageName.isNotEmpty) {
-        final previousPageName = previousRoute?.settings.name;
+      final page = _routeDescriptors[route] ?? _describeRoute(route);
+      if (page != null) {
+        final previousPage = _describeRoute(previousRoute);
         final pageInstanceId = _routePageInstances.remove(route);
+        _routeDescriptors.remove(route);
         _reporter.finishPageLoad(
-          pageName,
-          nextRouteName: previousPageName,
+          page.name,
+          nextRouteName: previousPage?.name,
+          nextRouteFullName: previousPage?.fullName,
           pageInstanceId: pageInstanceId,
         );
-        if (previousPageName != null && previousPageName.isNotEmpty) {
-          _reporter.setCurrentRoute(previousPageName);
-          _reporter.activatePageTrace(previousPageName);
-          onPageRoutePushed?.call(previousPageName);
+        if (previousPage != null) {
+          _reporter.setCurrentRoute(
+            previousPage.name,
+            fullName: previousPage.fullName,
+          );
+          _reporter.activatePageTrace(previousPage.name);
+          onPageRoutePushed?.call(previousPage.name);
         }
       }
     }
@@ -66,38 +74,41 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-    final oldName = oldRoute?.settings.name;
-    if (oldName != null && oldName.isNotEmpty) {
+    final oldPage = _describeRoute(oldRoute);
+    final newPage = _describeRoute(newRoute);
+    if (oldPage != null) {
       final oldPageInstanceId = oldRoute == null
           ? null
           : _routePageInstances.remove(oldRoute);
+      if (oldRoute != null) _routeDescriptors.remove(oldRoute);
       _reporter.finishPageLoad(
-        oldName,
-        nextRouteName: newRoute?.settings.name,
+        oldPage.name,
+        nextRouteName: newPage?.name,
+        nextRouteFullName: newPage?.fullName,
         pageInstanceId: oldPageInstanceId,
         endReason: PageEndReasons.routeReplace,
         resumePrevious: false,
       );
     }
-    if (newRoute is PageRoute && newRoute.settings.name != null) {
-      final newName = newRoute.settings.name!;
-      if (newName.isNotEmpty) {
-        final now = DateTime.now();
-        final pageInstanceId = _reporter.startPageLoad(
-          newName,
-          previousRouteName: oldName,
-          startTime: now,
-        );
-        if (pageInstanceId != null) {
-          _routePageInstances[newRoute] = pageInstanceId;
-        }
-        onPageRoutePushed?.call(newName);
-        _reporter.recordPageView(newName);
-        _schedulePageFirstFrameFallback(
-          newName,
-          pageInstanceId: pageInstanceId,
-        );
+    if (newRoute is PageRoute && newPage != null) {
+      final now = DateTime.now();
+      final pageInstanceId = _reporter.startPageLoad(
+        newPage.name,
+        routeFullName: newPage.fullName,
+        previousRouteName: oldPage?.name,
+        previousRouteFullName: oldPage?.fullName,
+        startTime: now,
+      );
+      if (pageInstanceId != null) {
+        _routePageInstances[newRoute] = pageInstanceId;
+        _routeDescriptors[newRoute] = newPage;
       }
+      onPageRoutePushed?.call(newPage.name);
+      _reporter.recordPageView(newPage.name, routeFullName: newPage.fullName);
+      _schedulePageFirstFrameFallback(
+        newPage.name,
+        pageInstanceId: pageInstanceId,
+      );
     }
   }
 
@@ -121,6 +132,65 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
       _reporter.finishPageFirstFrame(pageName, pageInstanceId: pageInstanceId);
     });
   }
+
+  _RouteDescriptor? _describeRoute(Route<dynamic>? route) {
+    if (route == null) return null;
+    final cached = _routeDescriptors[route];
+    if (cached != null) return cached;
+    final routeName = route.settings.name;
+    if (routeName == null || routeName.isEmpty) return null;
+    return _RouteDescriptor(
+      name: routeName,
+      fullName: _fullRouteName(routeName, route.settings.arguments),
+    );
+  }
+
+  String _fullRouteName(String routeName, Object? arguments) {
+    if (arguments == null) return routeName;
+    final values = _argumentQueryValues(arguments);
+    if (values.isEmpty) return routeName;
+    final uri = Uri(
+      path: routeName,
+      queryParameters: <String, String>{
+        for (final entry in values.entries) entry.key: entry.value,
+      },
+    );
+    return uri.toString();
+  }
+
+  Map<String, String> _argumentQueryValues(Object arguments) {
+    if (arguments is Map) {
+      final entries =
+          arguments.entries
+              .where((entry) => entry.key != null && entry.value != null)
+              .map(
+                (entry) => MapEntry('${entry.key}', _queryValue(entry.value)),
+              )
+              .where((entry) => entry.value.isNotEmpty)
+              .toList(growable: false)
+            ..sort((a, b) => a.key.compareTo(b.key));
+      return <String, String>{
+        for (final entry in entries) entry.key: entry.value,
+      };
+    }
+    return <String, String>{'argument': _queryValue(arguments)};
+  }
+
+  String _queryValue(Object? value) {
+    if (value == null) return '';
+    if (value is DateTime) return value.toIso8601String();
+    if (value is Iterable && value is! String) {
+      return value.map(_queryValue).where((item) => item.isNotEmpty).join(',');
+    }
+    return '$value';
+  }
+}
+
+class _RouteDescriptor {
+  const _RouteDescriptor({required this.name, required this.fullName});
+
+  final String name;
+  final String fullName;
 }
 
 // Dio拦截器，用于API性能监控
@@ -228,15 +298,13 @@ class MonitorDioInterceptor extends Interceptor {
 class PerformanceMonitor {
   final Reporter _reporter;
   final StartupTraceController? _startupTraceController;
-  final Future<void> Function(DateTime timestamp)? _onStartupFirstFrame;
   late final MonitorRouteObserver routeObserver;
 
   PerformanceMonitor(
     this._reporter, {
     StartupTraceController? startupTraceController,
-    Future<void> Function(DateTime timestamp)? onStartupFirstFrame,
   }) : _startupTraceController = startupTraceController,
-       _onStartupFirstFrame = onStartupFirstFrame {
+       super() {
     routeObserver = MonitorRouteObserver(_reporter);
   }
 
@@ -244,16 +312,7 @@ class PerformanceMonitor {
     // 监听第一帧渲染完成
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final now = DateTime.now();
-      final onStartupFirstFrame = _onStartupFirstFrame;
-      if (onStartupFirstFrame == null) {
-        _startupTraceController?.finishFirstFrame(endTime: now);
-        return;
-      }
-      unawaited(
-        onStartupFirstFrame(now).whenComplete(() {
-          _startupTraceController?.finishFirstFrame(endTime: now);
-        }),
-      );
+      _startupTraceController?.finishFirstFrame(endTime: now);
     });
   }
 }

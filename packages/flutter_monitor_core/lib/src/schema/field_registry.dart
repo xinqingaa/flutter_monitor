@@ -310,6 +310,12 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.contextRouteFullName,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.contextRouteStack,
     valueType: FieldValueType.array,
     privacyLevel: PrivacyLevel.queryable,
@@ -477,7 +483,19 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.pageFromFullName,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.pageTo,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.pageToFullName,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.queryable,
     indexed: true,

@@ -54,6 +54,7 @@ abstract final class FieldPaths {
   static const contextUserCohort = 'context.user.cohort';
 
   static const contextRouteName = 'context.route.name';
+  static const contextRouteFullName = 'context.route.fullName';
   static const contextRouteStack = 'context.route.stack';
   static const contextRouteSource = 'context.route.source';
 
@@ -91,7 +92,9 @@ abstract final class FieldPaths {
   static const pageFirstFrameMs = 'page.first_frame_ms';
   static const pageInteractiveMs = 'page.interactive_ms';
   static const pageFrom = 'page.from';
+  static const pageFromFullName = 'page.from_full_name';
   static const pageTo = 'page.to';
+  static const pageToFullName = 'page.to_full_name';
   static const pageInstanceId = 'page.instance_id';
   static const pageActivePhase = 'page.active_phase';
   static const pageLoadMs = 'page.load_ms';

@@ -153,7 +153,6 @@ Phase 3 当前页面事件语义：
 - `trace page.visit`：页面活动窗口，进入时 start，离开时 end。
 - `span route.push`：路由切换阶段。
 - `span page.load`：页面加载阶段，应在首帧或 fallback 首帧时结束。
-- `span page.first_frame`：页面首帧阶段。
 - `metric page.stay`：页面停留时长，使用 envelope `durationMs`。
 - `breadcrumb page.view`：页面访问足迹。
 
@@ -225,7 +224,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - 上报结构符合 `docs/event_model.md`。
 - 示例 App 能展示一条完整 session timeline。
 - 启动、热启动、页面加载、API、业务 action、PV、页面停留、卡顿、错误、最小 lifecycle 均可在 session 中看到。
-- 根路由和后续 route 的 `page.load` / `page.first_frame` 都能闭合；未拿到首帧时不得把页面停留时长伪装为成功加载耗时。
+- 根路由和后续 route 的 `page.load` 都能闭合并写入 `page.first_frame_ms`；未拿到首帧时不得把页面停留时长伪装为成功加载耗时。
 - 慢页面能关联页面 trace、相关 API 和最近 breadcrumbs。
 - 卡顿能关联当前 `context.route.*` / `context.module.*`、当前 page trace、最近相关 breadcrumbs 和 `resource.device.*`。
 - 错误能关联当前 `context.route.*` / `context.module.*`、active `traceId` / `spanId` 和最近 breadcrumbs。
@@ -281,7 +280,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 
 验收：
 
-- 启动和页面边界的帧数、FPS、稳定性、RSS 起止值默认合并到 `app.cold_start` / `app.hot_start` / `page.visit` 主 trace end，不再额外输出启动帧、启动内存、页面帧、页面内存独立 trace 或默认 envelope。
+- 启动边界的 RSS 起止值默认合并到 `app.cold_start` / `app.hot_start` 主 trace end；页面边界的帧数、FPS、稳定性、RSS 起止值默认合并到 `page.visit` 主 trace end。不再额外输出启动内存、页面帧、页面内存独立 trace 或默认 envelope，启动 trace 不承载帧摘要。
 - `metric memory.sample` 进入统一 envelope，至少包含可获得的 `memory.*` 字段、`memory.sample_source`、当前 `sessionId`、`context.route.*` / `context.module.*` 和 `resource.device.*`；它用于 session/lifecycle/jank/native 等低频诊断采样，不作为页面切换默认输出形态。
 - `metric memory.growth` 进入统一 envelope，必须包含 `memory.growth_mb`、`memory.growth_duration_ms` 和观察窗口上下文；没有足够样本时不得生成增长结论。
 - `metric memory.pressure` 进入统一 envelope，必须包含 `memory.pressure_level`，并作为 critical/high 价值线索进入 breadcrumb store，帮助后续 error、jank、OOM 解释上下文。

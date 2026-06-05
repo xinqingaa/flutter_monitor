@@ -1,6 +1,5 @@
 abstract final class EventNames {
   static const appColdStart = 'app.cold_start';
-  static const appFirstFrame = 'app.first_frame';
   static const appInteractive = 'app.interactive';
   static const appLifecycle = 'app.lifecycle';
   static const appForegroundDuration = 'app.foreground_duration';
@@ -23,7 +22,6 @@ abstract final class EventNames {
   static const pageVisit = 'page.visit';
   static const pageView = 'page.view';
   static const pageLoad = 'page.load';
-  static const pageFirstFrame = 'page.first_frame';
   static const pageStay = 'page.stay';
 
   static const routePush = 'route.push';

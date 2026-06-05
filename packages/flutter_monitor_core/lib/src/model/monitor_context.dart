@@ -26,22 +26,28 @@ class UserContext {
 }
 
 class RouteContext {
-  const RouteContext({this.name, this.stack, this.source});
+  const RouteContext({this.name, this.fullName, this.stack, this.source});
 
   final String? name;
+  final String? fullName;
   final List<String>? stack;
   final String? source;
 
   factory RouteContext.fromJson(Map<String, Object?> json) {
     return RouteContext(
       name: json['name'] as String?,
+      fullName: json['fullName'] as String?,
       stack: stringList(json['stack']),
       source: json['source'] as String?,
     );
   }
 
-  Map<String, Object?> toJson() =>
-      jsonMap({'name': name, 'stack': stack, 'source': source});
+  Map<String, Object?> toJson() => jsonMap({
+    'name': name,
+    'fullName': fullName,
+    'stack': stack,
+    'source': source,
+  });
 }
 
 class ModuleContext {

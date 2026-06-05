@@ -64,28 +64,6 @@ class StartupTraceController {
     final traceId = _ensureColdStartTrace();
     final durationMs = endTime.difference(_appStartTime).inMilliseconds;
 
-    final firstFrameSpanId = _reporter.startSpan(
-      EventNames.appFirstFrame,
-      traceId: traceId,
-      startTime: _appStartTime,
-      attributes: <String, Object?>{FieldPaths.appStartType: StartTypes.cold},
-      payload: const <String, Object?>{
-        PayloadKeys.startupPhase: StartupPhases.firstFrame,
-      },
-    );
-    _reporter.endSpan(
-      firstFrameSpanId,
-      endTime: endTime,
-      status: EventStatus.ok,
-      attributes: <String, Object?>{
-        FieldPaths.appStartType: StartTypes.cold,
-        FieldPaths.appFirstFrameMs: durationMs,
-      },
-      payload: const <String, Object?>{
-        PayloadKeys.startupPhase: StartupPhases.firstFrame,
-      },
-    );
-
     final performanceAttributes = _reporter.finishStartupPerformance(
       memoryEndRssMb: _reporter.captureRssMb(),
     );

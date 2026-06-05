@@ -221,6 +221,7 @@ flowchart TB
 | `context.user.userTags` | array | queryable | 是 | 用户标签 |
 | `context.user.cohort` | string | queryable | 是 | 用户分群 |
 | `context.route.name` | string | queryable | 是 | 当前 route 标识 |
+| `context.route.fullName` | string | queryable | 是 | 带参数的完整 route 标识，例如 `/detail?id=1` |
 | `context.route.stack` | array | queryable | 是 | 当前 route stack |
 | `context.route.source` | string | queryable | 是 | 页面来源 |
 | `context.module.name` | string | queryable | 是 | 业务模块，可选增强上下文，不作为基础接入前置条件 |
@@ -268,7 +269,9 @@ flowchart TB
 | `page.first_frame_ms` | duration_ms | safe | 是 | 页面首帧耗时 |
 | `page.interactive_ms` | duration_ms | safe | 是 | 页面可交互耗时；当前 core 预留，基础 SDK 不自动生成 |
 | `page.from` | string | queryable | 是 | 页面来源 route |
+| `page.from_full_name` | string | queryable | 是 | 页面来源完整 route |
 | `page.to` | string | queryable | 是 | 页面离开后进入的 route |
+| `page.to_full_name` | string | queryable | 是 | 页面离开后进入的完整 route |
 | `page.instance_id` | string | queryable | 是 | 单次页面实例 ID，用于区分同 route 多次进入 |
 | `page.active_phase` | string | safe | 是 | 页面活跃窗口阶段，例如 page.enter、page.covered、page.exit、page.resume、lifecycle.background、app.dispose |
 | `page.load_ms` | duration_ms | safe | 是 | 页面加载耗时，通常等于首次可渲染帧耗时 |
@@ -398,12 +401,13 @@ flowchart TB
 
 | 概念 | 字段 | 语义 | 主要用途 |
 |---|---|---|---|
-| route 名称 | `context.route.name` | 页面类型或路由标识，例如 `/detail` | 查询、聚合、展示 |
+| route 名称 | `context.route.name` | 页面类型或路由标识，例如 `/detail` | 查询、聚合 |
+| 完整 route 名称 | `context.route.fullName` | 带参数的业务可读 route，例如 `/detail?id=1` | 展示、定位、区分业务对象 |
 | 页面实例 | `page.instance_id` | 一次 route push 产生的页面实例，推荐由 route 名称和单调时间/ID 组成 | 区分同 route 多次进入，关联 page trace/load/stay |
 
 同一个 route 可以同时或连续产生多个页面实例。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`。回到 A 时不应伪造成新的 A route 实例；它仍然是 `A1`，恢复后的可见阶段通过 `page.active_phase = page.resume` 表达。
 
-页面 trace 由 `trace page.visit` 表达页面实例生命周期。基础 SDK 把页面可见期间的帧摘要和页面进入/退出 RSS 写入 `page.visit` trace end：route 用于聚合，`page.instance_id` 用于还原一次打开并区分同 route 多实例。
+页面 trace 由 `trace page.visit` 表达页面实例生命周期。基础 SDK 把页面可见期间的帧摘要和页面进入/退出 RSS 写入 `page.visit` trace end：`context.route.name` 用于聚合，`context.route.fullName` 用于展示和定位，`page.instance_id` 用于内部关联并区分同 route 多实例。
 
 页面活跃阶段推荐使用固定值：
 
@@ -641,7 +645,7 @@ flowchart TD
   PageTrace["页面链路<br/>Trace: page.visit"]
   ActionTrace["业务操作链路<br/>Trace: action.* / custom.trace"]
   InitSpan["启动阶段<br/>Span: sdk.init"]
-  FirstFrame["首帧阶段<br/>Span: app.first_frame"]
+  FirstFrame["首帧观测<br/>app.first_frame_ms"]
   RouteSpan["路由阶段<br/>Span: route.push"]
   HttpSpan["网络请求<br/>Span: http.client"]
   CustomSpan["业务步骤<br/>Span: custom.step"]
@@ -707,7 +711,6 @@ Trace 事件通常表示流程整体，内部阶段应使用 span 表达。
 典型 span：
 
 - `sdk.init`
-- `app.first_frame`
 - `app.interactive`（预留）
 - `route.push`
 - `http.client`
@@ -812,7 +815,8 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
   },
   "route": {
     "name": "/product/detail",
-    "stack": ["/home", "/product/detail"],
+    "fullName": "/product/detail?id=42",
+    "stack": ["/home", "/product/detail?id=42"],
     "source": "/home"
   },
   "module": {
@@ -867,6 +871,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | User ID | `context.user.userId` | 必须支持匿名化或关闭 |
 | User Cohort | `context.user.cohort` | 用户分群 |
 | Route Name | `context.route.name` | 当前 route 标识 |
+| Route Full Name | `context.route.fullName` | 带参数的完整 route 标识 |
 | Route Stack | `context.route.stack` | 当前 route stack |
 | Route Source | `context.route.source` | 页面来源 |
 | Module | `context.module.name` | 可选业务模块，不作为基础接入前置条件 |
@@ -918,11 +923,9 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 - `app.cold_start`
 - `app.hot_start`
-- `app.first_frame`
 - `app.interactive`（预留）
 - `page.visit`
 - `page.load`
-- `page.first_frame`
 - `page.stay`
 - `page.view`
 - `route.push`
@@ -951,11 +954,11 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 | 信号 | 推荐事件 | 关键字段 |
 |---|---|---|
-| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、`span app.first_frame`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs`、`frame.*` 摘要、`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` |
-| 页面 | `trace page.visit`、`span route.push`、`span page.load`、`span page.first_frame`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.to`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
+| 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs`、`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` |
+| 页面 | `trace page.visit`、`span route.push`、`span page.load`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.from_full_name`、`page.to`、`page.to_full_name`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
 | 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
-| 卡顿 | `metric ui.jank.sequence`；启动和页面帧摘要写入对应主 trace end | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
+| 卡顿 | `metric ui.jank.sequence`；页面帧摘要写入 `page.visit` trace end | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
 | 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect`；页面/启动边界 RSS 默认合并到主 trace | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
 | 生命周期 | `breadcrumb app.lifecycle`、`metric app.foreground_duration`、`metric app.background_duration`、`trace app.hot_start`、`sdk.lifecycle.flush` | `context.lifecycle.*`、`durationMs`、`app.start.type`、`app.exit_flush.success` |
 | Native | `metric native.memory.sample`、`metric native.memory.pressure`、`breadcrumb native.lifecycle`、`breadcrumb native.warning`、`error native.oom`、`error native.anr`、`error native.crash` | `context.native.*`、`native.signal`、`memory.native_used_mb`、`memory.pressure_level`、`payload.native` |

@@ -19,6 +19,7 @@ class RawSignal {
     this.breadcrumbLimit,
     this.eventPhase,
     this.contextRouteName,
+    this.contextRouteFullName,
     this.nativeContext,
     this.contextMissing,
     this.contextMissingReason,
@@ -43,6 +44,7 @@ class RawSignal {
   final int? breadcrumbLimit;
   final String? eventPhase;
   final String? contextRouteName;
+  final String? contextRouteFullName;
   final NativeResourceSnapshot? nativeContext;
   final bool? contextMissing;
   final String? contextMissingReason;

@@ -21,7 +21,7 @@ class EventSummarizer {
       sessionId: envelope.sessionId,
       traceId: envelope.traceId,
       spanId: envelope.spanId,
-      route: envelope.context.route?.name,
+      route: _routeDisplay(envelope),
       durationMs: envelope.durationMs,
       fields: _fieldsFor(kind, envelope),
       envelope: envelope,
@@ -89,16 +89,17 @@ class EventSummarizer {
       PayloadKeys.durationMs: envelope.durationMs,
       'first_frame_ms': envelope.attributes[FieldPaths.appFirstFrameMs],
       'interactive_ms': envelope.attributes[FieldPaths.appInteractiveMs],
-      'route': envelope.context.route?.name,
+      'route': _routeDisplay(envelope),
     });
   }
 
   Map<String, Object?> _pageFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
       'route':
-          envelope.context.route?.name ??
-          envelope.payload[PayloadKeys.routeName],
-      'from': envelope.payload[PayloadKeys.routePrevious],
+          _routeDisplay(envelope) ?? envelope.payload[PayloadKeys.routeName],
+      'from':
+          envelope.attributes[FieldPaths.pageFromFullName] ??
+          envelope.payload[PayloadKeys.routePrevious],
       PayloadKeys.durationMs: envelope.durationMs,
     });
   }
@@ -112,14 +113,14 @@ class EventSummarizer {
       'code': envelope.attributes[FieldPaths.httpStatusCode],
       'success': envelope.attributes[FieldPaths.httpSuccess],
       PayloadKeys.durationMs: envelope.durationMs,
-      'route': envelope.context.route?.name,
+      'route': _routeDisplay(envelope),
       'breadcrumbs': _breadcrumbCount(envelope),
     });
   }
 
   Map<String, Object?> _jankFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
-      'route': envelope.context.route?.name,
+      'route': _routeDisplay(envelope),
       'frames': envelope.attributes[FieldPaths.jankCount],
       'frame_max_ms': envelope.attributes[FieldPaths.frameMaxMs],
       'frame_avg_ms': envelope.attributes[FieldPaths.frameAvgMs],
@@ -133,7 +134,7 @@ class EventSummarizer {
           envelope.attributes[FieldPaths.errorMechanism] ??
           envelope.attributes[FieldPaths.errorType],
       'message': _errorMessage(envelope),
-      'route': envelope.context.route?.name,
+      'route': _routeDisplay(envelope),
       'breadcrumbs': _breadcrumbCount(envelope),
     });
   }
@@ -155,16 +156,20 @@ class EventSummarizer {
 
   Map<String, Object?> _sdkFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
-      if (envelope.context.route?.name != null)
-        'route': envelope.context.route?.name,
+      if (_routeDisplay(envelope) != null) 'route': _routeDisplay(envelope),
     });
   }
 
   Map<String, Object?> _eventFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
-      'route': envelope.context.route?.name,
+      'route': _routeDisplay(envelope),
       PayloadKeys.durationMs: envelope.durationMs,
     });
+  }
+
+  String? _routeDisplay(EventEnvelope envelope) {
+    final route = envelope.context.route;
+    return route?.fullName ?? route?.name;
   }
 
   int? _breadcrumbCount(EventEnvelope envelope) {
