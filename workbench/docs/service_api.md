@@ -339,6 +339,8 @@ Workbench 启动详情页按这个口径展示：
 | `stay` | `name=page.stay` 的 `durationMs`。 |
 | `routeSummaries` | 按 `context.route.name` 分组的页面加载摘要。停留时长不混入加载摘要。 |
 
+`pages.events` 会额外返回 `name=page.visit`、`attributes["event.phase"]="end"` 且 `status != "unknown"` 的 trace end 记录。页面帧表现和 RSS 变化只从这条页面主链路结束事件读取，包括 `frame.fps`、`frame.stability`、`frame.max_ms`、`frame.sample_count`、`frame.slow_count`、`memory.enter_rss_mb`、`memory.exit_rss_mb` 和 `memory.delta_rss_mb`。Workbench service 不生成 `ui.frame.window`、`page.active_window_id`、`memory.sample_delay_ms` 等旧迁移字段。
+
 `http` 额外字段：
 
 | 字段 | 来源 / 计算口径 |

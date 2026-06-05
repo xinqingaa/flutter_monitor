@@ -320,7 +320,9 @@ Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view m
 - `页面活动 ${route}`：当前 route 上的非页面进入事件窗口，包括 HTTP、错误、业务足迹、内存、生命周期、热重启和 SDK 自监控等。区段标题保持中性，具体问题类型放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
 - `会话活动`：缺少 route 上下文的非页面事件窗口。
 
-页面离开与停留的展示按语义区分：`page.visit end` 是页面离开动作，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面慢只读取 `page.load` 和 `page.first_frame` 的耗时。
+页面离开与停留的展示按语义区分：`page.visit end` 是页面离开动作，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时读取 `page.load` 和 `page.first_frame`；页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`，并用 `page.instance_id + traceId` 区分同 route 的多次进入。
+
+启动和页面性能证据都来自主链路 trace end：启动读取 `app.cold_start` / `app.hot_start` end 上的 `frame.*` 与 `memory.start/end/delta_rss_mb`，页面读取 `page.visit` end 上的 `frame.*` 与 `memory.enter/exit/delta_rss_mb`。Workbench 不展示独立 `ui.frame.window`、页面 activity `memory.sample` 或迁移期过滤字段作为新增性能口径。
 
 ### Memory 展示口径
 

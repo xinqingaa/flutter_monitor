@@ -6,6 +6,7 @@ import { cn } from '../../shared/formatting/cn';
 export interface SelectOption {
   value: string;
   label: string;
+  triggerLabel?: string;
 }
 
 const EMPTY_VALUE = '__flutter_monitor_select_all__';
@@ -25,6 +26,7 @@ export function Select({
   className?: string;
   ariaLabel?: string;
 }) {
+  const selected = value ? options.find((option) => option.value === value) : undefined;
   return (
     <SelectPrimitive.Root
       value={value ?? EMPTY_VALUE}
@@ -37,7 +39,9 @@ export function Select({
           className,
         )}
       >
-        <SelectPrimitive.Value placeholder={placeholder} />
+        <SelectPrimitive.Value placeholder={placeholder}>
+          <span className="block min-w-0 max-w-full truncate whitespace-nowrap">{selected?.triggerLabel ?? selected?.label}</span>
+        </SelectPrimitive.Value>
         <SelectPrimitive.Icon asChild>
           <ChevronDown className="size-4 shrink-0 text-zinc-400" />
         </SelectPrimitive.Icon>

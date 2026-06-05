@@ -5,6 +5,7 @@ import { formatDuration } from '../formatting/format';
 import { eventKind } from './accessors';
 import { readCanonicalPath, readStringPath } from './field-path';
 import { nativeActivity, nativeCallback, nativeRawState, nativeTrimLevel, nativeTrimLevelName } from './native';
+import { routeGroupName } from './route-display';
 
 export interface DisplayField {
   path: string;
@@ -106,11 +107,12 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   if (name === 'app.cold_start' || name === 'app.hot_start') {
     const startType = readStringPath(event, 'attributes.app.start.type');
     const firstFrame = formatNumberMetric(event, 'attributes.app.first_frame_ms', 'ms');
+    const perfItems = tracePerformanceSummaryItems(event);
     return {
       ...base,
       title: name === 'app.hot_start' || startType === 'hot' ? '热重启' : '冷启动',
       durationLabel: duration ?? firstFrame,
-      summaryItems: compactItems(route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
+      summaryItems: compactItems(...perfItems, route ? `页面 ${route}` : undefined, firstFrame ? `首帧 ${firstFrame}` : undefined),
     };
   }
 
@@ -125,14 +127,16 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
 
   if (name === 'page.visit') {
     const phase = readStringPath(event, 'attributes.event.phase');
+    const routeName = routeGroupName(event);
     if (phase === 'end') {
       const to = readStringPath(event, 'attributes.page.to');
       const reason = readStringPath(event, 'payload.page.end_reason');
-      const verb = reason === 'route_pop' && to ? `返回 ${to}` : route ? `离开页面 ${route}` : '离开页面';
-      return { ...base, title: verb, durationLabel: duration, summaryItems: compactItems(route ? `来源页面 ${route}` : undefined) };
+      const perfItems = tracePerformanceSummaryItems(event);
+      const verb = reason === 'route_pop' && to ? `返回 ${to}` : routeName ? `离开页面 ${routeName}` : '离开页面';
+      return { ...base, title: verb, durationLabel: duration, summaryItems: compactItems(...perfItems, routeName ? `页面 ${routeName}` : undefined) };
     }
     const from = readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
-    return { ...base, title: route ? `进入页面 ${route}` : '进入页面', summaryItems: compactItems(from ? `来源 ${from}` : undefined) };
+    return { ...base, title: routeName ? `进入页面 ${routeName}` : '进入页面', summaryItems: compactItems(from ? `来源 ${from}` : undefined) };
   }
 
   if (name === 'route.push') {
@@ -335,6 +339,39 @@ function formatNumberMetric(event: MonitorEvent, path: string, unit: string, dig
   return `${value.toFixed(digits)}${unit}`;
 }
 
+function tracePerformanceSummaryItems(event: MonitorEvent): string[] {
+  const fps = formatNumberMetric(event, 'attributes.frame.fps', ' FPS', 1);
+  const stability = formatStabilityMetric(event);
+  const slow = readCanonicalPath(event, 'attributes.frame.slow_count');
+  const sample = readCanonicalPath(event, 'attributes.frame.sample_count');
+  const maxFrame = formatNumberMetric(event, 'attributes.frame.max_ms', 'ms', 1);
+  const rssDelta = formatSignedNumberMetric(event, 'attributes.memory.delta_rss_mb', 'MB', 1);
+  return compactItems(
+    fps || stability ? [fps ? `平均帧数 ${fps}` : undefined, stability ? `稳定性 ${stability}` : undefined].filter(Boolean).join(' / ') : undefined,
+    rssDelta ? `RSS 变化 ${rssDelta}` : undefined,
+    maxFrame ? `最大帧 ${maxFrame}` : undefined,
+    typeof slow === 'number' || typeof sample === 'number' ? `慢帧 ${formatCount(slow)}/${formatCount(sample)}` : undefined,
+  );
+}
+
+function formatStabilityMetric(event: MonitorEvent): string | undefined {
+  const value = readCanonicalPath(event, 'attributes.frame.stability');
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const percent = value <= 1 ? value * 100 : value;
+  return `${percent.toFixed(1)}%`;
+}
+
+function formatSignedNumberMetric(event: MonitorEvent, path: string, unit: string, digits = 0): string | undefined {
+  const value = readCanonicalPath(event, path);
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(digits)}${unit}`;
+}
+
+function formatCount(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(Math.round(value)) : '-';
+}
+
 function lifecycleStateLabel(value: string): string {
   const labels: Record<string, string> = {
     resumed: '前台',
@@ -482,6 +519,10 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.page.instance_id');
     pushField(event, secondary, 'attributes.page.from');
     pushField(event, secondary, 'attributes.page.to');
+    pushFrameFields(event, secondary);
+    pushField(event, secondary, 'attributes.memory.enter_rss_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.exit_rss_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.delta_rss_mb', { unit: 'MB', digits: 1 });
     return;
   }
 
@@ -492,6 +533,10 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.app.interactive_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.sdk.init.duration_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.native.start.elapsed_ms', { unit: 'ms' });
+    pushFrameFields(event, secondary);
+    pushField(event, secondary, 'attributes.memory.start_rss_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.end_rss_mb', { unit: 'MB', digits: 1 });
+    pushField(event, secondary, 'attributes.memory.delta_rss_mb', { unit: 'MB', digits: 1 });
     return;
   }
 
@@ -566,6 +611,18 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
   pushField(event, secondary, 'payload.properties.allocated_mb', { unit: 'MB', digits: 0 });
   pushField(event, secondary, 'payload.properties.retained_mb', { unit: 'MB', digits: 0 });
   pushField(event, secondary, 'payload.properties.released_mb', { unit: 'MB', digits: 0 });
+}
+
+function pushFrameFields(event: MonitorEvent, target: DisplayField[]): void {
+  pushField(event, target, 'attributes.frame.sample_count');
+  pushField(event, target, 'attributes.frame.slow_count');
+  pushField(event, target, 'attributes.frame.dropped_count');
+  pushField(event, target, 'attributes.frame.fps', { digits: 1 });
+  pushField(event, target, 'attributes.frame.stability', { digits: 2 });
+  pushField(event, target, 'attributes.frame.max_ms', { unit: 'ms', digits: 1 });
+  pushField(event, target, 'attributes.frame.avg_ms', { unit: 'ms', digits: 1 });
+  pushField(event, target, 'attributes.frame.p90_ms', { unit: 'ms', digits: 1 });
+  pushField(event, target, 'attributes.frame.p99_ms', { unit: 'ms', digits: 1 });
 }
 
 function pushField(
@@ -736,13 +793,22 @@ export function fieldDescription(path: string): string | undefined {
     'attributes.response.size_bytes': '响应大小',
     'attributes.ui.action': 'tap/scroll/input 等',
     'attributes.business.result': '业务结果',
+    'attributes.frame.sample_count': '帧样本数',
+    'attributes.frame.slow_count': '慢帧数',
+    'attributes.frame.dropped_count': '掉帧数',
     'attributes.frame.avg_ms': '平均帧耗时',
     'attributes.frame.budget_ms': '帧预算',
     'attributes.frame.fps': '最近窗口 FPS',
     'attributes.frame.stability': '稳定性',
+    'attributes.frame.max_ms': '最大帧耗时',
     'attributes.frame.p50_ms': '帧耗时 P50',
     'attributes.frame.p90_ms': '帧耗时 P90',
     'attributes.frame.p99_ms': '帧耗时 P99',
+    'attributes.memory.start_rss_mb': '启动 trace 起点 RSS。',
+    'attributes.memory.end_rss_mb': '启动 trace 终点 RSS。',
+    'attributes.memory.enter_rss_mb': '页面进入时 RSS。',
+    'attributes.memory.exit_rss_mb': '页面离开时 RSS。',
+    'attributes.memory.delta_rss_mb': 'RSS 变化量；启动表示启动 trace 起止变化，页面表示页面进入到离开的变化。',
     'attributes.memory.heap_used_mb': 'heap 已使用。Android native bridge 当前表示 JVM/Android Runtime heap，不等于 Dart heap。',
     'attributes.memory.heap_capacity_mb': 'heap 容量。Android native bridge 当前表示 JVM/Android Runtime heap capacity。',
     'attributes.memory.external_mb': 'Dart/Flutter external memory，平台不支持时为空。',

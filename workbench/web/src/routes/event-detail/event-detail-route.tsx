@@ -48,6 +48,7 @@ export function EventDetailRoute() {
         <SessionTimeline
           events={sessionQuery.data ?? []}
           selectedEventId={selectedEvent?.eventId ?? eventId}
+          autoExpandSelected
           onSelectEvent={(item) => setSelectedEventId(item.eventId)}
         />
         <aside className="min-h-[560px] overflow-hidden xl:min-h-0">

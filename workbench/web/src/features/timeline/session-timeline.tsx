@@ -14,26 +14,39 @@ import { timelineDisplay } from '../../shared/event-model/display';
 export function SessionTimeline({
   events,
   selectedEventId,
+  autoExpandSelected = false,
   onSelectEvent,
 }: {
   events: MonitorEvent[];
   selectedEventId?: string;
+  autoExpandSelected?: boolean;
   onSelectEvent?: (event: MonitorEvent) => void;
 }) {
   const segments = useMemo(() => buildTimelineSegments(events), [events]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(segments.map((segment) => segment.id)));
   const selectedNodeRef = useRef<HTMLButtonElement | null>(null);
   const previousSelectedEventId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!selectedEventId || selectedEventId === previousSelectedEventId.current) return;
+    setCollapsed((current) => new Set(segments.filter((segment) => !(autoExpandSelected && containsEvent(segment, selectedEventId)) && (current.size === 0 || current.has(segment.id))).map((segment) => segment.id)));
+  }, [autoExpandSelected, segments, selectedEventId]);
+
+  useEffect(() => {
+    if (!autoExpandSelected || !selectedEventId || selectedEventId === previousSelectedEventId.current) return;
     if (previousSelectedEventId.current === undefined) {
       previousSelectedEventId.current = selectedEventId;
       return;
     }
     previousSelectedEventId.current = selectedEventId;
+    setCollapsed((current) => {
+      const selectedSegment = segments.find((segment) => containsEvent(segment, selectedEventId));
+      if (!selectedSegment) return current;
+      const next = new Set(current);
+      next.delete(selectedSegment.id);
+      return next;
+    });
     selectedNodeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [selectedEventId]);
+  }, [autoExpandSelected, segments, selectedEventId]);
 
   function toggle(set: Set<string>, id: string): Set<string> {
     const next = new Set(set);
@@ -115,6 +128,11 @@ function SegmentView({
           <span className="min-w-0">
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">{heading}</span>
+              {segment.pageInstanceId ? (
+                <span className="max-w-[18rem] shrink truncate rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-500">
+                 {segment.pageInstanceId}
+                </span>
+              ) : null}
               <span className="shrink-0 text-xs text-zinc-400">{segment.nodeCount} 个节点</span>
             </span>
             <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-zinc-500">
@@ -236,4 +254,9 @@ function TimelineNode({
 
 function nodeDisplay(event: MonitorEvent) {
   return timelineDisplay(event);
+}
+
+function containsEvent(segment: TimelineSegment, eventId: string | undefined): boolean {
+  if (!eventId) return false;
+  return segment.nodes.some((event) => event.eventId === eventId);
 }

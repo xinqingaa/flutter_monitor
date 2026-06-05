@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import type { BarSeriesOption, LineSeriesOption, PieSeriesOption, ScatterSeriesOption } from 'echarts/charts';
 import type {
   DataZoomComponentOption,
@@ -37,6 +37,7 @@ export function EchartsPanel({
   empty,
   height = 280,
   onClick,
+  toolbar,
 }: {
   title: string;
   description: string;
@@ -45,6 +46,7 @@ export function EchartsPanel({
   empty?: boolean;
   height?: number;
   onClick?: (params: unknown) => void;
+  toolbar?: ReactNode;
 }) {
   return (
     <Card className="grid min-h-[260px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
@@ -53,7 +55,10 @@ export function EchartsPanel({
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
-        <SourceBadge source={source} />
+        <div className="flex flex-wrap items-center gap-2">
+          {toolbar}
+          <SourceBadge source={source} />
+        </div>
       </CardHeader>
       <CardContent className="min-h-0">
         {empty || !option ? (

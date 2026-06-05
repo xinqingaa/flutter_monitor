@@ -24,7 +24,7 @@ try {
   await postEvents();
   await assertMissingEventId();
   await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
-    assert.equal(data.count, 2);
+    assert.equal(data.count, 4);
     assert.equal(data.events.some((event: any) => String(event.eventId).startsWith('evt_server_')), false);
   });
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=failed_http', (data) => {
@@ -32,7 +32,7 @@ try {
     assert.equal(data.events[0].eventId, 'evt_smoke_http');
   });
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=missing_app&appKey=smoke_app', (data) => {
-    assert.equal(data.count, 2);
+    assert.equal(data.count, 4);
   });
   await assertJson('/api/monitor/v1/dimensions', (data) => {
     assert.equal(data.apps[0].appKey, 'smoke_app');
@@ -54,7 +54,7 @@ try {
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
   });
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
-    assert.equal(data.count, 2);
+    assert.equal(data.count, 4);
   });
   await assertJson('/api/monitor/v1/traces/trace_smoke', (data) => {
     assert.equal(data.count, 2);
@@ -63,14 +63,22 @@ try {
     assert.equal(data.count, 1);
   });
   await assertJson('/api/monitor/v1/performance/overview', (data) => {
-    assert.equal(data.startup.count, 1);
+    assert.equal(data.startup.count, 2);
     assert.equal(data.http.count, 1);
     assert.equal(data.http.errorCount, 1);
+    assert.equal(data.pages.count, 1);
+    assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_start' && event.attributes['frame.fps'] === 58), true);
+    assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_hot' && event.attributes['memory.delta_rss_mb'] === 4.5), true);
+    assert.equal(data.pages.events.some((event: any) => event.eventId === 'evt_smoke_page_visit' && event.name === 'page.visit'), true);
+    const serialized = JSON.stringify(data);
+    assert.equal(serialized.includes('ui.frame.window'), false);
+    assert.equal(serialized.includes('page.active_window_id'), false);
+    assert.equal(serialized.includes('memory.sample_delay_ms'), false);
   });
 
   await restartService();
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
-    assert.equal(data.count, 2);
+    assert.equal(data.count, 4);
   });
   await postRetentionEvents();
   await assertJson('/api/monitor/v1/health', (data) => {
@@ -138,13 +146,95 @@ async function postEvents(): Promise<void> {
           status: 'ok',
           sessionId: 'ses_smoke',
           traceId: 'trace_smoke',
+          startTime: '2026-05-29T09:59:59.000Z',
+          endTime: '2026-05-29T10:00:00.000Z',
+          durationMs: 1000,
           resource: {
             app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
             device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
           },
           context: { user: { userId: 'user_smoke' }, route: { name: '/' }, native: { available: false, platform: 'android' } },
-          attributes: {},
+          attributes: {
+            'event.phase': 'end',
+            'app.start.type': 'cold',
+            'app.start.end_reason': 'first_frame',
+            'app.first_frame_ms': 1000,
+            'frame.sample_count': 60,
+            'frame.slow_count': 2,
+            'frame.dropped_count': 1,
+            'frame.fps': 58,
+            'frame.stability': 0.96,
+            'frame.max_ms': 24,
+            'memory.start_rss_mb': 101,
+            'memory.end_rss_mb': 112.5,
+            'memory.delta_rss_mb': 11.5,
+          },
           payload: {},
+        },
+        {
+          eventId: 'evt_smoke_hot',
+          timestamp: '2026-05-29T10:00:00.500Z',
+          signalType: 'trace',
+          name: 'app.hot_start',
+          startTime: '2026-05-29T10:00:00.300Z',
+          endTime: '2026-05-29T10:00:00.500Z',
+          durationMs: 200,
+          status: 'ok',
+          sessionId: 'ses_smoke',
+          traceId: 'trace_smoke_hot',
+          resource: {
+            app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
+            device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
+          },
+          context: { user: { userId: 'user_smoke' }, route: { name: '/' }, native: { available: false, platform: 'android' } },
+          attributes: {
+            'event.phase': 'end',
+            'app.start.type': 'hot',
+            'app.start.end_reason': 'first_frame',
+            'frame.sample_count': 18,
+            'frame.slow_count': 0,
+            'frame.dropped_count': 0,
+            'frame.fps': 60,
+            'frame.stability': 1,
+            'frame.max_ms': 17,
+            'memory.start_rss_mb': 112.5,
+            'memory.end_rss_mb': 117,
+            'memory.delta_rss_mb': 4.5,
+          },
+          payload: {},
+        },
+        {
+          eventId: 'evt_smoke_page_visit',
+          timestamp: '2026-05-29T10:00:00.800Z',
+          signalType: 'trace',
+          name: 'page.visit',
+          startTime: '2026-05-29T10:00:00.100Z',
+          endTime: '2026-05-29T10:00:00.800Z',
+          durationMs: 700,
+          status: 'ok',
+          sessionId: 'ses_smoke',
+          traceId: 'trace_smoke_page_home_1',
+          resource: {
+            app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
+            device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
+          },
+          context: { user: { userId: 'user_smoke' }, route: { name: '/detail' }, native: { available: false, platform: 'android' } },
+          attributes: {
+            'event.phase': 'end',
+            'page.instance_id': 'page_home_1',
+            'page.from': '/',
+            'page.to': '/detail',
+            'frame.sample_count': 42,
+            'frame.slow_count': 3,
+            'frame.dropped_count': 1,
+            'frame.fps': 54,
+            'frame.stability': 0.91,
+            'frame.max_ms': 33,
+            'memory.enter_rss_mb': 117,
+            'memory.exit_rss_mb': 124.25,
+            'memory.delta_rss_mb': 7.25,
+          },
+          payload: { page: { end_reason: 'route_push' } },
         },
         {
           eventId: 'evt_smoke_http',

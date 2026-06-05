@@ -13,6 +13,14 @@ import type {
   PerformanceMetricSummary,
   StartupPerformanceSummary,
 } from '../../shared/datasource/types';
+import {
+  extractFrameEvidence,
+  extractRssEvidence,
+  formatFps,
+  formatRssDelta,
+  isPageVisitEnd,
+  isStartupTraceEnd,
+} from './performance-evidence';
 
 export type MetricKind = 'startup' | 'pages' | 'network' | 'jank' | 'errors';
 
@@ -74,15 +82,32 @@ function KindSummary({ kind, summary }: { kind: MetricKind; summary?: Performanc
 }
 
 function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
+  const coldAverages = averagePerformanceEvidence((summary?.events ?? []).filter((event) => isStartupTraceEnd(event) && event.name === 'app.cold_start'), 'startup');
+  const hotAverages = averagePerformanceEvidence((summary?.events ?? []).filter((event) => isStartupTraceEnd(event) && event.name === 'app.hot_start'), 'startup');
   return (
     <div className="grid gap-2 text-xs">
       <DurationGroup
         label="冷启动"
         source="name=app.cold_start · value=durationMs"
         summary={summary?.coldStart}
+        compact
         hintSuffix="当前 SDK 的 app.cold_start 以首帧为结束点，app.first_frame_ms 是同一链路的终点口径。"
-      />
-      <DurationGroup label="热重启" source="app.hot_start.durationMs" summary={summary?.hotResume} compact />
+      >
+        <EvidenceMetrics
+          frameField={'app.cold_start end · attributes["frame.fps"]'}
+          rssField={'app.cold_start end · attributes["memory.delta_rss_mb"]'}
+          averages={coldAverages}
+          sourceLabel="冷启动主链路 trace end"
+        />
+      </DurationGroup>
+      <DurationGroup label="热重启" source="app.hot_start.durationMs" summary={summary?.hotResume} compact>
+        <EvidenceMetrics
+          frameField={'app.hot_start end · attributes["frame.fps"]'}
+          rssField={'app.hot_start end · attributes["memory.delta_rss_mb"]'}
+          averages={hotAverages}
+          sourceLabel="热重启主链路 trace end"
+        />
+      </DurationGroup>
       <DurationGroup label="后台间隔" source="app.background_duration.durationMs" summary={summary?.backgroundInterval} compact />
       <DurationGroup label="SDK 初始化" source={'name=sdk.init · value=attributes["sdk.init.duration_ms"]'} summary={summary?.sdkInit} compact />
     </div>
@@ -90,11 +115,19 @@ function StartupSummary({ summary }: { summary?: StartupPerformanceSummary }) {
 }
 
 function PagesSummary({ summary }: { summary?: PagePerformanceSummary }) {
+  const averages = averagePerformanceEvidence((summary?.events ?? []).filter(isPageVisitEnd), 'page');
   return (
     <div className="grid gap-2 text-xs">
-      <DurationGroup label="页面加载" source={'page.load · attributes["page.load_ms"]'} summary={summary?.load} />
-      <DurationGroup label="页面首帧" source={'page.first_frame · attributes["page.first_frame_ms"]'} summary={summary?.firstFrame} />
-      <DurationGroup label="页面停留" source="page.stay.durationMs · 单独展示，不计入加载耗时" summary={summary?.stay} />
+      <DurationGroup label="页面加载" source={'page.load · attributes["page.load_ms"]'} summary={summary?.load} compact>
+        <EvidenceMetrics
+          frameField={'page.visit end · attributes["frame.fps"]'}
+          rssField={'page.visit end · attributes["memory.delta_rss_mb"]'}
+          averages={averages}
+          sourceLabel="页面主链路 page.visit end"
+        />
+      </DurationGroup>
+      <DurationGroup label="页面首帧" source={'page.first_frame · attributes["page.first_frame_ms"]'} summary={summary?.firstFrame} compact />
+      <DurationGroup label="页面停留" source="page.stay.durationMs · 单独展示，不计入加载耗时" summary={summary?.stay} compact />
     </div>
   );
 }
@@ -159,12 +192,14 @@ function DurationGroup({
   summary,
   compact = false,
   hintSuffix,
+  children,
 }: {
   label: string;
   source: string;
   summary?: DurationSummary;
   compact?: boolean;
   hintSuffix?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <div className="grid gap-1 rounded border border-zinc-100 bg-zinc-50 px-2.5 py-2">
@@ -192,7 +227,37 @@ function DurationGroup({
           hint={`筛选口径：${source}。计算口径：取最大值。样本数：${summary?.sampleCount ?? 0}。${hintSuffix ?? ''}`}
         />
       )}
+      {children}
     </div>
+  );
+}
+
+function EvidenceMetrics({
+  averages,
+  frameField,
+  rssField,
+  sourceLabel,
+}: {
+  averages: { avgFps?: number; avgRssDeltaMb?: number; fpsCount: number; rssCount: number };
+  frameField: string;
+  rssField: string;
+  sourceLabel: string;
+}) {
+  return (
+    <>
+      <MetricPlainWithHint
+        label="平均帧数"
+        value={formatFps(averages.avgFps)}
+        field={frameField}
+        hint={`对${sourceLabel}上的 frame.fps 做算术平均。样本数：${averages.fpsCount}。`}
+      />
+      <MetricPlainWithHint
+        label="平均内存"
+        value={formatRssDelta(averages.avgRssDeltaMb)}
+        field={rssField}
+        hint={`对${sourceLabel}上的 RSS 变化做算术平均。样本数：${averages.rssCount}。`}
+      />
+    </>
   );
 }
 
@@ -230,6 +295,32 @@ function MetricPlain({ label, value }: { label: string; value: string }) {
       <span className="text-zinc-400">{label}</span>
       <span className="truncate text-right text-zinc-600 tabular-nums">{value}</span>
     </span>
+  );
+}
+
+function MetricPlainWithHint({
+  label,
+  value,
+  field,
+  hint,
+}: {
+  label: string;
+  value: string;
+  field: string;
+  hint: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="grid cursor-help grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-1">
+          <span className="text-zinc-400">{label}</span>
+          <span className="truncate text-right text-zinc-600 tabular-nums">{value}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        <FieldHint label={label} field={field} hint={hint} />
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -302,6 +393,33 @@ function FieldHint({ label, field, hint }: { label: string; field: string; hint:
 
 function formatOptionalNumber(value?: number): string {
   return typeof value === 'number' && Number.isFinite(value) ? compactNumber(value) : '-';
+}
+
+function averagePerformanceEvidence(
+  events: NonNullable<PerformanceMetricSummary['events']>,
+  mode: 'startup' | 'page',
+): { avgFps?: number; avgRssDeltaMb?: number; fpsCount: number; rssCount: number } {
+  const fpsValues = events
+    .map((event) => extractFrameEvidence(event).fps)
+    .filter(isFiniteNumber);
+  const rssValues = events
+    .map((event) => extractRssEvidence(event, mode).deltaRssMb)
+    .filter(isFiniteNumber);
+  return {
+    avgFps: average(fpsValues),
+    avgRssDeltaMb: average(rssValues),
+    fpsCount: fpsValues.length,
+    rssCount: rssValues.length,
+  };
+}
+
+function average(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function kindFromTitle(title: string): MetricKind {

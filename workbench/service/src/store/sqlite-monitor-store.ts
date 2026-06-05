@@ -868,10 +868,12 @@ function isStartupEvent(event: MonitorEvent): boolean {
 
 function isPageEvent(event: MonitorEvent): boolean {
   const name = nameOf(event) ?? '';
+  const phase = stringAttribute(event, 'event.phase');
   return statusOf(event) !== 'unknown' && (
     name === 'page.load' ||
     name === 'page.first_frame' ||
-    name === 'page.stay'
+    name === 'page.stay' ||
+    (name === 'page.visit' && phase === 'end')
   );
 }
 

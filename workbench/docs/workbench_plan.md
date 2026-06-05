@@ -725,7 +725,8 @@ Workbench MVP 完成时应满足：
 - 任意 timeline event 能查看完整 envelope JSON。
 - failed HTTP、error、jank 能展示 breadcrumb 数量、摘要和原始 breadcrumb 内容。
 - 页面 trace 能展示 `page.visit`、`route.push`、`page.load`、`page.first_frame`、`page.stay` 的顺序和 duration。
-- startup trace 能展示 `app.cold_start`、`sdk.init`、`app.first_frame`。
+- startup trace 能展示 `app.cold_start`、`sdk.init`、`app.first_frame`，并从 `app.cold_start` / `app.hot_start` trace end 展示启动帧表现和 RSS 变化。
+- 页面性能能从 `page.visit` trace end 展示页面帧表现和 RSS 变化；同 route 多次进入必须保留 `page.instance_id`，不能只按 route 合并。
 - 业务 `track` 事件能展示 `business.action`、`business.result`、`ui.target` 和 `payload.properties`。
 - service API 仍兼容 SDK `HttpOutput`。
 - service SSE 推送不改变 envelope 本体。

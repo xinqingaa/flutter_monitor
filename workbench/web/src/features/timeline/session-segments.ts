@@ -2,6 +2,17 @@ import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventKind, issueLabels, routeOf } from '../../shared/event-model/accessors';
 import { isNativeLifecycleEvent, isNativeMemoryEvent } from '../../shared/event-model/native';
 import { formatDuration } from '../../shared/formatting/format';
+import {
+  extractFrameEvidence,
+  extractRssEvidence,
+  formatFrameMs,
+  formatFps,
+  formatRssDelta,
+  formatSlowSample,
+  formatStability,
+  isPageVisitEnd,
+  isStartupTraceEnd,
+} from '../performance/performance-evidence';
 
 export type SegmentKind = 'startup' | 'page' | 'activity';
 export type SegmentSeverity = 'normal' | 'warn' | 'error';
@@ -11,6 +22,7 @@ export interface TimelineSegment {
   kind: SegmentKind;
   title: string;
   route?: string;
+  pageInstanceId?: string;
   events: MonitorEvent[];
   nodes: MonitorEvent[];
   spans: MonitorEvent[];
@@ -26,6 +38,7 @@ export interface TimelineSegment {
 interface RawSegment {
   kind: SegmentKind;
   route?: string;
+  pageKey?: string;
   events: MonitorEvent[];
   start: number;
 }
@@ -33,6 +46,7 @@ interface RawSegment {
 export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[] {
   const prepared = prepareSessionEvents(events);
   const raw: RawSegment[] = [];
+  const pageSegments = new Map<string, RawSegment>();
   let current: RawSegment | undefined;
   let startup: RawSegment | undefined;
   let initialStartupClosed = false;
@@ -55,17 +69,31 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
 
     if (isEntry) seenPageEntry = true;
 
+    const targetPageSegment = pageCompletionSegment(event, pageSegments);
+    if (targetPageSegment && targetPageSegment !== current) {
+      targetPageSegment.events.push(event);
+      continue;
+    }
+
     if (!current) {
       current = makeRaw(isEntry ? 'page' : 'activity', route, event);
+      registerPageSegment(current, pageSegments);
       raw.push(current);
     } else {
       const leavesStartupViaPage = current.kind === 'startup' && isEntry && route !== undefined;
-      const explicitNewPage = isEntry && route !== undefined && (current.kind !== 'page' || route !== current.route);
+      const entryPageKey = pageInstanceKey(event);
+      const explicitNewPage = isEntry && route !== undefined && (
+        current.kind !== 'page' ||
+        route !== current.route ||
+        (entryPageKey !== undefined && entryPageKey !== current.pageKey)
+      );
       const leavesPageForActivity = current.kind === 'page' && !isPageTimelineEvent(event);
       const activityRouteChanged = current.kind === 'activity' && route !== undefined && route !== current.route;
 
       if (explicitNewPage || leavesStartupViaPage) {
         current = makeRaw('page', route ?? current.route, event);
+        current.pageKey = entryPageKey;
+        registerPageSegment(current, pageSegments);
         raw.push(current);
       } else if (leavesPageForActivity || activityRouteChanged) {
         current = makeRaw('activity', route ?? current.route, event);
@@ -109,7 +137,17 @@ function prefersClosed(candidate: MonitorEvent, existing: MonitorEvent): boolean
 }
 
 function makeRaw(kind: SegmentKind, route: string | undefined, first: MonitorEvent): RawSegment {
-  return { kind, route, events: [], start: timelineTime(first) };
+  return { kind, route, pageKey: kind === 'page' ? pageInstanceKey(first) : undefined, events: [], start: timelineTime(first) };
+}
+
+function registerPageSegment(segment: RawSegment, segments: Map<string, RawSegment>): void {
+  if (segment.kind === 'page' && segment.pageKey) segments.set(segment.pageKey, segment);
+}
+
+function pageCompletionSegment(event: MonitorEvent, segments: Map<string, RawSegment>): RawSegment | undefined {
+  if (event.name !== 'page.stay' && !isPageVisitEnd(event)) return undefined;
+  const key = pageInstanceKey(event);
+  return key ? segments.get(key) : undefined;
 }
 
 function finalizeSegment(segment: RawSegment, index: number, nextStart: number | undefined): TimelineSegment {
@@ -125,13 +163,14 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
     id: `${index}-${first?.eventId ?? 'segment'}`,
     kind,
     route,
+    pageInstanceId: kind === 'page' ? pageInstanceIdForSegment(events) : undefined,
     title: segmentTitle(kind, events, route),
     events,
     nodes,
     spans,
     startTimestamp: first?.timestamp,
     durationLabel: segmentDurationLabel(kind, events, segment.start, nextStart),
-    summaryItems: segmentSummaryItems(events),
+    summaryItems: segmentSummaryItems(kind, events),
     nodeCount: nodes.length,
     severity,
     hasIssue: issueCount > 0,
@@ -147,6 +186,14 @@ function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string |
   if (kind === 'startup') return '启动';
   if (kind === 'page') return route ?? '页面';
   return route ? `页面活动 ${route}` : '会话活动';
+}
+
+function pageInstanceIdForSegment(events: MonitorEvent[]): string | undefined {
+  for (const event of events) {
+    const instanceId = event.attributes?.['page.instance_id'];
+    if (typeof instanceId === 'string' && instanceId.length > 0) return instanceId;
+  }
+  return undefined;
 }
 
 function segmentDurationLabel(
@@ -191,7 +238,8 @@ function safeSpanDuration(events: MonitorEvent[]): number | undefined {
   return Math.max(...ends) - Math.min(...starts);
 }
 
-function segmentSummaryItems(events: MonitorEvent[]): string[] {
+function segmentSummaryItems(kind: SegmentKind, events: MonitorEvent[]): string[] {
+  const performanceItems = performanceSummaryItems(kind, events);
   const failedHttp = events.filter(isFailedHttpEvent).length;
   const errors = events.filter(isNonHttpErrorEvent).length;
   const hotStarts = events.filter((event) => event.name === 'app.hot_start' && event.durationMs !== undefined).length;
@@ -203,7 +251,7 @@ function segmentSummaryItems(events: MonitorEvent[]): string[] {
   const nativeMemory = events.filter(isNativeMemoryEvent).length;
   const lifecycle = events.filter((event) => event.name === 'app.lifecycle').length;
 
-  const items: string[] = [];
+  const items: string[] = [...performanceItems];
   if (failedHttp > 0) items.push(`失败请求 ${failedHttp}`);
   if (errors > 0) items.push(`错误 ${errors}`);
   if (hotStarts > 0) items.push(`热重启 ${hotStarts}`);
@@ -213,6 +261,36 @@ function segmentSummaryItems(events: MonitorEvent[]): string[] {
   if (memorySamples > 0) items.push(`内存采样 ${memorySamples}`);
   if (lifecycle > 0) items.push(`生命周期 ${lifecycle}`);
   return items.slice(0, 4);
+}
+
+function performanceSummaryItems(kind: SegmentKind, events: MonitorEvent[]): string[] {
+  if (kind === 'startup') {
+    const startup = [...events].reverse().find(isStartupTraceEnd);
+    if (!startup) return [];
+    const frame = extractFrameEvidence(startup);
+    const rss = extractRssEvidence(startup, 'startup');
+    return [
+      startup.durationMs !== undefined ? `启动 ${formatDuration(startup.durationMs)}` : undefined,
+      frame.fps !== undefined || frame.stability !== undefined ? `${formatFps(frame.fps)} / ${formatStability(frame.stability)}` : undefined,
+      frame.slowCount !== undefined || frame.sampleCount !== undefined ? `慢帧 ${formatSlowSample(frame)}` : undefined,
+      rss.deltaRssMb !== undefined ? `RSS 变化 ${formatRssDelta(rss.deltaRssMb)}` : undefined,
+    ].filter(isString);
+  }
+  if (kind === 'page') {
+    const visit = [...events].reverse().find(isPageVisitEnd);
+    if (!visit) return [];
+    const frame = extractFrameEvidence(visit);
+    const rss = extractRssEvidence(visit, 'page');
+    const stay = events.find((event) => event.name === 'page.stay' && typeof event.durationMs === 'number')?.durationMs;
+    const load = events.find((event) => event.name === 'page.load' && typeof event.durationMs === 'number')?.durationMs;
+    return [
+      stay !== undefined ? `停留 ${formatDuration(stay)}` : load !== undefined ? `加载 ${formatDuration(load)}` : visit.durationMs !== undefined ? `停留 ${formatDuration(visit.durationMs)}` : undefined,
+      frame.fps !== undefined || frame.stability !== undefined ? `${formatFps(frame.fps)} / ${formatStability(frame.stability)}` : undefined,
+      frame.maxMs !== undefined ? `最大帧 ${formatFrameMs(frame.maxMs)}` : undefined,
+      rss.deltaRssMb !== undefined ? `RSS 变化 ${formatRssDelta(rss.deltaRssMb)}` : undefined,
+    ].filter(isString);
+  }
+  return [];
 }
 
 function segmentSeverity(events: MonitorEvent[]): SegmentSeverity {
@@ -259,6 +337,15 @@ function eventPhase(event: MonitorEvent): string | undefined {
   return typeof phase === 'string' ? phase : undefined;
 }
 
+function pageInstanceKey(event: MonitorEvent): string | undefined {
+  const instanceId = event.attributes?.['page.instance_id'];
+  if (typeof instanceId === 'string' && instanceId.length > 0) {
+    return event.traceId ? `${instanceId}:${event.traceId}` : instanceId;
+  }
+  if (event.name === 'page.visit' && event.traceId) return event.traceId;
+  return undefined;
+}
+
 function effectiveStart(event: MonitorEvent): number {
   return timeMs(event.startTime) ?? timeMs(event.timestamp) ?? 0;
 }
@@ -303,4 +390,8 @@ function timeMs(timestamp?: string): number | undefined {
 
 function isNumber(value: number | undefined): value is number {
   return value !== undefined;
+}
+
+function isString(value: string | undefined): value is string {
+  return typeof value === 'string' && value.length > 0 && !value.includes('-');
 }

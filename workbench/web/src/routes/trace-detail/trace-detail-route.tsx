@@ -49,7 +49,7 @@ export function TraceDetailRoute() {
           rightPanel.collapsed ? 'xl:grid-cols-[minmax(640px,1fr)_40px]' : 'xl:grid-cols-[minmax(640px,1fr)_560px]'
         }`}
       >
-        <SessionTimeline events={events} selectedEventId={selectedEvent?.eventId} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
+        <SessionTimeline events={events} selectedEventId={selectedEvent?.eventId} autoExpandSelected={Boolean(selectedEventId)} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
         <aside className="min-h-[560px] overflow-hidden xl:min-h-0">
           <CollapsiblePanel
             storageKey="workbench.traceDetail.right"

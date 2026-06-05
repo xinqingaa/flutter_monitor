@@ -105,6 +105,7 @@ export function SessionDetailRoute() {
             <SessionTimeline
               events={visibleEvents}
               selectedEventId={selectedEvent?.eventId}
+              autoExpandSelected={Boolean(search.eventId || search.traceId || selectedEventId)}
               onSelectEvent={(event) => setSelectedEventId(event.eventId)}
             />
           </>
