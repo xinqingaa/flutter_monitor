@@ -1,42 +1,6 @@
 # TODO
 
-本文件只记录尚未开始的 Workbench 适配和后续扩展。SDK 当前已经采用主链路方案：启动性能证据写入 `app.cold_start` / `app.hot_start` trace end，页面性能证据写入 `page.visit` trace end。
-
-## 当前 SDK 主链路方案
-
-### 启动性能证据
-
-- 冷启动和热启动分别由 `app.cold_start`、`app.hot_start` 表达，二者是互斥关系。
-- 启动首帧或恢复首帧闭合 trace 时，不写入帧摘要字段；帧数、FPS、稳定性和慢帧统一由页面 `page.visit` trace end 表达。
-- 启动 trace end 同时写入 RSS 证据：`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb`。
-- SDK 不维护启动帧窗口，启动性能证据统一落在启动 trace end。
-
-### 页面性能证据
-
-- 页面实例由 `page.instance_id` 区分，同一个 `routeName` 连续多次 push 时必须生成不同实例。
-- 页面 trace 由 `page.visit` 表达，页面首帧作为 `page.load` end 上的 `page.first_frame_ms` 观测字段表达，不再生成独立 `page.first_frame` span。
-- 页面关闭或被最终结束时，`page.visit` trace end 写入同一页面实例累计到的帧摘要字段。
-- 页面进入和退出时读取 RSS，`page.visit` trace end 写入 `memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb`。
-- 页面切换性能证据统一落在页面 trace end。
-- `page.view` breadcrumb、`route.push` / `route.pop` span 继续作为路径还原和路由阶段证据；Workbench 展示时应以 `page.visit` 作为页面主链路。
-
-### 性能开销约束
-
-- Flutter frame timing callback 中只做有界聚合：计数、总耗时、最大值、慢帧数、掉帧估算和少量分位数样本。
-- 路由回调路径只记录时间点、页面实例和 RSS 快照，不等待 IO，不主动触发 GC。
-- 内存采样使用系统可得的当前进程 RSS；缺失时省略字段，不伪造数值。
-- SDK 不依赖 native plugin；未注入 `FlutterMonitorNative` 时，Flutter-only 链路仍应完整工作。
-
-## Workbench 适配 TODO
-
-- Session timeline 以 `app.cold_start` / `app.hot_start`、`page.visit`、`http.client`、`ui.jank.sequence`、error、lifecycle 为主轴展示。
-- 启动详情直接读取启动 trace end 的启动耗时和 `memory.start/end/delta_rss_mb`，不展示启动 FPS。
-- 页面详情直接读取 `page.visit` trace end 的 `frame.*` 和 `memory.enter/exit/delta_rss_mb`。
-- 同 route 多实例展示必须使用 `page.instance_id`，不能只按 routeName 合并。
-- Raw JSON 回查应能证明页面切换性能证据已经写入对应 `page.visit` trace end。
-- Problems 只把 `ui.jank.sequence`、error、memory pressure/growth/suspect 等问题事件作为问题入口；普通启动/页面性能摘要作为 trace 详情展示。
-
-## 未来扩展一：长停留页面性能切片
+## 1. 扩展：长停留页面性能切片
 
 目标：页面不切路由时，也能观察长列表、图表、TabBar 容器页、仪表盘等长停留场景的中间性能表现。
 
@@ -54,7 +18,7 @@
 - `page.visit` payload 中切片结构的字段、大小上限和裁剪策略。
 - 长停留切片与 `ui.jank.sequence` 的关系：切片描述普通性能画像，卡顿序列仍是问题事件。
 
-## 未来扩展二：业务交互性能窗口
+## 2. 扩展：业务交互性能窗口
 
 目标：让业务主动标记 TabBar 切换、图表缩放、图表渲染、复杂滚动、筛选刷新等不切路由的关键交互，并把交互期间的帧表现回连到当前 session、route 和 `page.instance_id`。
 
@@ -97,10 +61,47 @@ await FlutterMonitorSDK.trackPerformanceWindow(
 - timeout、cancel、异常结束的状态语义。
 - 同时存在多个交互窗口时的样本归属和上限策略。
 
-## 内存诊断扩展 TODO
+## 3.扩展 TODO
 
 - 当前 example 的内存按钮只负责制造真实分配、释放、卡顿和 lifecycle 场景，方便调试 SDK 自动采集。
 - 当前 SDK 默认启用基础 memory collector：初始化后采 `memory.sample`，`paused/hidden` 采样，`resumed` 和 jank sequence 后基于 `ProcessInfo.currentRss` 做增长判断。
 - `memory.growth` 和 `memory.leak.suspect` 主要基于进程 RSS 增长判断，能定位到 session、route、module、scene 和 breadcrumbs，但不能区分 Dart heap、native heap、图片缓存、纹理或 mmap 等具体来源。
 - `native.memory.sample` 当前是旁路证据；后续可在 native 样本充足时补充 native delta 或独立 native growth 线索。
 - 当前能力只能形成疑似线索，不是对象级泄漏检测器；不能自动指出具体 Dart 对象、Widget、页面实例、图片缓存、纹理或 native 资源根因。
+
+
+## 4. 待验证：Lifecycle、热重启与 session 边界
+
+背景：一次本地 Workbench raw 数据中，用户操作路径预期为启动 App 后停留在 `/`，随后进入后台、恢复前台，再次进入后台。Workbench 中第二个 session 的首段显示为页面活动或会话活动，节点包含生命周期 `hidden -> paused`、退出前 flush、后台停留、前台恢复、热重启、前台停留等，并出现多轮热重启观感。
+
+本轮证据还不够充分，以下内容只作为待验证线索，不作为最终结论。后续需要多次复现，保留 raw envelope、控制台 compact log、Workbench SQLite 数据和操作时间点，再决定定位和修复方案。
+
+本轮观察到的 raw 现象：
+
+- Workbench 中可见两个 session，第二个 session 的第一条已入库事件不是 `app.cold_start` 或 `sdk.init`，而是 `app.lifecycle` 的 `hidden/paused` 相关事件。
+- 第二个 session 的首条可见事件 event id 计数已经不是 `_0`，说明该 SDK 实例在此之前可能生成过更早事件，但 Workbench 当前数据中没有看到这些早期事件。
+- 第二个 session 内可见多次 `app.hot_start`，但本轮 raw 中这些 `app.hot_start` 的 `payload.session.started_new` 均为 `false`；因此不能仅凭当前数据断定“第一次热重启开启了新 session”。
+- `app.foreground_duration` 当前语义应理解为上一段前台 activity window 的持续时间，即从上一次 `resumed` 到后续 `hidden/paused/detached` 的间隔。
+
+需要继续采证的问题：
+
+- 第二个 session 的早期 `app.cold_start`、`sdk.init`、`memory.sample(session.start)`、初始 `page.visit` 是否真实生成但没有入库，还是 SDK 在该场景下没有生成。
+- session 边界是由 App 进程重启、Flutter isolate/SDK 重新初始化、`backgroundSessionTimeout`、还是 lifecycle 恢复逻辑触发。
+- 多次短间隔 `paused -> resumed` 是否来自 Android lifecycle 抖动、系统权限/任务切换行为、热重载/调试器影响，还是 SDK lifecycle listener 重复触发。
+- `HttpOutput` 自身 lifecycle flush 与 Reporter lifecycle flush 是否存在重复 flush 或竞态，是否会导致后台/退出时 batch 丢失。
+- Workbench timeline 在缺失 session 早期启动事件时，是否应明确提示“该 session 起始事件缺失”，避免把缺失数据误读为真实链路起点。
+
+后续复现建议：
+
+- 每轮复现前清空或标记 Workbench 数据，记录绝对操作时间：启动、首次进入后台、首次恢复、第二次进入后台、第二次恢复。
+- 同时保留 Workbench raw 查询结果和控制台 compact log，重点对比 `eventId` 计数是否连续、`sessionId` 生成时间、`app.hot_start.payload.session.started_new`、`app.background_duration.durationMs`、`app.foreground_duration.durationMs`。
+- 复现时分别测试：仅 `LogMonitorOutput`、仅 `HttpOutput`、同时启用二者；`HttpOutput.flushOnAppExit` 开关；较大的 `batchReportSize` 与较短 periodic flush。
+- 用明确的 `backgroundSessionTimeout` 做对照：短阈值验证 session 切分，长阈值验证普通热恢复是否保持同一 session。
+
+候选修复方向，待证据确认后再实施：
+
+- 收口 flush 责任：避免 `HttpOutput` 自己的 lifecycle listener 与 Reporter lifecycle flush 同时触发同一批队列。
+- 提升 `HttpOutput` 可靠性：后台或退出 flush 失败时保留可重试队列，或至少输出可回查的丢弃/失败自监控事件。
+- 为 `app.hot_start` 增加最小后台间隔或 debounce，避免几十毫秒级 lifecycle 抖动被展示为完整热重启。
+- 如果 resume 后确实切分新 session，确认 `app.background_duration`、`app.hot_start`、恢复后的 lifecycle breadcrumb 都绑定到一致且正确的 session。
+- Workbench 对 session 首事件缺失、event id 不连续或缺少 cold start 的 session 增加诊断提示，不在 UI 层伪造启动事件。
