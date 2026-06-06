@@ -10,6 +10,9 @@ import { cn } from '../../shared/formatting/cn';
 import { buildTimelineSegments, type TimelineSegment } from './session-segments';
 import type * as React from 'react';
 import { timelineDisplay } from '../../shared/event-model/display';
+import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+
+type CollapseMode = 'collapsed' | 'expanded' | 'mixed';
 
 export function SessionTimeline({
   events,
@@ -24,28 +27,39 @@ export function SessionTimeline({
 }) {
   const segments = useMemo(() => buildTimelineSegments(events), [events]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(segments.map((segment) => segment.id)));
+  const [collapseMode, setCollapseMode] = useState<CollapseMode>('collapsed');
   const selectedNodeRef = useRef<HTMLButtonElement | null>(null);
-  const previousSelectedEventId = useRef<string | undefined>(undefined);
+  const previousAutoExpandedSelection = useRef<string | undefined>(undefined);
+  const knownSegmentIds = useRef<Set<string>>(new Set());
+  const collapsedCount = segments.filter((segment) => collapsed.has(segment.id)).length;
+  const allExpanded = segments.length > 0 && collapsedCount === 0;
+  const nextBulkAction = allExpanded ? '收起全部' : '展开全部';
 
   useEffect(() => {
-    setCollapsed((current) => new Set(segments.filter((segment) => !(autoExpandSelected && containsEvent(segment, selectedEventId)) && (current.size === 0 || current.has(segment.id))).map((segment) => segment.id)));
-  }, [autoExpandSelected, segments, selectedEventId]);
+    const previousSegmentIds = knownSegmentIds.current;
+    setCollapsed((current) => syncCollapsedSegments(segments, current, collapseMode, previousSegmentIds));
+    knownSegmentIds.current = segmentIdSet(segments);
+  }, [collapseMode, segments]);
 
   useEffect(() => {
-    if (!autoExpandSelected || !selectedEventId || selectedEventId === previousSelectedEventId.current) return;
-    if (previousSelectedEventId.current === undefined) {
-      previousSelectedEventId.current = selectedEventId;
+    if (!autoExpandSelected || !selectedEventId) {
+      previousAutoExpandedSelection.current = undefined;
       return;
     }
-    previousSelectedEventId.current = selectedEventId;
+    const selectedSegment = segments.find((segment) => containsEvent(segment, selectedEventId));
+    if (!selectedSegment) return;
+
+    const selectionKey = `${selectedEventId}:${selectedSegment.id}`;
+    if (selectionKey === previousAutoExpandedSelection.current) return;
+
+    const shouldScroll = previousAutoExpandedSelection.current !== undefined;
+    previousAutoExpandedSelection.current = selectionKey;
     setCollapsed((current) => {
-      const selectedSegment = segments.find((segment) => containsEvent(segment, selectedEventId));
-      if (!selectedSegment) return current;
       const next = new Set(current);
       next.delete(selectedSegment.id);
       return next;
     });
-    selectedNodeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (shouldScroll) selectedNodeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [autoExpandSelected, segments, selectedEventId]);
 
   function toggle(set: Set<string>, id: string): Set<string> {
@@ -55,11 +69,31 @@ export function SessionTimeline({
     return next;
   }
 
+  function toggleAllSegments(): void {
+    if (allExpanded) {
+      setCollapseMode('collapsed');
+      setCollapsed(new Set(segments.map((segment) => segment.id)));
+      return;
+    }
+    setCollapseMode('expanded');
+    setCollapsed(new Set());
+  }
+
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-      <CardHeader>
-        <CardTitle>会话链路</CardTitle>
-        <CardDescription>时间自上而下，启动、页面和会话活动形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
+      <CardHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className="min-w-0">
+          <CardTitle>会话链路</CardTitle>
+          <CardDescription>时间自上而下，启动、页面和会话活动形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
+        </div>
+        <IconTooltipButton
+          type="button"
+          variant="secondary"
+          size="icon"
+          label={allExpanded ? '收起所有区段' : '展开所有区段'}
+          icon={allExpanded ? ChevronDown : ChevronRight}
+          onClick={toggleAllSegments}
+        />
       </CardHeader>
       <CardContent className="min-h-0 overflow-auto p-0">
         {segments.length === 0 ? (
@@ -73,7 +107,10 @@ export function SessionTimeline({
                 key={segment.id}
                 segment={segment}
                 collapsed={collapsed.has(segment.id)}
-                onToggleCollapse={() => setCollapsed((prev) => toggle(prev, segment.id))}
+                onToggleCollapse={() => {
+                  setCollapseMode('mixed');
+                  setCollapsed((prev) => toggle(prev, segment.id));
+                }}
                 selectedEventId={selectedEventId}
                 selectedNodeRef={selectedNodeRef}
                 onSelectEvent={onSelectEvent}
@@ -254,4 +291,24 @@ function nodeDisplay(event: MonitorEvent) {
 function containsEvent(segment: TimelineSegment, eventId: string | undefined): boolean {
   if (!eventId) return false;
   return segment.nodes.some((event) => event.eventId === eventId);
+}
+
+function syncCollapsedSegments(
+  segments: TimelineSegment[],
+  current: Set<string>,
+  mode: CollapseMode,
+  previousSegmentIds: Set<string>,
+): Set<string> {
+  const collapsed = new Set<string>();
+
+  for (const segment of segments) {
+    if (mode === 'collapsed') collapsed.add(segment.id);
+    else if (mode === 'mixed' && (current.has(segment.id) || !previousSegmentIds.has(segment.id))) collapsed.add(segment.id);
+  }
+
+  return collapsed;
+}
+
+function segmentIdSet(segments: TimelineSegment[]): Set<string> {
+  return new Set(segments.map((segment) => segment.id));
 }

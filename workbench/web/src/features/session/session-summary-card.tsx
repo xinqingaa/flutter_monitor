@@ -74,7 +74,7 @@ export function SessionCard({
       search={(current) => pickScopeSearch(current)}
       className={cn(
         'group block min-w-0 rounded-md border bg-white text-left transition-colors hover:border-teal-300 hover:bg-teal-50/40',
-        selected ? 'border-teal-400 bg-teal-50/70' : 'border-zinc-200',
+        selected ? 'border-teal-400 bg-teal-50' : 'border-zinc-200',
         featured ? 'p-3 shadow-sm shadow-zinc-200/60' : compact ? 'p-2' : 'p-3',
         className,
       )}
