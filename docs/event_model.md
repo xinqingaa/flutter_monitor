@@ -355,7 +355,7 @@ flowchart TB
 - `resource.device.*` 表达设备、刷新率和设备等级。
 - `payload` 只保存诊断详情，例如采样窗口、样本数量、触发原因、裁剪状态和 suspect leak 依据。
 
-业务层不得主动构造或上报 `memory.growth`、`memory.pressure` 或 `memory.leak.suspect`。这些事件只能由 SDK memory collector、native bridge 或 SDK 内部测试根据真实采样、平台 warning、阈值判断等证据生成。example 若需要验证内存链路，应制造真实内存分配、持有、释放、jank 或 lifecycle 场景，让 SDK 自动捕获，而不是调用公开 API 直接写入 memory 日志。
+业务层不得主动构造或上报 `memory.growth`、`memory.pressure` 或 `memory.leak.suspect`。这些事件只能由 SDK memory collector、native bridge 或 SDK 内部测试根据真实采样、平台 warning、阈值判断等证据生成。example 若需要验证内存链路，应制造真实内存分配、持有、释放或 jank 场景，让 SDK 自动捕获；生命周期链路通过真实 App 前后台切换触发，不提供公开 API 或示例按钮伪造 lifecycle。
 
 `memory.sample_source` 取值必须稳定：
 
@@ -561,7 +561,22 @@ FlutterMonitorSDK.track(
 
 为了支持 QA 和开发者从人类排查入口找到 session，SDK 提供统一上下文入口。该入口用于补充后续事件都会携带的 context snapshot，而不是记录某一次业务动作。
 
-推荐形态：
+初始化期已知上下文应在 `init` 时传入，确保 `app.cold_start`、`sdk.init` 和首批 bootstrap 事件也能携带这些字段：
+
+```dart
+await FlutterMonitorSDK.init(
+  config: monitorConfig,
+  appStartTime: appStartTime,
+  initialContext: const MonitorInitialContext(
+    userId: 'user_001',
+    userType: 'qa',
+    releaseId: '2026.06.06',
+    featureFlags: ['new_cart'],
+  ),
+);
+```
+
+运行时变化继续使用 `setContext(...)`：
 
 ```dart
 FlutterMonitorSDK.setContext(

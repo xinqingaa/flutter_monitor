@@ -4,17 +4,31 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
 
-// 用于页面路由监听  可以适当修改泛型 <Route<dynamic>>
+/// 页面路由监听器。
+///
+/// 该类接入 `MaterialApp.navigatorObservers` 后，会把 Flutter route 的 push、
+/// pop、replace 转换为页面 trace、页面 load span、page view breadcrumb 和
+/// route context。后续 HTTP、错误、卡顿、内存等事件会通过 Reporter 自动关联到
+/// 当前页面链路。
 class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
   final Reporter _reporter;
   final Map<Route<dynamic>, String> _routePageInstances =
       <Route<dynamic>, String>{};
   final Map<Route<dynamic>, _RouteDescriptor> _routeDescriptors =
       <Route<dynamic>, _RouteDescriptor>{};
-  void Function(String?)? onPageRoutePushed; // 用于通知外部页面已切换
 
+  /// 页面切换回调。
+  ///
+  /// 主要用于 jank 监控器同步当前页面名，不参与 public API。
+  void Function(String?)? onPageRoutePushed;
+
+  /// 创建页面路由监听器。
+  ///
+  /// [Reporter] 负责真正发出页面 trace/span/breadcrumb，本类只负责把 route
+  /// 生命周期翻译为 Reporter 调用。
   MonitorRouteObserver(this._reporter);
 
+  /// 页面入栈时开启页面访问 trace 和页面加载 span。
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
@@ -44,6 +58,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     }
   }
 
+  /// 页面出栈时闭合页面 trace，并恢复前一个页面作为当前上下文。
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
@@ -71,6 +86,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     }
   }
 
+  /// 页面替换时闭合旧页面链路，并为新页面开启新的页面链路。
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
@@ -112,6 +128,10 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
     }
   }
 
+  /// 标记页面首帧或关键内容已经渲染完成。
+  ///
+  /// public facade 的 `FlutterMonitorSDK.markPageRendered` 最终会调用这里。
+  /// 若 route observer 已经通过下一帧兜底完成统计，重复调用会被 Reporter 忽略。
   void onPageRendered(String? pageName) {
     if (pageName == null || pageName.isEmpty) {
       debugPrint("警告: onPageRendered 收到空页面名称，跳过上报");
@@ -193,18 +213,24 @@ class _RouteDescriptor {
   final String fullName;
 }
 
-// Dio拦截器，用于API性能监控
+/// Dio 网络请求监控拦截器。
+///
+/// 每个实例只服务一个业务 Dio。它记录请求开始时间，在响应或错误回调中计算耗时、
+/// 状态码、错误类型、请求/响应大小，并交给 Reporter 生成 `http.client` span。
 class MonitorDioInterceptor extends Interceptor {
   final Reporter _reporter;
 
+  /// 创建 Dio 请求监控拦截器。
   MonitorDioInterceptor(this._reporter);
 
+  /// 记录请求开始时间，并继续交给业务 Dio 链路处理。
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra['startTime'] = DateTime.now();
     super.onRequest(options, handler);
   }
 
+  /// 请求成功或收到 HTTP 响应时，上报一次 `http.client` span。
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     final startTime = response.requestOptions.extra['startTime'] as DateTime;
@@ -232,6 +258,7 @@ class MonitorDioInterceptor extends Interceptor {
     super.onResponse(response, handler);
   }
 
+  /// 请求异常时，上报失败的 `http.client` span，并保留异常继续向业务层传递。
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final startTime = err.requestOptions.extra['startTime'] as DateTime;
@@ -294,12 +321,17 @@ class MonitorDioInterceptor extends Interceptor {
   }
 }
 
-// 性能监控主类
+/// SDK 性能采集模块装配类。
+///
+/// 当前负责页面路由监听器和冷启动首帧闭合。它不直接构建 envelope，而是把页面
+/// 和启动时机交给 Reporter / StartupTraceController，保持性能信号进入统一
+/// pipeline。
 class PerformanceMonitor {
   final Reporter _reporter;
   final StartupTraceController? _startupTraceController;
   late final MonitorRouteObserver routeObserver;
 
+  /// 创建性能监控模块。
   PerformanceMonitor(
     this._reporter, {
     StartupTraceController? startupTraceController,
@@ -308,6 +340,9 @@ class PerformanceMonitor {
     routeObserver = MonitorRouteObserver(_reporter);
   }
 
+  /// 初始化性能监听。
+  ///
+  /// SDK init 后注册首帧回调，用于闭合冷启动 trace 的 first-frame 口径。
   void init(DateTime appStartTime) {
     // 监听第一帧渲染完成
     WidgetsBinding.instance.addPostFrameCallback((_) {

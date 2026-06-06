@@ -63,7 +63,7 @@ await FlutterMonitorSDK.trackPerformanceWindow(
 
 ## 3.扩展 TODO
 
-- 当前 example 的内存按钮只负责制造真实分配、释放、卡顿和 lifecycle 场景，方便调试 SDK 自动采集。
+- 当前 example 的内存按钮只负责制造真实分配、释放和卡顿场景；生命周期链路通过真实 App 前后台切换调试 SDK 自动采集。
 - 当前 SDK 默认启用基础 memory collector：初始化后采 `memory.sample`，`paused/hidden` 采样，`resumed` 和 jank sequence 后基于 `ProcessInfo.currentRss` 做增长判断。
 - `memory.growth` 和 `memory.leak.suspect` 主要基于进程 RSS 增长判断，能定位到 session、route、module、scene 和 breadcrumbs，但不能区分 Dart heap、native heap、图片缓存、纹理或 mmap 等具体来源。
 - `native.memory.sample` 当前是旁路证据；后续可在 native 样本充足时补充 native delta 或独立 native growth 线索。

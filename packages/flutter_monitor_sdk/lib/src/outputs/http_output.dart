@@ -7,8 +7,9 @@ import 'monitor_output.dart';
 /// 一个通过 HTTP/HTTPS 将监控事件上报到远程服务器的 `MonitorOutput` 实现。
 ///
 /// 支持批量上报、定时上报和在 App 退出时自动上报，以提高效率和数据可靠性。
+/// 发送内容是统一 envelope JSON 的 batch：`{"events": [...]}`。
 class HttpOutput extends MonitorOutput {
-  /// 监控数据上报的目标服务器URL地址。
+  /// 监控数据上报的目标服务器 URL 地址。
   final String serverUrl;
 
   /// 是否开启定时上报功能。
@@ -59,6 +60,7 @@ class HttpOutput extends MonitorOutput {
   ///
   /// 需要提供 [serverUrl] 作为上报目的地。
   /// 其他参数如 [enablePeriodicReporting], [batchReportSize] 等用于配置上报策略。
+  /// [client] 主要用于测试或注入自定义 HTTP client。
   HttpOutput({
     required this.serverUrl,
     this.enablePeriodicReporting = false,
@@ -71,6 +73,9 @@ class HttpOutput extends MonitorOutput {
     http.Client? client,
   }) : _client = client ?? http.Client();
 
+  /// 初始化 HTTP output。
+  ///
+  /// 根据配置启动定时 flush，并可监听 App 生命周期在隐藏、暂停或销毁时尽力上报。
   @override
   void init() {
     if (enablePeriodicReporting) {
@@ -87,6 +92,9 @@ class HttpOutput extends MonitorOutput {
     debugPrint("HttpOutput initialized. Reporting to: $serverUrl");
   }
 
+  /// 把事件加入待上报队列。
+  ///
+  /// 队列达到 [batchReportSize] 时会触发一次异步 flush。
   @override
   void add(Map<String, dynamic> event) {
     _eventQueue.add(event);
@@ -97,6 +105,10 @@ class HttpOutput extends MonitorOutput {
     }
   }
 
+  /// 尝试上报队列中的所有事件。
+  ///
+  /// 普通 flush 会受到失败冷却影响；[isAppExiting] 为 true 时跳过冷却并采用
+  /// 尽力发送策略，失败时不再把事件塞回队列。
   @override
   Future<void> flush({bool isAppExiting = false}) async {
     if (_activeFlush != null) {
@@ -191,6 +203,7 @@ class HttpOutput extends MonitorOutput {
     _eventQueue.removeRange(0, _eventQueue.length - maxQueueSize);
   }
 
+  /// 释放定时器、lifecycle listener 和 HTTP client。
   @override
   void dispose() {
     _batchTimer?.cancel();

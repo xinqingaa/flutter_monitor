@@ -5,6 +5,13 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 
+/// 运行时 context/resource 快照管理器。
+///
+/// `ContextManager` 保存 SDK 当前已知的用户、路由、模块、发布、网络、
+/// lifecycle、native 和设备信息。每次 [EventPipeline] 捕获事件时都会调用
+/// [capture]，把这些动态状态固定成该事件自己的 `resource` 和 `context`。
+///
+/// 这里不负责发事件，只负责提供 envelope 构建所需的上下文快照。
 class ContextManager {
   ContextManager(this._config);
 
@@ -39,6 +46,10 @@ class ContextManager {
   Map<String, Object?>? get customData =>
       _runtimeCustomData ?? _config.customData?.cast<String, Object?>();
 
+  /// 捕获当前 resource/context 快照。
+  ///
+  /// 返回值会被 [EnvelopeBuilder] 直接写入 `EventEnvelope`。因此任何影响后续
+  /// 事件上下文的运行时状态，都应该先写入本类，再由 pipeline 捕获。
   ContextSnapshot capture() {
     final userInfo = _userContextCleared
         ? null
@@ -123,6 +134,9 @@ class ContextManager {
     _runtimeCustomData = null;
   }
 
+  /// 设置运行时用户上下文。
+  ///
+  /// 这是统一 `setContext` 的用户 scope 落点，会覆盖初始化配置中的 userInfo。
   void setUserContext({
     String? userId,
     String? userType,
@@ -138,12 +152,17 @@ class ContextManager {
     _userContextCleared = false;
   }
 
+  /// 清理运行时用户上下文，并阻止回退到初始化配置中的 userInfo。
   void clearUserContext() {
     _runtimeUserInfo = null;
     _runtimeUserCohort = null;
     _userContextCleared = true;
   }
 
+  /// 设置当前 route context。
+  ///
+  /// route observer 在页面进入/恢复时调用，后续 HTTP、错误、卡顿等事件会使用
+  /// 这里的 route 作为当前页面上下文。
   void setRouteName(String? routeName, {String? fullName}) {
     if (routeName == null || routeName.isEmpty) return;
     _currentRouteName = routeName;
@@ -152,16 +171,19 @@ class ContextManager {
         : fullName;
   }
 
+  /// 设置模块上下文，对应 `context.module.*`。
   void setModule({String? name, String? scene}) {
     _currentModuleName = name;
     _currentScene = scene;
   }
 
+  /// 清理模块上下文。
   void clearModule() {
     _currentModuleName = null;
     _currentScene = null;
   }
 
+  /// 设置发布/灰度上下文，对应 `context.release.*`。
   void setRelease({
     String? releaseId,
     List<String>? featureFlags,
@@ -174,18 +196,25 @@ class ContextManager {
     );
   }
 
+  /// 清理发布/灰度上下文。
   void clearRelease() {
     _runtimeRelease = null;
   }
 
+  /// 设置网络上下文，对应 `context.network.*`。
   void setNetwork({String? type, bool? isWeakNetwork}) {
     _runtimeNetwork = NetworkContext(type: type, isWeakNetwork: isWeakNetwork);
   }
 
+  /// 清理网络上下文。
   void clearNetwork() {
     _runtimeNetwork = null;
   }
 
+  /// 更新 lifecycle context。
+  ///
+  /// Reporter 会在 lifecycle 事件进入 pipeline 前调用它，保证该事件和后续事件
+  /// 都能看到最新的前后台状态。
   void setLifecycleState(String state) {
     _previousLifecycleState = _lifecycleState;
     _lifecycleState = state;

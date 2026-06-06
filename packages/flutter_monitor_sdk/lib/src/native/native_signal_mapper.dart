@@ -1,9 +1,17 @@
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 
+/// native bridge 信号到 SDK RawSignal 的映射器。
+///
+/// native plugin 只提供平台事实，本类负责把 crash/OOM/ANR、native memory、
+/// memory pressure、lifecycle、warning 等信号映射到统一 signal type、level、
+/// status、priority、attributes 和 payload，确保 native 能力不会绕过 SDK pipeline。
 class NativeSignalMapper {
   const NativeSignalMapper();
 
+  /// 将单个 [NativeSignal] 转换为 [RawSignal]。
+  ///
+  /// 返回值仍需由 Reporter 送入 EventPipeline，最终才会生成 `EventEnvelope`。
   RawSignal map(NativeSignal signal) {
     final nativePayload = Map<String, Object?>.from(signal.payload)
       ..remove(PayloadKeys.trigger);

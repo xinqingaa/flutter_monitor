@@ -602,7 +602,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - Flutter 层内存能力有限，不能保证跨平台一致。
 - 内存泄漏只能表达为 suspect。
 - 业务层不得主动上报 `memory.growth`、`memory.pressure` 或 `memory.leak.suspect`；这些事件必须由 SDK collector/native bridge 根据采样、平台 warning 或阈值判断生成。
-- example 只能制造真实内存压力、持有、释放、jank 或 lifecycle 场景来验证自动采集，不应通过 SDK public API 直接写入 memory 事件。
+- example 只能制造真实内存压力、持有、释放或 jank 场景来验证自动采集，不应通过 SDK public API 直接写入 memory 事件；生命周期采集通过真实 App 前后台切换触发。
 - 内存采样频率必须克制，避免 SDK 自身增加性能负担。
 - native memory 依赖可选 native plugin，基础 SDK 不强依赖。
 - OOM 前可能无法完整 flush，应依赖离线缓存和 native bridge 尽力保存。

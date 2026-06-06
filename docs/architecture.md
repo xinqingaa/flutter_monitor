@@ -567,12 +567,14 @@ Native signal 的最终字段映射发生在 SDK pipeline 入口：`flutter_moni
 await FlutterMonitorSDK.init(
   config: MonitorConfig(...),
   appStartTime: appStartTime,
+  initialContext: const MonitorInitialContext(...),
 );
 ```
 
 公开 API 应覆盖：
 
 - SDK 初始化；
+- 初始化期上下文 `initialContext`；
 - 业务主动埋点 `track(...)`；
 - 设置通用上下文 `setContext(...)` 和按 scope 清理 `clearContext(...)`；
 - 手动上报已处理 error `recordError(...)`；
@@ -580,7 +582,6 @@ await FlutterMonitorSDK.init(
 - 创建 Dio interceptor；
 - 创建 `http` client；
 - 标记页面首帧完成；
-- 手动记录 lifecycle state；
 - 注册可选 native bridge；
 - flush；
 - dispose。

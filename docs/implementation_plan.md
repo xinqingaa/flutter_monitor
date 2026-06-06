@@ -275,7 +275,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - SDK 负责 Flutter 层 memory/lifecycle collector、`MonitorNativeBridge` 抽象、native raw signal mapper、context snapshot 和 pipeline 接入。
 - `flutter_monitor_native` 负责 Android/iOS platform callback、MethodChannel/EventChannel 和 native raw signal 产生。
 - no-op/fake bridge 只用于 SDK 内部降级和测试，不作为 example 或业务层主动写入 memory/native 事件的入口。
-- example 通过真实内存分配/释放、jank、生命周期切换和可选 native plugin 接入验证链路，不通过公开 API 伪造 memory/native 日志。
+- example 通过真实内存分配/释放、jank、真实 App 前后台切换和可选 native plugin 接入验证链路，不通过公开 API 伪造 memory/native/lifecycle 日志。
 - 使用 raw JSON 验证 Android/iOS 有无 native bridge 四类场景是否都能进入同一 session timeline。
 
 验收：

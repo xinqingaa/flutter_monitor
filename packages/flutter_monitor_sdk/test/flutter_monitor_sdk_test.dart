@@ -2033,6 +2033,80 @@ void main() {
     );
   });
 
+  testWidgets('initial context is attached to bootstrap envelopes', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+
+    await FlutterMonitorSDK.init(
+      config: MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(
+          enableLifecycleTracking: false,
+          flushOnBackground: false,
+        ),
+        enableErrorMonitor: false,
+        enableJankMonitor: false,
+        outputs: <MonitorOutput>[output],
+      ),
+      appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
+      initialContext: const MonitorInitialContext(
+        userId: 'bootstrap_user',
+        userType: 'qa',
+        userTags: <String>['smoke'],
+        cohort: 'internal',
+        moduleName: 'example',
+        moduleScene: 'bootstrap',
+        releaseId: '2026.06.06',
+        featureFlags: <String>['new_cart'],
+        experiments: <String, Object?>{'checkout': 'b'},
+        networkType: 'wifi',
+        isWeakNetwork: false,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[
+          FlutterMonitorSDK.routeObserver,
+        ],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{'/': (_) => const SizedBox.shrink()},
+      ),
+    );
+    await tester.pump();
+    await FlutterMonitorSDK.dispose();
+
+    final bootstrapEvents = output.events
+        .where(
+          (event) =>
+              event['name'] == EventNames.appColdStart ||
+              event['name'] == EventNames.sdkInit,
+        )
+        .toList(growable: false);
+
+    expect(bootstrapEvents, isNotEmpty);
+    for (final event in bootstrapEvents) {
+      final context = event['context'] as Map;
+      final user = context['user'] as Map;
+      final module = context['module'] as Map;
+      final release = context['release'] as Map;
+      final network = context['network'] as Map;
+
+      expect(user['userId'], 'bootstrap_user');
+      expect(user['userType'], 'qa');
+      expect(user['userTags'], <String>['smoke']);
+      expect(user['cohort'], 'internal');
+      expect(module['name'], 'example');
+      expect(module['scene'], 'bootstrap');
+      expect(release['releaseId'], '2026.06.06');
+      expect(release['featureFlags'], <String>['new_cart']);
+      expect((release['experiments'] as Map)['checkout'], 'b');
+      expect(network['type'], 'wifi');
+      expect(network['isWeakNetwork'], isFalse);
+    }
+  });
+
   test('native resource is available for bootstrap events', () async {
     final output = RecordingOutput();
     final bridge = _FakeNativeBridge(

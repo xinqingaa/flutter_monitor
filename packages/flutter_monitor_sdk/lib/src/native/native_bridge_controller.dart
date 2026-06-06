@@ -5,7 +5,12 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 
+/// native bridge 生命周期控制器。
+///
+/// 负责订阅 [MonitorNativeBridge.signals]、转发 native signal 给 Reporter，并按需拉取
+/// native memory snapshot。它是 SDK 与可选 native plugin 之间的运行时适配层。
 class NativeBridgeController {
+  /// 创建 native bridge controller。
   NativeBridgeController({
     required MonitorNativeBridge bridge,
     required Reporter reporter,
@@ -20,6 +25,7 @@ class NativeBridgeController {
   StreamSubscription<NativeSignal>? _subscription;
   DateTime? _lastSampleAt;
 
+  /// 初始化 native bridge 订阅，并在 session start 时尝试采集一次 native memory。
   Future<void> init() async {
     _subscription = _bridge.signals.listen(
       _reporter.recordNativeSignal,
@@ -30,6 +36,9 @@ class NativeBridgeController {
     await recordMemorySample(trigger: TriggerValues.sessionStart);
   }
 
+  /// 主动采集 native memory snapshot。
+  ///
+  /// 默认按最小间隔限流；[force] 为 true 时跳过限流，适合关键生命周期节点。
   Future<void> recordMemorySample({
     required String trigger,
     bool force = false,
@@ -65,6 +74,7 @@ class NativeBridgeController {
     );
   }
 
+  /// 取消 native signal 订阅并释放 bridge。
   Future<void> dispose() async {
     await Future.wait(<Future<void>>[
       _subscription?.cancel() ?? Future<void>.value(),

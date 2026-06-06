@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/context/monitor_initial_context.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_timing_dispatcher.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
@@ -14,8 +15,12 @@ import 'reporter.dart';
 import '../modules/error_monitor.dart';
 import '../modules/performance_monitor.dart';
 
-/// 一个单例绑定类，它将所有监控模块粘合在一起。
-/// 这是 SDK 内部的核心枢纽。
+/// SDK 内部的模块装配中心。
+///
+/// `MonitorBinding` 负责把配置、Reporter、错误采集、性能采集、卡顿采集、
+/// 内存采样、生命周期和 native bridge 串到同一条运行时链路中。
+///
+/// 业务侧不应直接依赖该类；public API 通过 `FlutterMonitorSDK` 转发到这里。
 class MonitorBinding {
   late final JankMonitor jankMonitor; // JankMonitor 实例
   LifecycleManager? _lifecycleManager;
@@ -42,6 +47,11 @@ class MonitorBinding {
     }
   }
 
+  /// 启动各个采集模块。
+  ///
+  /// 调用前必须已经创建 [reporter]，并且已经应用初始化期上下文与 bootstrap
+  /// resource。该方法会发出冷启动、SDK init、memory sample 等首批事件，
+  /// 因此初始化顺序对 envelope 上下文完整性非常关键。
   Future<void> _start({required DateTime appStartTime}) async {
     if (config.enablePerformanceMonitor) {
       _startupTraceController = StartupTraceController(
@@ -193,11 +203,17 @@ class MonitorBinding {
 
   // --- 初始化方法 ---
 
-  /// 这是创建和设置 MonitorBinding 的主要入口点。
-  /// 它由公开的 FlutterMonitorSDK.init() 方法调用。
+  /// 创建并启动 SDK 内部单例。
+  ///
+  /// 初始化顺序固定为：
+  /// 1. 创建 [Reporter] 和 pipeline；
+  /// 2. 应用 [initialContext]，确保首批事件带上业务已知上下文；
+  /// 3. 解析设备/native bootstrap resource；
+  /// 4. 启动各采集模块并发出启动相关 trace/span。
   static Future<void> init({
     required MonitorConfig config,
     required DateTime appStartTime,
+    MonitorInitialContext? initialContext,
   }) async {
     // 错误恢复：如果已经初始化，直接返回现有实例
     if (_instance != null) {
@@ -206,6 +222,7 @@ class MonitorBinding {
     }
     // 正确调用私有构造函数并赋值给私有实例
     _instance = MonitorBinding._(config, appStartTime: appStartTime);
+    _instance!._applyInitialContext(initialContext);
 
     // Resolve bootstrap resources before modules emit the first envelope.
     try {
@@ -215,6 +232,27 @@ class MonitorBinding {
       // 即使初始化失败，也不影响其他功能，继续运行
     }
     await _instance!._start(appStartTime: appStartTime);
+  }
+
+  /// 在首批事件发出前应用初始化期上下文。
+  ///
+  /// 这里复用 [Reporter.setContext]，保证 `init(initialContext: ...)` 和运行时
+  /// `FlutterMonitorSDK.setContext(...)` 走同一套字段映射。
+  void _applyInitialContext(MonitorInitialContext? context) {
+    if (context == null || context.isEmpty) return;
+    reporter.setContext(
+      userId: context.userId,
+      userType: context.userType,
+      userTags: context.userTags,
+      cohort: context.cohort,
+      moduleName: context.moduleName,
+      moduleScene: context.moduleScene,
+      releaseId: context.releaseId,
+      featureFlags: context.featureFlags,
+      experiments: context.experiments,
+      networkType: context.networkType,
+      isWeakNetwork: context.isWeakNetwork,
+    );
   }
 
   // --- 可供内部访问的服务 ---
@@ -231,11 +269,17 @@ class MonitorBinding {
   /// 性能监控服务。
   late final PerformanceMonitor performanceMonitor;
 
-  /// 在 App 关闭时，用于释放资源的方法。
+  /// flush 当前所有 output 队列。
+  ///
+  /// 由 public `FlutterMonitorSDK.flush` 和生命周期后台/退出链路调用。
   Future<void> flush({bool isAppExiting = false}) {
     return reporter.flush(isAppExiting: isAppExiting);
   }
 
+  /// 处理 lifecycle state，并触发关联的 session、热启动、内存和 flush 逻辑。
+  ///
+  /// 该方法接收 core 协议中的 lifecycle 字符串，public API 会先把
+  /// `AppLifecycleState` 映射为这些字符串。
   Future<void> handleLifecycleState(String state, {DateTime? timestamp}) {
     return reporter.handleLifecycleState(state, timestamp: timestamp).then((_) {
       if (state == LifecycleStates.resumed ||

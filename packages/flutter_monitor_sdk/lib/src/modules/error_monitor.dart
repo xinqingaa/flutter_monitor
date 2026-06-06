@@ -1,11 +1,21 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 
+/// Flutter/Dart 自动错误采集器。
+///
+/// 该类安装 Flutter framework error 和 Dart uncaught error 回调，并将捕获到的
+/// 错误交给 Reporter 生成标准 error envelope。业务已捕获错误应通过
+/// `FlutterMonitorSDK.recordError` 主动上报。
 class ErrorMonitor {
   final Reporter _reporter;
 
+  /// 创建错误采集器。
   ErrorMonitor(this._reporter);
 
+  /// 注册 Flutter/Dart 错误回调。
+  ///
+  /// Flutter framework error 仍保留默认控制台输出；Dart 顶层错误被视为已由 SDK
+  /// 捕获并返回 true。
   void init() {
     // 1. 捕获Flutter框架错误
     FlutterError.onError = (FlutterErrorDetails details) {

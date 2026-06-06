@@ -19,8 +19,14 @@ class MonitoredHttpClient extends http.BaseClient {
   final Reporter _reporter;
   final http.Client _inner; // 被装饰的原始 client
 
+  /// 创建受监控的 `package:http` client。
+  ///
+  /// [_inner] 是实际发起请求的业务 client，本类只负责在请求前后补充监控事件。
   MonitoredHttpClient(this._reporter, this._inner);
 
+  /// 发送请求并在完成或异常时记录 `http.client` span。
+  ///
+  /// 该方法不会吞掉业务响应或异常；异常会在记录失败 span 后继续抛给调用方。
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final startTime = DateTime.now();
@@ -74,6 +80,7 @@ class MonitoredHttpClient extends http.BaseClient {
     }
   }
 
+  /// 关闭底层业务 client。
   @override
   void close() {
     _inner.close();

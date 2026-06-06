@@ -4,6 +4,11 @@ import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/utils/id_generator.dart';
 
+/// 将 [RawSignal]、context 快照和 trace 快照合成为 `EventEnvelope`。
+///
+/// Builder 只负责纯粹的数据组装：生成 event id、推导 event phase、合并 context
+/// override、筛选已注册 attributes，并把未注册 attributes 降级放入 payload。
+/// schema 校验、隐私过滤和 output 分发由 [EventPipeline] 负责。
 class EnvelopeBuilder {
   EnvelopeBuilder({FieldRegistry? registry, IdGenerator? idGenerator})
     : _registry = registry ?? FieldRegistry.defaults(),
@@ -12,6 +17,10 @@ class EnvelopeBuilder {
   final FieldRegistry _registry;
   final IdGenerator _idGenerator;
 
+  /// 构建单个 envelope。
+  ///
+  /// [signal] 是采集器提供的事实，[contextSnapshot] 是事件发生时的上下文，
+  /// [traceSnapshot] 提供 session/trace/span 和 breadcrumbs。
   EventEnvelope build({
     required RawSignal signal,
     required ContextSnapshot contextSnapshot,
@@ -57,6 +66,10 @@ class EnvelopeBuilder {
     );
   }
 
+  /// 合并 pipeline 捕获到的全局 context 与信号级 context override。
+  ///
+  /// 大多数 Flutter 信号直接使用全局 context；native 或异步信号可通过
+  /// [RawSignal] 覆盖 route、native runtime 或 context missing 信息。
   MonitorContext _mergeContext(MonitorContext context, RawSignal signal) {
     if (signal.nativeContext == null &&
         signal.contextRouteName == null &&
@@ -105,6 +118,10 @@ class EnvelopeBuilder {
     );
   }
 
+  /// 根据 signal 类型推导默认 event phase。
+  ///
+  /// trace/span 没有 endTime 时视为 start，带 endTime 时视为 end；
+  /// 其他信号默认为 instant。
   String _defaultEventPhase(RawSignal signal) {
     return switch (signal.signalType) {
       SignalType.trace || SignalType.span =>
@@ -113,6 +130,10 @@ class EnvelopeBuilder {
     };
   }
 
+  /// 计算该信号默认应携带多少条 breadcrumbs。
+  ///
+  /// 错误、卡顿、失败 HTTP、异常 metric 会自动带近期 breadcrumbs；
+  /// 普通成功事件默认不携带，避免 payload 过大。
   int? defaultBreadcrumbLimit(RawSignal signal) {
     if (signal.includeBreadcrumbs == false) return null;
     if (signal.breadcrumbLimit != null) return signal.breadcrumbLimit;

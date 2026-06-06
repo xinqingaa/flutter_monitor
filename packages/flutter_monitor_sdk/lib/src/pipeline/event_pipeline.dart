@@ -9,6 +9,13 @@ import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
 import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
 
+/// 事件进入统一 envelope 的主流水线。
+///
+/// Pipeline 的职责是把采集器产生的 [RawSignal] 转换为可上报/可导出的
+/// `EventEnvelope`：补齐 session/trace/span，捕获 context/resource，附加相关
+/// breadcrumbs，执行 schema 校验和隐私过滤，最后分发给所有 output。
+///
+/// 任何采集能力都应进入这里，避免绕过统一模型。
 class EventPipeline {
   EventPipeline({
     required ContextManager contextManager,
@@ -37,6 +44,9 @@ class EventPipeline {
   final SchemaValidator _schemaValidator;
   final PrivacyFilter _privacyFilter;
 
+  /// 使用当前 session 捕获一个信号。
+  ///
+  /// 大多数 SDK 内部采集器使用这个入口。
   PipelineResult capture(RawSignal signal) {
     return _capture(
       signal: signal,
@@ -44,6 +54,9 @@ class EventPipeline {
     );
   }
 
+  /// 使用指定 session 捕获一个信号。
+  ///
+  /// lifecycle 等需要把事件归属到状态变化前 session 的场景使用该入口。
   PipelineResult captureForSession({
     required RawSignal signal,
     required String sessionId,
@@ -51,6 +64,10 @@ class EventPipeline {
     return _capture(signal: signal, sessionId: sessionId);
   }
 
+  /// pipeline 的核心执行过程。
+  ///
+  /// 顺序固定为：捕获 context/trace 快照 -> 构建 envelope -> schema 校验 ->
+  /// 隐私过滤 -> 写 breadcrumb store -> 分发 output。
   PipelineResult _capture({
     required RawSignal signal,
     required String sessionId,
@@ -121,6 +138,9 @@ class EventPipeline {
     }
   }
 
+  /// 将已经过滤后的 envelope 分发给所有 output。
+  ///
+  /// output 异常不会影响 App 主流程，SDK 会记录 self-monitoring 事件。
   void _dispatch(EventEnvelope envelope) {
     final json = envelope.toJson();
     for (final output in _outputs) {
@@ -142,6 +162,9 @@ class EventPipeline {
     }
   }
 
+  /// flush 所有 output。
+  ///
+  /// 进入后台、退出前或业务主动调用 flush 时会走这里。
   Future<void> flush({bool isAppExiting = false}) async {
     for (final output in _outputs) {
       try {
@@ -160,6 +183,10 @@ class EventPipeline {
     }
   }
 
+  /// 根据 envelope 语义决定是否写入 recent breadcrumb store。
+  ///
+  /// 只有后续排障有价值的事件会成为 breadcrumb，例如业务 track、错误、
+  /// 卡顿、内存压力、native warning、失败 HTTP。
   void _recordBreadcrumb(EventEnvelope envelope) {
     if (!_shouldRecordBreadcrumb(envelope)) return;
     {

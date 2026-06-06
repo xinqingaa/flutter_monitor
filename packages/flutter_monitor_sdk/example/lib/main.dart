@@ -108,7 +108,8 @@ void main() async {
   //   ),
   //   // 自动获取配置
   //   // appInfo: appInfo,
-  //   // 用户上下文请在 init 后通过 FlutterMonitorSDK.setContext(...) 设置。
+  //   // 启动期上下文可通过 FlutterMonitorSDK.init(initialContext: ...) 设置；
+  //   // 运行时变化再通过 FlutterMonitorSDK.setContext(...) 调整。
   //   enableJankMonitor: true,
   //   jankConfig: JankConfig.lenient(),
   //   outputs: monitorOutputs, // 可选，不传则使用默认输出
@@ -118,6 +119,12 @@ void main() async {
   await FlutterMonitorSDK.init(
     config: monitorConfig,
     appStartTime: appStartTime,
+    initialContext: const MonitorInitialContext(
+      userType: 'qa',
+      cohort: 'example_session',
+      moduleName: 'example',
+      moduleScene: 'bootstrap',
+    ),
   );
   dio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
 

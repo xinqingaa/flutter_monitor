@@ -35,6 +35,10 @@ class JankMonitor {
   final VoidCallback? _onJankSequenceReported;
   final JankConfig _config;
 
+  /// 创建卡顿监控器。
+  ///
+  /// [getCurrentPage] 用于把卡顿事件关联到当前页面；[onJankSequenceReported]
+  /// 用于内部联动，例如触发 memory growth 采样；[config] 控制慢帧阈值和防抖。
   JankMonitor(
     this._reporter, {
     String Function()? getCurrentPage,
@@ -66,6 +70,9 @@ class JankMonitor {
   int _frameCounter = 0;
   static const int _samplingRate = 3; // 每3帧采样一次
 
+  /// 初始化卡顿检测阈值。
+  ///
+  /// 阈值会基于当前刷新率和 [JankConfig] 计算，后续由 [recordTimings] 消费帧数据。
   void init() {
     _initializeAdaptiveThresholds();
     debugPrint("✅ JankMonitor 初始化成功");
@@ -75,14 +82,13 @@ class JankMonitor {
   void _initializeAdaptiveThresholds() {
     const double defaultRefreshRate = 60.0;
     // 使用 PlatformDispatcher 替代已弃用的 window
-    final double refreshRate =
-        SchedulerBinding
-            .instance
-            .platformDispatcher
-            .views
-            .first
-            .display
-            .refreshRate;
+    final double refreshRate = SchedulerBinding
+        .instance
+        .platformDispatcher
+        .views
+        .first
+        .display
+        .refreshRate;
     _frameBudgetMs =
         1000 / (refreshRate > 0 ? refreshRate : defaultRefreshRate);
 
@@ -97,6 +103,10 @@ class JankMonitor {
     debugPrint("- Jitter tolerance: ${_config.jitterToleranceMs}ms");
   }
 
+  /// 记录一批 frame timings 并检测连续卡顿。
+  ///
+  /// 为降低监控自身开销，当前按固定采样率处理帧数据；达到连续慢帧阈值后生成
+  /// `ui.jank.sequence`。
   void recordTimings(List<FrameTiming> timings) {
     // 采样控制：不是每帧都处理，减少性能影响
     _frameCounter++;
@@ -265,6 +275,7 @@ class JankMonitor {
     _jankSequenceReported = false;
   }
 
+  /// 清理内部采样窗口和卡顿状态。
   void dispose() {
     // 清理数据，防止内存泄漏
     _recentFrameTimes.clear();
@@ -272,23 +283,33 @@ class JankMonitor {
   }
 }
 
-/// 卡顿监控配置
+/// UI 卡顿监控配置。
+///
+/// SDK 会基于 Flutter frame timings 识别连续慢帧，并生成 `ui.jank.sequence`
+/// 事件。该配置用于调整慢帧判断阈值、连续帧数量和重复上报防抖。
 class JankConfig {
-  /// 单帧卡顿阈值乘数（默认2.5，比原来的2.0更宽松）
+  /// 单帧卡顿阈值乘数。
+  ///
+  /// 实际阈值通常由设备刷新率对应的 frame budget 乘以该倍数得到。
   final double jankFrameTimeMultiplier;
 
-  /// 连续卡顿帧数阈值（默认4，比原来的3更严格）
+  /// 连续卡顿帧数阈值。
+  ///
+  /// 达到该数量后才认为形成一次 jank sequence，避免单帧偶发抖动过度上报。
   final int consecutiveJankThreshold;
 
-  /// 抖动容忍时间（毫秒），允许设备正常抖动
+  /// 抖动容忍时间（毫秒）。
+  ///
+  /// 用于容忍设备正常调度波动。
   final double jitterToleranceMs;
 
-  /// 防抖时间（毫秒），避免短时间内重复上报
+  /// 防抖时间（毫秒），避免短时间内重复上报同类卡顿。
   final int debounceMs;
 
-  /// 是否启用自适应阈值
+  /// 是否启用自适应阈值。
   final bool enableAdaptiveThresholds;
 
+  /// 创建 UI 卡顿监控配置。
   const JankConfig({
     this.jankFrameTimeMultiplier = 2.5,
     this.consecutiveJankThreshold = 4,
@@ -297,10 +318,10 @@ class JankConfig {
     this.enableAdaptiveThresholds = true,
   });
 
-  /// 默认配置
+  /// 默认配置，适合大多数设备。
   static JankConfig defaultConfig() => const JankConfig();
 
-  /// 宽松配置（适合低端设备）
+  /// 宽松配置，适合低端设备或噪声较大的测试环境。
   static JankConfig lenient() => const JankConfig(
     jankFrameTimeMultiplier: 3.0,
     consecutiveJankThreshold: 5,
@@ -308,7 +329,7 @@ class JankConfig {
     debounceMs: 2000,
   );
 
-  /// 严格配置（适合高端设备）
+  /// 严格配置，适合高端设备或需要更敏感性能告警的场景。
   static JankConfig strict() => const JankConfig(
     jankFrameTimeMultiplier: 2.0,
     consecutiveJankThreshold: 3,

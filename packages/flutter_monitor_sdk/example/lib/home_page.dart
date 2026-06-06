@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,7 +14,6 @@ enum _ScenarioAction {
   httpSlow,
   httpTimeout,
   checkoutAction,
-  memoryBackgroundGrowth,
 }
 
 class HomePage extends StatefulWidget {
@@ -265,15 +262,6 @@ class _HomePageState extends State<HomePage>
     _show('Allocated memory and triggered jank for SDK sampling.');
   }
 
-  Future<void> _simulateBackgroundMemoryGrowth() async {
-    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.paused);
-    await Future<void>.delayed(const Duration(milliseconds: 150));
-    _allocateRetainedMemory();
-    await Future<void>.delayed(const Duration(milliseconds: 150));
-    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.resumed);
-    _show('Background/resume memory growth scenario finished.');
-  }
-
   void _blockForMemoryJankFrame() {
     if (_memoryJankController.isAnimating) {
       final startTime = DateTime.now();
@@ -281,13 +269,6 @@ class _HomePageState extends State<HomePage>
         _retainedMemoryBytes += 0;
       }
     }
-  }
-
-  Future<void> _simulateLifecycle() async {
-    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.paused);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.resumed);
-    _show('Lifecycle paused/resumed simulated.');
   }
 
   @override
@@ -428,7 +409,7 @@ class _HomePageState extends State<HomePage>
                 onPressed: _triggerHandledBusinessError,
               ),
             ]),
-            _section('Memory And Lifecycle', [
+            _section('Memory', [
               _button(
                 label: 'Allocate retained memory',
                 color: Colors.indigo.shade200,
@@ -446,27 +427,11 @@ class _HomePageState extends State<HomePage>
                     ? null
                     : _releaseRetainedMemory,
               ),
-              _button(
-                label: 'Allocate during pause/resume',
-                action: _ScenarioAction.memoryBackgroundGrowth,
-                color: Colors.blueGrey.shade100,
-                onPressed: () => _runScenario(
-                  _ScenarioAction.memoryBackgroundGrowth,
-                  run: _simulateBackgroundMemoryGrowth,
-                  done: 'Memory growth scenario finished.',
-                ),
-              ),
-              if (kDebugMode)
-                _button(
-                  label: 'Simulate pause/resume',
-                  color: Colors.blueGrey.shade200,
-                  onPressed: () => unawaited(_simulateLifecycle()),
-                ),
             ]),
             _section('User And Business Context', [
               _button(
                 label: 'Set premium user context',
-                color: Theme.of(context).colorScheme.primary,
+                color: Colors.grey.shade100,
                 onPressed: () {
                   FlutterMonitorSDK.setContext(
                     userId: 'user_007_bond',

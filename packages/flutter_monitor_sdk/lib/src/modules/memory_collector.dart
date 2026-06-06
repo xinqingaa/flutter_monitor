@@ -6,7 +6,12 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 
+/// Flutter/Dart 层 memory 采集器。
+///
+/// 该类基于当前进程 RSS 采集 memory sample，并根据前后样本计算 growth 和
+/// suspect leak 线索。它只上报事实与证据，不把内存增长直接断言为确定泄漏。
 class MemoryCollector {
+  /// 创建 memory collector。
   MemoryCollector(this._reporter, {required MonitorMemoryConfig config})
     : _config = config;
 
@@ -16,8 +21,13 @@ class MemoryCollector {
   _MemorySample? _baseline;
   _MemorySample? _lastSample;
 
+  /// 当前是否启用 memory 采集。
   bool get enabled => _config.enabled;
 
+  /// 记录一次 memory sample。
+  ///
+  /// [trigger] 表示采样触发源，例如 session start、page enter、manual。
+  /// 非强制采样会按配置的最小间隔限流。
   Future<void> recordSample({
     required String trigger,
     DateTime? timestamp,
@@ -48,6 +58,10 @@ class MemoryCollector {
     );
   }
 
+  /// 记录一次 memory growth 线索。
+  ///
+  /// 与上一个样本比较，超过 growth 阈值时生成 `memory.growth`，超过 suspect leak
+  /// 阈值时额外生成 `memory.leak.suspect`。
   Future<void> recordGrowth({
     required String trigger,
     DateTime? timestamp,
@@ -103,6 +117,9 @@ class MemoryCollector {
     }
   }
 
+  /// 记录一次 memory pressure。
+  ///
+  /// Flutter/Dart 层无法直接获得所有平台 pressure 信号时，可由内部或测试主动调用。
   void recordPressure({
     MemoryPressureLevel level = MemoryPressureLevel.unknown,
     String trigger = TriggerValues.manual,

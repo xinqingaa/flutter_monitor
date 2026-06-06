@@ -16,7 +16,14 @@ import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
 import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
 
-/// Reporter 是 SDK 的数据心脏，负责收集、丰富、缓存和发送所有监控事件。
+/// SDK 运行时的数据入口。
+///
+/// `Reporter` 接收采集器、native bridge、业务 API 产生的原始事实，
+/// 将它们整理成 [RawSignal] 后交给 [EventPipeline]。它同时持有 context、
+/// session、trace、breadcrumb 的管理器，因此负责保证事件进入统一
+/// `EventEnvelope` 前已经具备正确的链路关系。
+///
+/// 业务侧不直接依赖该类；`FlutterMonitorSDK` facade 会调用这里的稳定入口。
 class Reporter {
   static const int _httpErrorPayloadMaxLength = 300;
   static const Duration _nativeBootstrapResourceTimeout = Duration(
@@ -71,7 +78,10 @@ class Reporter {
     }
   }
 
-  /// Resolve resources that should be present before the first envelope.
+  /// 解析首批 envelope 前应具备的资源信息。
+  ///
+  /// 包括设备信息和 native bridge resource snapshot。该方法必须在启动 trace
+  /// 和 SDK init span 发出前完成，避免 bootstrap 事件缺少 resource/context。
   Future<void> resolveBootstrapResources() async {
     await _fetchDeviceInfo();
     await resolveNativeBootstrapResource(_config.nativeBridge);
@@ -79,6 +89,10 @@ class Reporter {
 
   Future<void> initAsync() => resolveBootstrapResources();
 
+  /// 解析 native bridge 的启动期 resource。
+  ///
+  /// 这里使用短 timeout，避免 native channel 不可用时阻塞 Flutter 启动。
+  /// 失败时会降级为 Flutter-only native context。
   Future<void> resolveNativeBootstrapResource(
     MonitorNativeBridge? bridge,
   ) async {
@@ -102,6 +116,10 @@ class Reporter {
     }
   }
 
+  /// 开始记录启动阶段的内存证据。
+  ///
+  /// cold start 和 hot start 都会复用这份临时记录，在 trace 结束时合并到
+  /// 启动 trace 的 attributes 中。
   void beginStartupPerformance({required DateTime startTime}) {
     _startupPerfRecord = _StartupPerfRecord(
       startedAt: startTime,
@@ -109,6 +127,7 @@ class Reporter {
     );
   }
 
+  /// 结束启动阶段内存证据记录，并返回可并入 trace 的 performance attributes。
   Map<String, Object?> finishStartupPerformance({num? memoryEndRssMb}) {
     final attributes =
         _startupPerfRecord
@@ -119,6 +138,7 @@ class Reporter {
     return attributes;
   }
 
+  /// 捕获当前进程 RSS，平台不支持或读取失败时返回 null。
   num? captureRssMb() {
     try {
       if (kIsWeb) return null;
@@ -128,6 +148,10 @@ class Reporter {
     }
   }
 
+  /// 接收 native bridge 送来的 native 信号。
+  ///
+  /// native plugin 只提供平台事实；字段映射和 envelope 构建仍由 SDK pipeline
+  /// 完成，避免 native 层形成第二套事件模型。
   PipelineResult recordNativeSignal(NativeSignal signal) {
     try {
       return _pipeline.capture(_nativeSignalMapper.map(signal));
@@ -184,6 +208,10 @@ class Reporter {
     }
   }
 
+  /// 开始一个内部 trace。
+  ///
+  /// 用于启动、页面访问、热启动等 SDK 内部链路。普通业务接入不直接调用；
+  /// 业务动作应使用 `FlutterMonitorSDK.track`。
   String startTrace(
     String name, {
     DateTime? startTime,
@@ -213,6 +241,9 @@ class Reporter {
     return record.traceId;
   }
 
+  /// 结束一个内部 trace，并发出 trace end envelope。
+  ///
+  /// 如果 trace 不存在，会发出 SDK self-monitoring 事件，便于排查链路闭合问题。
   PipelineResult? endTrace(
     String traceId, {
     DateTime? endTime,
@@ -256,6 +287,9 @@ class Reporter {
     );
   }
 
+  /// 开始一个内部 span。
+  ///
+  /// span 表示 trace 中的阶段，例如页面加载、HTTP 请求、SDK init。
   String startSpan(
     String name, {
     String? traceId,
@@ -291,6 +325,7 @@ class Reporter {
     return record.spanId;
   }
 
+  /// 结束一个内部 span，并发出 span end envelope。
   PipelineResult? endSpan(
     String spanId, {
     DateTime? endTime,
@@ -336,6 +371,9 @@ class Reporter {
     );
   }
 
+  /// 记录一个内部 breadcrumb。
+  ///
+  /// 该能力服务 SDK 内部或测试；普通业务动作由 [track] 生成业务 breadcrumb。
   PipelineResult addBreadcrumb(
     String name, {
     EventLevel level = EventLevel.info,
@@ -737,6 +775,10 @@ class Reporter {
     );
   }
 
+  /// 记录业务侧主动上报的已处理错误。
+  ///
+  /// 该入口对应 public `FlutterMonitorSDK.recordError`，会生成标准 error
+  /// envelope，并携带当前 context、trace 和 recent breadcrumbs。
   PipelineResult recordManualError(
     Object error, {
     StackTrace? stackTrace,
@@ -911,6 +953,10 @@ class Reporter {
     );
   }
 
+  /// 记录一次业务动作 breadcrumb。
+  ///
+  /// 该入口对应 public `FlutterMonitorSDK.track`。它不设置全局上下文；
+  /// [properties] 只进入本次事件的 payload，用于详情排查。
   PipelineResult track({
     required String action,
     MonitorTrackResult result = MonitorTrackResult.unknown,
@@ -1002,6 +1048,10 @@ class Reporter {
     );
   }
 
+  /// 处理 Flutter/Dart lifecycle 变化。
+  ///
+  /// 这里负责更新 lifecycle context、记录前后台 duration、切分 session、
+  /// 生成 hot start trace，并在后台或退出时触发 flush。
   Future<void> handleLifecycleState(String state, {DateTime? timestamp}) async {
     final occurredAt = timestamp ?? DateTime.now();
     final previousState = _contextManager.lifecycleState;
@@ -1221,36 +1271,45 @@ class Reporter {
     );
   }
 
-  /// 动态设置用户信息（运行时更新）
+  /// 动态设置用户信息（内部 legacy 入口）。
+  ///
+  /// 主 public API 已收敛到 `setContext`；该方法保留给内部测试和旧配置路径。
   void setUserInfo(UserInfo userInfo) {
     _contextManager.setUserInfo(userInfo);
     debugPrint("✅ 用户信息已更新: ${userInfo.userId}");
   }
 
-  /// 动态设置用户ID（简化方法）
+  /// 动态设置用户 ID（内部 legacy 入口）。
   void setUserId(String userId) {
     _contextManager.setUserId(userId);
     debugPrint("✅ 用户ID已更新: $userId");
   }
 
-  /// 动态设置自定义数据（运行时更新）
+  /// 动态设置自定义数据（内部 legacy 入口）。
+  ///
+  /// customData 不会提升为 attributes，也不作为新的 public API 推荐。
   void setCustomData(Map<String, dynamic> data) {
     _contextManager.setCustomData(data);
     debugPrint("✅ 自定义数据已更新: $data");
   }
 
-  /// 清除用户信息（用户登出时调用）
+  /// 清除用户信息（内部 legacy 入口）。
   void clearUserInfo() {
     _contextManager.clearUserInfo();
     debugPrint("✅ 用户信息已清除");
   }
 
-  /// 清除自定义数据
+  /// 清除自定义数据（内部 legacy 入口）。
   void clearCustomData() {
     _contextManager.clearCustomData();
     debugPrint("✅ 自定义数据已清除");
   }
 
+  /// 设置运行时 canonical context。
+  ///
+  /// 该方法是 public `setContext` 和 `init(initialContext: ...)` 的共同落点，
+  /// 负责把业务友好的参数写入 `context.user.*`、`context.module.*`、
+  /// `context.release.*` 和 `context.network.*`。
   void setContext({
     String? userId,
     String? userType,
@@ -1293,6 +1352,9 @@ class Reporter {
     }
   }
 
+  /// 按 scope 清理运行时 context。
+  ///
+  /// 例如用户登出时清理 user scope，避免后续事件继续携带旧用户信息。
   void clearContext(Set<MonitorContextScope> scopes) {
     for (final scope in scopes) {
       switch (scope) {
@@ -1312,6 +1374,9 @@ class Reporter {
     }
   }
 
+  /// 更新当前 route context。
+  ///
+  /// 由 route observer 和页面 trace 管理逻辑调用，后续事件会自动携带该 route。
   void setCurrentRoute(String? routeName, {String? fullName}) {
     _contextManager.setRouteName(routeName, fullName: fullName);
   }
@@ -1326,11 +1391,16 @@ class Reporter {
     _contextManager.setModule(name: name, scene: scene);
   }
 
+  /// flush 所有 output 队列。
+  ///
+  /// [isAppExiting] 会透传给 output，允许 output 使用退出场景的发送策略。
   Future<void> flush({bool isAppExiting = false}) {
     return _pipeline.flush(isAppExiting: isAppExiting);
   }
 
-  /// 清理资源，在应用关闭时调用。
+  /// 清理资源，在应用关闭或测试结束时调用。
+  ///
+  /// 会先闭合活跃页面 trace，再 flush，最后调用所有 output 的 dispose。
   Future<void> dispose() async {
     finishActivePageTraces(endReason: PageEndReasons.appDispose);
     await flush(isAppExiting: true);

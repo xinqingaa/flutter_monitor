@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'monitor_output.dart';
 
 /// 定义一个函数类型，用于处理从 SDK 传出的监控事件。
+///
 /// 用户可以实现这个函数，将事件对接到他们自己的日志系统中。
 /// [event] 是一个包含所有丰富字段的、结构化的事件 Map。
 typedef MonitorLogHandler = void Function(Map<String, dynamic> event);
@@ -13,6 +14,7 @@ typedef MonitorLogHandler = void Function(Map<String, dynamic> event);
 /// 委托给一个由用户在构造时提供的 [onLog] 回调函数。
 /// 这允许用户将 SDK 的监控数据无缝集成到项目现有的日志框架中。
 class CustomLogOutput extends MonitorOutput {
+  /// 每个 envelope 到达时调用的业务自定义处理函数。
   final MonitorLogHandler onLog;
 
   /// 创建一个自定义日志输出器。

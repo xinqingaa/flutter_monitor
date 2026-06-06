@@ -5,14 +5,29 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart'
     show PageActivitySnapshot;
 
+/// 页面帧窗口类型。
+///
+/// 当前 SDK 只聚合页面活动窗口，后续可扩展 app/window/interaction 等窗口类型。
 const pageFrameWindowType = 'page';
 
+/// 页面活动期间的 frame timing 聚合器。
+///
+/// 页面进入或恢复时打开窗口，页面被覆盖、退出、后台或 dispose 时关闭窗口，
+/// 并输出 [FrameStatsSnapshot]。Reporter 会把快照合并到页面 trace 的
+/// `frame.*` attributes 中，作为页面性能排查证据。
 class FrameWindowCollector {
+  /// 创建 frame window collector。
+  ///
+  /// [onPageWindowFinished] 在窗口闭合且至少有一个 frame 样本时触发。
   FrameWindowCollector({this.onPageWindowFinished});
 
+  /// 页面窗口完成后的回调。
   final void Function(FrameStatsSnapshot snapshot)? onPageWindowFinished;
   final Map<String, _FrameWindow> _windows = <String, _FrameWindow>{};
 
+  /// 当前视图刷新率。
+  ///
+  /// 读取不到有效值时使用 60Hz，保证 frame budget 计算有稳定兜底。
   double get refreshRate {
     final views = SchedulerBinding.instance.platformDispatcher.views;
     if (views.isEmpty) return 60;
@@ -20,8 +35,10 @@ class FrameWindowCollector {
     return value > 0 ? value : 60;
   }
 
+  /// 当前刷新率对应的单帧预算，单位毫秒。
   double get frameBudgetMs => 1000 / refreshRate;
 
+  /// 为页面活动打开一个 frame 聚合窗口。
   void startPageWindow(PageActivitySnapshot activity) {
     if (_windows.containsKey(pageFrameWindowType)) return;
     _windows[pageFrameWindowType] = _FrameWindow(
@@ -34,6 +51,9 @@ class FrameWindowCollector {
     );
   }
 
+  /// 记录一批 Flutter frame timings。
+  ///
+  /// 所有已打开窗口都会收到样本，当前主要用于页面窗口。
   void recordTimings(List<FrameTiming> timings) {
     if (_windows.isEmpty) return;
     for (final timing in timings) {
@@ -44,6 +64,9 @@ class FrameWindowCollector {
     }
   }
 
+  /// 闭合页面窗口并输出快照。
+  ///
+  /// [phase] 用于说明窗口为什么结束，例如页面退出、被覆盖、进入后台或 SDK dispose。
   void finishPageWindow(String phase, {DateTime? timestamp}) {
     final window = _windows.remove(pageFrameWindowType);
     if (window == null) return;
@@ -51,6 +74,7 @@ class FrameWindowCollector {
     if (snapshot != null) onPageWindowFinished?.call(snapshot);
   }
 
+  /// SDK dispose 时闭合仍未结束的页面 frame 窗口。
   void dispose({DateTime? timestamp}) {
     finishPageWindow(PageActivePhases.appDispose, timestamp: timestamp);
   }
@@ -87,6 +111,10 @@ class FrameWindowCollector {
   }
 }
 
+/// 一段页面 frame window 的统计快照。
+///
+/// 该对象仍是 SDK 内部中间态；最终会通过 [toAttributes] 转为 core 注册的
+/// `frame.*` / `page.*` attributes，合并到页面 trace 或相关事件。
 class FrameStatsSnapshot {
   const FrameStatsSnapshot({
     required this.windowType,
@@ -110,26 +138,64 @@ class FrameStatsSnapshot {
     this.endTime,
   });
 
+  /// 窗口类型，例如 `page`。
   final String windowType;
+
+  /// 窗口结束阶段，例如 `exit`、`covered`、`lifecycle.background`。
   final String windowPhase;
+
+  /// 收集到的 frame 样本数。
   final int sampleCount;
+
+  /// 超过 frame budget 的慢帧数。
   final int slowCount;
+
+  /// 按 frame budget 估算出的掉帧数。
   final int droppedCount;
+
+  /// 当前刷新率。
   final num refreshRate;
+
+  /// 最大帧耗时，单位毫秒。
   final num frameMaxMs;
+
+  /// 平均帧耗时，单位毫秒。
   final num frameAvgMs;
+
+  /// 当前刷新率对应的单帧预算，单位毫秒。
   final num frameBudgetMs;
+
+  /// 估算 FPS。
   final num? frameFps;
+
+  /// 帧稳定性，越接近 1 越稳定。
   final num? frameStability;
+
+  /// P50 帧耗时。
   final num? frameP50Ms;
+
+  /// P90 帧耗时。
   final num? frameP90Ms;
+
+  /// P99 帧耗时。
   final num? frameP99Ms;
+
+  /// 快照对应的 route name。
   final String? routeName;
+
+  /// 快照对应的页面 trace id。
   final String? traceId;
+
+  /// 页面实例 id，用于区分同名 route 的多次打开。
   final String? pageInstanceId;
+
+  /// 窗口开始时间。
   final DateTime? startTime;
+
+  /// 窗口结束时间。
   final DateTime? endTime;
 
+  /// 转换为 core 注册过的 attributes。
   Map<String, Object?> toAttributes() {
     return <String, Object?>{
       FieldPaths.frameSampleCount: sampleCount,
