@@ -4,6 +4,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
+import 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
@@ -736,6 +737,41 @@ class Reporter {
     );
   }
 
+  PipelineResult recordManualError(
+    Object error, {
+    StackTrace? stackTrace,
+    String? type,
+    bool handled = true,
+    EventLevel level = EventLevel.error,
+    Map<String, Object?> properties = const <String, Object?>{},
+  }) {
+    return _pipeline.capture(
+      RawSignal(
+        source: SignalSources.sdkError,
+        name: EventNames.errorManual,
+        signalType: SignalType.error,
+        timestamp: DateTime.now(),
+        level: level,
+        status: EventStatus.error,
+        priority: level == EventLevel.fatal
+            ? EventPriority.critical
+            : EventPriority.high,
+        attributes: <String, Object?>{
+          FieldPaths.errorType: type ?? error.runtimeType.toString(),
+          FieldPaths.errorMechanism: ErrorMechanisms.manual,
+          FieldPaths.errorHandled: handled,
+          FieldPaths.errorFatal: level == EventLevel.fatal,
+        },
+        payload: <String, Object?>{
+          FieldPaths.payloadErrorMessage: error.toString(),
+          if (stackTrace != null)
+            FieldPaths.payloadErrorStacktrace: stackTrace.toString(),
+          if (properties.isNotEmpty) FieldPaths.payloadProperties: properties,
+        },
+      ),
+    );
+  }
+
   PipelineResult recordMemorySample({
     num? rssMb,
     num? heapUsedMb,
@@ -1213,6 +1249,67 @@ class Reporter {
   void clearCustomData() {
     _contextManager.clearCustomData();
     debugPrint("✅ 自定义数据已清除");
+  }
+
+  void setContext({
+    String? userId,
+    String? userType,
+    List<String>? userTags,
+    String? cohort,
+    String? moduleName,
+    String? moduleScene,
+    String? releaseId,
+    List<String>? featureFlags,
+    Map<String, Object?>? experiments,
+    String? networkType,
+    bool? isWeakNetwork,
+  }) {
+    if (userId != null ||
+        userType != null ||
+        userTags != null ||
+        cohort != null) {
+      _contextManager.setUserContext(
+        userId: userId,
+        userType: userType,
+        userTags: userTags,
+        cohort: cohort,
+      );
+    }
+    if (moduleName != null || moduleScene != null) {
+      _contextManager.setModule(name: moduleName, scene: moduleScene);
+    }
+    if (releaseId != null || featureFlags != null || experiments != null) {
+      _contextManager.setRelease(
+        releaseId: releaseId,
+        featureFlags: featureFlags,
+        experiments: experiments,
+      );
+    }
+    if (networkType != null || isWeakNetwork != null) {
+      _contextManager.setNetwork(
+        type: networkType,
+        isWeakNetwork: isWeakNetwork,
+      );
+    }
+  }
+
+  void clearContext(Set<MonitorContextScope> scopes) {
+    for (final scope in scopes) {
+      switch (scope) {
+        case MonitorContextScope.user:
+          _contextManager.clearUserContext();
+          break;
+        case MonitorContextScope.module:
+          _contextManager.clearModule();
+          break;
+        case MonitorContextScope.release:
+          _contextManager.clearRelease();
+          break;
+        case MonitorContextScope.network:
+          _contextManager.clearNetwork();
+          break;
+      }
+    }
   }
 
   void setCurrentRoute(String? routeName, {String? fullName}) {

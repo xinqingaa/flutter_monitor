@@ -574,16 +574,18 @@ await FlutterMonitorSDK.init(
 
 - SDK 初始化；
 - 业务主动埋点 `track(...)`；
-- 设置通用上下文，例如目标 `setContext(...)`；
-- 手动上报 error；
+- 设置通用上下文 `setContext(...)` 和按 scope 清理 `clearContext(...)`；
+- 手动上报已处理 error `recordError(...)`；
 - 获取 route observer；
-- 获取 Dio interceptor；
-- 获取 `http` client；
+- 创建 Dio interceptor；
+- 创建 `http` client；
+- 标记页面首帧完成；
+- 手动记录 lifecycle state；
 - 注册可选 native bridge；
 - flush；
-
-普通真实 App 接入不应被要求理解 trace/span/breadcrumb、`FieldPaths`、`RawSignal`、`EventEnvelope`、attributes/payload。`startTrace`、`startSpan`、`addBreadcrumb`、自定义 attributes/payload 等能力如保留，应定位为 SDK 内部、高级诊断或调试能力，不作为普通业务接入推荐路径。历史 `setUserId`、`setUserInfo`、`setCustomData` 应逐步归并到统一上下文语义，避免 public API 面形成多套概念。
 - dispose。
+
+普通真实 App 接入不应被要求理解 trace/span/breadcrumb、`FieldPaths`、`RawSignal`、`EventEnvelope`、attributes/payload。`startTrace`、`startSpan`、`addBreadcrumb`、自定义 attributes/payload、`MonitorBinding`、`Reporter` 等能力定位为 SDK 内部或未来高级诊断入口，不从主库导出。历史 `setUserId`、`setUserInfo`、`setCustomData`、`setModule` 不再作为 public API；用户、模块、发布和网络上下文统一通过 `setContext(...)` 表达。
 
 API 要求：
 

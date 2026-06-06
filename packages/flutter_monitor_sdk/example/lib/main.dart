@@ -42,7 +42,7 @@ final dio = Dio(
     connectTimeout: const Duration(seconds: 2),
     receiveTimeout: const Duration(seconds: 3),
   ),
-)..interceptors.add(FlutterMonitorSDK.dioInterceptor);
+);
 
 void main() async {
   // 记录启动时间
@@ -108,11 +108,7 @@ void main() async {
   //   ),
   //   // 自动获取配置
   //   // appInfo: appInfo,
-  //   // 默认用户信息
-  //   // userInfo: const UserInfo(
-  //   //   userId: 'user_123',
-  //   //   userType: 'tester',
-  //   // ),
+  //   // 用户上下文请在 init 后通过 FlutterMonitorSDK.setContext(...) 设置。
   //   enableJankMonitor: true,
   //   jankConfig: JankConfig.lenient(),
   //   outputs: monitorOutputs, // 可选，不传则使用默认输出
@@ -123,6 +119,7 @@ void main() async {
     config: monitorConfig,
     appStartTime: appStartTime,
   );
+  dio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
 
   // 运行App
   runApp(const MyApp());

@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 import 'package:flutter_monitor_sdk/src/utils/monitored_http_client.dart';
 
-export 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
+export 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 export 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
-export 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
-export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart';
+export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart'
+    show JankConfig;
 export 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
 export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
@@ -24,12 +25,11 @@ export 'package:flutter_monitor_core/flutter_monitor_core.dart'
 class FlutterMonitorSDK {
   FlutterMonitorSDK._();
 
-  static final FlutterMonitorSDK _instance = FlutterMonitorSDK._();
-  static FlutterMonitorSDK get instance => _instance;
-
   static bool _isInitialized = false;
 
-  static RouteObserver get routeObserver {
+  static bool get isInitialized => _isInitialized;
+
+  static RouteObserver<PageRoute<dynamic>> get routeObserver {
     if (!_isInitialized) {
       throw SDKNotInitializedException(
         '请先调用 FlutterMonitorSDK.init() 再使用 routeObserver。',
@@ -38,32 +38,66 @@ class FlutterMonitorSDK {
     return MonitorBinding.instance.performanceMonitor.routeObserver;
   }
 
-  static Interceptor get dioInterceptor {
+  static Interceptor createDioInterceptor() {
     if (!_isInitialized) {
       throw SDKNotInitializedException(
-        '请先调用 FlutterMonitorSDK.init() 再使用 dioInterceptor。',
+        '请先调用 FlutterMonitorSDK.init() 再创建 Dio interceptor。',
       );
     }
-    // SDK 内部负责创建拦截器实例，并传入所需的依赖（reporter）
-    // 使用者无需关心其内部实现
     return MonitorDioInterceptor(MonitorBinding.instance.reporter);
   }
 
-  static http.Client get httpClient {
+  static http.Client createHttpClient({http.Client? inner}) {
     if (!_isInitialized) {
       throw SDKNotInitializedException(
-        '请先调用 FlutterMonitorSDK.init() 再使用 httpClient。',
+        '请先调用 FlutterMonitorSDK.init() 再创建 http client。',
       );
     }
-    // 同样，SDK 内部负责创建实例
-    return MonitoredHttpClient(MonitorBinding.instance.reporter, http.Client());
+    return MonitoredHttpClient(
+      MonitorBinding.instance.reporter,
+      inner ?? http.Client(),
+    );
   }
 
-  static void onPageRendered(String? pageName) {
+  static void markPageRendered(String routeName) {
     if (!_isInitialized) return;
     MonitorBinding.instance.performanceMonitor.routeObserver.onPageRendered(
-      pageName,
+      routeName,
     );
+  }
+
+  static void setContext({
+    String? userId,
+    String? userType,
+    List<String>? userTags,
+    String? cohort,
+    String? moduleName,
+    String? moduleScene,
+    String? releaseId,
+    List<String>? featureFlags,
+    Map<String, Object?>? experiments,
+    String? networkType,
+    bool? isWeakNetwork,
+  }) {
+    if (!_isInitialized) return;
+    MonitorBinding.instance.reporter.setContext(
+      userId: userId,
+      userType: userType,
+      userTags: userTags,
+      cohort: cohort,
+      moduleName: moduleName,
+      moduleScene: moduleScene,
+      releaseId: releaseId,
+      featureFlags: featureFlags,
+      experiments: experiments,
+      networkType: networkType,
+      isWeakNetwork: isWeakNetwork,
+    );
+  }
+
+  static void clearContext({required Set<MonitorContextScope> scopes}) {
+    if (!_isInitialized) return;
+    MonitorBinding.instance.reporter.clearContext(scopes);
   }
 
   static void track({
@@ -85,18 +119,32 @@ class FlutterMonitorSDK {
     );
   }
 
-  static void setModule({String? name, String? scene}) {
+  static void recordError(
+    Object error, {
+    StackTrace? stackTrace,
+    String? type,
+    bool handled = true,
+    MonitorEventLevel level = MonitorEventLevel.error,
+    Map<String, Object?> properties = const <String, Object?>{},
+  }) {
     if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.setModule(name: name, scene: scene);
+    MonitorBinding.instance.reporter.recordManualError(
+      error,
+      stackTrace: stackTrace,
+      type: type,
+      handled: handled,
+      level: level,
+      properties: properties,
+    );
   }
 
-  static Future<void> handleLifecycleState(
-    String state, {
+  static Future<void> recordLifecycleState(
+    AppLifecycleState state, {
     DateTime? timestamp,
   }) {
     if (!_isInitialized) return Future<void>.value();
     return MonitorBinding.instance.handleLifecycleState(
-      state,
+      _lifecycleStateName(state),
       timestamp: timestamp,
     );
   }
@@ -126,34 +174,14 @@ class FlutterMonitorSDK {
     debugPrint("FlutterMonitorSDK initialized successfully.");
   }
 
-  /// 动态设置用户ID（运行时更新）
-  void setUserId(String userId) {
-    if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.setUserId(userId);
-  }
-
-  /// 动态设置用户信息（运行时更新）
-  void setUserInfo(UserInfo userInfo) {
-    if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.setUserInfo(userInfo);
-  }
-
-  /// 动态设置自定义数据（运行时更新）
-  void setCustomData(Map<String, dynamic> data) {
-    if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.setCustomData(data);
-  }
-
-  /// 清除用户信息（用户登出时调用）
-  void clearUserInfo() {
-    if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.clearUserInfo();
-  }
-
-  /// 清除自定义数据
-  void clearCustomData() {
-    if (!_isInitialized) return;
-    MonitorBinding.instance.reporter.clearCustomData();
+  static String _lifecycleStateName(AppLifecycleState state) {
+    return switch (state) {
+      AppLifecycleState.detached => LifecycleStates.detached,
+      AppLifecycleState.hidden => LifecycleStates.hidden,
+      AppLifecycleState.inactive => LifecycleStates.inactive,
+      AppLifecycleState.paused => LifecycleStates.paused,
+      AppLifecycleState.resumed => LifecycleStates.resumed,
+    };
   }
 }
 

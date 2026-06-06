@@ -13,7 +13,11 @@ class ContextManager {
   Map<String, Object?>? _deviceInfo;
   NativeResourceSnapshot? _nativeSnapshot;
   UserInfo? _runtimeUserInfo;
+  String? _runtimeUserCohort;
+  bool _userContextCleared = false;
   Map<String, Object?>? _runtimeCustomData;
+  ReleaseContext? _runtimeRelease;
+  NetworkContext? _runtimeNetwork;
   String? _currentRouteName;
   String? _currentRouteFullName;
   String? _currentModuleName;
@@ -36,7 +40,10 @@ class ContextManager {
       _runtimeCustomData ?? _config.customData?.cast<String, Object?>();
 
   ContextSnapshot capture() {
-    final userInfo = _runtimeUserInfo ?? _config.userInfo;
+    final userInfo = _userContextCleared
+        ? null
+        : _runtimeUserInfo ?? _config.userInfo;
+    final userCohort = _runtimeUserInfo == null ? null : _runtimeUserCohort;
     final effectiveCustomData = customData;
     final hasContext =
         userInfo != null ||
@@ -44,6 +51,8 @@ class ContextManager {
         _currentRouteName != null ||
         _currentModuleName != null ||
         _currentScene != null ||
+        _runtimeNetwork != null ||
+        _runtimeRelease != null ||
         _lifecycleState != null;
 
     return ContextSnapshot(
@@ -55,6 +64,7 @@ class ContextManager {
                 userId: userInfo.userId,
                 userType: userInfo.userType,
                 userTags: userInfo.userTags,
+                cohort: userCohort,
               ),
         route: _currentRouteName == null
             ? null
@@ -67,6 +77,8 @@ class ContextManager {
         module: _currentModuleName == null && _currentScene == null
             ? null
             : ModuleContext(name: _currentModuleName, scene: _currentScene),
+        network: _runtimeNetwork,
+        release: _runtimeRelease,
         lifecycle: _lifecycleState == null
             ? null
             : LifecycleContext(
@@ -87,14 +99,20 @@ class ContextManager {
 
   void setUserInfo(UserInfo userInfo) {
     _runtimeUserInfo = userInfo;
+    _runtimeUserCohort = null;
+    _userContextCleared = false;
   }
 
   void setUserId(String userId) {
     _runtimeUserInfo = UserInfo(userId: userId);
+    _runtimeUserCohort = null;
+    _userContextCleared = false;
   }
 
   void clearUserInfo() {
     _runtimeUserInfo = null;
+    _runtimeUserCohort = null;
+    _userContextCleared = true;
   }
 
   void setCustomData(Map<String, dynamic> data) {
@@ -103,6 +121,27 @@ class ContextManager {
 
   void clearCustomData() {
     _runtimeCustomData = null;
+  }
+
+  void setUserContext({
+    String? userId,
+    String? userType,
+    List<String>? userTags,
+    String? cohort,
+  }) {
+    _runtimeUserInfo = UserInfo(
+      userId: userId,
+      userType: userType,
+      userTags: userTags,
+    );
+    _runtimeUserCohort = cohort;
+    _userContextCleared = false;
+  }
+
+  void clearUserContext() {
+    _runtimeUserInfo = null;
+    _runtimeUserCohort = null;
+    _userContextCleared = true;
   }
 
   void setRouteName(String? routeName, {String? fullName}) {
@@ -116,6 +155,35 @@ class ContextManager {
   void setModule({String? name, String? scene}) {
     _currentModuleName = name;
     _currentScene = scene;
+  }
+
+  void clearModule() {
+    _currentModuleName = null;
+    _currentScene = null;
+  }
+
+  void setRelease({
+    String? releaseId,
+    List<String>? featureFlags,
+    Map<String, Object?>? experiments,
+  }) {
+    _runtimeRelease = ReleaseContext(
+      releaseId: releaseId,
+      featureFlags: featureFlags,
+      experiments: experiments,
+    );
+  }
+
+  void clearRelease() {
+    _runtimeRelease = null;
+  }
+
+  void setNetwork({String? type, bool? isWeakNetwork}) {
+    _runtimeNetwork = NetworkContext(type: type, isWeakNetwork: isWeakNetwork);
+  }
+
+  void clearNetwork() {
+    _runtimeNetwork = null;
   }
 
   void setLifecycleState(String state) {

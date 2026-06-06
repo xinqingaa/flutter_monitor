@@ -25,7 +25,7 @@ class _PageRenderMonitorState extends State<PageRenderMonitor> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 检查 widget 是否还在树上
       if (mounted) {
-        MonitorBinding.instance.performanceMonitor.routeObserver.onPageRendered(widget.pageName);
+        FlutterMonitorSDK.markPageRendered(widget.pageName);
       }
     });
   }

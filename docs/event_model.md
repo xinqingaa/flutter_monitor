@@ -559,18 +559,20 @@ FlutterMonitorSDK.track(
 
 ### 通用上下文入口
 
-为了支持 QA 和开发者从人类排查入口找到 session，SDK 应提供一个统一上下文入口。该入口用于补充后续事件都会携带的 context snapshot，而不是记录某一次业务动作。
+为了支持 QA 和开发者从人类排查入口找到 session，SDK 提供统一上下文入口。该入口用于补充后续事件都会携带的 context snapshot，而不是记录某一次业务动作。
 
-建议目标形态：
+推荐形态：
 
 ```dart
 FlutterMonitorSDK.setContext(
   userId: 'user_001',
   userType: 'qa',
+  moduleName: 'checkout',
+  moduleScene: 'submit',
 );
 ```
 
-第一阶段只要求通用上下文字段，不设计可声明业务维度或任意自定义索引字段：
+当前 public API 只支持 canonical context 字段，不支持任意 custom map 或自定义索引字段：
 
 | 参数 | 内部映射 | 说明 |
 |---|---|---|
@@ -578,8 +580,23 @@ FlutterMonitorSDK.setContext(
 | `userType` | `context.user.userType` | 用户类型 |
 | `userTags` | `context.user.userTags` | 用户标签 |
 | `cohort` | `context.user.cohort` | 用户分群 |
+| `moduleName` | `context.module.name` | 模块名，可选增强检索维度 |
+| `moduleScene` | `context.module.scene` | 模块场景，可选增强检索维度 |
+| `releaseId` | `context.release.releaseId` | 发布批次或版本标识 |
+| `featureFlags` | `context.release.featureFlags` | 灰度或功能开关 |
+| `experiments` | `context.release.experiments` | 实验分组 |
+| `networkType` | `context.network.type` | 当前网络类型 |
+| `isWeakNetwork` | `context.network.isWeakNetwork` | 是否弱网 |
 
-route、app、device、runtime、HTTP、错误、卡顿、启动等上下文应优先由 SDK 自动采集。`context.module.name` 和 `context.module.scene` 是可选增强上下文，但目前不作为核心接入要求；不应要求业务方在每个代码模块或页面频繁手动调用上下文 API。
+route、app、device、runtime、HTTP、错误、卡顿、启动等上下文应优先由 SDK 自动采集。`setContext(...)` 只用于业务方确实掌握且有排查价值的通用上下文；不应要求业务方在每个代码模块或页面频繁手动调用上下文 API。
+
+上下文清理使用 scope：
+
+```dart
+FlutterMonitorSDK.clearContext(
+  scopes: {MonitorContextScope.user, MonitorContextScope.network},
+);
+```
 
 如果 App 不调用统一上下文入口，SDK 仍必须能采集和查询基础链路。Workbench 仍可按时间范围、App 版本、环境、页面、错误、慢请求、卡顿、启动问题、session/trace/event ID 等维度查找数据。只有按用户排查时，才依赖 App 提供 `context.user.userId`。
 

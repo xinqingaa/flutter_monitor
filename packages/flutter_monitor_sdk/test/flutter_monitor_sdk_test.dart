@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
+import 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
@@ -371,6 +373,139 @@ void main() {
     expect(payload.containsKey('legacy.customData'), isFalse);
     expect(payload.containsKey('legacy.userProperties'), isFalse);
   });
+
+  test(
+    'setContext captures canonical user module release and network context',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+
+      reporter.setContext(
+        userId: 'user_001',
+        userType: 'qa',
+        userTags: const <String>['vip', 'beta'],
+        cohort: 'internal',
+        moduleName: 'checkout',
+        moduleScene: 'submit',
+        releaseId: '2026.06.06',
+        featureFlags: const <String>['new_cart'],
+        experiments: const <String, Object?>{'checkout_flow': 'b'},
+        networkType: 'wifi',
+        isWeakNetwork: false,
+      );
+      reporter.track(action: 'checkout.submit');
+
+      final context = output.events.single['context'] as Map;
+      final user = context['user'] as Map;
+      final module = context['module'] as Map;
+      final release = context['release'] as Map;
+      final network = context['network'] as Map;
+
+      expect(user['userId'], 'user_001');
+      expect(user['userType'], 'qa');
+      expect(user['userTags'], <String>['vip', 'beta']);
+      expect(user['cohort'], 'internal');
+      expect(module['name'], 'checkout');
+      expect(module['scene'], 'submit');
+      expect(release['releaseId'], '2026.06.06');
+      expect(release['featureFlags'], <String>['new_cart']);
+      expect((release['experiments'] as Map)['checkout_flow'], 'b');
+      expect(network['type'], 'wifi');
+      expect(network['isWeakNetwork'], isFalse);
+      expect(context['missing'], isFalse);
+    },
+  );
+
+  test('clearContext removes selected runtime context scopes', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        userInfo: const UserInfo(userId: 'config_user'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    reporter.setContext(
+      userId: 'runtime_user',
+      moduleName: 'profile',
+      moduleScene: 'edit',
+      releaseId: 'release_a',
+      networkType: 'cellular',
+      isWeakNetwork: true,
+    );
+    reporter.clearContext(<MonitorContextScope>{
+      MonitorContextScope.user,
+      MonitorContextScope.network,
+    });
+    reporter.track(action: 'profile.save');
+
+    final context = output.events.single['context'] as Map;
+    expect(context['user'], isNull);
+    expect(context['network'], isNull);
+    expect(context['module'], isA<Map>());
+    expect(context['release'], isA<Map>());
+    expect((context['module'] as Map)['name'], 'profile');
+    expect((context['release'] as Map)['releaseId'], 'release_a');
+  });
+
+  test(
+    'manual error records standard error envelope with context and breadcrumbs',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+
+      reporter.setContext(userId: 'user_001', moduleName: 'profile');
+      reporter.track(
+        action: 'profile.save',
+        result: MonitorTrackResult.failed,
+        target: 'save_button',
+      );
+      reporter.recordManualError(
+        StateError('validation failed'),
+        type: 'validation_failed',
+        handled: true,
+        properties: const <String, Object?>{'field': 'phone'},
+      );
+
+      final event = output.events.last;
+      final attributes = event['attributes'] as Map;
+      final payload = event['payload'] as Map;
+      final context = event['context'] as Map;
+      final breadcrumbs = payload[FieldPaths.payloadBreadcrumbs] as List;
+
+      expect(event['name'], EventNames.errorManual);
+      expect(event['signalType'], SignalType.error.toJson());
+      expect(event['status'], EventStatus.error.toJson());
+      expect(attributes[FieldPaths.errorType], 'validation_failed');
+      expect(attributes[FieldPaths.errorMechanism], ErrorMechanisms.manual);
+      expect(attributes[FieldPaths.errorHandled], isTrue);
+      expect(
+        payload[FieldPaths.payloadErrorMessage],
+        contains('validation failed'),
+      );
+      expect((payload[FieldPaths.payloadProperties] as Map)['field'], 'phone');
+      expect(((context['user'] as Map)['userId']), 'user_001');
+      expect(((context['module'] as Map)['name']), 'profile');
+      expect(
+        breadcrumbs.any((breadcrumb) {
+          final item = breadcrumb as Map;
+          return item['name'] == 'profile.save';
+        }),
+        isTrue,
+      );
+    },
+  );
 
   test('privacy filter removes forbidden fields before output', () {
     final output = RecordingOutput();

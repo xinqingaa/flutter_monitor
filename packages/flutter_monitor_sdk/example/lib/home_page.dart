@@ -53,13 +53,13 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
-    _monitoredHttpClient = FlutterMonitorSDK.httpClient;
+    _monitoredHttpClient = FlutterMonitorSDK.createHttpClient();
     _memoryJankController =
         AnimationController(vsync: this, duration: const Duration(seconds: 2))
           ..addListener(() {
             setState(() {});
           });
-    FlutterMonitorSDK.setModule(name: 'example', scene: 'home');
+    FlutterMonitorSDK.setContext(moduleName: 'example', moduleScene: 'home');
   }
 
   @override
@@ -266,11 +266,11 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _simulateBackgroundMemoryGrowth() async {
-    await FlutterMonitorSDK.handleLifecycleState('paused');
+    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.paused);
     await Future<void>.delayed(const Duration(milliseconds: 150));
     _allocateRetainedMemory();
     await Future<void>.delayed(const Duration(milliseconds: 150));
-    await FlutterMonitorSDK.handleLifecycleState('resumed');
+    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.resumed);
     _show('Background/resume memory growth scenario finished.');
   }
 
@@ -284,9 +284,9 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _simulateLifecycle() async {
-    await FlutterMonitorSDK.handleLifecycleState('paused');
+    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.paused);
     await Future<void>.delayed(const Duration(milliseconds: 300));
-    await FlutterMonitorSDK.handleLifecycleState('resumed');
+    await FlutterMonitorSDK.recordLifecycleState(AppLifecycleState.resumed);
     _show('Lifecycle paused/resumed simulated.');
   }
 
@@ -468,17 +468,11 @@ class _HomePageState extends State<HomePage>
                 label: 'Set premium user context',
                 color: Theme.of(context).colorScheme.primary,
                 onPressed: () {
-                  FlutterMonitorSDK.instance.setUserInfo(
-                    const UserInfo(
-                      userId: 'user_007_bond',
-                      userType: 'premium',
-                      userTags: ['vip', 'beta'],
-                      userProperties: {
-                        'age': 30,
-                        'city': 'Beijing',
-                        'subscription': 'premium',
-                      },
-                    ),
+                  FlutterMonitorSDK.setContext(
+                    userId: 'user_007_bond',
+                    userType: 'premium',
+                    userTags: const ['vip', 'beta'],
+                    cohort: 'example_premium',
                   );
                   _show('User context updated.');
                 },

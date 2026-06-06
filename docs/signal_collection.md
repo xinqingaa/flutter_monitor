@@ -819,18 +819,28 @@ Native memory pressure 映射规则：
 - 业务可选提供：`userId`、`userType`、`userTags`、`cohort`。
 - module/scene 如未来支持，只作为可选增强上下文。
 
-### 推荐 API 方向
+### 推荐 API
 
-目标 API 应收敛到统一上下文语义，例如：
+API 收敛到统一上下文语义，例如：
 
 ```dart
 FlutterMonitorSDK.setContext(
   userId: 'user_001',
   userType: 'qa',
+  moduleName: 'checkout',
+  moduleScene: 'submit',
 );
 ```
 
-用户上下文入口应保持统一语义：用户维度进入 `context.user.*`，业务动作详情进入 `payload.properties`，`userProperties` 和任意 custom map 不得默认提升为 `attributes` 或服务端索引。
+清理上下文使用 scope：
+
+```dart
+FlutterMonitorSDK.clearContext(
+  scopes: {MonitorContextScope.user},
+);
+```
+
+上下文入口应保持统一语义：用户维度进入 `context.user.*`，模块进入 `context.module.*`，发布进入 `context.release.*`，网络进入 `context.network.*`。业务动作详情进入 `payload.properties`，`userProperties` 和任意 custom map 不得默认提升为 `attributes` 或服务端索引。
 
 ### 查询影响
 
