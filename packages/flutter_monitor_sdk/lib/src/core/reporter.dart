@@ -1369,40 +1369,6 @@ class Reporter {
     );
   }
 
-  /// 动态设置用户信息（内部 legacy 入口）。
-  ///
-  /// 主 public API 已收敛到 `setContext`；该方法保留给内部测试和旧配置路径。
-  void setUserInfo(UserInfo userInfo) {
-    _contextManager.setUserInfo(userInfo);
-    debugPrint("✅ 用户信息已更新: ${userInfo.userId}");
-  }
-
-  /// 动态设置用户 ID（内部 legacy 入口）。
-  void setUserId(String userId) {
-    _contextManager.setUserId(userId);
-    debugPrint("✅ 用户ID已更新: $userId");
-  }
-
-  /// 动态设置自定义数据（内部 legacy 入口）。
-  ///
-  /// customData 不会提升为 attributes，也不作为新的 public API 推荐。
-  void setCustomData(Map<String, dynamic> data) {
-    _contextManager.setCustomData(data);
-    debugPrint("✅ 自定义数据已更新: $data");
-  }
-
-  /// 清除用户信息（内部 legacy 入口）。
-  void clearUserInfo() {
-    _contextManager.clearUserInfo();
-    debugPrint("✅ 用户信息已清除");
-  }
-
-  /// 清除自定义数据（内部 legacy 入口）。
-  void clearCustomData() {
-    _contextManager.clearCustomData();
-    debugPrint("✅ 自定义数据已清除");
-  }
-
   /// 设置运行时 canonical context。
   ///
   /// 该方法是 public `setContext` 和 `init(initialContext: ...)` 的共同落点，
@@ -1484,10 +1450,6 @@ class Reporter {
   }
 
   PageActivitySnapshot? get currentPageActivity => _currentPageActivity;
-
-  void setModule({String? name, String? scene}) {
-    _contextManager.setModule(name: name, scene: scene);
-  }
 
   /// flush 所有 output 队列。
   ///

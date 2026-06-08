@@ -7,10 +7,10 @@
 | 地址 | 用途 | 说明 |
 |---|---|---|
 | `http://localhost:4700/` | Workbench Web 开发入口 | Vite dev server，读取 `workbench/web/src`，开发时优先访问这里。 |
-| `http://localhost:3700/` | Workbench service 静态入口 | service 会优先托管 `workbench/web/dist`，否则 fallback 到 `workbench/service/public`。如果 dist 或 public 是旧产物，这里可能显示旧工作台。 |
+| `http://localhost:3700/` | Workbench service 静态入口 | service 会优先托管 `workbench/web/dist`，否则使用 `workbench/service/public` 中的静态占位页。 |
 | `http://localhost:3700/api/monitor/v1/*` | Workbench service API | SDK 写入、Workbench 查询和 SSE 都走这里。 |
 
-开发阶段应把 `4700` 作为主工作台入口，把 `3700` 作为 API service。`3700 /` 只适合 build 后预览或 legacy fallback，不代表当前前端源码。
+开发阶段应把 `4700` 作为主工作台入口，把 `3700` 作为 API service。`3700 /` 只适合 build 后预览或静态占位页，不代表当前前端源码。
 
 ## 数据边界
 
@@ -120,10 +120,6 @@ Workbench service 只接收和存储 SDK 发来的 `EventEnvelope`。原始 enve
   ]
 }
 ```
-
-### `POST /report`
-
-Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 Workbench 文档不应推荐使用它。
 
 ## 原始 Envelope 查询
 
@@ -313,7 +309,7 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 | `maxEventId` | 最大统计值对应的 `eventId`，用于回查。 |
 | `latestEventId` | 最近统计值对应的 `eventId`，用于回查。 |
 
-除兼容用的 `durationSummary` 外，`performance/overview` 会返回按 signal 语义拆分的专属摘要，避免把停留时长、错误状态或卡顿帧指标误展示成通用耗时。
+除通用 `durationSummary` 外，`performance/overview` 会返回按 signal 语义拆分的专属摘要，避免把停留时长、错误状态或卡顿帧指标误展示成通用耗时。
 
 `startup` 额外字段：
 
@@ -322,7 +318,7 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 | `coldStart` | `name=app.cold_start` 的 `durationMs`。当前 SDK 口径下它表示“冷启动到首帧”的累计耗时。 |
 | `sdkInit` | `name=sdk.init` 的 `attributes["sdk.init.duration_ms"]`，缺失时降级到 `durationMs`。 |
 | `backgroundInterval` | `name=app.background_duration` 的 `durationMs`。它表示后台停留间隔，只作为 lifecycle 和恢复上下文，不进入热重启耗时统计。 |
-| `hotResume` | `name=app.hot_start` 的 `durationMs`，且 `attributes["app.start.type"] = "hot"`。`attributes["app.start.end_reason"]` 说明闭合口径，例如 `first_frame` 或 `interactive`。旧 SDK 数据如果只有 `durationMs = 0` 或仅在 payload 中带 `background_duration_ms`，应标记为 `sdk_hot_resume_duration_missing`。 |
+| `hotResume` | `name=app.hot_start` 的 `durationMs`，且 `attributes["app.start.type"] = "hot"`。`attributes["app.start.end_reason"]` 说明闭合口径，例如 `first_frame` 或 `interactive`。没有有效样本时标记为 `hot_resume_duration_unavailable`。 |
 
 Workbench 启动详情页按这个口径展示：
 
@@ -340,7 +336,7 @@ Workbench 启动详情页按这个口径展示：
 | `stay` | `name=page.stay` 的 `durationMs`。 |
 | `routeSummaries` | 按 `context.route.name` 分组的页面加载摘要。停留时长不混入加载摘要。 |
 
-`pages.events` 会额外返回 `name=page.visit`、`attributes["event.phase"]="end"` 且 `status != "unknown"` 的 trace end 记录。页面帧表现和 RSS 变化只从这条页面主链路结束事件读取，包括 `frame.fps`、`frame.stability`、`frame.max_ms`、`frame.sample_count`、`frame.slow_count`、`memory.enter_rss_mb`、`memory.exit_rss_mb` 和 `memory.delta_rss_mb`。Workbench service 不生成 `ui.frame.window`、`page.active_window_id`、`memory.sample_delay_ms` 等旧迁移字段。
+`pages.events` 会额外返回 `name=page.visit`、`attributes["event.phase"]="end"` 且 `status != "unknown"` 的 trace end 记录。页面帧表现和 RSS 变化只从这条页面主链路结束事件读取，包括 `frame.fps`、`frame.stability`、`frame.max_ms`、`frame.sample_count`、`frame.slow_count`、`memory.enter_rss_mb`、`memory.exit_rss_mb` 和 `memory.delta_rss_mb`。
 
 Workbench Web 展示 route 时优先读取 `context.route.fullName`，再回退到 `context.route.name`。`page.instance_id` 只用于内部合并和 Inspector/raw JSON 诊断，不作为页面性能概览、图表坐标轴或会话链路区段标题的默认展示名。
 
@@ -355,7 +351,7 @@ Workbench Web 展示 route 时优先读取 `context.route.fullName`，再回退�
 | `endpointSummaries` | 按 `attributes["http.url.normalized"]` 分组。 |
 | `statusSummaries` | 按 `attributes["http.status_code"]` 或失败类型分组。 |
 
-Workbench 只统计符合新规范的 completed single-span HTTP envelope：`name=http.client` 且 `attributes["event.phase"]="instant"`。旧的 `event.phase=end` HTTP 数据不做兼容，清理 SQLite 后重新采集。
+Workbench 只统计 completed single-span HTTP envelope：`name=http.client` 且 `attributes["event.phase"]="instant"`。
 
 `jank` 额外字段：
 

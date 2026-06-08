@@ -587,7 +587,7 @@ await FlutterMonitorSDK.init(
 - flush；
 - dispose。
 
-普通真实 App 接入不应被要求理解 trace/span/breadcrumb、`FieldPaths`、`RawSignal`、`EventEnvelope`、attributes/payload。`startTrace`、`startSpan`、`addBreadcrumb`、自定义 attributes/payload、`MonitorBinding`、`Reporter` 等能力定位为 SDK 内部或未来高级诊断入口，不从主库导出。历史 `setUserId`、`setUserInfo`、`setCustomData`、`setModule` 不再作为 public API；用户、模块、发布和网络上下文统一通过 `setContext(...)` 表达。
+普通真实 App 接入不应被要求理解 trace/span/breadcrumb、`FieldPaths`、`RawSignal`、`EventEnvelope`、attributes/payload。`startTrace`、`startSpan`、`addBreadcrumb`、自定义 attributes/payload、`MonitorBinding`、`Reporter` 等能力定位为 SDK 内部或未来高级诊断入口，不从主库导出。用户、模块、发布和网络上下文统一通过 `setContext(...)` 表达。
 
 API 要求：
 

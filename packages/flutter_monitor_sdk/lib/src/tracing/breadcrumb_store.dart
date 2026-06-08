@@ -15,7 +15,7 @@ class BreadcrumbStore {
   final int capacity;
   final List<Breadcrumb> _items = <Breadcrumb>[];
 
-  /// 添加一条 breadcrumb，并按容量裁剪旧数据。
+  /// 添加一条 breadcrumb，并按容量裁剪最早的数据。
   void add(Breadcrumb breadcrumb) {
     _items.add(breadcrumb);
     while (_items.length > capacity) {

@@ -41,20 +41,6 @@ export function registerRoutes(app: Express, store: MonitorStore, sseHub: SseHub
     });
   });
 
-  app.post('/report', (req, res) => {
-    const incoming = normalizeEvents(req.body);
-    const rejected = incoming.filter((event) => !hasEventId(event)).length;
-    const accepted = store.addEvents(incoming);
-    if (accepted.length === 0) {
-      return res.status(400).send({ error: 'missing_event_id', accepted: 0, rejected });
-    }
-    sseHub.publishEvents(accepted);
-    console.log(
-      `[FM workbench] legacy /report accepted=${accepted.length} rejected=${rejected} total=${store.health().eventCount}`,
-    );
-    return res.status(202).send({ accepted: accepted.length, rejected, total: store.health().eventCount });
-  });
-
   app.get('/api/monitor/v1/health', (_req, res) => {
     res.send({
       ok: true,

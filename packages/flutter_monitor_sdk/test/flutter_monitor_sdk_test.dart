@@ -323,22 +323,13 @@ void main() {
     final reporter = Reporter(
       MonitorConfig(
         appInfo: const AppInfo(appKey: 'app_key'),
-        userInfo: const UserInfo(
-          userProperties: <String, Object?>{'plan': 'pro'},
-        ),
-        customData: const <String, Object?>{'buildFlavor': 'qa'},
         outputs: <MonitorOutput>[output],
       ),
     );
 
-    reporter.setUserInfo(
-      const UserInfo(
-        userId: 'user_a',
-        userProperties: <String, Object?>{'plan': 'pro'},
-      ),
-    );
+    reporter.setContext(userId: 'user_a');
     reporter.track(action: 'profile.view', result: MonitorTrackResult.started);
-    reporter.setUserId('user_b');
+    reporter.setContext(userId: 'user_b');
     reporter.track(
       action: 'profile.refresh',
       result: MonitorTrackResult.started,
@@ -349,56 +340,39 @@ void main() {
 
     expect((firstContext['user'] as Map)['userId'], 'user_a');
     expect((secondContext['user'] as Map)['userId'], 'user_b');
-    expect(
-      (output.events[0]['payload'] as Map).containsKey('legacy.customData'),
-      isFalse,
-    );
-    expect(
-      (output.events[0]['payload'] as Map).containsKey('legacy.userProperties'),
-      isFalse,
-    );
 
-    reporter.setUserInfo(
-      const UserInfo(
-        userId: 'user_c',
-        userProperties: <String, Object?>{'plan': 'pro'},
-      ),
-    );
+    reporter.setContext(userId: 'user_c');
     reporter.track(action: 'profile.save', result: MonitorTrackResult.success);
 
-    final eventPayload = output.events.last['payload'] as Map;
     final eventContext = output.events.last['context'] as Map;
-    expect(eventPayload.containsKey('legacy.customData'), isFalse);
-    expect(eventPayload.containsKey('legacy.userProperties'), isFalse);
     expect((eventContext['user'] as Map)['userId'], 'user_c');
   });
 
-  test('breadcrumb payload does not inherit legacy context details', () {
-    final output = RecordingOutput();
-    final reporter = Reporter(
-      MonitorConfig(
-        appInfo: const AppInfo(appKey: 'app_key'),
-        userInfo: const UserInfo(
-          userId: 'user_a',
-          userProperties: <String, Object?>{'plan': 'pro'},
+  test(
+    'breadcrumb payload carries only action details and canonical context',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
         ),
-        customData: const <String, Object?>{'buildFlavor': 'qa'},
-        outputs: <MonitorOutput>[output],
-      ),
-    );
+      );
 
-    reporter.addBreadcrumb('ui.tap.profile');
+      reporter.setContext(userId: 'user_a');
+      reporter.addBreadcrumb('ui.tap.profile');
 
-    final event = output.events.single;
-    final payload = event['payload'] as Map;
-    final context = event['context'] as Map;
-    final user = context['user'] as Map;
+      final event = output.events.single;
+      final payload = event['payload'] as Map;
+      final context = event['context'] as Map;
+      final user = context['user'] as Map;
 
-    expect(event['signalType'], 'breadcrumb');
-    expect(user['userId'], 'user_a');
-    expect(payload.containsKey('legacy.customData'), isFalse);
-    expect(payload.containsKey('legacy.userProperties'), isFalse);
-  });
+      expect(event['signalType'], 'breadcrumb');
+      expect(event['name'], 'ui.tap.profile');
+      expect(user['userId'], 'user_a');
+      expect(payload, isEmpty);
+    },
+  );
 
   test(
     'setContext captures canonical user module release and network context',
@@ -452,7 +426,6 @@ void main() {
     final reporter = Reporter(
       MonitorConfig(
         appInfo: const AppInfo(appKey: 'app_key'),
-        userInfo: const UserInfo(userId: 'config_user'),
         outputs: <MonitorOutput>[output],
       ),
     );
@@ -946,7 +919,6 @@ void main() {
           breadcrumb['payload'] as Map? ?? const <Object?, Object?>{};
       expect(payload.containsKey(FieldPaths.payloadBreadcrumbs), isFalse);
       expect(payload.containsKey(FieldPaths.payloadErrorStacktrace), isFalse);
-      expect(payload.containsKey('legacy.data'), isFalse);
     }
   });
 

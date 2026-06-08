@@ -873,7 +873,7 @@ FlutterMonitorSDK.clearContext(
 );
 ```
 
-上下文入口应保持统一语义：用户维度进入 `context.user.*`，模块进入 `context.module.*`，发布进入 `context.release.*`，网络进入 `context.network.*`。业务动作详情进入 `payload.properties`，`userProperties` 和任意 custom map 不得默认提升为 `attributes` 或服务端索引。
+上下文入口应保持统一语义：用户维度进入 `context.user.*`，模块进入 `context.module.*`，发布进入 `context.release.*`，网络进入 `context.network.*`。业务动作详情进入 `payload.properties`，不得通过任意 custom map 提升为 `attributes` 或服务端索引。
 
 ### 查询影响
 

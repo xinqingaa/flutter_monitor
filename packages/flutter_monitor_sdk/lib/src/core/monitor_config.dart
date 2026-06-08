@@ -200,33 +200,6 @@ class AppInfo {
   }
 }
 
-/// 用户信息配置（内部 legacy 配置）。
-///
-/// 新的业务接入推荐使用 `FlutterMonitorSDK.init(initialContext: ...)` 和
-/// `FlutterMonitorSDK.setContext(...)` 设置用户上下文。该类型保留给配置兼容
-/// 和内部测试路径，不再作为主 public API 的推荐入口。
-class UserInfo {
-  /// 用户 ID。
-  final String? userId;
-
-  /// 用户类型。
-  final String? userType;
-
-  /// 用户标签。
-  final List<String>? userTags;
-
-  /// 用户属性。
-  final Map<String, dynamic>? userProperties;
-
-  /// 创建用户信息配置。
-  const UserInfo({
-    this.userId,
-    this.userType,
-    this.userTags,
-    this.userProperties,
-  });
-}
-
 /// SDK 初始化配置。
 ///
 /// `MonitorConfig` 只描述采集能力、输出、队列、native bridge 等 SDK 行为。
@@ -237,11 +210,6 @@ class MonitorConfig {
   ///
   /// 这些字段进入 `resource.app.*`，用于版本、环境、渠道等稳定维度聚合。
   final AppInfo appInfo;
-
-  /// 用户信息（可选，legacy）。
-  ///
-  /// 新接入推荐使用 `initialContext` 或 `setContext`。
-  final UserInfo? userInfo;
 
   /// 是否启用 Flutter/Dart 错误自动采集。
   final bool enableErrorMonitor;
@@ -278,15 +246,9 @@ class MonitorConfig {
   /// 可选 native bridge。未提供时 SDK 只保留 Flutter/Dart 层能力。
   final MonitorNativeBridge? nativeBridge;
 
-  /// 自定义全局附加数据（legacy）。
-  ///
-  /// 当前不会默认提升为 attributes，也不推荐作为新的业务上下文入口。
-  final Map<String, dynamic>? customData;
-
   /// 创建 SDK 初始化配置。
   const MonitorConfig({
     required this.appInfo,
-    this.userInfo,
     this.enableErrorMonitor = true,
     this.enablePerformanceMonitor = true,
     this.enableJankMonitor = true,
@@ -298,7 +260,6 @@ class MonitorConfig {
     this.frameConfig,
     this.interactionConfig,
     this.nativeBridge,
-    this.customData,
   });
 
   /// 获取实际使用的输出列表。

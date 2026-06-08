@@ -153,7 +153,7 @@ scripts/
 - web 管诊断展示和交互。
 - web 只消费 service 返回的 `EventEnvelope` 和派生摘要。
 - 派生摘要不得成为第二套协议，必须能回查完整 envelope。
-- Workbench 的数据结构必须保持与 SDK HTTP 上报和 session export 兼容。
+- Workbench 的数据结构必须与 SDK HTTP 上报和 session export 使用同一套 envelope。
 - Workbench web 应按 datasource adapter 设计：本地 service、SSE live、session export、未来远端查询服务都应映射成同一组查询和展示模型。
 - `workbench/shared` 只能承载 TypeScript 侧 wire shape mirror、API client、datasource interface 和 UI helper，不能成为新的模型事实源。
 
@@ -255,7 +255,7 @@ QA 提供 userId 和大概时间
 
 ### API
 
-service 保持与 SDK `HttpOutput` 兼容。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `workbench/docs/service_api.md`。这里仅保留设计边界：
+service 接收 SDK `HttpOutput` 写入的统一 envelope。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `workbench/docs/service_api.md`。这里仅保留设计边界：
 
 - 写入接口接收完整 SDK `EventEnvelope`，缺少 `eventId` 的事件不得被 service 补写成 SDK 字段。
 - raw envelope 查询接口返回入库 envelope 本身，例如 recent、event detail、session detail、trace detail 和 search。
@@ -443,7 +443,7 @@ Workbench Web 可以维护一份短期 field dictionary，用于字段释义和�
 | `context.user.userId` | 用户 ID | 接入方提供的用户标识 | SDK context | user | 是 |
 | `resource.app.appVersion` | App 版本 | 事件发生时的应用版本 | SDK resource | internal | 是 |
 | `resource.app.environment` | 环境 | dev/test/staging/production | SDK resource | internal | 是 |
-| `attributes.http.statusCode` | HTTP 状态码 | 网络请求响应码 | network collector | internal | 是 |
+| `attributes.http.status_code` | HTTP 状态码 | 网络请求响应码 | network collector | internal | 是 |
 | `payload.breadcrumbs` | Breadcrumbs | 问题前后的上下文足迹 | SDK payload | mixed | 否 |
 
 长期应由 `flutter_monitor_core` 导出 schema、field registry 或 summary artifact 供 Workbench 消费。短期 web 内的 field dictionary 必须标记为 UI 释义层，不得反向成为事件模型来源。
@@ -662,12 +662,12 @@ Phase 6 Server 承担：
 - 将 Workbench 的定位、目录、技术栈、datasource、脚本和验收标准集中在本文档。
 - `docs/implementation_plan.md` 只保留 SDK 总计划里的 Workbench 插入点和本文档引用。
 
-### Phase W1：迁移本地调试服务
+### Phase W1：本地调试服务
 
 - 新建 `workbench/` JS/TS workspace。
 - 将本地 collector/query service 收敛为 `workbench/service`。
-- 保持现有 `/api/monitor/v1/*` API 兼容。
-- 删除旧本地 server 入口，避免产生两套本地服务认知。
+- 使用 `/api/monitor/v1/*` 作为唯一 Workbench service API。
+- 不保留其他本地写入入口，避免产生两套本地服务认知。
 
 ### Phase W2：Service 结构化
 
@@ -728,7 +728,7 @@ Workbench MVP 完成时应满足：
 - startup trace 能展示 `app.cold_start`、`sdk.init`，并从 `app.cold_start` / `app.hot_start` trace end 展示启动 RSS 变化；启动不展示 FPS 或帧稳定性。
 - 页面性能能从 `page.visit` trace end 展示页面帧表现和 RSS 变化；同 route 多次进入内部按页面链路区分，主界面优先展示 `context.route.fullName`，`page.instance_id` 只在 Inspector/raw JSON 中作为诊断字段。
 - 业务 `track` 事件能展示 `business.action`、`business.result`、`ui.target` 和 `payload.properties`。
-- service API 仍兼容 SDK `HttpOutput`。
+- service API 接收 SDK `HttpOutput` 写入的统一 envelope。
 - service SSE 推送不改变 envelope 本体。
 - SDK 到 service 的近实时写入必须使用显式配置和批量语义。
 - Workbench 不引入第二套事件模型。

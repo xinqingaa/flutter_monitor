@@ -12,11 +12,11 @@ export const fieldDefinitions: FieldDefinition[] = [
   {
     path: 'schemaVersion',
     label: 'schemaVersion',
-    description: '事件模型版本，用于兼容 Workbench、服务端和 SDK 之间的协议演进。',
+    description: '事件模型版本，用于 Workbench、服务端和 SDK 之间的协议演进。',
     source: 'EventEnvelope',
     privacy: 'public',
     searchable: true,
-    emptyHint: '旧数据可能没有 schemaVersion。',
+    emptyHint: 'SDK 应提供 schemaVersion；缺失时需要回查 raw envelope。',
   },
   {
     path: 'eventId',

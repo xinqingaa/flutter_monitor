@@ -348,7 +348,7 @@ export class SqliteMonitorStore implements MonitorStore {
   }
 
   private initializeSchema(): void {
-    if (this.hasLegacyEventsTable()) this.migrateLegacyEventsTable();
+    this.assertNoUnsupportedEventsTable();
     this.db.run(`
       create table if not exists events (
         sequence integer primary key autoincrement,
@@ -401,63 +401,11 @@ export class SqliteMonitorStore implements MonitorStore {
     this.flushToDisk();
   }
 
-  private hasLegacyEventsTable(): boolean {
+  private assertNoUnsupportedEventsTable(): void {
     const columns = this.selectRows<{ name: string }>('pragma table_info(events)');
-    return columns.length > 0 && !columns.some((column) => column.name === 'sequence');
-  }
-
-  private migrateLegacyEventsTable(): void {
-    this.db.run(`
-      alter table events rename to events_legacy;
-      create table events (
-        sequence integer primary key autoincrement,
-        event_id text not null unique,
-        session_id text,
-        trace_id text,
-        span_id text,
-        timestamp_ms integer,
-        user_id text,
-        route text,
-        app_version text,
-        environment text,
-        signal_type text,
-        name text,
-        status text,
-        envelope_json text not null
-      );
-      insert into events (
-        event_id,
-        session_id,
-        trace_id,
-        span_id,
-        timestamp_ms,
-        user_id,
-        route,
-        app_version,
-        environment,
-        signal_type,
-        name,
-        status,
-        envelope_json
-      )
-      select
-        event_id,
-        session_id,
-        trace_id,
-        span_id,
-        timestamp_ms,
-        user_id,
-        route,
-        app_version,
-        environment,
-        signal_type,
-        name,
-        status,
-        envelope_json
-      from events_legacy
-      order by timestamp_ms asc;
-      drop table events_legacy;
-    `);
+    if (columns.length === 0) return;
+    if (columns.some((column) => column.name === 'sequence')) return;
+    throw new Error('Unsupported Workbench SQLite schema. Remove workbench/.data/events.sqlite and collect fresh events.');
   }
 
   private persistEvents(events: MonitorEvent[]): void {
@@ -919,7 +867,7 @@ function summarizeStartup(
       available: hotResume.sampleCount > 0,
       missingReason: hotResume.sampleCount > 0
         ? undefined
-        : 'sdk_hot_resume_duration_missing',
+        : 'hot_resume_duration_unavailable',
     },
   };
 }

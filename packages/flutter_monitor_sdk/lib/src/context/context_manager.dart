@@ -19,10 +19,8 @@ class ContextManager {
 
   Map<String, Object?>? _deviceInfo;
   NativeResourceSnapshot? _nativeSnapshot;
-  UserInfo? _runtimeUserInfo;
-  String? _runtimeUserCohort;
+  UserContext? _runtimeUserContext;
   bool _userContextCleared = false;
-  Map<String, Object?>? _runtimeCustomData;
   ReleaseContext? _runtimeRelease;
   NetworkContext? _runtimeNetwork;
   String? _currentRouteName;
@@ -43,22 +41,14 @@ class ContextManager {
     _nativeSnapshot = snapshot;
   }
 
-  Map<String, Object?>? get customData =>
-      _runtimeCustomData ?? _config.customData?.cast<String, Object?>();
-
   /// 捕获当前 resource/context 快照。
   ///
   /// 返回值会被 [EnvelopeBuilder] 直接写入 `EventEnvelope`。因此任何影响后续
   /// 事件上下文的运行时状态，都应该先写入本类，再由 pipeline 捕获。
   ContextSnapshot capture() {
-    final userInfo = _userContextCleared
-        ? null
-        : _runtimeUserInfo ?? _config.userInfo;
-    final userCohort = _runtimeUserInfo == null ? null : _runtimeUserCohort;
-    final effectiveCustomData = customData;
+    final userContext = _userContextCleared ? null : _runtimeUserContext;
     final hasContext =
-        userInfo != null ||
-        effectiveCustomData != null ||
+        userContext != null ||
         _currentRouteName != null ||
         _currentModuleName != null ||
         _currentScene != null ||
@@ -69,14 +59,7 @@ class ContextManager {
     return ContextSnapshot(
       resource: _buildResource(),
       context: MonitorContext(
-        user: userInfo == null
-            ? null
-            : UserContext(
-                userId: userInfo.userId,
-                userType: userInfo.userType,
-                userTags: userInfo.userTags,
-                cohort: userCohort,
-              ),
+        user: userContext,
         route: _currentRouteName == null
             ? null
             : RouteContext(
@@ -103,59 +86,30 @@ class ContextManager {
             ? null
             : ContextMissingReasons.sdkBootstrapIncomplete,
       ),
-      customData: effectiveCustomData,
-      userProperties: userInfo?.userProperties?.cast<String, Object?>(),
     );
-  }
-
-  void setUserInfo(UserInfo userInfo) {
-    _runtimeUserInfo = userInfo;
-    _runtimeUserCohort = null;
-    _userContextCleared = false;
-  }
-
-  void setUserId(String userId) {
-    _runtimeUserInfo = UserInfo(userId: userId);
-    _runtimeUserCohort = null;
-    _userContextCleared = false;
-  }
-
-  void clearUserInfo() {
-    _runtimeUserInfo = null;
-    _runtimeUserCohort = null;
-    _userContextCleared = true;
-  }
-
-  void setCustomData(Map<String, dynamic> data) {
-    _runtimeCustomData = data.cast<String, Object?>();
-  }
-
-  void clearCustomData() {
-    _runtimeCustomData = null;
   }
 
   /// 设置运行时用户上下文。
   ///
-  /// 这是统一 `setContext` 的用户 scope 落点，会覆盖初始化配置中的 userInfo。
+  /// 这是统一 `setContext` 的用户 scope 落点。
   void setUserContext({
     String? userId,
     String? userType,
     List<String>? userTags,
     String? cohort,
   }) {
-    _runtimeUserInfo = UserInfo(
+    _runtimeUserContext = UserContext(
       userId: userId,
       userType: userType,
       userTags: userTags,
+      cohort: cohort,
     );
-    _runtimeUserCohort = cohort;
     _userContextCleared = false;
   }
 
-  /// 清理运行时用户上下文，并阻止回退到初始化配置中的 userInfo。
+  /// 清理运行时用户上下文。
   void clearUserContext() {
-    _runtimeUserInfo = null;
-    _runtimeUserCohort = null;
+    _runtimeUserContext = null;
     _userContextCleared = true;
   }
 

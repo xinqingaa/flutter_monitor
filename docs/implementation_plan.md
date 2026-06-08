@@ -80,7 +80,7 @@ flowchart TD
 - DevTools、server protocol、native package 不定义第二套模型。
 - Phase 2 只允许基于统一字段契约构建 pipeline。
 
-## Phase 2：SDK Runtime Pipeline 基础设施与兼容适配
+## Phase 2：SDK Runtime Pipeline 基础设施
 
 目标：
 
@@ -96,7 +96,7 @@ flowchart TD
   - envelope builder；
   - outputs。
 - 将 Reporter 从最终事件分发器升级为标准 SDK 内部上报入口和 pipeline 入口。
-- 业务主动埋点使用 `FlutterMonitorSDK.track(...)`；错误、页面、HTTP、卡顿等 SDK 内部采集器直接生成标准 raw signal，不再经过 legacy `category + data` mapper。
+- 业务主动埋点使用 `FlutterMonitorSDK.track(...)`；错误、页面、HTTP、卡顿等 SDK 内部采集器直接生成标准 raw signal。
 - 接入支撑 session 切分和 hot start 的最小 lifecycle 信号。
 
 本阶段不要求：
@@ -105,7 +105,7 @@ flowchart TD
 - 完整实现 HTTP 重试、离线缓存和 remote config；
 - 完整实现 DevTools 面板；
 - 实现 native 深度能力；
-- 完成所有旧公开 API 移除。
+- 完成 public API 收敛。
 
 验收：
 
@@ -113,7 +113,7 @@ flowchart TD
 - 任意业务事件至少能带 `sessionId`。
 - output 消费统一 event envelope 或 envelope JSON。
 - 上下文异步变化时，事件仍使用发生时的 context snapshot。
-- Reporter 仍兼容旧 `category + data` 调用，但内部不再把该结构作为最终协议源。
+- Reporter 作为 SDK 内部 pipeline 入口，不对业务侧暴露内部事件结构。
 - SDK 能记录 envelope 构建失败、事件丢弃、flush 失败等 self-monitoring 事件。
 - 原 SDK example/test 继续通过。
 

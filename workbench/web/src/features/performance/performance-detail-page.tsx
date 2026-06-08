@@ -179,7 +179,7 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
     label: '耗时事件',
     count: metric?.durationSummary?.sampleCount,
     field: 'http.client.durationMs / attributes["event.phase"]=instant',
-    hint: 'HTTP completed single-span envelope 的 durationMs 样本数；旧 event.phase=end 数据不参与统计。',
+    hint: 'HTTP completed single-span envelope 的 durationMs 样本数。',
   };
 }
 

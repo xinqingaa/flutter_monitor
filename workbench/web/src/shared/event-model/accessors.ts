@@ -39,8 +39,7 @@ export function sceneOf(event?: MonitorEvent): string {
 }
 
 export function httpStatusOf(event?: MonitorEvent): string {
-  const value = readPath(event, ['attributes', 'http.statusCode'])
-    ?? readPath(event, ['payload', 'statusCode']);
+  const value = readPath(event, ['attributes', 'http.status_code']);
   return value === undefined ? '-' : String(value);
 }
 

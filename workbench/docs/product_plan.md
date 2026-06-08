@@ -428,7 +428,7 @@ Workbench 的错误页和首页“错误/稳定性”只承接程序与稳定性
   - **版本 / 环境**：补分组，支撑性能回归的版本对比。
   - **页面 route**：分组即 Pages 健康表。
   - **signalType / name / status**：暴露为 Problems 页筛选。
-- **紧接着**（在 envelope 内但需加索引，价值高）：`resource.device.deviceTier`（低端机才慢）、`context.network.type / isWeakNetwork`（弱网才超时）、`attributes.http.statusCode / url.normalized`（哪个接口最差）。它们回答“为什么只有部分用户慢或崩”。
+- **紧接着**（在 envelope 内但需加索引，价值高）：`resource.device.deviceTier`（低端机才慢）、`context.network.type / isWeakNetwork`（弱网才超时）、`attributes.http.status_code / http.url.normalized`（哪个接口最差）。它们回答“为什么只有部分用户慢或崩”。
 - **缓做**（企业/线上向或本地增量价值低）：`context.release.featureFlags / experiments`（灰度实验对比）、`context.module / scene`、`buildNumber / flavor / channel`、`priority / level`。本地调试阶段加入只会让筛选器臃肿。
 
 维度发散后的长期解是 service 支持“按 `FieldPath` 通用分组/筛选 + 来自 core field registry 的白名单”，热点维度保留索引列，其余走白名单 JSON 路径；但 MVP 不先建通用引擎，先索引 3~4 个热点维度，等维度清单压不住时再上。

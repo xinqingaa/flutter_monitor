@@ -163,13 +163,7 @@ function pageSegmentForEvent(event: MonitorEvent, segments: Map<string, RawSegme
   const completion = pageCompletionSegment(event, segments);
   if (completion) return completion;
   const key = pageInstanceKey(event);
-  if (key) return latestSegment(segments.get(key));
-  if (!event.traceId) return undefined;
-  return latestSegment(
-    [...segments.values()]
-      .flat()
-      .filter((segment) => segment.pageKey?.endsWith(`:${event.traceId}`)),
-  );
+  return key ? latestSegment(segments.get(key)) : undefined;
 }
 
 function latestSegment(segments: RawSegment[] | undefined): RawSegment | undefined {
@@ -387,11 +381,7 @@ function eventBelongsToPageSegment(event: MonitorEvent, segment: RawSegment): bo
   if (segment.kind !== 'page') return false;
   if (isPageTimelineEvent(event)) return true;
   const eventKey = pageInstanceKey(event);
-  if (eventKey && segment.pageKey && eventKey === segment.pageKey) return true;
-  return event.traceId !== undefined &&
-    segment.pageKey !== undefined &&
-    segment.pageKey.endsWith(`:${event.traceId}`) &&
-    realRoute(event) === segment.route;
+  return Boolean(eventKey && segment.pageKey && eventKey === segment.pageKey);
 }
 
 function isInitialStartupEvent(
@@ -423,7 +413,6 @@ function pageInstanceKey(event: MonitorEvent): string | undefined {
   if (typeof instanceId === 'string' && instanceId.length > 0) {
     return event.traceId ? `${instanceId}:${event.traceId}` : instanceId;
   }
-  if (event.name === 'page.visit' && event.traceId) return event.traceId;
   return undefined;
 }
 
