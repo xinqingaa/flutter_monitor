@@ -7,6 +7,7 @@ import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
+import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
@@ -708,6 +709,195 @@ void main() {
       isTrue,
     );
   });
+
+  test('measure snapshots map to interaction span on current page trace', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final t0 = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    final pageInstanceId = reporter.startPageLoad('/chart', startTime: t0);
+
+    reporter.recordInteractionMeasure(
+      InteractionMeasureSnapshot(
+        id: 'measure_1',
+        action: 'chart.zoom',
+        mode: MonitorMeasureMode.common,
+        result: MonitorMeasureResult.success,
+        endReason: InteractionEndReasons.autoWindow,
+        startedAt: t0.add(const Duration(milliseconds: 10)),
+        endedAt: t0.add(const Duration(milliseconds: 1210)),
+        observedUntil: t0.add(const Duration(milliseconds: 1210)),
+        observeFor: const Duration(milliseconds: 1200),
+        timeout: const Duration(seconds: 5),
+        target: 'revenue_chart',
+        properties: const <String, Object?>{'chart.type': 'line'},
+        finishProperties: const <String, Object?>{},
+        sampleCount: 4,
+        slowCount: 1,
+        droppedCount: 2,
+        refreshRate: 60,
+        frameMaxMs: 42,
+        frameAvgMs: 12,
+        frameBudgetMs: 16.67,
+        frameFps: 60,
+        frameStability: 0.75,
+        frameP50Ms: 8,
+        frameP90Ms: 24,
+        frameP99Ms: 42,
+        sampleStatus: 'ok',
+      ),
+    );
+
+    final event = output.events.last;
+    final attributes = event['attributes'] as Map;
+    final payload = event['payload'] as Map;
+    final interaction = payload[PayloadKeys.interaction] as Map;
+
+    expect(event['name'], EventNames.interactionMeasure);
+    expect(event['signalType'], 'span');
+    expect(event['status'], 'ok');
+    expect(event['traceId'], output.events.first['traceId']);
+    expect(attributes[FieldPaths.businessAction], 'chart.zoom');
+    expect(attributes[FieldPaths.businessResult], 'success');
+    expect(attributes[FieldPaths.interactionMode], 'common');
+    expect(
+      attributes[FieldPaths.interactionEndReason],
+      InteractionEndReasons.autoWindow,
+    );
+    expect(attributes[FieldPaths.uiTarget], 'revenue_chart');
+    expect(attributes[FieldPaths.pageInstanceId], pageInstanceId);
+    expect(attributes[FieldPaths.frameSampleCount], 4);
+    expect(
+      payload[FieldPaths.payloadProperties],
+      containsPair('chart.type', 'line'),
+    );
+    expect(interaction[PayloadKeys.identifier], 'measure_1');
+    expect(
+      (interaction[PayloadKeys.observedFrameSummary]
+          as Map)[PayloadKeys.sampleStatus],
+      'ok',
+    );
+    expect(
+      SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+      isTrue,
+    );
+  });
+
+  test('measure events become breadcrumbs for later errors', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final t0 = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    reporter.startPageLoad('/filters', startTime: t0);
+    reporter.recordInteractionMeasure(
+      InteractionMeasureSnapshot(
+        id: 'measure_2',
+        action: 'filter.apply',
+        mode: MonitorMeasureMode.stage,
+        result: MonitorMeasureResult.success,
+        endReason: InteractionEndReasons.finish,
+        startedAt: t0,
+        endedAt: t0.add(const Duration(milliseconds: 300)),
+        observedUntil: t0.add(const Duration(milliseconds: 550)),
+        observeFor: const Duration(milliseconds: 250),
+        timeout: const Duration(seconds: 5),
+        target: null,
+        properties: const <String, Object?>{},
+        finishProperties: const <String, Object?>{},
+        sampleCount: 0,
+        slowCount: 0,
+        droppedCount: 0,
+        refreshRate: 60,
+        frameMaxMs: 0,
+        frameAvgMs: 0,
+        frameBudgetMs: 16.67,
+        frameFps: null,
+        frameStability: null,
+        frameP50Ms: null,
+        frameP90Ms: null,
+        frameP99Ms: null,
+        sampleStatus: 'insufficient_samples',
+      ),
+    );
+    reporter.recordManualError(StateError('boom'), type: 'filter_failed');
+
+    final payload = output.events.last['payload'] as Map;
+    final breadcrumbs = payload[FieldPaths.payloadBreadcrumbs] as List;
+    final interactionBreadcrumb = breadcrumbs.cast<Map>().firstWhere(
+      (breadcrumb) => breadcrumb['name'] == EventNames.interactionMeasure,
+    );
+
+    expect(
+      (interactionBreadcrumb['attributes'] as Map)[FieldPaths.businessAction],
+      'filter.apply',
+    );
+  });
+
+  test(
+    'interaction collector supports common auto window and stage finish',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final snapshots = <InteractionMeasureSnapshot>[];
+      final collector = InteractionMeasureCollector(
+        config: const MonitorInteractionConfig(
+          commonObserveFor: Duration(milliseconds: 1),
+          stageSettleWindow: Duration(milliseconds: 1),
+          stageTimeout: Duration(seconds: 1),
+        ),
+        onFinished: snapshots.add,
+      );
+
+      collector.measure(action: 'tab.switch');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(snapshots, hasLength(1));
+      expect(snapshots.single.action, 'tab.switch');
+      expect(snapshots.single.mode, MonitorMeasureMode.common);
+      expect(snapshots.single.endReason, InteractionEndReasons.autoWindow);
+
+      final handle = collector.measure(
+        action: 'sheet.open',
+        mode: MonitorMeasureMode.stage,
+      );
+      handle.finish(properties: const <String, Object?>{'source': 'test'});
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(snapshots, hasLength(2));
+      expect(snapshots.last.action, 'sheet.open');
+      expect(snapshots.last.mode, MonitorMeasureMode.stage);
+      expect(snapshots.last.endReason, InteractionEndReasons.finish);
+      expect(snapshots.last.finishProperties, containsPair('source', 'test'));
+    },
+  );
+
+  test(
+    'interaction collector treats non-positive concurrency as disabled',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final snapshots = <InteractionMeasureSnapshot>[];
+      final collector = InteractionMeasureCollector(
+        config: const MonitorInteractionConfig(
+          commonObserveFor: Duration(milliseconds: 1),
+          maxConcurrent: 0,
+        ),
+        onFinished: snapshots.add,
+      );
+
+      final handle = collector.measure(action: 'tab.switch');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(handle.id, isEmpty);
+      expect(snapshots, isEmpty);
+    },
+  );
 
   test('manual breadcrumbs are attached to later error payload', () {
     final output = RecordingOutput();

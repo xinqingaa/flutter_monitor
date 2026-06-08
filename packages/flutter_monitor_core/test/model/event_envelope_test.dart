@@ -101,6 +101,8 @@ void main() {
     expect(EventStatus.timeout.toJson(), 'timeout');
     expect(EventPriority.critical.toJson(), 'critical');
     expect(MonitorTrackResult.failed.toJson(), 'failed');
+    expect(MonitorMeasureMode.stage.toJson(), 'stage');
+    expect(MonitorMeasureResult.cancelled.toJson(), 'cancelled');
     expect(
       MonitorTrackResult.fromJson('cancelled'),
       MonitorTrackResult.cancelled,

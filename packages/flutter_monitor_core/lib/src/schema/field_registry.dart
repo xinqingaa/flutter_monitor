@@ -594,6 +594,42 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.interactionMode,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.interactionEndReason,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.interactionActiveMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.interactionSettleMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.interactionObserveMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.interactionTimeoutMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.jankCount,
     valueType: FieldValueType.number,
     privacyLevel: PrivacyLevel.safe,

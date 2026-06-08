@@ -6,6 +6,7 @@ import 'package:flutter_monitor_sdk/src/context/monitor_initial_context.dart';
 import 'package:flutter_monitor_sdk/src/lifecycle/lifecycle_manager.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_timing_dispatcher.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
+import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/memory_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
 import 'package:flutter_monitor_sdk/src/startup/startup_trace_controller.dart';
@@ -28,6 +29,7 @@ class MonitorBinding {
   NativeBridgeController? _nativeBridgeController;
   StartupTraceController? _startupTraceController;
   FrameWindowCollector? _frameWindowCollector;
+  InteractionMeasureCollector? _interactionMeasureCollector;
   FrameTimingDispatcher? _frameTimingDispatcher;
   String? _currentPage; // 用于给 JankMonitor 提供当前页面信息
 
@@ -95,7 +97,9 @@ class MonitorBinding {
     }
 
     final needsFrameTimings =
-        config.enableJankMonitor || config.effectiveFrameConfig.enabled;
+        config.enableJankMonitor ||
+        config.effectiveFrameConfig.enabled ||
+        config.effectiveInteractionConfig.enabled;
     if (needsFrameTimings) {
       _frameTimingDispatcher = FrameTimingDispatcher();
     }
@@ -110,6 +114,20 @@ class MonitorBinding {
         );
       } catch (e) {
         debugPrint("错误: FrameWindowCollector 初始化失败: $e");
+      }
+    }
+
+    if (config.effectiveInteractionConfig.enabled) {
+      try {
+        _interactionMeasureCollector = InteractionMeasureCollector(
+          config: config.effectiveInteractionConfig,
+          onFinished: reporter.recordInteractionMeasure,
+        );
+        _frameTimingDispatcher?.addListener(
+          _interactionMeasureCollector!.recordTimings,
+        );
+      } catch (e) {
+        debugPrint("错误: InteractionMeasureCollector 初始化失败: $e");
       }
     }
 
@@ -276,6 +294,29 @@ class MonitorBinding {
     return reporter.flush(isAppExiting: isAppExiting);
   }
 
+  /// 开启一次业务交互性能观测。
+  MonitorMeasureHandle measure({
+    required String action,
+    MonitorMeasureMode mode = MonitorMeasureMode.common,
+    String? target,
+    Map<String, Object?> properties = const <String, Object?>{},
+    Duration? observeFor,
+    Duration? timeout,
+  }) {
+    final collector = _interactionMeasureCollector;
+    if (collector == null) {
+      return MonitorMeasureHandle.disabled(action: action, mode: mode);
+    }
+    return collector.measure(
+      action: action,
+      mode: mode,
+      target: target,
+      properties: properties,
+      observeFor: observeFor,
+      timeout: timeout,
+    );
+  }
+
   /// 处理 lifecycle state，并触发关联的 session、热启动、内存和 flush 逻辑。
   ///
   /// 该方法接收 core 协议中的 lifecycle 字符串，public API 会先把
@@ -331,6 +372,11 @@ class MonitorBinding {
   }
 
   Future<void> dispose() async {
+    try {
+      _interactionMeasureCollector?.dispose();
+    } catch (e) {
+      debugPrint("错误: InteractionMeasureCollector dispose 失败: $e");
+    }
     _frameWindowCollector?.dispose();
     try {
       await reporter.dispose();

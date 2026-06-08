@@ -212,6 +212,10 @@ class EventPipeline {
     if (envelope.signalType == SignalType.breadcrumb) return true;
     if (envelope.signalType == SignalType.error) return true;
     if (envelope.name == EventNames.uiJankSequence) return true;
+    if (envelope.name == EventNames.interactionMeasure &&
+        envelope.status != EventStatus.unknown) {
+      return true;
+    }
     if (envelope.name == EventNames.memoryPressure) return true;
     if (envelope.name == EventNames.nativeMemoryPressure) return true;
     if (envelope.name == EventNames.memoryLeakSuspect) return true;

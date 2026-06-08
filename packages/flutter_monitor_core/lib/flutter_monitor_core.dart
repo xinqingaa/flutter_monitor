@@ -19,6 +19,8 @@ export 'src/model/event_status.dart';
 export 'src/model/memory_pressure_level.dart';
 export 'src/model/memory_sample_source.dart';
 export 'src/model/monitor_context.dart';
+export 'src/model/monitor_measure_mode.dart';
+export 'src/model/monitor_measure_result.dart';
 export 'src/model/monitor_resource.dart';
 export 'src/model/monitor_track_result.dart';
 export 'src/model/native_signal.dart';

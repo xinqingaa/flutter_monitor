@@ -64,4 +64,11 @@ abstract final class PayloadKeys {
   static const p50 = 'p50';
   static const p90 = 'p90';
   static const p99 = 'p99';
+
+  static const interaction = 'interaction';
+  static const sampleStatus = 'sample_status';
+  static const beforeFrameSummary = 'before_frame_summary';
+  static const observedFrameSummary = 'observed_frame_summary';
+  static const settleFrameSummary = 'settle_frame_summary';
+  static const cancelReason = 'cancel_reason';
 }

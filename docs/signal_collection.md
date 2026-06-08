@@ -770,6 +770,7 @@ Native memory pressure 映射规则：
 普通真实 App 接入的业务面应尽量收敛为：
 
 - `track(...)`：记录一次关键业务动作。
+- `measure(...)`：记录一次关键业务交互的性能窗口。
 - 未来统一上下文入口，例如 `setContext(...)`：设置后续事件的通用排查上下文。
 
 业务方不应为了常规排查去理解或拼装 `FieldPaths`、`RawSignal`、`EventEnvelope`、trace/span/breadcrumb store、attributes/payload。
@@ -779,15 +780,18 @@ Native memory pressure 映射规则：
 - 用户触发关键业务动作。
 - 业务动作成功、失败、取消或开始。
 - 业务错误、降级或关键状态变化。
+- 用户触发需要观察帧表现的关键交互，例如 Tab 切换、图表缩放、弹层展开、筛选刷新、复杂滚动或页面内组件渲染。
 
 ### 生成事件
 
 - `breadcrumb <action>`，其中 `<action>` 来自 `track(action: ...)`。
+- `span interaction.measure`，其中业务交互名来自 `measure(action: ...)` 并写入 `business.action`。
 
 ### 链路关联
 
 - `track` 事件默认归属当前 session、当前 route context 和当前 active trace；module/scene 仅在上下文已存在时携带。
-- pipeline 会将 `track` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
+- `measure` 事件默认归属当前 session、当前 route context、当前 page trace 和当前 `page.instance_id`；module/scene 仅在上下文已存在时携带。
+- pipeline 会将 `track` 和完成态 `measure` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
 - 业务层不需要知道 breadcrumb store，也不需要手动调用 `addBreadcrumb` 来实现常规埋点。
 
 ### 字段映射
@@ -803,10 +807,38 @@ Native memory pressure 映射规则：
 
 `properties` 是本次业务动作的诊断详情，默认不作为主要聚合索引。业务方需要按用户排查 session 时，应通过统一上下文入口写入 `context.user.userId`，而不是把 userId 放进 `track.properties`。
 
+`measure` 参数由 SDK 内部映射：
+
+- `action` -> `business.action`
+- `mode` -> `interaction.mode`
+- `target` -> `ui.target`
+- `result` -> `business.result`、`status`
+- `properties` -> payload 中的业务详情
+- `observeFor` -> `interaction.observe_ms`
+- `timeout` -> `interaction.timeout_ms`
+
+`measure` 只接受稳定业务动作名，不接受回调函数，不包裹正式业务逻辑。业务代码应保持原有 Provider、GetX、Bloc、Riverpod、动画控制器或平台回调结构，SDK 只在调用点旁路打开性能观测窗口。
+
+`MonitorMeasureMode.common`：
+
+- 调用 `measure(action: ...)` 时以当前时刻为锚点。
+- SDK 自动观察后续短窗口，默认约 1200ms。
+- 可使用调用前短暂 frame ring buffer 作为 baseline 线索；baseline 只用于诊断 payload，不作为精确归因。
+- 自动闭合后输出 `interaction.measure` 完成态 span，`interaction.end_reason = auto_window`。
+
+`MonitorMeasureMode.stage`：
+
+- 调用 `measure(action: ..., mode: stage)` 时打开阶段窗口。
+- 业务在明确完成、失败或取消时调用 handle 的 `finish()` 或 `cancel()`。
+- `finish()` 后 SDK 继续观察短 settle window，默认约 250ms，捕捉业务认为完成后下一帧、动画尾部、布局或图表重绘带来的真实帧开销。
+- 业务忘记结束时 SDK 按 timeout 自动闭合，默认约 5s，并设置 `interaction.end_reason = timeout`、`status = timeout`。
+
 ### 限制与降级
 
 - `action` 必须稳定，动态业务 ID 不得进入 action/name。
 - `properties` 仍必须经过隐私过滤，不得包含 token、cookie、原始请求体、精确位置等 forbidden 字段。
+- `measure` 并发数量必须受配置限制；超限时 SDK 应拒绝新窗口或输出 SDK self-monitoring 事件，不能无限持有状态。
+- `measure` 即使没有足够 frame 样本，也应输出可回查的交互 span 和上下文；frame 字段可省略，并通过 payload 说明样本不足。
 - `FieldPaths` 是 core/schema 内部契约，不暴露给普通业务接入。
 
 ## 通用上下文采集

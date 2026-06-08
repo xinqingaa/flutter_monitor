@@ -6,6 +6,7 @@ import 'package:flutter_monitor_sdk/src/context/monitor_initial_context.dart';
 import 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
 import 'package:flutter_monitor_sdk/src/utils/monitored_http_client.dart';
 
@@ -14,6 +15,8 @@ export 'package:flutter_monitor_sdk/src/context/monitor_initial_context.dart';
 export 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart'
     show JankConfig;
+export 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart'
+    show MonitorMeasureHandle;
 export 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
 export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
@@ -22,7 +25,13 @@ export 'package:flutter_monitor_sdk/src/outputs/log_monitor_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/http_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/custom_log_output.dart';
 export 'package:flutter_monitor_core/flutter_monitor_core.dart'
-    show EventLevel, EventStatus, MonitorEventLevel, MonitorTrackResult;
+    show
+        EventLevel,
+        EventStatus,
+        MonitorEventLevel,
+        MonitorMeasureMode,
+        MonitorMeasureResult,
+        MonitorTrackResult;
 
 /// Flutter Monitor SDK 的业务接入主入口。
 ///
@@ -181,6 +190,36 @@ class FlutterMonitorSDK {
       level: level,
       error: error,
       properties: properties,
+    );
+  }
+
+  /// 观测一次关键业务交互的性能窗口。
+  ///
+  /// [action] 与 [track] 的 `action` 语义一致，是稳定低基数业务动作名，例如
+  /// `tab.switch`、`chart.zoom`、`sheet.open`，不能包含订单号、用户输入或 URL
+  /// query 等动态值。
+  ///
+  /// 该 API 不接收回调函数，也不执行正式业务逻辑。common 模式只需调用一次，
+  /// SDK 会围绕调用点自动观察短窗口；stage 模式返回 handle，业务在明确完成或
+  /// 取消时调用 [MonitorMeasureHandle.finish] / [MonitorMeasureHandle.cancel]。
+  static MonitorMeasureHandle measure({
+    required String action,
+    MonitorMeasureMode mode = MonitorMeasureMode.common,
+    String? target,
+    Map<String, Object?> properties = const <String, Object?>{},
+    Duration? observeFor,
+    Duration? timeout,
+  }) {
+    if (!_isInitialized) {
+      return MonitorMeasureHandle.disabled(action: action, mode: mode);
+    }
+    return MonitorBinding.instance.measure(
+      action: action,
+      mode: mode,
+      target: target,
+      properties: properties,
+      observeFor: observeFor,
+      timeout: timeout,
     );
   }
 

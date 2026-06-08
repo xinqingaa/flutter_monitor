@@ -94,6 +94,46 @@ void main() {
       );
     });
 
+    test('formats interaction measure spans with action and frame data', () {
+      final envelope = EventEnvelope(
+        eventId: 'evt_interaction',
+        timestamp: DateTime.parse('2026-05-26T15:46:00.522551'),
+        startTime: DateTime.parse('2026-05-26T15:46:00.000000'),
+        endTime: DateTime.parse('2026-05-26T15:46:01.200000'),
+        durationMs: 1200,
+        signalType: SignalType.span,
+        name: EventNames.interactionMeasure,
+        level: EventLevel.info,
+        status: EventStatus.ok,
+        sessionId: 'ses_1',
+        traceId: 'trace_1',
+        spanId: 'span_1',
+        context: const MonitorContext(route: RouteContext(name: '/chart')),
+        attributes: const <String, Object?>{
+          FieldPaths.eventPhase: EventPhases.end,
+          FieldPaths.businessAction: 'chart.zoom',
+          FieldPaths.businessResult: 'success',
+          FieldPaths.interactionMode: 'common',
+          FieldPaths.interactionEndReason: 'auto_window',
+          FieldPaths.frameMaxMs: 42.4,
+          FieldPaths.frameAvgMs: 12.2,
+          FieldPaths.frameFps: 60,
+        },
+      );
+
+      final summary = summarizer.summarize(envelope);
+      final line = formatter.format(summary);
+
+      expect(summary.kind, EventSummaryKind.interaction);
+      expect(
+        line,
+        '[FM] kind=interaction name=interaction.measure status=ok phase=end '
+        'action=chart.zoom mode=common result=success end_reason=auto_window '
+        'duration_ms=1200 route=/chart frame_max_ms=42.4 frame_avg_ms=12.2 '
+        'fps=60 session=ses_1 trace=trace_1 span=span_1 event=evt_interaction',
+      );
+    });
+
     test('quotes error messages and keeps lookup ids', () {
       final envelope = EventEnvelope(
         eventId: 'evt_error',

@@ -22,44 +22,49 @@
 
 目标：让业务主动标记 TabBar 切换、图表缩放、图表渲染、复杂滚动、筛选刷新等不切路由的关键交互，并把交互期间的帧表现回连到当前 session、route 和 `page.instance_id`。
 
-建议 API 草案：
+当前确定方案：
 
 ```dart
-final handle = FlutterMonitorSDK.startPerformanceWindow(
-  name: 'chart.zoom',
-  attributes: {'chart.type': 'line'},
+FlutterMonitorSDK.measure(
+  action: 'chart.zoom',
+  target: 'revenue_chart',
+  properties: {'chart.type': 'line'},
 );
-
-await doZoom();
-
-handle.finish();
 ```
 
-便捷 API 草案：
+`action` 与 `track(action: ...)` 语义一致：它是稳定低基数业务动作名，不是回调函数。SDK 不接管、不包裹、不执行正式业务逻辑，只在调用点旁路打开交互性能观测窗口。
+
+阶段型 API：
 
 ```dart
-await FlutterMonitorSDK.trackPerformanceWindow(
-  name: 'tab.switch',
-  action: () async {
-    setState(() => currentTab = index);
-    await nextFrameOrDelay();
-  },
+final measure = FlutterMonitorSDK.measure(
+  action: 'sheet.open',
+  mode: MonitorMeasureMode.stage,
 );
+
+// 业务自己的展开、渲染、异步加载或动画逻辑保持原样。
+measure.finish();
 ```
+
+模式语义：
+
+- `common`：业务只标记一个交互点，SDK 以该时刻为锚点观察前后短窗口。适合 TabBar 切换、图表缩放、轻量点击、没有可靠完成回调的局部 UI 变化。
+- `stage`：业务标记明确开始与结束，SDK 从 `measure(...)` 观察到 `finish()`，再追加短 settle 窗口。适合弹层展开、筛选刷新、图表渲染、复杂异步加载等有明确完成点的交互。
 
 设计原则：
 
-- 交互名称必须低基数、可聚合，不允许包含用户输入、URL query、订单号等动态值。
+- `action` 必须低基数、可聚合，不允许包含用户输入、URL query、订单号等动态值。
 - 交互窗口可以和页面窗口同时存在，同一批 `FrameTiming` 可进入多个内存聚合器。
 - 必须限制并发数量，并提供 timeout，避免业务忘记 finish 后长期持有状态。
-- 输出形态优先回写当前业务 trace、breadcrumb 或 `page.visit` 详情，不新增一套默认主时间线事件。
+- 输出形态为稳定 `span interaction.measure`，默认挂到当前 `page.visit` trace；业务动作名写入 `business.action`。
+- `measure` 完成事件应进入 breadcrumb store，使后续 error、jank、failed HTTP 能携带最近交互上下文。
 - Workbench 在页面详情或业务动作详情内展示交互窗口，不把它和 `ui.jank.sequence` 混成同一类问题。
 
 待设计：
 
-- 交互窗口字段 namespace、隐私等级、字段注册和服务端聚合边界。
-- timeout、cancel、异常结束的状态语义。
-- 同时存在多个交互窗口时的样本归属和上限策略。
+- Workbench 页面详情中的 interaction 列表与聚合筛选。
+- interaction 与附近 HTTP/error/jank 的时间重叠提示。
+- 更细的 before/settle frame summary payload 裁剪策略。
 
 ## 3.扩展 TODO
 

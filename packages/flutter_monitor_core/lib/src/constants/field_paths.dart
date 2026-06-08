@@ -114,6 +114,13 @@ abstract final class FieldPaths {
   static const businessAction = 'business.action';
   static const businessResult = 'business.result';
 
+  static const interactionMode = 'interaction.mode';
+  static const interactionEndReason = 'interaction.end_reason';
+  static const interactionActiveMs = 'interaction.active_ms';
+  static const interactionSettleMs = 'interaction.settle_ms';
+  static const interactionObserveMs = 'interaction.observe_ms';
+  static const interactionTimeoutMs = 'interaction.timeout_ms';
+
   static const jankCount = 'jank.count';
   static const frameMaxMs = 'frame.max_ms';
   static const frameAvgMs = 'frame.avg_ms';

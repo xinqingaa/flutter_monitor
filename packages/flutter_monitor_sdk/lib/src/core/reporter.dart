@@ -7,6 +7,7 @@ import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
+import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
@@ -989,6 +990,56 @@ class Reporter {
     );
   }
 
+  /// 记录一次业务交互性能观测。
+  ///
+  /// 该入口对应 public `FlutterMonitorSDK.measure`。它不执行、不包裹业务逻辑；
+  /// 只把 interaction collector 聚合出的窗口事实写入当前页面 trace。
+  PipelineResult recordInteractionMeasure(InteractionMeasureSnapshot snapshot) {
+    final page = _topPageTrace();
+    final traceId = page?.traceId ?? _traceManager.activeTraceId;
+    final attributes = <String, Object?>{
+      FieldPaths.businessAction: snapshot.action,
+      FieldPaths.businessResult: snapshot.result.toJson(),
+      FieldPaths.interactionMode: snapshot.mode.toJson(),
+      FieldPaths.interactionEndReason: snapshot.endReason,
+      FieldPaths.interactionObserveMs: snapshot.observeFor.inMilliseconds,
+      FieldPaths.interactionTimeoutMs: snapshot.timeout.inMilliseconds,
+      FieldPaths.interactionActiveMs: snapshot.activeDuration.inMilliseconds,
+      FieldPaths.interactionSettleMs: snapshot.settleDuration.inMilliseconds,
+      if (snapshot.target != null && snapshot.target!.isNotEmpty)
+        FieldPaths.uiTarget: snapshot.target,
+      if (page != null) FieldPaths.pageInstanceId: page.pageInstanceId,
+      ...snapshot.frameAttributes(
+        minSampleCount: _config.effectiveInteractionConfig.minSampleCount,
+      ),
+    };
+    final payloadProperties = <String, Object?>{
+      ...snapshot.properties,
+      ...snapshot.finishProperties,
+    };
+    return _recordCompletedSpan(
+      name: EventNames.interactionMeasure,
+      traceId: traceId,
+      startTime: snapshot.startedAt,
+      endTime: snapshot.observedUntil,
+      status: _measureStatus(snapshot.result),
+      level: _measureLevel(snapshot.result),
+      source: SignalSources.sdkMeasure,
+      includeBreadcrumbs: true,
+      attributes: attributes,
+      payload: <String, Object?>{
+        PayloadKeys.interaction: <String, Object?>{
+          PayloadKeys.identifier: snapshot.id,
+          PayloadKeys.observedFrameSummary: snapshot.frameSummary(),
+          if (snapshot.cancelReason != null)
+            PayloadKeys.cancelReason: snapshot.cancelReason,
+        },
+        if (payloadProperties.isNotEmpty)
+          FieldPaths.payloadProperties: payloadProperties,
+      },
+    );
+  }
+
   PipelineResult reportSdkEvent(
     String name, {
     EventLevel level = EventLevel.info,
@@ -1513,11 +1564,12 @@ class Reporter {
 
   PipelineResult _recordCompletedSpan({
     required String name,
-    required String traceId,
+    required String? traceId,
     required DateTime startTime,
     required DateTime endTime,
     EventStatus status = EventStatus.ok,
     EventLevel level = EventLevel.info,
+    String source = SignalSources.sdkApi,
     bool? includeBreadcrumbs,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
@@ -1544,7 +1596,7 @@ class Reporter {
     }
     return _pipeline.capture(
       RawSignal(
-        source: SignalSources.sdkApi,
+        source: source,
         name: finished.name,
         signalType: SignalType.span,
         timestamp: endTime,
@@ -1769,6 +1821,24 @@ class Reporter {
   EventLevel _trackLevel(MonitorTrackResult result) {
     return switch (result) {
       MonitorTrackResult.failed => EventLevel.warning,
+      _ => EventLevel.info,
+    };
+  }
+
+  EventStatus _measureStatus(MonitorMeasureResult result) {
+    return switch (result) {
+      MonitorMeasureResult.success => EventStatus.ok,
+      MonitorMeasureResult.failed => EventStatus.error,
+      MonitorMeasureResult.cancelled => EventStatus.cancelled,
+      MonitorMeasureResult.timeout => EventStatus.timeout,
+      MonitorMeasureResult.unknown => EventStatus.unknown,
+    };
+  }
+
+  EventLevel _measureLevel(MonitorMeasureResult result) {
+    return switch (result) {
+      MonitorMeasureResult.failed ||
+      MonitorMeasureResult.timeout => EventLevel.warning,
       _ => EventLevel.info,
     };
   }

@@ -62,6 +62,7 @@ abstract final class SignalSources {
   static const sdkPage = 'sdk.page';
   static const sdkRuntime = 'sdk.runtime';
   static const sdkTrack = 'sdk.track';
+  static const sdkMeasure = 'sdk.measure';
 }
 
 abstract final class StartTypes {
@@ -96,6 +97,14 @@ abstract final class PageActivePhases {
   static const resume = 'page.resume';
   static const lifecycleBackground = 'lifecycle.background';
   static const appDispose = 'app.dispose';
+}
+
+abstract final class InteractionEndReasons {
+  static const autoWindow = 'auto_window';
+  static const finish = 'finish';
+  static const cancel = 'cancel';
+  static const timeout = 'timeout';
+  static const dispose = 'dispose';
 }
 
 abstract final class TriggerValues {

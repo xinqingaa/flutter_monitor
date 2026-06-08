@@ -32,6 +32,8 @@ abstract final class EventNames {
   static const uiClick = 'ui.click';
   static const uiJankSequence = 'ui.jank.sequence';
 
+  static const interactionMeasure = 'interaction.measure';
+
   static const memorySample = 'memory.sample';
   static const memoryGrowth = 'memory.growth';
   static const memoryPressure = 'memory.pressure';

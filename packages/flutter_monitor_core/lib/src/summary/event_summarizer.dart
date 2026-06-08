@@ -42,6 +42,10 @@ class EventSummarizer {
         envelope.attributes.containsKey(FieldPaths.httpStatusCode)) {
       return EventSummaryKind.http;
     }
+    if (envelope.name == EventNames.interactionMeasure ||
+        envelope.attributes.containsKey(FieldPaths.interactionMode)) {
+      return EventSummaryKind.interaction;
+    }
     if (envelope.name == EventNames.uiJankSequence ||
         envelope.name == 'jank.sequence' ||
         envelope.attributes.containsKey(FieldPaths.jankCount)) {
@@ -72,6 +76,7 @@ class EventSummarizer {
       EventSummaryKind.startup => _startupFields(envelope),
       EventSummaryKind.page => _pageFields(envelope),
       EventSummaryKind.http => _httpFields(envelope),
+      EventSummaryKind.interaction => _interactionFields(envelope),
       EventSummaryKind.jank => _jankFields(envelope),
       EventSummaryKind.error => _errorFields(envelope),
       EventSummaryKind.lifecycle => _lifecycleFields(envelope),
@@ -115,6 +120,20 @@ class EventSummarizer {
       PayloadKeys.durationMs: envelope.durationMs,
       'route': _routeDisplay(envelope),
       'breadcrumbs': _breadcrumbCount(envelope),
+    });
+  }
+
+  Map<String, Object?> _interactionFields(EventEnvelope envelope) {
+    return _withoutNulls(<String, Object?>{
+      'action': envelope.attributes[FieldPaths.businessAction],
+      'mode': envelope.attributes[FieldPaths.interactionMode],
+      'result': envelope.attributes[FieldPaths.businessResult],
+      'end_reason': envelope.attributes[FieldPaths.interactionEndReason],
+      PayloadKeys.durationMs: envelope.durationMs,
+      'route': _routeDisplay(envelope),
+      'frame_max_ms': envelope.attributes[FieldPaths.frameMaxMs],
+      'frame_avg_ms': envelope.attributes[FieldPaths.frameAvgMs],
+      'fps': envelope.attributes[FieldPaths.frameFps],
     });
   }
 
@@ -213,6 +232,7 @@ class CompactLogVisibilityPolicy {
       EventSummaryKind.jank => true,
       EventSummaryKind.startup => phase != 'start',
       EventSummaryKind.http => _shouldDisplayHttp(summary),
+      EventSummaryKind.interaction => phase != 'start',
       EventSummaryKind.page => _shouldDisplayPage(summary),
       EventSummaryKind.lifecycle => true,
       EventSummaryKind.sdk => _shouldDisplaySdk(envelope),

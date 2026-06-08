@@ -140,6 +140,19 @@ void main() {
       FieldValueType.string,
     );
     expect(
+      registry.lookup(FieldPaths.interactionMode)?.valueType,
+      FieldValueType.string,
+    );
+    expect(registry.lookup(FieldPaths.interactionMode)?.indexed, isTrue);
+    expect(
+      registry.lookup(FieldPaths.interactionActiveMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
+      registry.lookup(FieldPaths.interactionTimeoutMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
       registry.lookup(FieldPaths.frameSampleCount)?.valueType,
       FieldValueType.number,
     );
@@ -298,6 +311,12 @@ void main() {
       FieldPaths.uiAction,
       FieldPaths.businessAction,
       FieldPaths.businessResult,
+      FieldPaths.interactionMode,
+      FieldPaths.interactionEndReason,
+      FieldPaths.interactionActiveMs,
+      FieldPaths.interactionSettleMs,
+      FieldPaths.interactionObserveMs,
+      FieldPaths.interactionTimeoutMs,
       FieldPaths.jankCount,
       FieldPaths.frameMaxMs,
       FieldPaths.frameAvgMs,

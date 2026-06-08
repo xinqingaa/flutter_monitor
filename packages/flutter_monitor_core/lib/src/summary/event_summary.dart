@@ -4,6 +4,7 @@ enum EventSummaryKind {
   startup('startup'),
   page('page'),
   http('http'),
+  interaction('interaction'),
   jank('jank'),
   error('error'),
   lifecycle('lifecycle'),

@@ -538,6 +538,59 @@ FlutterMonitorSDK.track(
 
 `track` 生成 `signalType = breadcrumb` 的完整 `EventEnvelope`，进入 session timeline，并由 pipeline 自动加入 recent breadcrumb store。后续 error、jank、failed HTTP 可携带它作为 `payload.breadcrumbs` 上下文。业务层不需要也不应该主动调用 `addBreadcrumb` 来实现常规埋点。
 
+`measure` 的职责是记录一次关键业务交互的性能窗口，不接管业务逻辑，不接受回调函数。`measure(action: ...)` 中的 `action` 与 `track(action: ...)` 语义一致：它是稳定低基数业务动作名，例如 `tab.switch`、`chart.zoom`、`sheet.open`、`filter.apply`，不得包含用户输入、订单号、URL query 或其他动态 ID。
+
+```dart
+FlutterMonitorSDK.measure(
+  action: 'tab.switch',
+  target: 'orders_tab',
+);
+
+final measure = FlutterMonitorSDK.measure(
+  action: 'sheet.open',
+  mode: MonitorMeasureMode.stage,
+);
+measure.finish();
+```
+
+`measure` 生成稳定事件名 `interaction.measure`，默认使用 `signalType = span`，挂到当前 `page.visit` trace 下，并自动携带当前 session、route、`page.instance_id`、module、user、release、network、lifecycle 和 recent breadcrumbs。业务动作名写入 `attributes.business.action`，目标控件写入 `attributes.ui.target`，交互采集语义写入 `attributes.interaction.*`。
+
+`MonitorMeasureMode` 取值：
+
+| 值 | 说明 | 窗口闭合 |
+|---|---|---|
+| `common` | 业务只标记一个交互点，SDK 围绕调用时刻观察前后短窗口 | 自动闭合，`interaction.end_reason = auto_window` |
+| `stage` | 业务标记明确开始与结束的阶段，例如弹层展开、筛选刷新、图表渲染 | `finish()` 后追加短 settle 窗口；忘记结束时 timeout 闭合 |
+
+`MonitorMeasureResult` 取值：
+
+| 值 | 说明 | 默认 status | 默认 level |
+|---|---|---|---|
+| `success` | 交互观测正常完成 | `ok` | `info` |
+| `failed` | 业务显式标记交互失败 | `error` | `warning` |
+| `cancelled` | 业务显式取消观测 | `cancelled` | `info` |
+| `timeout` | stage 模式超时自动闭合 | `timeout` | `warning` |
+| `unknown` | 无明确结果 | `unknown` | `info` |
+
+`interaction.measure` 关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `business.action` | 稳定业务交互名 |
+| `business.result` | 交互观测结果 |
+| `ui.target` | 可选低基数控件或业务对象标识 |
+| `interaction.mode` | `common` / `stage` |
+| `interaction.end_reason` | `auto_window` / `finish` / `cancel` / `timeout` / `dispose` |
+| `interaction.active_ms` | stage 从开始到 finish/cancel/timeout 的业务阶段时长 |
+| `interaction.settle_ms` | finish 后追加观察窗口时长 |
+| `interaction.observe_ms` | common 自动观察窗口时长 |
+| `interaction.timeout_ms` | stage 超时阈值 |
+| `page.instance_id` | 当前页面实例，自动对齐当前 route |
+| `frame.*` | 交互窗口内的帧摘要，复用页面/卡顿帧字段 |
+| `payload.properties` | 业务详情，只做诊断展示，不作为主要索引 |
+
+`measure` 完成事件会进入 breadcrumb store，使后续错误、卡顿和失败 HTTP 能携带最近交互上下文。它不替代 `track`：只需要记录“发生过什么”时用 `track`；需要回答“这个交互卡不卡、窗口内帧表现如何”时用 `measure`。
+
 `reportEvent(category, data)`、组件式点击埋点、`startTrace` / `startSpan` / `addBreadcrumb` 不作为当前 `FlutterMonitorSDK` 公开业务接入 API。后续只有出现明确业务场景时，才重新设计并暴露高级诊断 API。
 
 ### SDK 内部 source 标准值
@@ -556,6 +609,7 @@ FlutterMonitorSDK.track(
 | `sdk.page` | page/route 采集 |
 | `sdk.runtime` | SDK runtime self-monitoring |
 | `sdk.track` | `FlutterMonitorSDK.track(...)` 业务埋点 |
+| `sdk.measure` | `FlutterMonitorSDK.measure(...)` 业务交互性能观测 |
 
 ### 通用上下文入口
 
@@ -965,6 +1019,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 - `ui.click`
 - `ui.scroll`
 - `ui.jank.sequence`
+- `interaction.measure`
 - `memory.sample`
 - `memory.growth`
 - `memory.pressure`
@@ -990,6 +1045,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.from_full_name`、`page.to`、`page.to_full_name`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
 | 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
+| 业务交互性能 | `span interaction.measure` | `business.action`、`business.result`、`ui.target`、`interaction.mode`、`interaction.end_reason`、`interaction.active_ms`、`interaction.settle_ms`、`interaction.observe_ms`、`interaction.timeout_ms`、`page.instance_id`、`durationMs`、`frame.*` |
 | 卡顿 | `metric ui.jank.sequence`；页面帧摘要写入 `page.visit` trace end | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
 | 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect`；页面/启动边界 RSS 默认合并到主 trace | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
 | 生命周期 | `breadcrumb app.lifecycle`、`metric app.foreground_duration`、`metric app.background_duration`、`trace app.hot_start`、`sdk.lifecycle.flush` | `context.lifecycle.*`、`durationMs`、`app.start.type`、`app.exit_flush.success` |
@@ -1009,7 +1065,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 完整 URL、query、body 默认不应直接上报。失败请求的原始错误文本只允许作为短摘要存在；长错误文本必须裁剪，并通过 `error.truncated`、`error.original_length` 表达裁剪状态。稳定检索和聚合必须依赖 `attributes.http.error_type`，不能依赖错误原文。
 
-业务侧普通接入只推荐 `FlutterMonitorSDK.track(...)`。`startTrace`、`startSpan`、`addBreadcrumb`、任意自定义 attributes/payload 不作为当前公开业务 API；未来只有出现明确业务场景时才重新设计高级诊断入口。
+业务侧普通接入推荐 `FlutterMonitorSDK.track(...)` 和 `FlutterMonitorSDK.measure(...)`。`measure` 也不接受回调函数；业务逻辑保持在业务代码中执行，SDK 只旁路观测。`startTrace`、`startSpan`、`addBreadcrumb`、任意自定义 attributes/payload 不作为当前公开业务 API；未来只有出现明确业务场景时才重新设计高级诊断入口。
 
 ## 完整 Session Batch 示例
 

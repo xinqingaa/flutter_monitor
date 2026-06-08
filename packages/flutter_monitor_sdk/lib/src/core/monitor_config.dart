@@ -94,6 +94,44 @@ class MonitorFrameConfig {
   static const MonitorFrameConfig defaultConfig = MonitorFrameConfig();
 }
 
+/// 业务交互性能观测配置。
+///
+/// 控制 `FlutterMonitorSDK.measure(...)` 的 common/stage 观测窗口、并发上限和
+/// 样本门槛。该能力只旁路观察业务交互，不接管业务逻辑。
+class MonitorInteractionConfig {
+  /// 是否启用业务交互性能观测。
+  final bool enabled;
+
+  /// common 模式调用后自动观察的窗口。
+  final Duration commonObserveFor;
+
+  /// stage 模式 finish 后追加观察的 settle 窗口。
+  final Duration stageSettleWindow;
+
+  /// stage 模式未显式结束时的自动闭合超时。
+  final Duration stageTimeout;
+
+  /// 同时存在的最大交互窗口数。
+  final int maxConcurrent;
+
+  /// 输出 frame 摘要所需的最小样本数。
+  final int minSampleCount;
+
+  /// 创建业务交互性能观测配置。
+  const MonitorInteractionConfig({
+    this.enabled = true,
+    this.commonObserveFor = const Duration(milliseconds: 1200),
+    this.stageSettleWindow = const Duration(milliseconds: 250),
+    this.stageTimeout = const Duration(seconds: 5),
+    this.maxConcurrent = 4,
+    this.minSampleCount = 3,
+  });
+
+  /// 默认业务交互性能观测配置。
+  static const MonitorInteractionConfig defaultConfig =
+      MonitorInteractionConfig();
+}
+
 /// 应用信息配置。
 ///
 /// 这些字段会进入 `resource.app.*`，属于相对稳定的资源维度，适合用于版本、
@@ -234,6 +272,9 @@ class MonitorConfig {
   /// Frame window 聚合配置。
   final MonitorFrameConfig? frameConfig;
 
+  /// 业务交互性能观测配置。
+  final MonitorInteractionConfig? interactionConfig;
+
   /// 可选 native bridge。未提供时 SDK 只保留 Flutter/Dart 层能力。
   final MonitorNativeBridge? nativeBridge;
 
@@ -255,6 +296,7 @@ class MonitorConfig {
     this.sessionConfig,
     this.memoryConfig,
     this.frameConfig,
+    this.interactionConfig,
     this.nativeBridge,
     this.customData,
   });
@@ -305,5 +347,10 @@ class MonitorConfig {
   /// 获取实际使用的帧窗口聚合配置。
   MonitorFrameConfig get effectiveFrameConfig {
     return frameConfig ?? MonitorFrameConfig.defaultConfig;
+  }
+
+  /// 获取实际使用的业务交互性能观测配置。
+  MonitorInteractionConfig get effectiveInteractionConfig {
+    return interactionConfig ?? MonitorInteractionConfig.defaultConfig;
   }
 }

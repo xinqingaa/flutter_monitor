@@ -22,6 +22,7 @@ void main() {
     expect(EventNames.pageVisit, 'page.visit');
     expect(EventNames.pageLoad, 'page.load');
     expect(EventNames.httpClient, 'http.client');
+    expect(EventNames.interactionMeasure, 'interaction.measure');
     expect(EventNames.uiJankSequence, 'ui.jank.sequence');
     expect(EventNames.memorySample, 'memory.sample');
     expect(EventNames.memoryLeakSuspect, 'memory.leak.suspect');
@@ -43,6 +44,7 @@ void main() {
     expect(PayloadKeys.startupPhase, 'startup.phase');
     expect(PayloadKeys.unregisteredAttributes, 'unregistered.attributes');
     expect(FieldPaths.appStartEndReason, 'app.start.end_reason');
+    expect(FieldPaths.interactionMode, 'interaction.mode');
 
     expect(ErrorTypes.dartError, 'dart_error');
     expect(EventPhases.start, 'start');
@@ -56,9 +58,21 @@ void main() {
     expect(StartupPhases.firstFrame, 'first_frame');
     expect(StartupEndReasons.firstFrame, 'first_frame');
     expect(StartupEndReasons.interactive, 'interactive');
+    expect(InteractionEndReasons.autoWindow, 'auto_window');
+    expect(InteractionEndReasons.timeout, 'timeout');
   });
 
   test('exposes stable wire values for memory and native protocol enums', () {
+    expect(MonitorMeasureMode.common.toJson(), 'common');
+    expect(MonitorMeasureMode.stage.toJson(), 'stage');
+    expect(MonitorMeasureMode.fromJson('stage'), MonitorMeasureMode.stage);
+    expect(MonitorMeasureResult.success.toJson(), 'success');
+    expect(MonitorMeasureResult.timeout.toJson(), 'timeout');
+    expect(
+      MonitorMeasureResult.fromJson('cancelled'),
+      MonitorMeasureResult.cancelled,
+    );
+
     expect(MemorySampleSource.dart.toJson(), 'dart');
     expect(MemorySampleSource.native.toJson(), 'native');
     expect(MemorySampleSource.fromJson('system'), MemorySampleSource.system);

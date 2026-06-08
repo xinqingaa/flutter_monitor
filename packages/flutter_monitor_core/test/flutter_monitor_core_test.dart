@@ -10,6 +10,8 @@ void main() {
     expect(SignalType.trace.toJson(), 'trace');
     expect(MonitorEventLevel.warning.toJson(), 'warning');
     expect(MonitorTrackResult.success.toJson(), 'success');
+    expect(MonitorMeasureMode.common.toJson(), 'common');
+    expect(MonitorMeasureResult.success.toJson(), 'success');
     expect(MemorySampleSource.native.toJson(), 'native');
     expect(MemoryPressureLevel.critical.toJson(), 'critical');
     expect(NativeSignalType.anr.toJson(), 'anr');
