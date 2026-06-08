@@ -484,17 +484,41 @@ class Reporter {
     return pageInstanceId;
   }
 
-  PipelineResult recordPageView(String routeName, {String? routeFullName}) {
-    return addBreadcrumb(
-      EventNames.pageView,
-      attributes: <String, Object?>{
-        if (routeFullName != null && routeFullName.isNotEmpty)
-          FieldPaths.contextRouteFullName: routeFullName,
-      },
-      payload: <String, Object?>{
-        PayloadKeys.type: EventNames.pageView,
-        PayloadKeys.page: routeName,
-      },
+  PipelineResult recordPageView(
+    String routeName, {
+    String? routeFullName,
+    String? pageInstanceId,
+    String? activePhase,
+    DateTime? timestamp,
+  }) {
+    final effectiveRouteFullName = _effectiveRouteFullName(
+      routeName,
+      routeFullName,
+    );
+    return _pipeline.capture(
+      RawSignal(
+        source: SignalSources.sdkPage,
+        name: EventNames.pageView,
+        signalType: SignalType.breadcrumb,
+        timestamp: timestamp ?? DateTime.now(),
+        level: EventLevel.info,
+        status: EventStatus.ok,
+        traceId: pageInstanceId == null
+            ? _activePageTraceForRoute(routeName)?.traceId
+            : _pageTracesByInstanceId[pageInstanceId]?.traceId,
+        includeBreadcrumbs: false,
+        contextRouteName: routeName,
+        contextRouteFullName: effectiveRouteFullName,
+        attributes: <String, Object?>{
+          if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
+          if (activePhase != null) FieldPaths.pageActivePhase: activePhase,
+          FieldPaths.contextRouteFullName: effectiveRouteFullName,
+        },
+        payload: <String, Object?>{
+          PayloadKeys.type: EventNames.pageView,
+          PayloadKeys.page: routeName,
+        },
+      ),
     );
   }
 
@@ -570,6 +594,29 @@ class Reporter {
         _pageTracesByInstanceId[record.pageInstanceId] ?? completedRecord;
     _pageTracesByInstanceId.remove(record.pageInstanceId);
     _pageInstanceStack.remove(record.pageInstanceId);
+    if (endReason == PageEndReasons.routePop) {
+      _recordCompletedSpan(
+        name: EventNames.routePop,
+        traceId: record.traceId,
+        startTime: finishedAt,
+        endTime: finishedAt,
+        includeBreadcrumbs: false,
+        attributes: <String, Object?>{
+          FieldPaths.pageInstanceId: record.pageInstanceId,
+          if (record.previousRouteName != null)
+            FieldPaths.pageFrom: record.previousRouteName,
+          if (record.previousRouteFullName != null)
+            FieldPaths.pageFromFullName: record.previousRouteFullName,
+          if (nextRouteName != null) FieldPaths.pageTo: nextRouteName,
+          if (effectiveNextRouteFullName != null)
+            FieldPaths.pageToFullName: effectiveNextRouteFullName,
+        },
+        payload: <String, Object?>{
+          PayloadKeys.routeName: record.routeName,
+          if (nextRouteName != null) PayloadKeys.routePrevious: nextRouteName,
+        },
+      );
+    }
     _finishPageTrace(
       recordWithStats.copyWith(
         nextRouteName: nextRouteName,
@@ -1649,6 +1696,13 @@ class Reporter {
     _openPageWindow(
       record.pageInstanceId,
       PageActivePhases.resume,
+      timestamp: timestamp,
+    );
+    recordPageView(
+      record.routeName,
+      routeFullName: record.routeFullName,
+      pageInstanceId: record.pageInstanceId,
+      activePhase: PageActivePhases.resume,
       timestamp: timestamp,
     );
   }

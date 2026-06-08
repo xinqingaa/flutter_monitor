@@ -136,9 +136,17 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     return { ...base, title: routeName ? `进入页面 ${routeName}` : '进入页面', summaryItems: compactItems(from ? `来源 ${from}` : undefined) };
   }
 
-  if (name === 'route.push') {
+  if (name === 'route.push' || name === 'route.pop') {
     const from = readStringPath(event, 'attributes.page.from_full_name') ?? readStringPath(event, 'attributes.page.from') ?? readStringPath(event, 'payload.route.previous');
     const to = readStringPath(event, 'attributes.page.to_full_name') ?? readStringPath(event, 'attributes.page.to') ?? routeFullName(event) ?? readStringPath(event, 'payload.route.name') ?? route;
+    if (name === 'route.pop') {
+      return {
+        ...base,
+        title: to ? `返回 ${to}` : '路由返回',
+        durationLabel: duration,
+        summaryItems: compactItems(from ? `来源 ${from}` : undefined),
+      };
+    }
     return {
       ...base,
       title: to ? (from ? `从 ${from} 进入 ${to}` : `路由切换到 ${to}`) : '路由切换',
@@ -159,7 +167,11 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
   }
 
   if (name === 'page.view') {
-    return { ...base, title: route ? `页面访问 ${route}` : '页面访问', summaryItems: [] };
+    const activePhase = readStringPath(event, 'attributes.page.active_phase');
+    const title = activePhase === 'page.resume'
+      ? route ? `返回后继续 ${route}` : '返回后继续'
+      : route ? `页面访问 ${route}` : '页面访问';
+    return { ...base, title, summaryItems: activePhase ? compactItems(activePhaseLabel(activePhase)) : [] };
   }
 
   if (name === 'page.stay') {
@@ -335,7 +347,7 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     return {
       ...base,
       kindLabel: '业务埋点',
-      title: memoryAction?.title ?? (action ? `${result === 'failed' ? '业务埋点失败' : '业务埋点动作'} ${action}` : `用户操作 ${target}`),
+      title: memoryAction?.title ?? (action ? `${result === 'failed' ? '失败' : '动作'} ${action}` : `用户操作 ${target}`),
       summaryItems: memoryAction?.summaryItems ?? compactItems(result ? trackResultLabel(result) : target),
     };
   }
@@ -532,11 +544,12 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     return;
   }
 
-  if (name.startsWith('page.') || name === 'route.push') {
+  if (name.startsWith('page.') || name === 'route.push' || name === 'route.pop') {
     pushField(event, secondary, 'attributes.page.load_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.page.first_frame_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.page.interactive_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.page.instance_id');
+    pushField(event, secondary, 'attributes.page.active_phase');
     pushField(event, secondary, 'attributes.page.from');
     pushField(event, secondary, 'attributes.page.from_full_name');
     pushField(event, secondary, 'attributes.page.to');
@@ -748,6 +761,7 @@ function nameDescription(name: string): string | undefined {
     'sdk.init': 'SDK 初始化',
     'page.visit': '页面访问',
     'route.push': '路由切换',
+    'route.pop': '路由返回',
     'page.load': '页面加载',
     'page.view': '页面访问足迹',
     'app.lifecycle': '生命周期变化',
@@ -759,6 +773,18 @@ function nameDescription(name: string): string | undefined {
     'interaction.measure': '交互性能观测',
   };
   return labels[name];
+}
+
+function activePhaseLabel(value: string): string {
+  const labels: Record<string, string> = {
+    'page.enter': '进入可见',
+    'page.covered': '被覆盖',
+    'page.exit': '离开',
+    'page.resume': '恢复可见',
+    'lifecycle.background': '进入后台',
+    'app.dispose': '退出清理',
+  };
+  return labels[value] ?? value;
 }
 
 function measureModeLabel(value: string): string {

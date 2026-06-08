@@ -21,6 +21,7 @@ void main() {
     expect(EventNames.appColdStart, 'app.cold_start');
     expect(EventNames.pageVisit, 'page.visit');
     expect(EventNames.pageLoad, 'page.load');
+    expect(EventNames.routePop, 'route.pop');
     expect(EventNames.httpClient, 'http.client');
     expect(EventNames.interactionMeasure, 'interaction.measure');
     expect(EventNames.uiJankSequence, 'ui.jank.sequence');
@@ -58,6 +59,8 @@ void main() {
     expect(StartupPhases.firstFrame, 'first_frame');
     expect(StartupEndReasons.firstFrame, 'first_frame');
     expect(StartupEndReasons.interactive, 'interactive');
+    expect(PageActivePhases.enter, 'page.enter');
+    expect(PageActivePhases.resume, 'page.resume');
     expect(InteractionEndReasons.autoWindow, 'auto_window');
     expect(InteractionEndReasons.timeout, 'timeout');
   });

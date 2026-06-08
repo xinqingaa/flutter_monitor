@@ -32,12 +32,14 @@ export interface TimelineSegment {
   severity: SegmentSeverity;
   hasIssue: boolean;
   issueCount: number;
+  resumed: boolean;
 }
 
 interface RawSegment {
   kind: SegmentKind;
   route?: string;
   pageKey?: string;
+  resumed?: boolean;
   events: MonitorEvent[];
   start: number;
 }
@@ -45,7 +47,7 @@ interface RawSegment {
 export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[] {
   const prepared = prepareSessionEvents(events);
   const raw: RawSegment[] = [];
-  const pageSegments = new Map<string, RawSegment>();
+  const pageSegments = new Map<string, RawSegment[]>();
   let current: RawSegment | undefined;
   let startup: RawSegment | undefined;
   let initialStartupClosed = false;
@@ -54,6 +56,7 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
   for (const event of prepared) {
     const route = realRoute(event);
     const isEntry = isPageEntry(event);
+    const isResume = isPageResume(event);
 
     if (isInitialStartupEvent(event, { startup, initialStartupClosed, seenPageEntry })) {
       if (!startup) {
@@ -66,22 +69,24 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
       continue;
     }
 
-    if (isEntry) seenPageEntry = true;
+    if (isEntry || isResume) seenPageEntry = true;
 
-    const targetPageSegment = pageSegmentForEvent(event, pageSegments);
+    const targetPageSegment = isResume ? undefined : pageSegmentForEvent(event, pageSegments);
     if (targetPageSegment && targetPageSegment !== current) {
       targetPageSegment.events.push(event);
       continue;
     }
 
     if (!current) {
-      current = makeRaw(isEntry ? 'page' : 'activity', route, event);
+      current = makeRaw(isEntry || isResume ? 'page' : 'activity', route, event);
+      if (isResume) current.resumed = true;
       registerPageSegment(current, pageSegments);
       raw.push(current);
     } else {
-      const leavesStartupViaPage = current.kind === 'startup' && isEntry && route !== undefined;
+      const leavesStartupViaPage = current.kind === 'startup' && (isEntry || isResume) && route !== undefined;
       const entryPageKey = pageInstanceKey(event);
-      const explicitNewPage = isEntry && route !== undefined && (
+      const explicitNewPage = (isEntry || isResume) && route !== undefined && (
+        isResume ||
         current.kind !== 'page' ||
         route !== current.route ||
         (entryPageKey !== undefined && entryPageKey !== current.pageKey)
@@ -93,6 +98,7 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
       if (explicitNewPage || leavesStartupViaPage) {
         current = makeRaw('page', route ?? current.route, event);
         current.pageKey = entryPageKey;
+        current.resumed = isResume;
         registerPageSegment(current, pageSegments);
         raw.push(current);
       } else if (leavesPageForActivity || activityRouteChanged) {
@@ -140,23 +146,34 @@ function makeRaw(kind: SegmentKind, route: string | undefined, first: MonitorEve
   return { kind, route, pageKey: kind === 'page' ? pageInstanceKey(first) : undefined, events: [], start: timelineTime(first) };
 }
 
-function registerPageSegment(segment: RawSegment, segments: Map<string, RawSegment>): void {
-  if (segment.kind === 'page' && segment.pageKey) segments.set(segment.pageKey, segment);
+function registerPageSegment(segment: RawSegment, segments: Map<string, RawSegment[]>): void {
+  if (segment.kind !== 'page' || !segment.pageKey) return;
+  const current = segments.get(segment.pageKey) ?? [];
+  current.push(segment);
+  segments.set(segment.pageKey, current);
 }
 
-function pageCompletionSegment(event: MonitorEvent, segments: Map<string, RawSegment>): RawSegment | undefined {
+function pageCompletionSegment(event: MonitorEvent, segments: Map<string, RawSegment[]>): RawSegment | undefined {
   if (event.name !== 'page.stay' && !isPageVisitEnd(event)) return undefined;
   const key = pageInstanceKey(event);
-  return key ? segments.get(key) : undefined;
+  return key ? latestSegment(segments.get(key)) : undefined;
 }
 
-function pageSegmentForEvent(event: MonitorEvent, segments: Map<string, RawSegment>): RawSegment | undefined {
+function pageSegmentForEvent(event: MonitorEvent, segments: Map<string, RawSegment[]>): RawSegment | undefined {
   const completion = pageCompletionSegment(event, segments);
   if (completion) return completion;
   const key = pageInstanceKey(event);
-  if (key) return segments.get(key);
+  if (key) return latestSegment(segments.get(key));
   if (!event.traceId) return undefined;
-  return [...segments.values()].find((segment) => segment.pageKey?.endsWith(`:${event.traceId}`));
+  return latestSegment(
+    [...segments.values()]
+      .flat()
+      .filter((segment) => segment.pageKey?.endsWith(`:${event.traceId}`)),
+  );
+}
+
+function latestSegment(segments: RawSegment[] | undefined): RawSegment | undefined {
+  return segments?.at(-1);
 }
 
 function finalizeSegment(segment: RawSegment, index: number, nextStart: number | undefined): TimelineSegment {
@@ -183,6 +200,7 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
     severity,
     hasIssue: issueCount > 0,
     issueCount,
+    resumed: Boolean(segment.resumed),
   };
 }
 
@@ -192,7 +210,7 @@ export function firstTimelineEvent(events: MonitorEvent[]): MonitorEvent | undef
 
 function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string | undefined): string {
   if (kind === 'startup') return '启动';
-  if (kind === 'page') return [route ?? '页面', ...pageDiagnosticLabels(events)].join(' · ');
+  if (kind === 'page') return [route ?? '页面', pageResumed(events) ? '返回后继续' : undefined, ...pageDiagnosticLabels(events)].filter(isString).join(' · ');
   return route ? `页面活动 ${route}` : '会话活动';
 }
 
@@ -356,8 +374,12 @@ function isPageEntry(event: MonitorEvent): boolean {
   return event.name === 'page.visit' && eventPhase(event) === 'start';
 }
 
+function isPageResume(event: MonitorEvent): boolean {
+  return event.name === 'page.view' && event.attributes?.['page.active_phase'] === 'page.resume';
+}
+
 function isPageTimelineEvent(event: MonitorEvent): boolean {
-  return event.name === 'route.push' || event.name === 'page.visit' || event.name === 'page.load' ||
+  return event.name === 'route.push' || event.name === 'route.pop' || event.name === 'page.visit' || event.name === 'page.load' ||
     event.name === 'page.view' || event.name === 'page.stay';
 }
 
@@ -390,6 +412,10 @@ function realRoute(event: MonitorEvent): string | undefined {
 function eventPhase(event: MonitorEvent): string | undefined {
   const phase = event.attributes?.['event.phase'];
   return typeof phase === 'string' ? phase : undefined;
+}
+
+function pageResumed(events: MonitorEvent[]): boolean {
+  return events.some(isPageResume);
 }
 
 function pageInstanceKey(event: MonitorEvent): string | undefined {
@@ -428,6 +454,7 @@ function timelinePriority(event: MonitorEvent): number {
   const phase = eventPhase(event);
   if (event.name === 'page.visit' && phase === 'start') return 10;
   if (event.name === 'route.push') return 20;
+  if (event.name === 'route.pop') return 25;
   if (event.name === 'page.view') return 30;
   if (event.name === 'page.load') return 40;
   if (event.name === 'page.stay') return 80;

@@ -66,7 +66,7 @@ export function eventKind(event?: MonitorEvent): string {
   if (readPath(event, ['attributes', 'business.action']) !== undefined) return 'business';
   if (event.signalType === 'error' || event.status === 'error') return 'error';
   if (name.includes('jank')) return 'jank';
-  if (name.startsWith('page.') || name === 'route.push') return 'page';
+  if (name.startsWith('page.') || name === 'route.push' || name === 'route.pop') return 'page';
   if (name === 'app.cold_start' || name === 'app.hot_start' || name.includes('startup') || name.includes('start')) {
     return 'startup';
   }

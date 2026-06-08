@@ -49,7 +49,13 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
           _routeDescriptors[route] = page;
         }
         onPageRoutePushed?.call(page.name); // 触发回调
-        _reporter.recordPageView(page.name, routeFullName: page.fullName);
+        _reporter.recordPageView(
+          page.name,
+          routeFullName: page.fullName,
+          pageInstanceId: pageInstanceId,
+          activePhase: PageActivePhases.enter,
+          timestamp: now,
+        );
         _schedulePageFirstFrameFallback(
           page.name,
           pageInstanceId: pageInstanceId,
@@ -120,7 +126,13 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
         _routeDescriptors[newRoute] = newPage;
       }
       onPageRoutePushed?.call(newPage.name);
-      _reporter.recordPageView(newPage.name, routeFullName: newPage.fullName);
+      _reporter.recordPageView(
+        newPage.name,
+        routeFullName: newPage.fullName,
+        pageInstanceId: pageInstanceId,
+        activePhase: PageActivePhases.enter,
+        timestamp: now,
+      );
       _schedulePageFirstFrameFallback(
         newPage.name,
         pageInstanceId: pageInstanceId,

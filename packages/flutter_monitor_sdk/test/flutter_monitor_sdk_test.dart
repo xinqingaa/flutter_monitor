@@ -1113,7 +1113,18 @@ void main() {
       expect(pageFirstFrameEvents, isEmpty);
 
       final pageTraceId = pageVisitEvents.first['traceId'];
+      final pageInstanceId =
+          (pageVisitEvents.first['attributes']
+              as Map)[FieldPaths.pageInstanceId];
       expect(pageView['traceId'], pageTraceId);
+      expect(
+        (pageView['attributes'] as Map)[FieldPaths.pageInstanceId],
+        pageInstanceId,
+      );
+      expect(
+        (pageView['attributes'] as Map)[FieldPaths.pageActivePhase],
+        PageActivePhases.enter,
+      );
       expect(pageLoadEvents.first['signalType'], 'span');
       expect(pageLoadEvents.last['status'], 'ok');
       expect(pageLoadEvents.last['durationMs'], isA<num>());
@@ -1490,6 +1501,99 @@ void main() {
         )
         .toList(growable: false);
     expect(laterComplexLoadEnds, hasLength(1));
+  });
+
+  testWidgets('route pop emits pop span and resumed page view boundary', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final routeObserver = MonitorRouteObserver(reporter);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[routeObserver],
+        initialRoute: '/',
+        routes: <String, WidgetBuilder>{
+          '/': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/detail'),
+              child: const Text('detail'),
+            ),
+          ),
+          '/detail': (_) => Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/complex_list'),
+              child: const Text('complex'),
+            ),
+          ),
+          '/complex_list': (_) => const SizedBox(key: Key('complex-page')),
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('detail'));
+    await tester.pumpAndSettle();
+    final detailVisit = output.events
+        .where(
+          (event) =>
+              event['name'] == EventNames.pageVisit &&
+              (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+                  EventPhases.start &&
+              ((event['context'] as Map)['route'] as Map)['name'] == '/detail',
+        )
+        .single;
+    final detailTraceId = detailVisit['traceId'];
+    final detailPageInstanceId =
+        (detailVisit['attributes'] as Map)[FieldPaths.pageInstanceId];
+
+    await tester.tap(find.text('complex'));
+    await tester.pumpAndSettle();
+    final complexVisit = output.events
+        .where(
+          (event) =>
+              event['name'] == EventNames.pageVisit &&
+              (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+                  EventPhases.start &&
+              ((event['context'] as Map)['route'] as Map)['name'] ==
+                  '/complex_list',
+        )
+        .single;
+    final complexTraceId = complexVisit['traceId'];
+    final complexPageInstanceId =
+        (complexVisit['attributes'] as Map)[FieldPaths.pageInstanceId];
+
+    Navigator.of(tester.element(find.byKey(const Key('complex-page')))).pop();
+    await tester.pumpAndSettle();
+
+    final routePop = output.events.singleWhere(
+      (event) => event['name'] == EventNames.routePop,
+    );
+    final routePopAttributes = routePop['attributes'] as Map;
+    expect(routePop['traceId'], complexTraceId);
+    expect(
+      routePopAttributes[FieldPaths.pageInstanceId],
+      complexPageInstanceId,
+    );
+    expect(routePopAttributes[FieldPaths.pageTo], '/detail');
+
+    final resumedPageView = output.events.lastWhere(
+      (event) =>
+          event['name'] == EventNames.pageView &&
+          (event['attributes'] as Map)[FieldPaths.pageActivePhase] ==
+              PageActivePhases.resume,
+    );
+    final resumedAttributes = resumedPageView['attributes'] as Map;
+    final resumedRoute = (resumedPageView['context'] as Map)['route'] as Map;
+    expect(resumedPageView['traceId'], detailTraceId);
+    expect(resumedAttributes[FieldPaths.pageInstanceId], detailPageInstanceId);
+    expect(resumedRoute['name'], '/detail');
   });
 
   testWidgets('popping a page clears stale page trace before later events', (
