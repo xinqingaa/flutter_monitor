@@ -454,6 +454,7 @@ Outputs 由 `flutter_monitor_sdk` 实现。
 - Output 不修改事件语义。
 - Output 不重新读取未脱敏原始数据。
 - HTTP output 使用 `docs/server_protocol.md`。
+- 后台和退出前 flush 由 Reporter / pipeline 统一协调，Output 只实现被动 `flush`，不得各自监听 App lifecycle。
 - DevTools/File export 使用 `docs/devtools_integration.md` 的导出格式。
 - future `OpenTelemetryOutput` 只能从统一 event envelope 派生映射，不能成为 SDK 内部主模型或第二套协议。
 

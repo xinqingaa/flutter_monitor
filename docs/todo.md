@@ -88,19 +88,19 @@ await FlutterMonitorSDK.trackPerformanceWindow(
 - 第二个 session 的早期 `app.cold_start`、`sdk.init`、`memory.sample(session.start)`、初始 `page.visit` 是否真实生成但没有入库，还是 SDK 在该场景下没有生成。
 - session 边界是由 App 进程重启、Flutter isolate/SDK 重新初始化、`backgroundSessionTimeout`、还是 lifecycle 恢复逻辑触发。
 - 多次短间隔 `paused -> resumed` 是否来自 Android lifecycle 抖动、系统权限/任务切换行为、热重载/调试器影响，还是 SDK lifecycle listener 重复触发。
-- `HttpOutput` 自身 lifecycle flush 与 Reporter lifecycle flush 是否存在重复 flush 或竞态，是否会导致后台/退出时 batch 丢失。
+- `HttpOutput` 自身 lifecycle flush 与 Reporter lifecycle flush 曾存在重复职责；当前已收口为 Reporter / pipeline 统一触发，`HttpOutput` 只保留被动 `flush`。仍需后续观察弱网/后台失败时 batch 保留策略。
 - Workbench timeline 在缺失 session 早期启动事件时，是否应明确提示“该 session 起始事件缺失”，避免把缺失数据误读为真实链路起点。
 
 后续复现建议：
 
 - 每轮复现前清空或标记 Workbench 数据，记录绝对操作时间：启动、首次进入后台、首次恢复、第二次进入后台、第二次恢复。
 - 同时保留 Workbench raw 查询结果和控制台 compact log，重点对比 `eventId` 计数是否连续、`sessionId` 生成时间、`app.hot_start.payload.session.started_new`、`app.background_duration.durationMs`、`app.foreground_duration.durationMs`。
-- 复现时分别测试：仅 `LogMonitorOutput`、仅 `HttpOutput`、同时启用二者；`HttpOutput.flushOnAppExit` 开关；较大的 `batchReportSize` 与较短 periodic flush。
+- 复现时分别测试：仅 `LogMonitorOutput`、仅 `HttpOutput`、同时启用二者；`MonitorSessionConfig.flushOnBackground` 开关；较大的 `batchReportSize` 与较短 periodic flush。
 - 用明确的 `backgroundSessionTimeout` 做对照：短阈值验证 session 切分，长阈值验证普通热恢复是否保持同一 session。
 
 候选修复方向，待证据确认后再实施：
 
-- 收口 flush 责任：避免 `HttpOutput` 自己的 lifecycle listener 与 Reporter lifecycle flush 同时触发同一批队列。
+- 已收口 flush 责任：`HttpOutput` 不再注册自己的 lifecycle listener，由 Reporter lifecycle flush 统一触发 output `flush`。
 - 提升 `HttpOutput` 可靠性：后台或退出 flush 失败时保留可重试队列，或至少输出可回查的丢弃/失败自监控事件。
 - 为 `app.hot_start` 增加最小后台间隔或 debounce，避免几十毫秒级 lifecycle 抖动被展示为完整热重启。
 - 如果 resume 后确实切分新 session，确认 `app.background_duration`、`app.hot_start`、恢复后的 lifecycle breadcrumb 都绑定到一致且正确的 session。

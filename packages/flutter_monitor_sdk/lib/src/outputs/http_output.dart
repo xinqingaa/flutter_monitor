@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'monitor_output.dart';
 
 /// 一个通过 HTTP/HTTPS 将监控事件上报到远程服务器的 `MonitorOutput` 实现。
 ///
-/// 支持批量上报、定时上报和在 App 退出时自动上报，以提高效率和数据可靠性。
+/// 支持批量上报、定时上报，以及由 Reporter 统一协调的后台/退出前 flush。
 /// 发送内容是统一 envelope JSON 的 batch：`{"events": [...]}`。
 class HttpOutput extends MonitorOutput {
   /// 监控数据上报的目标服务器 URL 地址。
@@ -27,11 +27,6 @@ class HttpOutput extends MonitorOutput {
   /// 默认为 10 条。
   final int batchReportSize;
 
-  /// 是否监听 App 的生命周期，在 App 进入后台或关闭时自动上报数据。
-  /// 这可以有效防止因用户突然关闭应用导致的数据丢失。
-  /// 默认为 `true`。
-  final bool flushOnAppExit;
-
   /// 上报失败后的冷却时间，避免服务不可达时持续刷屏。
   final Duration failureCooldown;
 
@@ -49,8 +44,6 @@ class HttpOutput extends MonitorOutput {
   /// 用于实现定时上报的定时器。
   Timer? _batchTimer;
 
-  /// App 生命周期监听器，用于在 App 状态变化时触发上报。
-  AppLifecycleListener? _lifecycleListener;
   Future<void>? _activeFlush;
   DateTime? _cooldownUntil;
   Object? _lastError;
@@ -66,7 +59,6 @@ class HttpOutput extends MonitorOutput {
     this.enablePeriodicReporting = false,
     this.periodicReportDuration = const Duration(seconds: 20),
     this.batchReportSize = 10,
-    this.flushOnAppExit = true,
     this.failureCooldown = const Duration(seconds: 15),
     this.maxQueueSize = 200,
     this.requestTimeout = const Duration(seconds: 10),
@@ -75,19 +67,12 @@ class HttpOutput extends MonitorOutput {
 
   /// 初始化 HTTP output。
   ///
-  /// 根据配置启动定时 flush，并可监听 App 生命周期在隐藏、暂停或销毁时尽力上报。
+  /// 根据配置启动定时 flush。App 生命周期触发的后台/退出前 flush 由 Reporter
+  /// 调用 [flush] 统一完成，避免 output 层重复监听 lifecycle。
   @override
   void init() {
     if (enablePeriodicReporting) {
       _batchTimer = Timer.periodic(periodicReportDuration, (_) => flush());
-    }
-    if (flushOnAppExit) {
-      _lifecycleListener = AppLifecycleListener(
-        // 当 App 隐藏、暂停或即将销毁时，进行一次“尽力而为”的上报。
-        onHide: () => flush(isAppExiting: true),
-        onPause: () => flush(isAppExiting: true),
-        onDetach: () => flush(isAppExiting: true),
-      );
     }
     debugPrint("HttpOutput initialized. Reporting to: $serverUrl");
   }
@@ -203,11 +188,10 @@ class HttpOutput extends MonitorOutput {
     _eventQueue.removeRange(0, _eventQueue.length - maxQueueSize);
   }
 
-  /// 释放定时器、lifecycle listener 和 HTTP client。
+  /// 释放定时器和 HTTP client。
   @override
   void dispose() {
     _batchTimer?.cancel();
-    _lifecycleListener?.dispose();
     // 确保在 dispose 时也尝试最后上报一次，以防队列中仍有未发送的事件。
     flush(isAppExiting: true);
     _client.close();

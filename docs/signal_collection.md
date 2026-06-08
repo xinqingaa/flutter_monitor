@@ -636,7 +636,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 
 - lifecycle 影响 session 切分。
 - resumed 可创建 hot start trace，但 trace 必须延后到恢复观测点闭合，不能在 resumed 回调中同步 start/end。
-- paused/hidden/detached 应触发尽力 flush；detached 还应在 flush 前尽力闭合当前活跃页面。
+- paused/hidden/detached 应由 SDK lifecycle 主链路统一触发尽力 flush；output 不应各自注册 lifecycle listener，避免重复 flush 和退出语义不一致。detached 还应在 flush 前尽力闭合当前活跃页面。
 - lifecycle breadcrumb 应帮助解释请求中断、错误、卡顿和 native 信号。
 - 前台/后台持续时间使用 `app.foreground_duration` 和 `app.background_duration` 的 envelope `durationMs` 表达。
 - 后台停留间隔可作为 hot start 的上下文，但不得写入 `app.hot_start.durationMs`。

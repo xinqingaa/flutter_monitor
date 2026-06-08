@@ -292,6 +292,31 @@ void main() {
     expect(client.requests, hasLength(1));
   });
 
+  testWidgets('http output does not listen to app lifecycle directly', (
+    tester,
+  ) async {
+    final client = _RecordingHttpClient((request) async {
+      return http.Response('ok', 202);
+    });
+    final output = HttpOutput(
+      serverUrl: 'http://localhost:3700/api/monitor/v1/events',
+      client: client,
+      batchReportSize: 10,
+    );
+
+    output.init();
+    addTearDown(output.dispose);
+
+    output.add(<String, dynamic>{'eventId': 'evt_lifecycle'});
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+
+    expect(client.requests, isEmpty);
+
+    await output.flush(isAppExiting: true);
+    expect(client.requests, hasLength(1));
+  });
+
   test('context is captured when the event is reported', () {
     final output = RecordingOutput();
     final reporter = Reporter(
