@@ -17,6 +17,7 @@ import {
   flavorOf,
   isCompletedHttpEvent,
   isErrorEvent,
+  isBusinessFailureEvent,
   isFailedHttpEvent,
   isJankEvent,
   isStabilityErrorEvent,
@@ -673,6 +674,7 @@ export class SqliteMonitorStore implements MonitorStore {
           or device_platform is null
           or native_available is null
           or problem_type is null
+          or problem_type = 'error'
         limit 5000
       `,
     );
@@ -1219,6 +1221,8 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
   const firstNativePlatform = events.find((event) => Boolean(nativePlatformOf(event)));
   const status = events.some(isStabilityErrorEvent)
     ? 'error'
+    : events.some(isBusinessFailureEvent)
+      ? 'warning'
     : [...events].reverse().map(statusOf).find(Boolean);
 
   return {
@@ -1250,6 +1254,7 @@ function buildSessionSummary(sessionId: string, events: MonitorEvent[]): Session
     errorCount: events.filter(isStabilityErrorEvent).length,
     jankCount: events.filter(isJankEvent).length,
     failedHttpCount: events.filter(isFailedHttpEvent).length,
+    businessFailureCount: events.filter(isBusinessFailureEvent).length,
   };
 }
 

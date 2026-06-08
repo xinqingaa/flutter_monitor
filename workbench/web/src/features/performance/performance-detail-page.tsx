@@ -75,6 +75,7 @@ export function PerformanceDetailPage({
 }) {
   const events = metric?.events ?? [];
   const fieldSummary = fieldSummaryFor(kind, metric);
+  const issueSummary = issueSummaryFor(kind);
   const leftPanel = useCollapsiblePanel(`workbench.performance.${kind}.left`);
 
   return (
@@ -119,6 +120,9 @@ export function PerformanceDetailPage({
                 sampleCount={fieldSummary.count}
                 sampleField={fieldSummary.field}
                 sampleHint={fieldSummary.hint}
+                issueLabel={issueSummary.label}
+                issueField={issueSummary.field}
+                issueHint={issueSummary.hint}
               />
               <PrinciplesCard />
             </div>
@@ -167,8 +171,8 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
     return {
       label: '错误记录',
       count: errors?.count ?? 0,
-      field: 'signalType=error / status=error',
-      hint: '错误记录不以 durationMs 为主指标；HTTP 失败的耗时请在网络页查看。',
+      field: 'signalType=error / attributes["error.*"]',
+      hint: '错误记录不以 durationMs 为主指标；HTTP 失败的耗时请在网络页查看，业务失败留在 session/page 链路里诊断。',
     };
   }
   return {
@@ -176,6 +180,21 @@ function fieldSummaryFor(kind: PerformanceKind, metric?: PerformanceMetricSummar
     count: metric?.durationSummary?.sampleCount,
     field: 'http.client.durationMs / attributes["event.phase"]=instant',
     hint: 'HTTP completed single-span envelope 的 durationMs 样本数；旧 event.phase=end 数据不参与统计。',
+  };
+}
+
+function issueSummaryFor(kind: PerformanceKind): { label: string; field: string; hint: string } {
+  if (kind === 'errors') {
+    return {
+      label: '错误数',
+      field: 'signalType=error / attributes["error.*"]',
+      hint: '稳定性错误不包含 completed HTTP 失败，也不包含 business.result=failed 的业务失败。',
+    };
+  }
+  return {
+    label: '问题数',
+    field: 'problem_type',
+    hint: '来源：Workbench query summary 的问题分类计数。',
   };
 }
 
@@ -1064,7 +1083,7 @@ function JankContent({ events, metric }: { events: PerformanceMetricEvent[]; met
 }
 
 function ErrorsContent({ events, metric }: { events: PerformanceMetricEvent[]; metric?: ErrorPerformanceSummary }) {
-  const errors = chronological(events.filter((event) => event.signalType === 'error' || event.status === 'error'));
+  const errors = chronological(events.filter(isStabilityErrorEvent));
   const errorRecent = [...errors].reverse();
   const errorTypes = groupCount(errors.map((event) => attrString(event, 'error.type')), '未知类型').map((item) => ({ ...item, tone: 'danger' as const }));
   const mechanisms = groupCount(errors.map((event) => attrString(event, 'error.mechanism')), '未知机制');
@@ -1102,8 +1121,8 @@ function ErrorsContent({ events, metric }: { events: PerformanceMetricEvent[]; m
       </div>
       <EventTablePanel
         title="错误记录"
-        description="错误 envelope 及 status=error 的记录。"
-        source={'signalType / status / attributes["error.type"] / attributes["error.mechanism"] / attributes["error.fatal"]'}
+        description="稳定性错误 envelope；业务失败和 HTTP 失败不混入错误页。"
+        source={'signalType=error / attributes["error.type"] / attributes["error.mechanism"] / attributes["error.fatal"]'}
         events={errorRecent}
         columns={[
           { key: 'type', label: '类型', render: (event) => attrString(event, 'error.type') ?? event.name ?? '-' },
@@ -1114,6 +1133,14 @@ function ErrorsContent({ events, metric }: { events: PerformanceMetricEvent[]; m
       />
     </div>
   );
+}
+
+function isStabilityErrorEvent(event: PerformanceMetricEvent): boolean {
+  if (isCompletedHttpEvent(event)) return false;
+  if (attrString(event, 'business.action') && attrString(event, 'business.result') === 'failed') return false;
+  return event.signalType === 'error' ||
+    attrString(event, 'error.type') !== undefined ||
+    attrString(event, 'error.mechanism') !== undefined;
 }
 
 function PrinciplesCard() {

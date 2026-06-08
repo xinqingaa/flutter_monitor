@@ -42,6 +42,9 @@ export function SignalSummary({
   sampleCount,
   sampleField,
   sampleHint,
+  issueLabel = '问题数',
+  issueField = 'problem_type',
+  issueHint = '来源：Workbench query summary 的问题分类计数。',
 }: {
   title: string;
   description: string;
@@ -51,6 +54,9 @@ export function SignalSummary({
   sampleCount?: number;
   sampleField?: string;
   sampleHint?: string;
+  issueLabel?: string;
+  issueField?: string;
+  issueHint?: string;
 }) {
   const withDuration = events.filter((event) => typeof event.durationMs === 'number').length;
   return (
@@ -67,7 +73,7 @@ export function SignalSummary({
           field={sampleField ?? 'durationMs'}
           hint={sampleHint ?? '来源：SDK envelope.durationMs。未提供 durationMs 的事件不会进入耗时类折线。'}
         />
-        <SummaryCell label="问题数" value={issueCount} field="status / signalType" hint="来源：status=error 或 signalType=error 的 SDK envelope 数量" tone={issueCount > 0 ? 'danger' : 'normal'} />
+        <SummaryCell label={issueLabel} value={issueCount} field={issueField} hint={issueHint} tone={issueCount > 0 ? 'danger' : 'normal'} />
       </CardContent>
     </Card>
   );

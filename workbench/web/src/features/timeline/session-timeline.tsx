@@ -224,7 +224,7 @@ function TimelineNode({
   onSelect: () => void;
 }) {
   const kind = eventKind(event);
-  const isError = kind === 'error' || event.status === 'error';
+  const isError = kind === 'error';
   const labels = issueLabels(event);
   const display = nodeDisplay(event);
   const visibleLabels = labels.slice(0, 2);
@@ -267,7 +267,7 @@ function TimelineNode({
         {event.status && event.status !== 'ok' && event.status !== 'unknown' ? <span className="text-xs text-zinc-500">{event.status}</span> : null}
         <div>
           {visibleLabels.map((label) => (
-            <Badge key={label} tone={label === '错误' || label.includes('失败') ? 'danger' : 'warn'} className="rounded-md px-1.5 py-0">
+            <Badge key={label} tone={issueLabelTone(label)} className="rounded-md px-1.5 py-0">
               {label}
             </Badge>
           ))}
@@ -282,6 +282,11 @@ function TimelineNode({
       
     </button>
   );
+}
+
+function issueLabelTone(label: string): 'danger' | 'warn' {
+  if (label === '错误' || label === '请求失败') return 'danger';
+  return 'warn';
 }
 
 function nodeDisplay(event: MonitorEvent) {

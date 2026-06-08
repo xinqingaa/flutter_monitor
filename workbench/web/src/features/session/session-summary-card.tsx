@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Activity, AlertTriangle, CalendarClock, Cpu, Gauge, Globe2, Radio, Smartphone, UserRound } from 'lucide-react';
+import { Activity, AlertTriangle, BadgeAlert, CalendarClock, Cpu, Gauge, Globe2, Radio, Smartphone, UserRound } from 'lucide-react';
 import type * as React from 'react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
@@ -82,7 +82,7 @@ export function SessionCard({
       <div className="grid min-w-0 grid-cols-[3px_minmax(0,1fr)] gap-2">
         <span className={cn(
           'rounded-full',
-          session.status === 'error' ? 'bg-red-500' : session.nativeAvailable ? 'bg-teal-500' : 'bg-zinc-300',
+          session.status === 'error' ? 'bg-red-500' : session.status === 'warning' ? 'bg-amber-500' : session.nativeAvailable ? 'bg-teal-500' : 'bg-zinc-300',
         )} />
         <div className="min-w-0">
           <div className="flex min-w-0 items-start justify-between gap-2">
@@ -90,7 +90,7 @@ export function SessionCard({
               {session.sessionId}
             </code>
             <div className="flex shrink-0 items-center gap-1">
-              <Badge tone={session.status === 'error' ? 'danger' : 'neutral'} className="rounded-md px-1.5 py-0">
+              <Badge tone={statusTone(session.status)} className="rounded-md px-1.5 py-0">
                 {statusLabel(session.status)}
               </Badge>
               <NativeBadge session={session} />
@@ -196,9 +196,10 @@ export function SessionMetadataLine({ session }: { session: SessionSummary }) {
 
 export function SessionIssueSummary({ session, compact = false }: { session: SessionSummary; compact?: boolean }) {
   return (
-    <div className={cn('mt-2 grid gap-1.5 text-xs', compact ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4')}>
+    <div className={cn('mt-2 grid gap-1.5 text-xs', compact ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5')}>
       <IssuePill label="事件" value={session.count} compact={compact} />
       <IssuePill label="错误" value={session.errorCount} icon={AlertTriangle} tone={session.errorCount > 0 ? 'danger' : 'neutral'} compact={compact} />
+      <IssuePill label="业务失败" value={session.businessFailureCount ?? 0} icon={BadgeAlert} tone={(session.businessFailureCount ?? 0) > 0 ? 'warn' : 'neutral'} compact={compact} />
       <IssuePill label="卡顿" value={session.jankCount} icon={Gauge} tone={session.jankCount > 0 ? 'warn' : 'neutral'} compact={compact} />
       <IssuePill label="网络" value={session.failedHttpCount} icon={Globe2} tone={session.failedHttpCount > 0 ? 'danger' : 'neutral'} compact={compact} />
     </div>
@@ -210,6 +211,7 @@ export function SessionIssueInline({ session }: { session: SessionSummary }) {
     <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-zinc-600">
       <InlineMetric label="事件数" value={session.count} icon={Activity} />
       <InlineMetric label="错误数" value={session.errorCount} icon={AlertTriangle} tone={session.errorCount > 0 ? 'danger' : 'neutral'} />
+      <InlineMetric label="业务失败数" value={session.businessFailureCount ?? 0} icon={BadgeAlert} tone={(session.businessFailureCount ?? 0) > 0 ? 'warn' : 'neutral'} />
       <InlineMetric label="卡顿数" value={session.jankCount} icon={Gauge} tone={session.jankCount > 0 ? 'warn' : 'neutral'} />
       <InlineMetric label="失败请求数" value={session.failedHttpCount} icon={Globe2} tone={session.failedHttpCount > 0 ? 'danger' : 'neutral'} />
     </div>
@@ -277,4 +279,10 @@ function IssuePill({
       <div className="mt-0.5 text-sm font-semibold tabular-nums">{value}</div>
     </div>
   );
+}
+
+function statusTone(status?: string): 'neutral' | 'danger' | 'warn' {
+  if (status === 'error') return 'danger';
+  if (status === 'warning' || status === 'warn') return 'warn';
+  return 'neutral';
 }

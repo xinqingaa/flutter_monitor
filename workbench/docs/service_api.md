@@ -264,10 +264,11 @@ Legacy 兼容入口，行为接近 `POST /api/monitor/v1/events`。新 SDK 和 W
 | `userId` | 首个包含 `context.user.userId` 的事件。 |
 | `appVersion` / `environment` | 首个包含 `resource.app.*` 的事件。 |
 | `route` | 最后一条包含 `context.route.name` 的事件。 |
-| `status` | 有非 HTTP 的稳定性错误则为 `error`，否则取最近可用 `status`。 |
-| `errorCount` | 非 completed HTTP 的稳定性错误事件数；HTTP 失败不计入该字段。 |
+| `status` | 有非 HTTP、非业务失败的稳定性错误则为 `error`；否则有业务失败则为 `warning`；再否则取最近可用 `status`。 |
+| `errorCount` | 非 completed HTTP、非业务失败的稳定性错误事件数；HTTP 失败和 `business.result=failed` 不计入该字段。 |
 | `jankCount` | `name=ui.jank.sequence` 的事件数。 |
 | `failedHttpCount` | `name=http.client`、`attributes["event.phase"]="instant"`，且 `status=error` 或 `attributes["http.success"]=false` 的事件数。 |
+| `businessFailureCount` | `attributes["business.result"]="failed"` 的业务动作或交互观测事件数。该字段是 Workbench query summary，不是 SDK envelope 字段。 |
 
 ### `GET /api/monitor/v1/performance/overview?...filters`
 
@@ -369,7 +370,7 @@ Workbench 只统计符合新规范的 completed single-span HTTP envelope：`nam
 
 `errors` 额外字段：
 
-Workbench 错误页关注稳定性错误，不混入 completed HTTP 失败；HTTP 失败统一在 `http.failedCount`、网络页和 Session 失败请求中展示。
+Workbench 错误页关注稳定性错误，不混入 completed HTTP 失败，也不混入 `track/measure` 的业务失败；HTTP 失败统一在 `http.failedCount`、网络页和 Session 失败请求中展示，业务失败统一在 session/page 链路和 `problemType=business_failure` 中展示。
 
 | 字段 | 来源 / 计算口径 |
 |---|---|

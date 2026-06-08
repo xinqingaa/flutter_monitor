@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cpu, Download, Gauge, Globe2, Info, ListTree, Package, Smartphone, User } from 'lucide-react';
+import { AlertTriangle, BadgeAlert, ChevronDown, ChevronRight, Clock, Cpu, Download, Gauge, Globe2, Info, ListTree, Package, Smartphone, User } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent } from '../../components/ui/card';
 import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
@@ -40,7 +40,7 @@ export function SessionHeader({
       <CardContent className="grid gap-2 p-2.5">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <Badge tone={summary?.status === 'error' ? 'danger' : 'neutral'}>{statusLabel(summary?.status)}</Badge>
+            <Badge tone={statusTone(summary?.status)}>{statusLabel(summary?.status)}</Badge>
             <Badge tone={native.available ? 'teal' : 'neutral'}>{native.available ? 'Native on' : 'Native off'}</Badge>
             <h2 className="min-w-0 truncate text-[15px] font-semibold text-zinc-950">{sessionId}</h2>
           </div>
@@ -69,6 +69,8 @@ export function SessionHeader({
           <span className="text-zinc-300">·</span>
           <span>错误 {summary?.errorCount ?? 0}</span>
           <span className="text-zinc-300">·</span>
+          <span>业务失败 {summary?.businessFailureCount ?? 0}</span>
+          <span className="text-zinc-300">·</span>
           <span>卡顿 {summary?.jankCount ?? 0}</span>
           <span className="text-zinc-300">·</span>
           <span>失败请求 {summary?.failedHttpCount ?? 0}</span>
@@ -85,6 +87,7 @@ export function SessionHeader({
               <HeaderMetric icon={User} label="用户" value={summary?.userId ?? userIdOf(contextEvent)} />
               <HeaderMetric icon={Globe2} label="页面" value={summary?.route ?? routeOf(contextEvent)} />
               <HeaderMetric icon={AlertTriangle} label="错误数" value={String(summary?.errorCount ?? 0)} />
+              <HeaderMetric icon={BadgeAlert} label="业务失败" value={String(summary?.businessFailureCount ?? 0)} />
               <HeaderMetric icon={Gauge} label="卡顿 / 失败请求" value={`${summary?.jankCount ?? 0} / ${summary?.failedHttpCount ?? 0}`} />
               <HeaderMetric icon={Cpu} label="Native" value={native.available ? `${native.platform ?? 'native'} ${native.version ? `v${native.version}` : 'on'}` : 'off'} />
             </div>
@@ -106,6 +109,12 @@ export function SessionHeader({
       </Dialog>
     </Card>
   );
+}
+
+function statusTone(status?: string): 'neutral' | 'danger' | 'warn' {
+  if (status === 'error') return 'danger';
+  if (status === 'warning' || status === 'warn') return 'warn';
+  return 'neutral';
 }
 
 function HeaderMetric({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {

@@ -68,7 +68,7 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
 
     if (isEntry) seenPageEntry = true;
 
-    const targetPageSegment = pageCompletionSegment(event, pageSegments);
+    const targetPageSegment = pageSegmentForEvent(event, pageSegments);
     if (targetPageSegment && targetPageSegment !== current) {
       targetPageSegment.events.push(event);
       continue;
@@ -86,7 +86,8 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
         route !== current.route ||
         (entryPageKey !== undefined && entryPageKey !== current.pageKey)
       );
-      const leavesPageForActivity = current.kind === 'page' && !isPageTimelineEvent(event);
+      const belongsToCurrentPage = current.kind === 'page' && eventBelongsToPageSegment(event, current);
+      const leavesPageForActivity = current.kind === 'page' && !isPageTimelineEvent(event) && !belongsToCurrentPage;
       const activityRouteChanged = current.kind === 'activity' && route !== undefined && route !== current.route;
 
       if (explicitNewPage || leavesStartupViaPage) {
@@ -149,6 +150,15 @@ function pageCompletionSegment(event: MonitorEvent, segments: Map<string, RawSeg
   return key ? segments.get(key) : undefined;
 }
 
+function pageSegmentForEvent(event: MonitorEvent, segments: Map<string, RawSegment>): RawSegment | undefined {
+  const completion = pageCompletionSegment(event, segments);
+  if (completion) return completion;
+  const key = pageInstanceKey(event);
+  if (key) return segments.get(key);
+  if (!event.traceId) return undefined;
+  return [...segments.values()].find((segment) => segment.pageKey?.endsWith(`:${event.traceId}`));
+}
+
 function finalizeSegment(segment: RawSegment, index: number, nextStart: number | undefined): TimelineSegment {
   const { events, kind } = segment;
   const nodes = events;
@@ -182,7 +192,7 @@ export function firstTimelineEvent(events: MonitorEvent[]): MonitorEvent | undef
 
 function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string | undefined): string {
   if (kind === 'startup') return '启动';
-  if (kind === 'page') return route ?? '页面';
+  if (kind === 'page') return [route ?? '页面', ...pageDiagnosticLabels(events)].join(' · ');
   return route ? `页面活动 ${route}` : '会话活动';
 }
 
@@ -240,8 +250,14 @@ function segmentSummaryItems(kind: SegmentKind, events: MonitorEvent[]): string[
   const nativeLifecycle = events.filter(isNativeLifecycleEvent).length;
   const nativeMemory = events.filter(isNativeMemoryEvent).length;
   const lifecycle = events.filter((event) => event.name === 'app.lifecycle').length;
+  const business = events.filter(isBusinessEvent).length;
+  const interactions = events.filter(isInteractionMeasureEvent).length;
+  const slowInteractions = events.filter(isSlowInteractionEvent).length;
 
   const items: string[] = [...performanceItems];
+  if (interactions > 0) items.push(`交互 ${interactions}`);
+  if (slowInteractions > 0) items.push(`慢交互 ${slowInteractions}`);
+  if (business > 0) items.push(`业务操作 ${business}`);
   if (failedHttp > 0) items.push(`失败请求 ${failedHttp}`);
   if (errors > 0) items.push(`错误 ${errors}`);
   if (hotStarts > 0) items.push(`热重启 ${hotStarts}`);
@@ -281,9 +297,21 @@ function performanceSummaryItems(kind: SegmentKind, events: MonitorEvent[]): str
 }
 
 function segmentSeverity(events: MonitorEvent[]): SegmentSeverity {
-  if (events.some((event) => eventKind(event) === 'error' || event.status === 'error')) return 'error';
-  if (events.some((event) => issueLabels(event).length > 0)) return 'warn';
+  if (events.some((event) => eventKind(event) === 'error')) return 'error';
+  if (events.some((event) => eventKind(event) === 'business' && event.status === 'error')) return 'warn';
+  if (events.some((event) => issueLabels(event).length > 0 || isSlowInteractionEvent(event))) return 'warn';
   return 'normal';
+}
+
+function pageDiagnosticLabels(events: MonitorEvent[]): string[] {
+  const labels: string[] = [];
+  if (events.some(isNonHttpErrorEvent) || events.some(isFailedBusinessEvent)) labels.push('业务失败');
+  if (events.some(isInteractionMeasureEvent)) labels.push('交互性能');
+  if (events.some((event) => isBusinessEvent(event) && !isInteractionMeasureEvent(event))) labels.push('业务操作');
+  if (events.some(isFailedHttpEvent)) labels.push('失败请求');
+  if (events.some((event) => eventKind(event) === 'jank')) labels.push('卡顿');
+  if (events.some((event) => eventKind(event) === 'memory' || event.name === 'app.lifecycle')) labels.push('运行状态');
+  return labels.slice(0, 2);
 }
 
 function isFailedHttpEvent(event: MonitorEvent): boolean {
@@ -291,7 +319,36 @@ function isFailedHttpEvent(event: MonitorEvent): boolean {
 }
 
 function isNonHttpErrorEvent(event: MonitorEvent): boolean {
-  return eventKind(event) !== 'http' && (eventKind(event) === 'error' || event.status === 'error');
+  return eventKind(event) !== 'http' &&
+    !isFailedBusinessEvent(event) &&
+    (eventKind(event) === 'error' || event.status === 'error');
+}
+
+function isBusinessEvent(event: MonitorEvent): boolean {
+  return typeof event.attributes?.['business.action'] === 'string' && event.attributes['business.action'].length > 0;
+}
+
+function isFailedBusinessEvent(event: MonitorEvent): boolean {
+  return isBusinessEvent(event) && (
+    event.attributes?.['business.result'] === 'failed' ||
+    event.status === 'error'
+  );
+}
+
+function isInteractionMeasureEvent(event: MonitorEvent): boolean {
+  return event.name === 'interaction.measure' || typeof event.attributes?.['interaction.mode'] === 'string';
+}
+
+function isSlowInteractionEvent(event: MonitorEvent): boolean {
+  if (!isInteractionMeasureEvent(event)) return false;
+  const maxMs = numberAttribute(event, 'frame.max_ms');
+  const budgetMs = numberAttribute(event, 'frame.budget_ms');
+  const slowCount = numberAttribute(event, 'frame.slow_count');
+  return (slowCount ?? 0) > 0 || (
+    maxMs !== undefined &&
+    budgetMs !== undefined &&
+    maxMs > budgetMs * 2
+  );
 }
 
 function isPageEntry(event: MonitorEvent): boolean {
@@ -302,6 +359,17 @@ function isPageEntry(event: MonitorEvent): boolean {
 function isPageTimelineEvent(event: MonitorEvent): boolean {
   return event.name === 'route.push' || event.name === 'page.visit' || event.name === 'page.load' ||
     event.name === 'page.view' || event.name === 'page.stay';
+}
+
+function eventBelongsToPageSegment(event: MonitorEvent, segment: RawSegment): boolean {
+  if (segment.kind !== 'page') return false;
+  if (isPageTimelineEvent(event)) return true;
+  const eventKey = pageInstanceKey(event);
+  if (eventKey && segment.pageKey && eventKey === segment.pageKey) return true;
+  return event.traceId !== undefined &&
+    segment.pageKey !== undefined &&
+    segment.pageKey.endsWith(`:${event.traceId}`) &&
+    realRoute(event) === segment.route;
 }
 
 function isInitialStartupEvent(
@@ -331,6 +399,11 @@ function pageInstanceKey(event: MonitorEvent): string | undefined {
   }
   if (event.name === 'page.visit' && event.traceId) return event.traceId;
   return undefined;
+}
+
+function numberAttribute(event: MonitorEvent, key: string): number | undefined {
+  const value = event.attributes?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function effectiveStart(event: MonitorEvent): number {

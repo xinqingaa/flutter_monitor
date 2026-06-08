@@ -42,6 +42,11 @@ export function MetricCard({
   panelAction?: React.ReactNode;
 }) {
   const errorCount = summary?.errorCount ?? 0;
+  const issueLabel = kind === 'errors' ? '错误数' : '问题数';
+  const issueField = kind === 'errors' ? 'signalType=error / attributes["error.*"]' : 'problem_type';
+  const issueHint = kind === 'errors'
+    ? '来源：稳定性错误 envelope；不包含 completed HTTP 失败，也不包含 business.result=failed 的业务失败。'
+    : '来源：Workbench query summary 的问题分类计数。';
   const body = (
     <Card className="min-w-0">
       <CardContent className="grid gap-3 p-3.5">
@@ -57,7 +62,7 @@ export function MetricCard({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <MetricNumber label="事件数" field="events.length" hint="来源：当前筛选范围内匹配该类 signal 的 SDK envelope 数量" value={summary?.count ?? 0} />
-          <MetricNumber label="问题数" field="status / signalType" hint="来源：status=error 或 signalType=error 的 SDK envelope 数量" value={errorCount} tone={errorCount > 0 ? 'danger' : 'normal'} />
+          <MetricNumber label={issueLabel} field={issueField} hint={issueHint} value={errorCount} tone={errorCount > 0 ? 'danger' : 'normal'} />
         </div>
         <KindSummary kind={kind ?? kindFromTitle(title)} summary={summary} />
       </CardContent>
@@ -177,7 +182,7 @@ function JankSummary({ summary }: { summary?: JankPerformanceSummary }) {
 function ErrorsSummary({ summary }: { summary?: ErrorPerformanceSummary }) {
   return (
     <div className="grid gap-1 text-xs">
-      <MetricPlain label="错误数" value={compactNumber(summary?.count ?? 0)} />
+      <MetricPlain label="错误记录" value={compactNumber(summary?.count ?? 0)} />
       <MetricPlain label="影响会话" value={compactNumber(summary?.affectedSessionCount ?? 0)} />
       <MetricPlain label="高频类型" value={summary?.typeSummaries[0]?.key ?? '-'} />
       <MetricPlain label="高频机制" value={summary?.mechanismSummaries[0]?.key ?? '-'} />

@@ -70,7 +70,7 @@ export function ErrorsRoute() {
     <PerformanceDetailPage
       kind="errors"
       title="错误"
-      description="错误页读取稳定性错误，不混入 completed HTTP 失败；失败请求请在网络页查看。"
+      description="错误页读取稳定性错误，不混入 completed HTTP 失败和业务失败；失败请求看网络页，业务失败看 session/page 链路。"
       icon={AlertTriangle}
       metric={query.data?.errors}
       emphasis="稳定性"

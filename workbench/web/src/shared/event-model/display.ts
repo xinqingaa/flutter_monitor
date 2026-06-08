@@ -178,6 +178,33 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     };
   }
 
+  if (name === 'interaction.measure' || kind === 'interaction') {
+    const action = readStringPath(event, 'attributes.business.action');
+    const mode = readStringPath(event, 'attributes.interaction.mode');
+    const result = readStringPath(event, 'attributes.business.result');
+    const active = formatNumberMetric(event, 'attributes.interaction.active_ms', 'ms');
+    const settle = formatNumberMetric(event, 'attributes.interaction.settle_ms', 'ms');
+    const fps = formatNumberMetric(event, 'attributes.frame.fps', ' FPS', 1);
+    const maxFrame = formatNumberMetric(event, 'attributes.frame.max_ms', 'ms', 1);
+    const slow = readCanonicalPath(event, 'attributes.frame.slow_count');
+    const sample = readCanonicalPath(event, 'attributes.frame.sample_count');
+    const stability = formatStabilityMetric(event);
+    return {
+      ...base,
+      kindLabel: '交互性能',
+      title: action ? `交互性能 ${action}` : '交互性能',
+      durationLabel: duration,
+      summaryItems: compactItems(
+        [mode ? measureModeLabel(mode) : undefined, active ? `active ${active}` : undefined, settle ? `settle ${settle}` : undefined].filter(Boolean).join(' · '),
+        fps ? `FPS ${fps}` : undefined,
+        maxFrame ? `最大帧 ${maxFrame}` : undefined,
+        typeof slow === 'number' || typeof sample === 'number' ? `慢帧 ${formatCount(slow)}/${formatCount(sample)}` : undefined,
+        stability ? `稳定性 ${stability}` : undefined,
+        result ? `结果 ${trackResultLabel(result)}` : undefined,
+      ),
+    };
+  }
+
   if (name === 'ui.jank.sequence' || kind === 'jank') {
     const count = readCanonicalPath(event, 'attributes.jank.count');
     const maxFrame = formatNumberMetric(event, 'attributes.frame.max_ms', 'ms');
@@ -307,8 +334,8 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     const memoryAction = memoryActionSummary(event, action);
     return {
       ...base,
-      kindLabel: '业务',
-      title: memoryAction?.title ?? (action ? `业务动作 ${action}` : `用户操作 ${target}`),
+      kindLabel: '业务埋点',
+      title: memoryAction?.title ?? (action ? `${result === 'failed' ? '业务埋点失败' : '业务埋点动作'} ${action}` : `用户操作 ${target}`),
       summaryItems: memoryAction?.summaryItems ?? compactItems(result ? trackResultLabel(result) : target),
     };
   }
@@ -453,6 +480,7 @@ function timelineKindLabel(event: MonitorEvent): string {
     startup: '启动',
     memory: '内存',
     lifecycle: '生命周期',
+    interaction: '交互性能',
     business: '业务',
     trace: '链路',
     span: '阶段',
@@ -539,6 +567,21 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.frame.avg_ms', { unit: 'ms', digits: 1 });
     pushField(event, secondary, 'attributes.frame.fps', { digits: 1 });
     pushField(event, secondary, 'attributes.frame.stability', { digits: 2 });
+    return;
+  }
+
+  if (name === 'interaction.measure' || eventKind(event) === 'interaction') {
+    pushField(event, primary, 'attributes.business.action');
+    pushField(event, primary, 'attributes.business.result');
+    pushField(event, primary, 'attributes.interaction.mode');
+    pushField(event, primary, 'attributes.interaction.end_reason');
+    pushField(event, secondary, 'attributes.interaction.active_ms', { unit: 'ms' });
+    pushField(event, secondary, 'attributes.interaction.settle_ms', { unit: 'ms' });
+    pushField(event, secondary, 'attributes.interaction.observe_ms', { unit: 'ms' });
+    pushField(event, secondary, 'attributes.interaction.timeout_ms', { unit: 'ms' });
+    pushField(event, secondary, 'attributes.ui.target');
+    pushField(event, secondary, 'attributes.page.instance_id');
+    pushFrameFields(event, secondary);
     return;
   }
 
@@ -658,13 +701,23 @@ function signalDescription(signalType: string): string {
 
 function signalTone(event: MonitorEvent): BadgeProps['tone'] {
   const kind = eventKind(event);
-  if (event.status === 'error' || event.signalType === 'error') return 'danger';
+  if (kind === 'error' || event.signalType === 'error') return 'danger';
   if (kind === 'http') return event.status === 'error' ? 'danger' : 'info';
   if (kind === 'jank') return 'warn';
+  if (kind === 'interaction') {
+    const slow = readCanonicalPath(event, 'attributes.frame.slow_count');
+    const maxMs = readCanonicalPath(event, 'attributes.frame.max_ms');
+    const budgetMs = readCanonicalPath(event, 'attributes.frame.budget_ms');
+    if ((typeof slow === 'number' && slow > 0) ||
+      (typeof maxMs === 'number' && typeof budgetMs === 'number' && maxMs > budgetMs * 2)) {
+      return 'warn';
+    }
+    return 'info';
+  }
   if (kind === 'page') return 'teal';
   if (kind === 'startup') return 'good';
   if (kind === 'memory') return 'purple';
-  if (kind === 'business') return 'info';
+  if (kind === 'business') return event.status === 'error' ? 'warn' : 'info';
   return 'neutral';
 }
 
@@ -703,8 +756,17 @@ function nameDescription(name: string): string | undefined {
     'sdk.lifecycle.flush': '退出前 flush',
     'memory.sample': '内存采样',
     'http.client': '网络请求',
+    'interaction.measure': '交互性能观测',
   };
   return labels[name];
+}
+
+function measureModeLabel(value: string): string {
+  const labels: Record<string, string> = {
+    common: 'common',
+    stage: 'stage',
+  };
+  return labels[value] ?? value;
 }
 
 function compactCanonicalPath(path: string): string {

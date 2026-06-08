@@ -92,12 +92,24 @@ export function nameOf(event: MonitorEvent): string | undefined {
 }
 
 export function isErrorEvent(event: MonitorEvent): boolean {
-  return statusOf(event) === 'error' || signalTypeOf(event) === 'error';
+  if (isCompletedHttpEvent(event)) return isFailedHttpEvent(event);
+  if (isBusinessFailureEvent(event)) return false;
+  return isStabilityErrorEvent(event);
 }
 
 export function isStabilityErrorEvent(event: MonitorEvent): boolean {
   if (isCompletedHttpEvent(event)) return false;
-  return statusOf(event) === 'error' || signalTypeOf(event) === 'error';
+  if (isBusinessFailureEvent(event)) return false;
+  return statusOf(event) === 'error' ||
+    signalTypeOf(event) === 'error' ||
+    stringAttribute(event, 'error.type') !== undefined ||
+    stringAttribute(event, 'error.mechanism') !== undefined ||
+    readPath(event, ['payload', 'error']) !== undefined;
+}
+
+export function isBusinessFailureEvent(event: MonitorEvent): boolean {
+  return stringAttribute(event, 'business.action') !== undefined &&
+    stringAttribute(event, 'business.result') === 'failed';
 }
 
 export function isJankEvent(event: MonitorEvent): boolean {
@@ -117,6 +129,7 @@ export function isFailedHttpEvent(event: MonitorEvent): boolean {
 
 export function problemTypeOf(event: MonitorEvent): string | undefined {
   if (isFailedHttpEvent(event)) return 'failed_http';
+  if (isBusinessFailureEvent(event)) return 'business_failure';
   if (isStabilityErrorEvent(event)) return 'error';
   if (isJankEvent(event)) return 'jank';
   if (isMemoryLeakSuspectEvent(event)) return 'memory_leak_suspect';
@@ -135,6 +148,10 @@ export function numericAttribute(event: MonitorEvent, key: string): number | und
 export function numericPayload(event: MonitorEvent, key: string): number | undefined {
   const value = readPath(event, ['payload', key]);
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function stringAttribute(event: MonitorEvent, key: string): string | undefined {
+  return stringValue(readPath(event, ['attributes', key]));
 }
 
 function readString(event: MonitorEvent, key: string): string | undefined {

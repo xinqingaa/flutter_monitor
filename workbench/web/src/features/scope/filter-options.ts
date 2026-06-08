@@ -2,6 +2,7 @@ import type { DimensionAppOption, DimensionOption } from '../../shared/datasourc
 
 const PROBLEM_TYPES: DimensionOption[] = [
   { value: 'error', count: 0 },
+  { value: 'business_failure', count: 0 },
   { value: 'failed_http', count: 0 },
   { value: 'jank', count: 0 },
   { value: 'slow_startup', count: 0 },
@@ -36,6 +37,7 @@ export function problemOptions(): Array<{ value: string; label: string }> {
 export function problemLabel(value: string): string {
   const labels: Record<string, string> = {
     error: '错误',
+    business_failure: '业务失败',
     failed_http: '失败请求',
     jank: '卡顿',
     slow_startup: '慢启动',

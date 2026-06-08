@@ -22,7 +22,7 @@ export function OverviewMetrics({
       <MetricCard kind="pages" title="页面性能" icon={Gauge} summary={overview?.pages} emphasis="加载 / 停留" to="/pages" />
       <MetricCard kind="network" title="网络请求" icon={Globe2} summary={overview?.http} emphasis="HTTP" to="/network" />
       <MetricCard kind="jank" title="卡顿" icon={Activity} summary={overview?.jank} emphasis="帧耗时" to="/jank" />
-      <MetricCard kind="errors" title="错误" icon={AlertTriangle} summary={overview?.errors} emphasis="稳定性" to="/errors" />
+      <MetricCard kind="errors" title="稳定性错误" icon={AlertTriangle} summary={overview?.errors} emphasis="稳定性" to="/errors" />
     </div>
   );
 }

@@ -62,6 +62,8 @@ export function eventKind(event?: MonitorEvent): string {
   const name = event.name ?? '';
   if (name === 'http.client') return 'http';
   if (isSdkMemoryEventName(name)) return 'memory';
+  if (name === 'interaction.measure' || readPath(event, ['attributes', 'interaction.mode']) !== undefined) return 'interaction';
+  if (readPath(event, ['attributes', 'business.action']) !== undefined) return 'business';
   if (event.signalType === 'error' || event.status === 'error') return 'error';
   if (name.includes('jank')) return 'jank';
   if (name.startsWith('page.') || name === 'route.push') return 'page';
@@ -82,10 +84,13 @@ export function issueLabels(event: MonitorEvent): string[] {
   const kind = eventKind(event);
   if (kind === 'http' && (event.status === 'error' || readPath(event, ['attributes', 'http.success']) === false)) {
     labels.push('请求失败');
+  } else if (kind === 'business' && isFailedBusinessEvent(event)) {
+    labels.push('业务失败');
   } else if (event.status === 'error' || event.signalType === 'error') {
     labels.push('错误');
   }
   if (kind === 'jank') labels.push('卡顿');
+  if (kind === 'interaction' && isSlowInteractionEvent(event)) labels.push('交互慢');
   if (kind === 'startup' && (event.durationMs ?? 0) >= 1000) labels.push('启动慢');
   if (kind === 'page' && isSlowPagePerformanceEvent(event)) labels.push('页面慢');
   if (kind === 'memory') {
@@ -130,6 +135,7 @@ export function eventKindLabel(event?: MonitorEvent): string {
     startup: '启动',
     memory: '内存',
     lifecycle: '生命周期',
+    interaction: '交互性能',
     business: '业务',
     event: '事件',
     trace: '链路',
@@ -138,6 +144,22 @@ export function eventKindLabel(event?: MonitorEvent): string {
     breadcrumb: '足迹',
   };
   return labels[kind] ?? kind;
+}
+
+function isSlowInteractionEvent(event: MonitorEvent): boolean {
+  const maxMs = readPath(event, ['attributes', 'frame.max_ms']);
+  const budgetMs = readPath(event, ['attributes', 'frame.budget_ms']);
+  const slowCount = readPath(event, ['attributes', 'frame.slow_count']);
+  return (typeof slowCount === 'number' && slowCount > 0) ||
+    (
+      typeof maxMs === 'number' &&
+      typeof budgetMs === 'number' &&
+      maxMs > budgetMs * 2
+    );
+}
+
+function isFailedBusinessEvent(event: MonitorEvent): boolean {
+  return event.status === 'error' || readPath(event, ['attributes', 'business.result']) === 'failed';
 }
 
 export function sortEvents(events: MonitorEvent[]): MonitorEvent[] {

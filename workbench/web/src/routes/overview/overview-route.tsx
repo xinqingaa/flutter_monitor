@@ -35,7 +35,7 @@ export function OverviewRoute() {
           <CardHeader className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>性能概览</CardTitle>
-              <CardDescription>启动、页面、网络、卡顿和错误是首页主视图；点击卡片进入对应明细页。</CardDescription>
+              <CardDescription>启动、页面、网络、卡顿和稳定性错误是首页主视图；业务失败保留在对应 session/page 链路里。</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="min-h-0 overflow-auto">

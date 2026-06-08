@@ -76,6 +76,7 @@ export interface SessionSummary {
   errorCount: number;
   jankCount: number;
   failedHttpCount: number;
+  businessFailureCount: number;
 }
 
 export interface PerformanceMetricSummary {

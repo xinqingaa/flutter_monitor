@@ -24,15 +24,19 @@ try {
   await postEvents();
   await assertMissingEventId();
   await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
-    assert.equal(data.count, 4);
+    assert.equal(data.count, 5);
     assert.equal(data.events.some((event: any) => String(event.eventId).startsWith('evt_server_')), false);
   });
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=failed_http', (data) => {
     assert.equal(data.count, 1);
     assert.equal(data.events[0].eventId, 'evt_smoke_http');
   });
+  await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=business_failure', (data) => {
+    assert.equal(data.count, 1);
+    assert.equal(data.events[0].eventId, 'evt_smoke_business_failed');
+  });
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=missing_app&appKey=smoke_app', (data) => {
-    assert.equal(data.count, 4);
+    assert.equal(data.count, 5);
   });
   await assertJson('/api/monitor/v1/dimensions', (data) => {
     assert.equal(data.apps[0].appKey, 'smoke_app');
@@ -44,6 +48,9 @@ try {
     assert.equal(data.userIdAvailable, true);
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
     assert.equal(data.sessions[0].failedHttpCount, 1);
+    assert.equal(data.sessions[0].errorCount, 0);
+    assert.equal(data.sessions[0].businessFailureCount, 1);
+    assert.equal(data.sessions[0].status, 'warning');
   });
   await assertJson('/api/monitor/v1/sessions?environment=missing,dev&devicePlatform=ios,android', (data) => {
     assert.equal(data.count, 1);
@@ -54,7 +61,7 @@ try {
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
   });
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
-    assert.equal(data.count, 4);
+    assert.equal(data.count, 5);
   });
   await assertJson('/api/monitor/v1/traces/trace_smoke', (data) => {
     assert.equal(data.count, 2);
@@ -66,6 +73,7 @@ try {
     assert.equal(data.startup.count, 2);
     assert.equal(data.http.count, 1);
     assert.equal(data.http.errorCount, 1);
+    assert.equal(data.errors.count, 0);
     assert.equal(data.pages.count, 1);
     assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_start' && event.attributes['frame.fps'] === undefined), true);
     assert.equal(data.startup.events.some((event: any) => event.eventId === 'evt_smoke_hot' && event.attributes['memory.delta_rss_mb'] === 4.5), true);
@@ -78,14 +86,14 @@ try {
 
   await restartService();
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
-    assert.equal(data.count, 4);
+    assert.equal(data.count, 5);
   });
   await postRetentionEvents();
   await assertJson('/api/monitor/v1/health', (data) => {
-    assert.equal(data.eventCount, 4);
+    assert.equal(data.eventCount, 5);
   });
   await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
-    assert.equal(data.count, 4);
+    assert.equal(data.count, 5);
   });
   await assertStatus('/api/monitor/v1/events/evt_smoke_start', 404);
 } finally {
@@ -99,7 +107,7 @@ function spawnService() {
       ...process.env,
       PORT: String(port),
       FM_WORKBENCH_SQLITE_PATH: sqlitePath,
-      FM_WORKBENCH_MAX_EVENTS: '4',
+      FM_WORKBENCH_MAX_EVENTS: '5',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -223,6 +231,23 @@ async function postEvents(): Promise<void> {
             'memory.delta_rss_mb': 7.25,
           },
           payload: { page: { end_reason: 'route_push' } },
+        },
+        {
+          eventId: 'evt_smoke_business_failed',
+          timestamp: '2026-05-29T10:00:00.900Z',
+          signalType: 'breadcrumb',
+          name: 'detail.coupon.apply',
+          status: 'error',
+          level: 'warning',
+          sessionId: 'ses_smoke',
+          traceId: 'trace_smoke_page_home_1',
+          resource: {
+            app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
+            device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
+          },
+          context: { user: { userId: 'user_smoke' }, route: { name: '/detail' }, native: { available: false, platform: 'android' } },
+          attributes: { 'business.action': 'detail.coupon.apply', 'business.result': 'failed' },
+          payload: { properties: { error: 'invalid_coupon' } },
         },
         {
           eventId: 'evt_smoke_http',
