@@ -15,21 +15,23 @@ flowchart TD
   P2["Phase 2<br/>SDK runtime pipeline"]
   P3["Phase 3<br/>现有 Flutter 信号接入"]
   P4["Phase 4<br/>内存 / Native bridge / 增强 lifecycle"]
-  P5["Phase 5<br/>DevTools 本地诊断"]
-  P6["Phase 6<br/>服务端协议与稳定性"]
-  P7["Phase 7<br/>工具入口扩展"]
+  P5["Phase 5<br/>Flutter-only 生产接入与真实 App 验证"]
+  P6["Phase 6<br/>DevTools 桥接与会话导出"]
+  P7["Phase 7<br/>服务端协议与稳定性"]
+  P8["Phase 8<br/>工具入口扩展"]
 
   P0 -->|"先确定包边界"| P1
   P1 -->|"模型与字段契约稳定后铺管线"| P2
   P2 -->|"管线可用后接入信号"| P3
   P3 -->|"基础信号稳定后增强"| P4
-  P4 -->|"统一 envelope 可被本地消费"| P5
-  P4 -->|"统一 envelope 可被服务端消费"| P6
-  P5 -->|"导出与诊断能力复用"| P7
-  P6 -->|"协议与导出能力复用"| P7
+  P4 -->|"Flutter 侧信号稳定后先验证真实接入"| P5
+  P5 -->|"生产接入数据可被本地/远端消费"| P6
+  P5 -->|"可靠上报与回查进入服务端协议"| P7
+  P6 -->|"导出与诊断能力复用"| P8
+  P7 -->|"协议与导出能力复用"| P8
 ```
 
-阶段依赖的核心是先稳定模型和 pipeline，再接入现有信号，最后扩展 DevTools、服务端和工具入口。
+阶段依赖的核心是先稳定模型和 pipeline，再接入现有信号，然后把 Flutter-only SDK 做到可安全接入真实 App，最后扩展 DevTools、服务端和工具入口。
 
 ## Phase 0：Workspace 与包边界
 
@@ -304,7 +306,183 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - example 能触发并在 raw JSON 中验证 memory sample、memory growth 或 pressure、foreground/background duration、exit flush 结果和 native bridge 信号；pressure 依赖系统 low memory warning，不要求每轮手动测试必然出现。
 - Phase 4 完成后仍满足 Phase 3 验收：page/http/error/jank/lifecycle/startup/track 的 raw JSON 链路不退化，breadcrumb 数量裁剪规则不被破坏。
 
-## Phase 5：DevTools 桥接、Timeline 与会话导出
+## Phase 5：Flutter-only 生产接入与真实 App 验证
+
+目标：
+
+- 暂停 native 深度投入，把 `flutter_monitor_native` 保持为可选、实验性增强层；主线聚焦 Flutter-only SDK 在真实 App 中的安全接入。
+- 将 SDK 从“本地诊断可用”推进到“真实中大型 App 可灰度接入”：
+  - 端侧开销可控；
+  - 弱网、断网、后台、退出和长 session 下关键事件不轻易丢失；
+  - 高频事件不会撑爆内存、磁盘、网络或 Workbench 查询；
+  - 出现问题时可以通过远程配置或初始化配置快速降级。
+- 建立生产级输出策略：
+  - `consoleOnly`：本地开发，只输出 compact log 或自定义 output。
+  - `localLive`：QA/本地复现，批量写入 Workbench service。
+  - `production`：真实 App 灰度或线上，使用离线队列、采样、限流、重试和优先级。
+- 接入一个真实中大型 App 或同等级业务工程的 QA/灰度包，验证启动、页面、HTTP、错误、行为、交互、卡顿、内存和 lifecycle 在真实业务流中的链路价值。
+- 输出可复查的压测和灰度验证结果，用数据证明 SDK 的开销、可靠性、丢弃策略和排查价值。
+
+本阶段不要求：
+
+- 恢复 native 深度能力建设；native crash、OOM、ANR 可靠捕获继续后置。
+- 建设完整生产服务端、告警、多租户、权限、计费或长期治理平台。
+- 完整 DevTools extension 体验；DevTools 桥接顺延到 Phase 6。
+- 追求采集面继续扩张。新增信号必须先证明对真实 App 排查有直接价值。
+
+### Native 暂停策略
+
+当前 native 包已提供 Android/iOS 基础 bridge，但短期主线暂停，原因是：
+
+- native 初始化成本明显高于 Flutter-only 模式，例如 4ms 提升到 40ms 量级时，会直接影响 SDK 接入阻力。
+- Android 与 iOS 的系统事件、回调名、生命周期语义和内存指标存在细微差异，SDK 虽可兼容，但会显著增加模型解释、测试矩阵和长期维护成本。
+- 对当前阶段而言，Flutter-only 的启动、页面、HTTP、行为、交互、卡顿、错误、内存 RSS 线索和 Workbench session timeline 已能覆盖大部分可验证价值。
+
+约束：
+
+- `flutter_monitor_native` 保留 optional/experimental 定位，不作为真实 App 基础接入前置条件。
+- SDK 初始化默认不启用 native bridge；未配置 native 时必须清楚表达 `context.native.available = false`，但不能降低 Flutter-only 链路质量。
+- 文档、example、Workbench 不得暗示 native crash/OOM/ANR 已完整可靠支持。
+- 后续只有当真实 App 的问题定位明确需要 Flutter-only 无法提供的 native 证据，并且初始化成本和兼容矩阵可被控制时，才重新评估 native 投入。
+
+### 生产级端侧可靠性
+
+#### 离线队列
+
+- 新增持久化事件队列，用于保存尚未成功送达的 `EventEnvelope` batch。
+- 队列必须保存已经隐私过滤后的 envelope，不保存未过滤 raw signal。
+- 队列存储应有总大小、事件数、单事件大小和单 batch 大小上限。
+- 队列按 priority 驱逐：
+  - 优先保留 `critical`、`high`、错误、关键慢页面、失败 HTTP、严重卡顿、memory pressure、SDK self-monitoring。
+  - 普通 breadcrumb、成功 HTTP、低价值 debug event 可优先丢弃或采样。
+- 持久化格式必须复用统一 envelope，不引入第二套本地缓存协议。
+- 队列损坏、反序列化失败或磁盘不可用时，SDK 应记录 self-monitoring 事件并降级，不得影响 App 主流程。
+
+#### 批量与 flush 策略
+
+- 所有生产和 local live 上报都应默认 batch，不允许真实 App 默认一事件一请求。
+- 支持以下 flush 触发：
+  - batch size 达到阈值；
+  - flush interval 到达；
+  - App 进入后台或退出前；
+  - critical/high 事件触发短延迟快速 flush；
+  - 业务主动调用 `FlutterMonitorSDK.flush(...)`。
+- `isAppExiting = true` 时采用尽力发送，不得因等待网络阻塞主线程或明显拖慢退出。
+- flush 成功、失败、跳过、部分成功、丢弃数量都应进入 SDK self-monitoring 或可查询 health 状态。
+
+#### 可靠重试
+
+- 按响应类型处理：
+  - 2xx：确认成功，删除对应 batch。
+  - 400/401/403：默认不可重试，记录 rejected 原因并按策略丢弃或保留少量诊断。
+  - 413：拆分 batch 或降低单事件大小，仍失败则按优先级丢弃。
+  - 429：按 `Retry-After` 或指数退避重试。
+  - 5xx、超时、断网：指数退避 + jitter，保留队列。
+- 重试必须有最大尝试次数、最大保留时间和失败冷却，避免弱网下持续耗电、耗流量或刷屏。
+- 重试状态不得破坏事件幂等，`eventId` 是服务端和本地去重键。
+
+#### 采样、限流和优先级
+
+- 支持按 signal type、event name、route、status、priority 配置采样率。
+- 默认策略：
+  - 错误、严重卡顿、失败 HTTP、关键慢页面、启动 trace end、SDK self-monitoring 尽量保留。
+  - 成功 HTTP、普通 breadcrumb、低频价值不高的 memory sample 可采样。
+  - 高频业务 track 必须限流，避免业务误用导致队列爆炸。
+- 限流应记录被丢弃数量和原因，例如 `sampled_out`、`rate_limited`、`queue_full`、`payload_too_large`。
+- 采样和限流不能让错误、失败 HTTP 或卡顿失去最近 breadcrumbs 和 page trace 归属。
+
+#### 远程配置最小集
+
+远程配置不追求复杂控制台，但必须预留真实 App 安全接入所需的最小能力：
+
+- 全局 kill switch。
+- output mode：`consoleOnly`、`localLive`、`production`。
+- 各 collector 开关：startup、page、http、error、track、interaction、jank、memory、lifecycle、native。
+- 各 signal 采样率、限流阈值、queue 上限、batch size、flush interval、retry 参数。
+- 配置拉取失败时使用本地默认配置或上一次有效配置。
+- 配置必须有版本号、过期时间和生效时间，便于定位某次 session 使用了哪套策略。
+- 远程配置本身不得引入第二套事件模型；配置变化可通过 SDK self-monitoring event 记录。
+
+### 真实 App 接入最小集
+
+真实 App 首轮接入只启用 Flutter-only 最小闭环：
+
+- 启动：`app.cold_start`、`app.hot_start`、`sdk.init`。
+- 页面：`page.visit`、`page.load`、`page.stay`、`page.view`。
+- 网络：Dio 或 `http` 的 `http.client` span，包含耗时、状态码、失败类型和 normalized URL。
+- 错误：Flutter framework error、Dart uncaught error、业务手动 `recordError`。
+- 行为：`FlutterMonitorSDK.track(...)`。
+- 交互性能：`FlutterMonitorSDK.measure(...)`，优先接入关键业务操作，不做全量自动拦截。
+- 卡顿：保守配置启用，重点关联 route、page trace、frame summary 和 breadcrumbs。
+- 内存：低频 RSS sample、页面/启动边界 RSS delta、growth 线索；不得宣称确定泄漏。
+- lifecycle：前后台切换、background/foreground duration、退出前 flush。
+- native：默认关闭，仅保留 Flutter-only 降级标识。
+
+接入方式：
+
+- 先接 QA/debug 包，再接内部灰度包，不直接全量线上开启。
+- 先选择 1-2 条高价值业务链路，例如启动 -> 首页 -> 详情页 -> 关键请求 -> 用户操作 -> 返回。
+- 每个业务链路必须能在 Workbench 中看到 session timeline、页面区段、HTTP、行为、错误/卡顿上下文和 raw envelope。
+- 对真实 App 代码的侵入应控制在初始化、navigator observer、HTTP interceptor/client、少量 `track`/`measure`/`setContext`。
+
+### 压测与灰度验证矩阵
+
+必须建立可重复执行的验证矩阵，而不是只看一次 demo：
+
+| 场景 | 验证目标 |
+|---|---|
+| 初始化 | Flutter-only 初始化 P50/P95、是否明显影响冷启动 |
+| 高频事件 | 高频 HTTP、track、breadcrumb 下队列是否稳定 |
+| 弱网/断网 | 断网 30 分钟、弱网恢复后关键事件是否可送达 |
+| 后台/恢复 | background duration、hot start、exit flush 是否准确 |
+| 长 session | 1 小时、3 小时 session 下内存、磁盘、队列是否稳定 |
+| 低端机 | CPU、内存、帧耗时和掉帧影响是否可接受 |
+| 大 payload | 大错误栈、大 breadcrumbs、大属性 map 是否被裁剪 |
+| 服务不可用 | 5xx/超时/429 下是否退避，是否影响 App 主流程 |
+| 查询性能 | Workbench 对数千/数万 envelope 的 session、trace、event 查询是否可用 |
+| 隐私过滤 | token、cookie、body、手机号等敏感字段是否不会进入 output 和离线队列 |
+
+建议目标：
+
+- Flutter-only SDK 初始化 P50 < 5ms，P95 < 10ms；若真实 App 环境无法满足，必须说明原因和优化计划。
+- SDK 采集对页面切换、滑动和关键交互无肉眼可感影响。
+- 弱网或服务不可用时，SDK 不持续刷请求、不阻塞 UI、不导致内存持续增长。
+- 队列达到上限时，保留关键事件并记录丢弃原因。
+- Workbench 能从 `userId + 时间范围`、sessionId、eventId、traceId、页面、错误、失败 HTTP、卡顿进入排查。
+
+### Workbench 在 Phase 5 的职责
+
+- 作为真实 App QA/灰度验证的主要本地诊断入口。
+- 继续只消费统一 envelope，不补写 SDK 字段，不成为第二套协议。
+- 支持查看 SDK self-monitoring：队列长度、丢弃数、重试数、flush 失败、采样/限流原因。
+- 支持按真实 App 的 appKey、environment、version、device、route、userId、problem type 过滤 session。
+- 在性能概览中区分“采集到的业务问题”和“SDK 自身可靠性问题”。
+
+### 实施顺序
+
+1. 梳理 `MonitorConfig` 输出模式和生产配置入口，明确 `consoleOnly`、`localLive`、`production` 三类策略。
+2. 抽象 production queue/output：内存队列、持久化队列、batch builder、flush coordinator、retry policy、drop policy。
+3. 实现 priority-aware queue 和 drop reason 统计。
+4. 实现采样与限流策略，先支持本地配置，再接入远程配置预留。
+5. 增强 SDK self-monitoring envelope 和 Workbench 展示。
+6. 补充端侧单测和集成测试：队列、重试、采样、限流、隐私过滤、退出 flush。
+7. 建立压测脚本或 example stress mode，生成可复查结果。
+8. 接入真实 App QA 包，先关闭 native，仅启用 Flutter-only 最小集。
+9. 复盘真实数据，修正字段、采样、限流、timeline 展示和接入文档。
+
+验收：
+
+- 不启用 native 时，Flutter-only SDK 的启动、页面、HTTP、错误、行为、交互、卡顿、内存和 lifecycle 仍能形成完整 session timeline。
+- production mode 下所有上报默认 batch，支持离线队列、重试、采样、限流、优先级和退出前 flush。
+- SDK 能处理 2xx、4xx、413、429、5xx、超时和断网，不因服务不可用影响 App 主流程。
+- 队列满、采样、限流、payload 裁剪、隐私过滤、flush 失败都有可回查的 self-monitoring 证据。
+- critical/high 事件优先保留，普通 breadcrumb、成功 HTTP、低价值 sample 可按策略丢弃。
+- 远程配置最小集可控制全局开关、collector 开关、采样率、限流、队列、batch、flush 和 retry 参数；配置失败时可降级。
+- 真实 App QA/灰度包至少完成一条关键业务链路接入，并能在 Workbench 还原用户路径、页面区段、请求、行为、错误/卡顿/内存上下文和 raw JSON。
+- 压测矩阵有记录，覆盖初始化、弱网、长 session、低端机、高频事件、服务不可用、隐私过滤和 Workbench 查询性能。
+- 文档和 example 明确 native 当前为 optional/experimental，不把 native 作为 Flutter-only 生产接入前置条件。
+
+## Phase 6：DevTools 桥接、Timeline 与会话导出
 
 目标：
 
@@ -325,11 +503,11 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 - SDK bridge 输出的事件与 HTTP 上报事件语义一致。
 - native、memory、jank、error 和 HTTP signals 在 DevTools 集成中只通过统一 envelope 和 Timeline 标记表达，不单独建模。
 - DevTools 集成不复制 Workbench 的完整 session timeline、trace detail、event detail 和 breadcrumb detail UI。
-- Workbench 可消费 Phase 5 export/bridge 数据，但两者不共享第二套协议。
+- Workbench 可消费 Phase 6 export/bridge 数据，但两者不共享第二套协议。
 
 ## Workbench：本地调试、QA 复现与统一排查入口
 
-Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。当前决策是先暂停继续推进 Phase 5 的完整 DevTools 体验，优先把 Workbench 作为独立 JS/TS 工作台落地，用于本地调试、QA 复现、session timeline 和性能问题排查。
+Workbench 横跨 Phase 5 / Phase 7 的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。当前决策是先暂停继续推进完整 DevTools 体验，优先把 Workbench 作为独立 JS/TS 工作台落地，用于本地调试、QA 复现、session timeline 和性能问题排查。
 
 目标：
 
@@ -343,20 +521,20 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 - Workbench 可以近实时显示，但 SDK 到 service 的写入仍必须遵守 batch 和 flush 策略。
 - 近实时写入必须通过初始化配置显式开启，不能成为真实 App 默认行为。
 - local workbench service 不承担生产鉴权、多租户、长期治理、告警、remote config、SDK 离线缓存和动态采样。
-- Phase 6 Server 后续可以作为 Workbench 的 remote datasource，但 Workbench UI 不因此改变事件模型。
+- Phase 7 Server 后续可以作为 Workbench 的 remote datasource，但 Workbench UI 不因此改变事件模型。
 
 完整目录规划、技术选型、脚本编排、Service/Web MVP、实施顺序和验收标准以 `workbench/docs/workbench_plan.md` 为准。本文只保留 SDK 总计划中的 Workbench 插入点。
 
-## Phase 6：服务端协议与稳定性
+## Phase 7：服务端协议与稳定性
 
 目标：
 
 - HTTP 上报使用 `docs/server_protocol.md`。
 - 支持 schema version。
 - 支持鉴权 headers。
-- 支持重试、限流、请求大小控制。
-- 支持离线缓存。
-- 支持动态采样和事件优先级。
+- 与 Phase 5 的端侧可靠上报策略对齐，稳定服务端接收、校验、幂等、错误码和查询边界。
+- 支持服务端侧请求大小控制、schema 校验、幂等写入、基础聚合和 raw envelope 回查。
+- 支持动态采样和事件优先级的服务端解释与兜底。
 - 支持 remote config 预留。
 - 提供写入链路和查询链路的清晰边界：SDK 上报 API 负责可靠接收，Workbench 查询 API 负责 session、trace、event 和聚合回查。
 - 真实 App 上报必须保护 App 体验，不得默认无策略实时逐条上报。
@@ -364,15 +542,14 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 验收：
 
 - 服务端能校验 schema。
-- SDK 能处理 2xx、4xx、413、429、5xx。
-- SDK 能记录 flush 成功、失败、丢弃事件等 self-monitoring 信息。
-- SDK 能通过显式模式切换 `consoleOnly`、`localLive` 和 `production` 三类输出策略。
+- 服务端错误码语义能被 Phase 5 SDK 重试策略正确消费。
+- 服务端能按 `eventId` 幂等去重，支持 batch 部分成功和明确 reject reason。
 - 服务端能按 `sessionId`、`traceId`、`context.route.name`、`context.module.name`、`resource.app.appVersion`、`resource.device.deviceTier`、`context.native.platform` 聚合。
 - 查询服务能按 `context.user.userId + time range` 查找 session；未提供 userId 的 App 仍可按时间、版本、页面、错误和性能问题查询。
 - 服务端能基于统一事件派生启动 P95、页面 P95、API P95、卡顿率、错误率、native crash/ANR/OOM rate、内存趋势和影响用户数。
 - 采样和限流不会破坏错误、native crash、OOM、关键卡顿、关键慢页面的定位链路。
 
-## Phase 7：工具入口扩展
+## Phase 8：工具入口扩展
 
 目标：
 
