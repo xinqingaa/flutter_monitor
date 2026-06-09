@@ -369,19 +369,29 @@ function isPageEntry(event: MonitorEvent): boolean {
 }
 
 function isPageResume(event: MonitorEvent): boolean {
-  return event.name === 'page.view' && event.attributes?.['page.active_phase'] === 'page.resume';
+  return event.name === 'page.view' &&
+    event.attributes?.['page.active_phase'] === 'page.resume' &&
+    event.attributes?.['page.active_trigger'] === 'route_pop';
 }
 
 function isPageTimelineEvent(event: MonitorEvent): boolean {
+  if (isLifecycleResumePageView(event)) return false;
   return event.name === 'route.push' || event.name === 'route.pop' || event.name === 'page.visit' || event.name === 'page.load' ||
     event.name === 'page.view' || event.name === 'page.stay';
 }
 
 function eventBelongsToPageSegment(event: MonitorEvent, segment: RawSegment): boolean {
   if (segment.kind !== 'page') return false;
+  if (isLifecycleResumePageView(event)) return false;
   if (isPageTimelineEvent(event)) return true;
   const eventKey = pageInstanceKey(event);
   return Boolean(eventKey && segment.pageKey && eventKey === segment.pageKey);
+}
+
+function isLifecycleResumePageView(event: MonitorEvent): boolean {
+  return event.name === 'page.view' &&
+    event.attributes?.['page.active_phase'] === 'page.resume' &&
+    event.attributes?.['page.active_trigger'] === 'lifecycle_resumed';
 }
 
 function isInitialStartupEvent(

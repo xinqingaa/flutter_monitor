@@ -97,6 +97,7 @@ abstract final class FieldPaths {
   static const pageToFullName = 'page.to_full_name';
   static const pageInstanceId = 'page.instance_id';
   static const pageActivePhase = 'page.active_phase';
+  static const pageActiveTrigger = 'page.active_trigger';
   static const pageLoadMs = 'page.load_ms';
 
   static const httpMethod = 'http.method';

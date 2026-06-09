@@ -489,6 +489,7 @@ class Reporter {
     String? routeFullName,
     String? pageInstanceId,
     String? activePhase,
+    String? activeTrigger,
     DateTime? timestamp,
   }) {
     final effectiveRouteFullName = _effectiveRouteFullName(
@@ -512,6 +513,8 @@ class Reporter {
         attributes: <String, Object?>{
           if (pageInstanceId != null) FieldPaths.pageInstanceId: pageInstanceId,
           if (activePhase != null) FieldPaths.pageActivePhase: activePhase,
+          if (activeTrigger != null)
+            FieldPaths.pageActiveTrigger: activeTrigger,
           FieldPaths.contextRouteFullName: effectiveRouteFullName,
         },
         payload: <String, Object?>{
@@ -627,7 +630,11 @@ class Reporter {
       payload: <String, Object?>{PayloadKeys.pageEndReason: endReason},
     );
     if (resumePrevious && nextRouteName != null && nextRouteName.isNotEmpty) {
-      _resumeTopPage(nextRouteName, timestamp: finishedAt);
+      _resumeTopPage(
+        nextRouteName,
+        activeTrigger: PageActiveTriggers.routePop,
+        timestamp: finishedAt,
+      );
     }
   }
 
@@ -1235,7 +1242,11 @@ class Reporter {
       _foregroundStartedAt = occurredAt;
       final currentRoute = _topPageTrace()?.routeName;
       if (currentRoute != null) {
-        _resumeTopPage(currentRoute, timestamp: occurredAt);
+        _resumeTopPage(
+          currentRoute,
+          activeTrigger: PageActiveTriggers.lifecycleResumed,
+          timestamp: occurredAt,
+        );
       }
     }
 
@@ -1647,7 +1658,11 @@ class Reporter {
     return null;
   }
 
-  void _resumeTopPage(String routeName, {DateTime? timestamp}) {
+  void _resumeTopPage(
+    String routeName, {
+    required String activeTrigger,
+    DateTime? timestamp,
+  }) {
     final record = _activePageTraceForRoute(routeName) ?? _topPageTrace();
     if (record == null) {
       _traceManager.setActiveTrace(traceId: null);
@@ -1665,6 +1680,7 @@ class Reporter {
       routeFullName: record.routeFullName,
       pageInstanceId: record.pageInstanceId,
       activePhase: PageActivePhases.resume,
+      activeTrigger: activeTrigger,
       timestamp: timestamp,
     );
   }

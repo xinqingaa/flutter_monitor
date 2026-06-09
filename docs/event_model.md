@@ -274,6 +274,7 @@ flowchart TB
 | `page.to_full_name` | string | queryable | 是 | 页面离开后进入的完整 route |
 | `page.instance_id` | string | queryable | 是 | 单次页面实例 ID，用于区分同 route 多次进入 |
 | `page.active_phase` | string | safe | 是 | 页面活跃窗口阶段，例如 page.enter、page.covered、page.exit、page.resume、lifecycle.background、app.dispose |
+| `page.active_trigger` | string | safe | 是 | 页面活跃窗口阶段的触发来源，例如 route_push、route_pop、lifecycle_resumed、lifecycle_background、route_replace、app_dispose |
 | `page.load_ms` | duration_ms | safe | 是 | 页面加载耗时，通常等于首次可渲染帧耗时 |
 | `http.method` | string | safe | 是 | GET/POST 等 |
 | `http.url.normalized` | string | queryable | 是 | 归一化 URL，不含 query |
@@ -405,9 +406,9 @@ flowchart TB
 | 完整 route 名称 | `context.route.fullName` | 带参数的业务可读 route，例如 `/detail?id=1` | 展示、定位、区分业务对象 |
 | 页面实例 | `page.instance_id` | 一次 route push 产生的页面实例，推荐由 route 名称和单调时间/ID 组成 | 区分同 route 多次进入，关联 page trace/load/stay |
 
-同一个 route 可以同时或连续产生多个页面实例。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`。回到 A 时不应伪造成新的 A route 实例；它仍然是 `A1`，恢复后的可见阶段通过 `page.active_phase = page.resume` 表达。SDK 应把 `page.enter` 和 `page.resume` 作为可见区段边界写入 envelope，调试工具可以据此把同一个 `page.instance_id` 拆成多个用户可见区段。
+同一个 route 可以同时或连续产生多个页面实例。例如 `A -> B(id=1) -> B(id=2) -> C -> A` 中，页面实例是 `A1`、`B1`、`B2`、`C1`。回到 A 时不应伪造成新的 A route 实例；它仍然是 `A1`，导航返回后的可见阶段通过 `page.active_phase = page.resume` 和 `page.active_trigger = route_pop` 表达。SDK 应把 `page.enter + route_push` 和 `page.resume + route_pop` 作为页面可见区段边界写入 envelope，调试工具可以据此把同一个 `page.instance_id` 拆成多个用户导航可见区段。
 
-页面 trace 由 `trace page.visit` 表达页面实例生命周期。基础 SDK 把页面可见期间的帧摘要和页面进入/退出 RSS 写入 `page.visit` trace end：`context.route.name` 用于聚合，`context.route.fullName` 用于展示和定位，`page.instance_id` 用于内部关联并区分同 route 多实例。`page.visit.durationMs` 不代表某个单独可见区段的停留时间；当页面被下级 route 覆盖后恢复，后续业务操作、请求、错误和交互性能仍挂到同一个页面 trace，但 timeline 应以 `page.resume` 开启新的可见区段。
+页面 trace 由 `trace page.visit` 表达页面实例生命周期。基础 SDK 把页面可见期间的帧摘要和页面进入/退出 RSS 写入 `page.visit` trace end：`context.route.name` 用于聚合，`context.route.fullName` 用于展示和定位，`page.instance_id` 用于内部关联并区分同 route 多实例。`page.visit.durationMs` 不代表某个单独可见区段的停留时间；当页面被下级 route 覆盖后恢复，后续业务操作、请求、错误和交互性能仍挂到同一个页面 trace，但 timeline 只应以 `page.resume + route_pop` 开启新的页面返回区段。`page.resume + lifecycle_resumed` 只表示 App 从后台恢复后当前页面重新可见，属于 lifecycle / hot start 活动，不是 Navigator 返回。
 
 页面活跃阶段推荐使用固定值：
 
@@ -420,7 +421,18 @@ flowchart TB
 | `lifecycle.background` | App 进入后台，当前可见页面活跃窗口闭合 |
 | `app.dispose` | SDK dispose 或 App 退出时尽力闭合当前窗口 |
 
-页面访问足迹使用 `breadcrumb page.view` 表达页面变为可见。首次进入页面时应携带 `page.active_phase = page.enter` 和 `page.instance_id`；从子页面 pop 或 App 前台恢复后重新可见时应携带 `page.active_phase = page.resume` 和原 `page.instance_id`。Navigator pop 动作可用 `span route.pop` 表达，并挂在被 pop 页面 trace 上；恢复页的 `page.view` 仍挂在恢复后的页面 trace 上。
+页面活跃触发来源推荐使用固定值：
+
+| 值 | 说明 |
+|---|---|
+| `route_push` | 新 route push 或首个页面进入导致页面可见 |
+| `route_pop` | 子页面 pop 后栈中已有页面重新可见 |
+| `lifecycle_resumed` | App 从后台恢复到前台后当前页面重新可见 |
+| `lifecycle_background` | App 进入后台导致当前页面可见窗口闭合 |
+| `route_replace` | route replace 导致页面可见状态变化 |
+| `app_dispose` | SDK dispose 或 App 退出导致窗口闭合 |
+
+页面访问足迹使用 `breadcrumb page.view` 表达页面变为可见。首次进入页面时应携带 `page.active_phase = page.enter`、`page.active_trigger = route_push` 和 `page.instance_id`；从子页面 pop 后重新可见时应携带 `page.active_phase = page.resume`、`page.active_trigger = route_pop` 和原 `page.instance_id`；App 前台恢复时如发出 page.view，必须携带 `page.active_trigger = lifecycle_resumed`，避免消费侧把前台恢复误读为导航返回。Navigator pop 动作可用 `span route.pop` 表达，并挂在被 pop 页面 trace 上；恢复页的 `page.view` 仍挂在恢复后的页面 trace 上。
 
 ### 增强 Lifecycle 事件
 
@@ -1182,7 +1194,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
       "parentSpanId": null,
       "resource": {},
       "context": {"route": {"name": "/home", "stack": ["/home"]}, "module": {"name": "home", "scene": "home"}},
-      "attributes": {"event.phase": "instant"},
+      "attributes": {"event.phase": "instant", "page.instance_id": "/home_001", "page.active_phase": "page.enter", "page.active_trigger": "route_push"},
       "payload": {}
     },
     {

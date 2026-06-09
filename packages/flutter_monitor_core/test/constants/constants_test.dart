@@ -61,6 +61,10 @@ void main() {
     expect(StartupEndReasons.interactive, 'interactive');
     expect(PageActivePhases.enter, 'page.enter');
     expect(PageActivePhases.resume, 'page.resume');
+    expect(PageActiveTriggers.routePush, 'route_push');
+    expect(PageActiveTriggers.routePop, 'route_pop');
+    expect(PageActiveTriggers.lifecycleResumed, 'lifecycle_resumed');
+    expect(PageActiveTriggers.lifecycleBackground, 'lifecycle_background');
     expect(InteractionEndReasons.autoWindow, 'auto_window');
     expect(InteractionEndReasons.timeout, 'timeout');
   });

@@ -212,7 +212,8 @@ Native 增强来源：
 - 页面性能采集应围绕页面实例维护可见阶段：同一时刻只有一个当前可见页面，但同一页面实例可能被覆盖后再次恢复，因此可能拥有多段可见阶段。
 - 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。基础 SDK 把页面可见阶段累计到的帧摘要和进入/退出 RSS 写入 `page.visit` trace end。
 - route pop/replace/page stay 应结束被移除的页面实例；route push 会结束旧页面的当前可见阶段并开启新页面实例。
-- route pop 返回到已有页面时，不创建新的页面实例，但必须用 `page.active_phase = page.resume` 发出恢复可见事实。Workbench 和 DevTools 可基于该事件把同一 `page.instance_id` 拆成多个可见区段。
+- route pop 返回到已有页面时，不创建新的页面实例，但必须用 `page.active_phase = page.resume` 和 `page.active_trigger = route_pop` 发出导航返回导致的恢复可见事实。Workbench 和 DevTools 可基于该事件把同一 `page.instance_id` 拆成多个用户导航可见区段。
+- App 从后台恢复到前台时，可以用 `page.active_phase = page.resume` 和 `page.active_trigger = lifecycle_resumed` 发出当前页面重新可见事实，但它属于 lifecycle / hot start 活动，不应被展示为“返回后继续”页面区段。
 - paused/hidden 不结束页面实例，但应闭合当前页面可见阶段并尽力 flush 页面级性能聚合；detached、SDK dispose 或 app exiting flush 应尽力结束活跃页面实例，并通过 payload 标明结束原因。
 
 ### 页面实例与可见阶段编排
@@ -242,17 +243,17 @@ route 实例:
   A1: A1 恢复可见
 ```
 
-回到 A 时不应创建新的 A route 实例；它仍然是 `A1`。恢复阶段通过 `page.active_phase = page.resume` 表达，页面级 FPS、慢帧和内存证据仍写回同一个页面实例的 `page.visit`。`page.visit` 的 `durationMs` 是页面实例生命周期，不等同于某一个可见区段的停留时长；调试工具展示用户操作链路时应优先按 `page.enter` / `page.resume` 切分可见区段。
+回到 A 时不应创建新的 A route 实例；它仍然是 `A1`。导航返回恢复阶段通过 `page.active_phase = page.resume` 和 `page.active_trigger = route_pop` 表达，页面级 FPS、慢帧和内存证据仍写回同一个页面实例的 `page.visit`。`page.visit` 的 `durationMs` 是页面实例生命周期，不等同于某一个可见区段的停留时长；调试工具展示用户操作链路时应优先按 `page.enter` / `route_pop` 触发的 `page.resume` 切分页面可见区段。
 
 推荐的内部流转：
 
 | 路由事件 | 页面实例动作 | 可见阶段动作 | 采集动作 |
 |---|---|---|---|
-| App 首个页面进入 / route push | 创建 `page.instance_id`，启动 `page.visit` | `page.active_phase = page.enter` | 记录进入 RSS；页面帧聚合开始；发出 `page.view` 进入足迹 |
+| App 首个页面进入 / route push | 创建 `page.instance_id`，启动 `page.visit` | `page.active_phase = page.enter`，`page.active_trigger = route_push` | 记录进入 RSS；页面帧聚合开始；发出 `page.view` 进入足迹 |
 | 新 route push | 新建新页面实例 | 旧页面以 `page.covered` 闭合，新页面以 `page.enter` 开启 | 旧页面帧聚合 flush；新页面记录进入 RSS |
-| route pop | 结束被 pop 页面实例，生成 `page.stay` | 被 pop 页面以 `page.exit` 闭合；上一个页面以 `page.resume` 恢复 | 被 pop 页面帧聚合 flush；被 pop 页面记录退出 RSS；发出 `route.pop` 和恢复页 `page.view` 足迹 |
-| lifecycle hidden/paused | 页面实例保留 | 当前页面以 `lifecycle.background` 闭合 | App/page 帧聚合 flush；lifecycle 低频内存采样 |
-| resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` 恢复 | App/page 帧聚合重新开始；lifecycle 恢复检查；发出恢复页 `page.view` 足迹 |
+| route pop | 结束被 pop 页面实例，生成 `page.stay` | 被 pop 页面以 `page.exit` 闭合；上一个页面以 `page.resume` + `route_pop` 恢复 | 被 pop 页面帧聚合 flush；被 pop 页面记录退出 RSS；发出 `route.pop` 和恢复页 `page.view` 足迹 |
+| lifecycle hidden/paused | 页面实例保留 | 当前页面以 `lifecycle.background` + `lifecycle_background` 闭合 | App/page 帧聚合 flush；lifecycle 低频内存采样 |
+| resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` + `lifecycle_resumed` 恢复 | App/page 帧聚合重新开始；lifecycle 恢复检查；发出恢复页 `page.view` 足迹；Workbench 不因此新开页面区段 |
 | detached/dispose | 尽力结束活跃页面实例 | 当前页面以 `app.dispose` 闭合 | flush 和最终采样尽力执行，不阻塞退出 |
 
 第一阶段不要求完整支持所有 Navigator 复杂操作。`didPush`、`didPop`、`didReplace` 和 SDK dispose 是基础路径；`popUntil`、嵌套路由、tab router、匿名 route 和第三方 router 集成应通过后续适配补充，但不能改变上述 route / page instance / active window 三层语义。
@@ -268,6 +269,7 @@ route 实例:
 - `context.module.scene`
 - `page.instance_id`
 - `page.active_phase`
+- `page.active_trigger`
 - `page.from`
 - `page.from_full_name`
 - `page.to`
@@ -641,6 +643,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - lifecycle breadcrumb 应帮助解释请求中断、错误、卡顿和 native 信号。
 - 前台/后台持续时间使用 `app.foreground_duration` 和 `app.background_duration` 的 envelope `durationMs` 表达。
 - 后台停留间隔可作为 hot start 的上下文，但不得写入 `app.hot_start.durationMs`。
+- resumed 后的页面重新可见事实必须用 `page.active_trigger = lifecycle_resumed` 标明来源；它不表示 Navigator 返回，不应被 Workbench、DevTools 或服务端展示为“返回后继续”。
 
 ### 字段映射
 

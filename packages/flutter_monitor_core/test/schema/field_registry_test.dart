@@ -140,6 +140,11 @@ void main() {
       FieldValueType.string,
     );
     expect(
+      registry.lookup(FieldPaths.pageActiveTrigger)?.valueType,
+      FieldValueType.string,
+    );
+    expect(registry.lookup(FieldPaths.pageActiveTrigger)?.indexed, isTrue);
+    expect(
       registry.lookup(FieldPaths.interactionMode)?.valueType,
       FieldValueType.string,
     );
@@ -297,6 +302,7 @@ void main() {
       FieldPaths.pageToFullName,
       FieldPaths.pageInstanceId,
       FieldPaths.pageActivePhase,
+      FieldPaths.pageActiveTrigger,
       FieldPaths.pageLoadMs,
       FieldPaths.httpMethod,
       FieldPaths.httpUrlNormalized,

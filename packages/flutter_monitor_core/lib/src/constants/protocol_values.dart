@@ -99,6 +99,15 @@ abstract final class PageActivePhases {
   static const appDispose = 'app.dispose';
 }
 
+abstract final class PageActiveTriggers {
+  static const routePush = 'route_push';
+  static const routePop = 'route_pop';
+  static const lifecycleResumed = 'lifecycle_resumed';
+  static const lifecycleBackground = 'lifecycle_background';
+  static const routeReplace = 'route_replace';
+  static const appDispose = 'app_dispose';
+}
+
 abstract final class InteractionEndReasons {
   static const autoWindow = 'auto_window';
   static const finish = 'finish';

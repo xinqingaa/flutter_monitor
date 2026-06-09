@@ -513,6 +513,13 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.pageActiveTrigger,
+    valueType: FieldValueType.string,
+    requirement: FieldRequirement.conditional,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.pageLoadMs,
     valueType: FieldValueType.durationMs,
     privacyLevel: PrivacyLevel.safe,

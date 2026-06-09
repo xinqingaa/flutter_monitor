@@ -54,6 +54,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
           routeFullName: page.fullName,
           pageInstanceId: pageInstanceId,
           activePhase: PageActivePhases.enter,
+          activeTrigger: PageActiveTriggers.routePush,
           timestamp: now,
         );
         _schedulePageFirstFrameFallback(
@@ -131,6 +132,7 @@ class MonitorRouteObserver extends RouteObserver<PageRoute<dynamic>> {
         routeFullName: newPage.fullName,
         pageInstanceId: pageInstanceId,
         activePhase: PageActivePhases.enter,
+        activeTrigger: PageActiveTriggers.routePush,
         timestamp: now,
       );
       _schedulePageFirstFrameFallback(

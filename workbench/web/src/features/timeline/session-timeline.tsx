@@ -254,7 +254,7 @@ function TimelineNode({
       )} />
       <div className="flex w-full justify-between min-w-0 ">
         <Badge tone={display.tone} className="rounded-md px-1.5 py-0">{display.kindLabel}</Badge>
-        <span className="shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatDateTime(event.startTime ?? event.timestamp)}</span>
+        <span className="shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-400">{formatDateTime(nodeDisplayTime(event))}</span>
       </div>
       <div className='flex flex-col gap-1 w-full'>
         <div className='flex justify-between'>
@@ -291,6 +291,15 @@ function issueLabelTone(label: string): 'danger' | 'warn' {
 
 function nodeDisplay(event: MonitorEvent) {
   return timelineDisplay(event);
+}
+
+function nodeDisplayTime(event: MonitorEvent): string | undefined {
+  const phase = typeof event.attributes?.['event.phase'] === 'string'
+    ? event.attributes['event.phase']
+    : undefined;
+  if (phase === 'end') return event.endTime ?? event.timestamp ?? event.startTime;
+  if (phase === 'start') return event.startTime ?? event.timestamp;
+  return event.timestamp ?? event.startTime ?? event.endTime;
 }
 
 function containsEvent(segment: TimelineSegment, eventId: string | undefined): boolean {

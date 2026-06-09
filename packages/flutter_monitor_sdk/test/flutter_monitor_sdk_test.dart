@@ -1097,6 +1097,10 @@ void main() {
         (pageView['attributes'] as Map)[FieldPaths.pageActivePhase],
         PageActivePhases.enter,
       );
+      expect(
+        (pageView['attributes'] as Map)[FieldPaths.pageActiveTrigger],
+        PageActiveTriggers.routePush,
+      );
       expect(pageLoadEvents.first['signalType'], 'span');
       expect(pageLoadEvents.last['status'], 'ok');
       expect(pageLoadEvents.last['durationMs'], isA<num>());
@@ -1565,7 +1569,61 @@ void main() {
     final resumedRoute = (resumedPageView['context'] as Map)['route'] as Map;
     expect(resumedPageView['traceId'], detailTraceId);
     expect(resumedAttributes[FieldPaths.pageInstanceId], detailPageInstanceId);
+    expect(
+      resumedAttributes[FieldPaths.pageActiveTrigger],
+      PageActiveTriggers.routePop,
+    );
     expect(resumedRoute['name'], '/detail');
+  });
+
+  test('lifecycle resumed page view uses lifecycle trigger', () async {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(flushOnBackground: false),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+    final startedAt = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+    final resumedAt = startedAt.add(const Duration(seconds: 8));
+
+    final pageInstanceId = reporter.startPageLoad(
+      '/home',
+      startTime: startedAt,
+    );
+    reporter.recordPageView(
+      '/home',
+      pageInstanceId: pageInstanceId,
+      activePhase: PageActivePhases.enter,
+      activeTrigger: PageActiveTriggers.routePush,
+      timestamp: startedAt,
+    );
+    await reporter.handleLifecycleState(
+      LifecycleStates.paused,
+      timestamp: startedAt.add(const Duration(seconds: 3)),
+    );
+    await reporter.handleLifecycleState(
+      LifecycleStates.resumed,
+      timestamp: resumedAt,
+    );
+
+    final resumedPageView = output.events.lastWhere(
+      (event) =>
+          event['name'] == EventNames.pageView &&
+          (event['attributes'] as Map)[FieldPaths.pageActivePhase] ==
+              PageActivePhases.resume,
+    );
+    final attributes = resumedPageView['attributes'] as Map;
+    expect(attributes[FieldPaths.pageInstanceId], pageInstanceId);
+    expect(
+      attributes[FieldPaths.pageActiveTrigger],
+      PageActiveTriggers.lifecycleResumed,
+    );
+    expect(
+      ((resumedPageView['context'] as Map)['route'] as Map)['name'],
+      '/home',
+    );
   });
 
   testWidgets('popping a page clears stale page trace before later events', (

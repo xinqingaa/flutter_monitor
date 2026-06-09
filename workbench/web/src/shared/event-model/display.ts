@@ -168,10 +168,13 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
 
   if (name === 'page.view') {
     const activePhase = readStringPath(event, 'attributes.page.active_phase');
-    const title = activePhase === 'page.resume'
+    const activeTrigger = readStringPath(event, 'attributes.page.active_trigger');
+    const title = activePhase === 'page.resume' && activeTrigger === 'lifecycle_resumed'
+      ? route ? `前台恢复 ${route}` : '前台恢复'
+      : activePhase === 'page.resume'
       ? route ? `返回后继续 ${route}` : '返回后继续'
       : route ? `页面访问 ${route}` : '页面访问';
-    return { ...base, title, summaryItems: activePhase ? compactItems(activePhaseLabel(activePhase)) : [] };
+    return { ...base, title, summaryItems: compactItems(activePhase ? activePhaseLabel(activePhase) : undefined, activeTrigger ? activeTriggerLabel(activeTrigger) : undefined) };
   }
 
   if (name === 'page.stay') {
@@ -550,6 +553,7 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.page.interactive_ms', { unit: 'ms' });
     pushField(event, secondary, 'attributes.page.instance_id');
     pushField(event, secondary, 'attributes.page.active_phase');
+    pushField(event, secondary, 'attributes.page.active_trigger');
     pushField(event, secondary, 'attributes.page.from');
     pushField(event, secondary, 'attributes.page.from_full_name');
     pushField(event, secondary, 'attributes.page.to');
@@ -783,6 +787,18 @@ function activePhaseLabel(value: string): string {
     'page.resume': '恢复可见',
     'lifecycle.background': '进入后台',
     'app.dispose': '退出清理',
+  };
+  return labels[value] ?? value;
+}
+
+function activeTriggerLabel(value: string): string {
+  const labels: Record<string, string> = {
+    route_push: '路由进入',
+    route_pop: '路由返回',
+    lifecycle_resumed: '前台恢复',
+    lifecycle_background: '进入后台',
+    route_replace: '路由替换',
+    app_dispose: '退出清理',
   };
   return labels[value] ?? value;
 }
