@@ -761,6 +761,91 @@ void main() {
     );
   });
 
+  test(
+    'measure keeps start page binding when it finishes after route push',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+      final t0 = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+      final detailId = reporter.startPageLoad(
+        '/detail',
+        routeFullName: '/detail?id=2',
+        startTime: t0,
+      );
+      final detailTraceId = output.events.first['traceId'] as String;
+      final binding = reporter.currentInteractionPageBinding();
+
+      reporter.startPageLoad(
+        '/complex_list',
+        startTime: t0.add(const Duration(milliseconds: 500)),
+        previousRouteName: '/detail',
+        previousRouteFullName: '/detail?id=2',
+      );
+      final complexTraceId = output.events.last['traceId'] as String;
+
+      reporter.recordInteractionMeasure(
+        InteractionMeasureSnapshot(
+          id: 'measure_route_drift',
+          action: 'detail.tab.switch',
+          mode: MonitorMeasureMode.common,
+          result: MonitorMeasureResult.success,
+          endReason: InteractionEndReasons.autoWindow,
+          startedAt: t0.add(const Duration(milliseconds: 10)),
+          endedAt: t0.add(const Duration(milliseconds: 1210)),
+          observedUntil: t0.add(const Duration(milliseconds: 1210)),
+          observeFor: const Duration(milliseconds: 1200),
+          timeout: const Duration(seconds: 5),
+          target: 'trend_tab',
+          properties: const <String, Object?>{},
+          finishProperties: const <String, Object?>{},
+          pageBinding: binding,
+          sampleCount: 0,
+          slowCount: 0,
+          droppedCount: 0,
+          refreshRate: 60,
+          frameMaxMs: 0,
+          frameAvgMs: 0,
+          frameBudgetMs: 16.67,
+          frameFps: null,
+          frameStability: null,
+          frameP50Ms: null,
+          frameP90Ms: null,
+          frameP99Ms: null,
+          sampleStatus: 'insufficient_samples',
+        ),
+      );
+
+      final event = output.events.last;
+      final attributes = event['attributes'] as Map;
+      final route = (event['context'] as Map)['route'] as Map;
+
+      expect(event['name'], EventNames.interactionMeasure);
+      expect(event['traceId'], detailTraceId);
+      expect(event['traceId'], isNot(complexTraceId));
+      expect(route['name'], '/detail');
+      expect(route['fullName'], '/detail?id=2');
+      expect(attributes[FieldPaths.pageInstanceId], detailId);
+      expect(attributes[FieldPaths.businessAction], 'detail.tab.switch');
+      expect(
+        SchemaValidator().validateJson(event.cast<String, Object?>()).isValid,
+        isTrue,
+      );
+
+      reporter.track(action: 'complex.after_measure');
+      final followup = output.events.last;
+      expect(followup['traceId'], complexTraceId);
+      expect(
+        (followup['attributes'] as Map)[FieldPaths.pageInstanceId],
+        isNot(detailId),
+      );
+    },
+  );
+
   test('measure events become breadcrumbs for later errors', () {
     final output = RecordingOutput();
     final reporter = Reporter(

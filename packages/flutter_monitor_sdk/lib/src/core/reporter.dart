@@ -1049,10 +1049,13 @@ class Reporter {
   /// 记录一次业务交互性能观测。
   ///
   /// 该入口对应 public `FlutterMonitorSDK.measure`。它不执行、不包裹业务逻辑；
-  /// 只把 interaction collector 聚合出的窗口事实写入当前页面 trace。
+  /// 只把 interaction collector 聚合出的窗口事实写入观测开始时的页面 trace。
   PipelineResult recordInteractionMeasure(InteractionMeasureSnapshot snapshot) {
-    final page = _topPageTrace();
-    final traceId = page?.traceId ?? _traceManager.activeTraceId;
+    final page = snapshot.pageBinding ?? currentInteractionPageBinding();
+    final traceId =
+        page?.traceId ??
+        _topPageTrace()?.traceId ??
+        _traceManager.activeTraceId;
     final attributes = <String, Object?>{
       FieldPaths.businessAction: snapshot.action,
       FieldPaths.businessResult: snapshot.result.toJson(),
@@ -1082,6 +1085,9 @@ class Reporter {
       level: _measureLevel(snapshot.result),
       source: SignalSources.sdkMeasure,
       includeBreadcrumbs: true,
+      preserveActiveTrace: snapshot.pageBinding != null,
+      contextRouteName: page?.routeName,
+      contextRouteFullName: page?.routeFullName,
       attributes: attributes,
       payload: <String, Object?>{
         PayloadKeys.interaction: <String, Object?>{
@@ -1464,6 +1470,17 @@ class Reporter {
 
   PageActivitySnapshot? get currentPageActivity => _currentPageActivity;
 
+  InteractionPageBinding? currentInteractionPageBinding() {
+    final page = _topPageTrace();
+    if (page == null) return null;
+    return InteractionPageBinding(
+      routeName: page.routeName,
+      routeFullName: page.routeFullName,
+      traceId: page.traceId,
+      pageInstanceId: page.pageInstanceId,
+    );
+  }
+
   /// flush 所有 output 队列。
   ///
   /// [isAppExiting] 会透传给 output，允许 output 使用退出场景的发送策略。
@@ -1593,9 +1610,18 @@ class Reporter {
     EventLevel level = EventLevel.info,
     String source = SignalSources.sdkApi,
     bool? includeBreadcrumbs,
+    bool preserveActiveTrace = false,
+    String? contextRouteName,
+    String? contextRouteFullName,
     Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
+    final previousTrace = preserveActiveTrace
+        ? _traceManager.capture(
+            sessionId: _sessionManager.currentSessionId,
+            breadcrumbs: const <Breadcrumb>[],
+          )
+        : null;
     final span = _traceManager.startSpan(
       name: name,
       traceId: traceId,
@@ -1610,10 +1636,24 @@ class Reporter {
       level: level,
     );
     if (finished == null) {
+      if (previousTrace != null) {
+        _traceManager.setActiveTrace(
+          traceId: previousTrace.traceId,
+          spanId: previousTrace.spanId,
+          parentSpanId: previousTrace.parentSpanId,
+        );
+      }
       return reportSdkEvent(
         EventNames.sdkSpanEndUnknown,
         level: EventLevel.warning,
         payload: <String, Object?>{PayloadKeys.spanId: span.spanId},
+      );
+    }
+    if (previousTrace != null) {
+      _traceManager.setActiveTrace(
+        traceId: previousTrace.traceId,
+        spanId: previousTrace.spanId,
+        parentSpanId: previousTrace.parentSpanId,
       );
     }
     return _pipeline.capture(
@@ -1631,6 +1671,8 @@ class Reporter {
         spanId: finished.spanId,
         parentSpanId: finished.parentSpanId,
         includeBreadcrumbs: includeBreadcrumbs,
+        contextRouteName: contextRouteName,
+        contextRouteFullName: contextRouteFullName,
         attributes: finished.attributes,
         payload: finished.payload,
       ),

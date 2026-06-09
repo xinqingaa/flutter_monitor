@@ -312,6 +312,7 @@ class MonitorBinding {
       mode: mode,
       target: target,
       properties: properties,
+      pageBinding: reporter.currentInteractionPageBinding(),
       observeFor: observeFor,
       timeout: timeout,
     );

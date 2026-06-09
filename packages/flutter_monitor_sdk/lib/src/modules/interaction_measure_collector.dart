@@ -24,6 +24,7 @@ class InteractionMeasureSnapshot {
     required this.target,
     required this.properties,
     required this.finishProperties,
+    this.pageBinding,
     required this.sampleCount,
     required this.slowCount,
     required this.droppedCount,
@@ -53,6 +54,7 @@ class InteractionMeasureSnapshot {
   final String? target;
   final Map<String, Object?> properties;
   final Map<String, Object?> finishProperties;
+  final InteractionPageBinding? pageBinding;
   final int sampleCount;
   final int slowCount;
   final int droppedCount;
@@ -109,6 +111,21 @@ class InteractionMeasureSnapshot {
       },
     };
   }
+}
+
+/// 业务交互性能观测开始时冻结的页面归属。
+class InteractionPageBinding {
+  const InteractionPageBinding({
+    required this.routeName,
+    required this.routeFullName,
+    required this.traceId,
+    required this.pageInstanceId,
+  });
+
+  final String routeName;
+  final String routeFullName;
+  final String traceId;
+  final String pageInstanceId;
 }
 
 /// 业务交互性能观测 handle。
@@ -191,6 +208,7 @@ class InteractionMeasureCollector {
     MonitorMeasureMode mode = MonitorMeasureMode.common,
     String? target,
     Map<String, Object?> properties = const <String, Object?>{},
+    InteractionPageBinding? pageBinding,
     Duration? observeFor,
     Duration? timeout,
   }) {
@@ -224,6 +242,7 @@ class InteractionMeasureCollector {
       mode: mode,
       target: target,
       properties: properties,
+      pageBinding: pageBinding,
       startedAt: now,
       refreshRate: refreshRate,
       observeFor: effectiveObserveFor,
@@ -348,6 +367,7 @@ class _InteractionWindow {
     required this.observeFor,
     required this.timeout,
     this.target,
+    this.pageBinding,
     Map<String, Object?> properties = const <String, Object?>{},
   }) : properties = Map<String, Object?>.from(properties);
 
@@ -359,6 +379,7 @@ class _InteractionWindow {
   final Duration observeFor;
   final Duration timeout;
   final String? target;
+  final InteractionPageBinding? pageBinding;
   final Map<String, Object?> properties;
   final Map<String, Object?> finishProperties = <String, Object?>{};
   final List<double> _samples = <double>[];
@@ -411,6 +432,7 @@ class _InteractionWindow {
       target: target,
       properties: properties,
       finishProperties: finishProperties,
+      pageBinding: pageBinding,
       sampleCount: sampleCount,
       slowCount: slowCount,
       droppedCount: droppedCount,
