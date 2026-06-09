@@ -793,7 +793,7 @@ Native memory pressure 映射规则：
 
 ### 链路关联
 
-- `track` 事件默认归属当前 session、当前 route context 和当前 active trace；module/scene 仅在上下文已存在时携带。
+- `track` 事件默认归属当前 session、当前 route context、当前 active trace 和当前 `page.instance_id`；module/scene 仅在上下文已存在时携带。缺失当前页面实例时可以只保留 route/trace，但 Workbench 不应因此把同一页面 trace 下的业务足迹拆成独立页面活动。
 - `measure` 事件默认归属当前 session、当前 route context、当前 page trace 和当前 `page.instance_id`；module/scene 仅在上下文已存在时携带。
 - pipeline 会将 `track` 和完成态 `measure` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
 - 业务层不需要知道 breadcrumb store，也不需要手动调用 `addBreadcrumb` 来实现常规埋点。
@@ -805,6 +805,7 @@ Native memory pressure 映射规则：
 - `action` -> `name`、`business.action`
 - `result` -> `business.result`、`status`
 - `target` -> `ui.target`
+- 当前页面实例 -> `page.instance_id`
 - `level` -> envelope `level`
 - `error` -> `payload.error.message`
 - `properties` -> payload 中的业务详情

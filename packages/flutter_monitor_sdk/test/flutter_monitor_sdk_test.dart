@@ -651,7 +651,7 @@ void main() {
       ),
     );
 
-    reporter.startPageLoad('/profile');
+    final pageInstanceId = reporter.startPageLoad('/profile');
     reporter.track(
       action: 'profile.save',
       result: MonitorTrackResult.failed,
@@ -671,6 +671,7 @@ void main() {
     expect(attributes[FieldPaths.businessAction], 'profile.save');
     expect(attributes[FieldPaths.businessResult], 'failed');
     expect(attributes[FieldPaths.uiTarget], 'save_button');
+    expect(attributes[FieldPaths.pageInstanceId], pageInstanceId);
     expect(payload[FieldPaths.payloadErrorMessage], 'validation_failed');
     expect(
       payload[FieldPaths.payloadProperties],

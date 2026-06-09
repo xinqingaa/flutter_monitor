@@ -527,7 +527,7 @@ FlutterMonitorSDK.track(
 
 业务层不得直接依赖 `FieldPaths`、`RawSignal`、`EventEnvelope`、breadcrumb store 或 pipeline 内部结构。`FieldPaths` 是 `flutter_monitor_core` 中的 schema 契约，由 SDK 内部使用；业务 API 参数必须保持稳定、简单，并由 SDK 映射到 canonical fields。
 
-`track` 的职责是记录一次业务动作，不是设置全局上下文。`track.properties` 是这次动作的详情，默认进入 payload，不作为主要聚合索引，也不承担 userId、版本、页面、设备等通用上下文职责。
+`track` 的职责是记录一次业务动作，不是设置全局上下文。`track.properties` 是这次动作的详情，默认进入 payload，不作为主要聚合索引，也不承担 userId、版本、页面、设备等通用上下文职责。SDK 应把 `track` 归属到当前页面 trace；存在当前页面实例时必须写入 `page.instance_id`，确保 Workbench、DevTools 和服务端能把业务足迹挂回页面区段。
 
 `track` 参数契约：
 
@@ -567,7 +567,7 @@ final measure = FlutterMonitorSDK.measure(
 measure.finish();
 ```
 
-`measure` 生成稳定事件名 `interaction.measure`，默认使用 `signalType = span`，挂到当前 `page.visit` trace 下，并自动携带当前 session、route、`page.instance_id`、module、user、release、network、lifecycle 和 recent breadcrumbs。业务动作名写入 `attributes.business.action`，目标控件写入 `attributes.ui.target`，交互采集语义写入 `attributes.interaction.*`。
+`measure` 生成稳定事件名 `interaction.measure`，默认使用 `signalType = span`，挂到调用时所在的 `page.visit` trace 下，并自动携带该调用时刻的 route、`page.instance_id`、module、user、release、network、lifecycle 和 recent breadcrumbs。页面归属必须在打开观测窗口时冻结，不能在 common 自动闭合、stage `finish()` 后 settle 或 timeout 时重新读取栈顶页面；否则一次从 Detail 开始但在窗口闭合前 push 到 List 的交互会被错误归属到 List。业务动作名写入 `attributes.business.action`，目标控件写入 `attributes.ui.target`，交互采集语义写入 `attributes.interaction.*`。
 
 `MonitorMeasureMode` 取值：
 
@@ -599,7 +599,7 @@ measure.finish();
 | `interaction.settle_ms` | finish 后追加观察窗口时长 |
 | `interaction.observe_ms` | common 自动观察窗口时长 |
 | `interaction.timeout_ms` | stage 超时阈值 |
-| `page.instance_id` | 当前页面实例，自动对齐当前 route |
+| `page.instance_id` | 打开观测窗口时的页面实例，自动对齐调用时 route |
 | `frame.*` | 交互窗口内的帧摘要，复用页面/卡顿帧字段 |
 | `payload.properties` | 业务详情，只做诊断展示，不作为主要索引 |
 

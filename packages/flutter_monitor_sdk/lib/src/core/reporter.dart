@@ -1022,6 +1022,7 @@ class Reporter {
   }) {
     final status = _trackStatus(result);
     final effectiveLevel = level ?? _trackLevel(result);
+    final page = _topPageTrace();
     return _pipeline.capture(
       RawSignal(
         source: SignalSources.sdkTrack,
@@ -1034,6 +1035,7 @@ class Reporter {
           FieldPaths.businessAction: action,
           FieldPaths.businessResult: result.toJson(),
           if (target != null && target.isNotEmpty) FieldPaths.uiTarget: target,
+          if (page != null) FieldPaths.pageInstanceId: page.pageInstanceId,
         },
         payload: <String, Object?>{
           if (error != null && error.isNotEmpty)

@@ -385,7 +385,9 @@ function eventBelongsToPageSegment(event: MonitorEvent, segment: RawSegment): bo
   if (isLifecycleResumePageView(event)) return false;
   if (isPageTimelineEvent(event)) return true;
   const eventKey = pageInstanceKey(event);
-  return Boolean(eventKey && segment.pageKey && eventKey === segment.pageKey);
+  if (eventKey && segment.pageKey && eventKey === segment.pageKey) return true;
+  const segmentTraceId = pageSegmentTraceId(segment);
+  return Boolean(segmentTraceId && event.traceId && event.traceId === segmentTraceId);
 }
 
 function isLifecycleResumePageView(event: MonitorEvent): boolean {
@@ -424,6 +426,11 @@ function pageInstanceKey(event: MonitorEvent): string | undefined {
     return event.traceId ? `${instanceId}:${event.traceId}` : instanceId;
   }
   return undefined;
+}
+
+function pageSegmentTraceId(segment: RawSegment): string | undefined {
+  return segment.events.find((event) => event.name === 'page.visit' && event.traceId)?.traceId ??
+    segment.events.find((event) => event.traceId)?.traceId;
 }
 
 function numberAttribute(event: MonitorEvent, key: string): number | undefined {
