@@ -19,6 +19,7 @@ export 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.da
     show MonitorMeasureHandle;
 export 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
+export 'package:flutter_monitor_sdk/src/utils/monitor_page_scope.dart';
 export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
 export 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 export 'package:flutter_monitor_sdk/src/outputs/log_monitor_output.dart';

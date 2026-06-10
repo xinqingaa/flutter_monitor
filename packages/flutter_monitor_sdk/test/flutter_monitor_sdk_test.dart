@@ -2675,6 +2675,117 @@ void main() {
     );
   });
 
+  testWidgets(
+    'monitor page scope marks route rendered and optionally context',
+    (tester) async {
+      final output = RecordingOutput();
+
+      await FlutterMonitorSDK.init(
+        config: MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          sessionConfig: const MonitorSessionConfig(
+            enableLifecycleTracking: false,
+            flushOnBackground: false,
+          ),
+          enableErrorMonitor: false,
+          enableJankMonitor: false,
+          outputs: <MonitorOutput>[output],
+        ),
+        appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorObservers: <NavigatorObserver>[
+            FlutterMonitorSDK.routeObserver,
+          ],
+          initialRoute: '/scope',
+          routes: <String, WidgetBuilder>{
+            '/scope': (_) => const MonitorPageScope(
+              routeName: '/scope',
+              moduleName: 'ops',
+              moduleScene: 'api_lab',
+              child: Text('scope page'),
+            ),
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      FlutterMonitorSDK.track(
+        action: 'scope.action',
+        result: MonitorTrackResult.success,
+      );
+      await FlutterMonitorSDK.dispose();
+
+      final pageLoadEnd = output.events.singleWhere(
+        (event) =>
+            event['name'] == EventNames.pageLoad &&
+            (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+                EventPhases.end &&
+            ((event['context'] as Map)['route'] as Map)['name'] == '/scope',
+      );
+      final trackEvent = output.events.singleWhere(
+        (event) => event['name'] == 'scope.action',
+      );
+
+      expect(pageLoadEnd['durationMs'], isA<num>());
+      expect(((trackEvent['context'] as Map)['module'] as Map)['name'], 'ops');
+      expect(
+        ((trackEvent['context'] as Map)['module'] as Map)['scene'],
+        'api_lab',
+      );
+    },
+  );
+
+  testWidgets('monitor page scope allows route name without module context', (
+    tester,
+  ) async {
+    final output = RecordingOutput();
+
+    await FlutterMonitorSDK.init(
+      config: MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        sessionConfig: const MonitorSessionConfig(
+          enableLifecycleTracking: false,
+          flushOnBackground: false,
+        ),
+        enableErrorMonitor: false,
+        enableJankMonitor: false,
+        outputs: <MonitorOutput>[output],
+      ),
+      appStartTime: DateTime.now().subtract(const Duration(milliseconds: 8)),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[
+          FlutterMonitorSDK.routeObserver,
+        ],
+        initialRoute: '/plain',
+        routes: <String, WidgetBuilder>{
+          '/plain': (_) => const MonitorPageScope(
+            routeName: '/plain',
+            child: Text('plain page'),
+          ),
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await FlutterMonitorSDK.dispose();
+
+    final pageLoadEnd = output.events.singleWhere(
+      (event) =>
+          event['name'] == EventNames.pageLoad &&
+          (event['attributes'] as Map)[FieldPaths.eventPhase] ==
+              EventPhases.end &&
+          ((event['context'] as Map)['route'] as Map)['name'] == '/plain',
+    );
+
+    expect(pageLoadEnd['durationMs'], isA<num>());
+  });
+
   testWidgets('initial context is attached to bootstrap envelopes', (
     tester,
   ) async {
