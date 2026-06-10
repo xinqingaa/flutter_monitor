@@ -101,7 +101,7 @@ flutter_monitor/
     server_protocol.md
     devtools_integration.md
     architecture.md
-    implementation_plan.md
+    plan.md
   packages/
     flutter_monitor_core/
       pubspec.yaml

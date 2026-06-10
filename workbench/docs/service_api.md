@@ -1,6 +1,6 @@
 # Workbench Service API
 
-本文档描述当前本地 `workbench/service` 的 HTTP API。它服务于本地调试、QA 复现和 Workbench Web 查询，不等同于 `docs/server_protocol.md` 中面向 Phase 6 的生产服务端协议。
+本文档描述当前本地 `workbench/service` 的 HTTP API。它服务于本地调试、QA 复现和 Workbench Web 查询。Phase 6 会将这部分服务端能力迁移到 `services/monitor_service`，并在 `docs/server_protocol.md` 中收口 Monitor Service 协议。
 
 ## 端口与入口
 

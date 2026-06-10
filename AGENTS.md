@@ -141,7 +141,7 @@ DevTools 侧目标：
 - `docs/server_protocol.md`：服务端上报协议、schema version、鉴权、错误处理、重试、批量、remote config 和兼容策略。
 - `docs/devtools_integration.md`：Flutter Timeline、DevTools bridge、本地 session 导出/导入和本地/服务端边界。
 - `docs/architecture.md`：workspace 目标架构、包职责、代码目录、模块边界和运行时数据流。
-- `docs/implementation_plan.md`：分阶段实施计划和验收标准。
+- `docs/plan.md`：当前状态总览、分阶段实施计划、验收标准和待办验证清单。
 - `workbench/docs/README.md`：Workbench 文档索引和消费侧边界。
 - `workbench/docs/workbench_plan.md`：Workbench 架构、Service、Datasource、存储、脚本和验收标准。
 - `workbench/docs/product_plan.md`：Workbench Web 产品定位、信息架构、展示原则和交互设计。

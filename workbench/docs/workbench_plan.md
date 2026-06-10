@@ -24,7 +24,7 @@ Flutter Monitor 的排查体验分为三层，三层共享统一 `EventEnvelope`
 
 3. 写入/查询服务
    - 本地阶段是轻量 workbench service，使用 SQLite 作为唯一存储和查询引擎。
-   - 未来生产阶段是 Phase 6 Server，负责鉴权、可靠写入、采样限流、离线重试、聚合和长期治理。
+   - Phase 6 Monitor Service 负责可靠写入、schema 校验、错误码语义、remote config、基础聚合和 evidence pack；鉴权、告警、多租户和长期治理后续增强。
    - 即使只服务本地 Workbench，也应区分 SDK 写入链路和 Workbench 查询链路，避免把调试实时性和生产上报策略混为一谈。
 
 对应的 SDK 输出模式也只保留三类：
@@ -64,9 +64,9 @@ production
     -> EventEnvelope
     -> production output policy
        batch / request size / offline / retry / priority / sampling
-    -> Phase 6 ingest API
-    -> production validation / storage / index / aggregation
-    -> Phase 6 query API
+    -> Monitor Service ingest API
+    -> validation / storage / index / aggregation / evidence pack
+    -> Monitor Service query API
     -> Workbench Web RemoteServer datasource
 ```
 
@@ -91,7 +91,7 @@ Workbench 与其他模块的边界：
 - Workbench service：接收、暂存、索引、查询和实时推送 envelope。
 - Workbench web：展示、筛选、联动和排查，不定义新协议。
 - DevTools 集成：负责 Flutter Timeline、SDK bridge 和 session export/import。
-- Phase 6 Server：负责生产上报协议、可靠性、采样限流、聚合和长期质量治理。
+- Phase 6 Monitor Service：负责上报协议、可靠接收、remote config、基础聚合、evidence pack 和真实 App 灰度验证。
 
 ## 架构
 
@@ -587,7 +587,7 @@ DevTools 集成不重复建设完整 Workbench UI。Workbench 可以消费 DevTo
 
 Workbench 面向本地调试、QA 复现、性能分析和未来线上排查。Workbench UI 可以复用，底层 datasource 可以不同。
 
-Phase 6 Server 面向生产协议与长期质量治理：
+Phase 6 Monitor Service 面向可靠接收、查询聚合、evidence pack 和真实 App 灰度验证：
 
 - 上报鉴权。
 - 重试和限流。
@@ -597,32 +597,32 @@ Phase 6 Server 面向生产协议与长期质量治理：
 - 事件优先级。
 - 聚合查询。
 - 趋势分析。
-- 告警。
+- evidence pack。
 
 Workbench service 不代表最终生产服务端，不承担生产可靠性和长期聚合职责。
 
 边界结论：
 
-- local workbench service 是本地数据源和调试服务，不是 Phase 6 Server。
+- local workbench service 是当前本地数据源和调试服务，后续能力迁移到 Phase 6 Monitor Service。
 - Workbench web 可以同时接 local datasource 和 future remote datasource，但不因此定义第二套 event model。
-- Phase 6 Server 的写入 API 负责可靠接收，查询 API 负责给 Workbench 提供 session、trace、event 和聚合数据。
+- Monitor Service 的写入 API 负责可靠接收，查询 API 负责给 Web 提供 session、trace、event、聚合数据和 evidence pack。
 - 本地 Workbench 可以近实时，生产上报必须遵守 batch、优先级、大小限制、重试、离线缓存和采样限流。
 
 未来线上编排：
 
 ```text
 SDK production output
-  -> Phase 6 ingest API
+  -> Monitor Service ingest API
   -> schema validation
   -> privacy / sampling / rate limit
   -> queue / storage / index
-  -> query API / aggregation API
+  -> query API / aggregation API / diagnostics API
   -> Workbench RemoteServer datasource
 ```
 
 Workbench Web 不因线上化改变产品形态。线上阶段只是把 datasource 从 `LocalLive` / `LocalStore` 切到 `RemoteServer`，查询结果仍必须能回查完整 `EventEnvelope`。
 
-Phase 6 Server 承担：
+Phase 6 Monitor Service 承担：
 
 - 鉴权。
 - 多环境。
@@ -660,7 +660,7 @@ Phase 6 Server 承担：
 ### Phase W0：文档收口
 
 - 将 Workbench 的定位、目录、技术栈、datasource、脚本和验收标准集中在本文档。
-- `docs/implementation_plan.md` 只保留 SDK 总计划里的 Workbench 插入点和本文档引用。
+- `docs/plan.md` 只保留 SDK 总计划里的 Workbench 插入点和本文档引用。
 
 ### Phase W1：本地调试服务
 
@@ -711,7 +711,7 @@ Phase 6 Server 承担：
 ### Phase W8：Remote datasource 预留
 
 - 固化 datasource interface。
-- 为 Phase 6 Server query API 预留 `RemoteServer`。
+- 为 Phase 6 Monitor Service query API 预留 `RemoteServer`。
 - Workbench Web 不因 remote datasource 改变事件模型。
 
 ## 验收标准

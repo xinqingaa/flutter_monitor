@@ -108,7 +108,7 @@ pnpm --dir workbench --filter @flutter-monitor/workbench-service run smoke
 - [信号采集设计](docs/signal_collection.md)
 - [服务端协议](docs/server_protocol.md)
 - [DevTools 集成](docs/devtools_integration.md)
-- [实施计划](docs/implementation_plan.md)
+- [实施计划](docs/plan.md)
 
 Workbench 文档：
 

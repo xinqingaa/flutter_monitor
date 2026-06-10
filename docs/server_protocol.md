@@ -8,7 +8,7 @@
 
 服务端不应要求不同模块发送不同结构。所有 Flutter 信号、native 信号、SDK self-monitoring 信号都应通过统一 envelope 表达。
 
-本文档描述 Phase 6 的生产服务端协议与稳定性要求，不等同于当前 local workbench service。Workbench service 可以兼容部分 API 方便本地调试和 QA 复现，但不承担生产鉴权、长期存储、离线缓存、动态采样、告警和多租户治理。
+本文档描述 Phase 6 Monitor Service 的服务端协议与稳定性要求，不等同于当前 local workbench service。Workbench service 可以兼容部分 API 方便本地调试和 QA 复现，但不承担长期存储、告警和多租户治理。
 
 服务端能力应拆成两条链路：
 

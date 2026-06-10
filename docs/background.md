@@ -231,6 +231,6 @@ DevTools 回答“这次复现发生了什么”。服务端回答“这件事�
 3. `docs/server_protocol.md` - 定义服务端接入 API、headers、schema version、鉴权、错误、重试预期和兼容策略。
 4. `docs/devtools_integration.md` - 定义 Flutter Timeline 使用方式、DevTools extension 设计、本地 session 导出/导入、本地与服务端边界。
 5. `docs/architecture.md` - 定义未来 SDK 模块架构和模块职责。
-6. `docs/implementation_plan.md` - 定义分阶段实施计划。
+6. `docs/plan.md` - 定义当前状态总览、分阶段实施计划、验收标准和待办验证清单。
 
 这些文档稳定后，再将 README 重写为清晰的产品入口。
