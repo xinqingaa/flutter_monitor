@@ -15,6 +15,9 @@ void main() {
     expect(FieldPaths.memoryPressureLevel, 'memory.pressure_level');
     expect(FieldPaths.nativeSignal, 'native.signal');
     expect(FieldPaths.authToken, 'auth.token');
+    expect(FieldPaths.sdkOutputMode, 'sdk.output.mode');
+    expect(FieldPaths.sdkDropReason, 'sdk.drop.reason');
+    expect(FieldPaths.sdkRetryDelayMs, 'sdk.retry.delay_ms');
   });
 
   test('exposes canonical event names for memory lifecycle and native', () {
@@ -31,6 +34,10 @@ void main() {
     expect(EventNames.nativeCrash, 'native.crash');
     expect(EventNames.appForegroundDuration, 'app.foreground_duration');
     expect(EventNames.sdkLifecycleFlush, 'sdk.lifecycle.flush');
+    expect(EventNames.sdkOutputFlush, 'sdk.output.flush');
+    expect(EventNames.sdkQueueDrop, 'sdk.queue.drop');
+    expect(EventNames.sdkRetrySchedule, 'sdk.retry.schedule');
+    expect(EventNames.sdkConfigApplied, 'sdk.config.applied');
     expect(
       EventNames.sdkPipelineValidationFailed,
       'sdk.pipeline.validation_failed',
@@ -67,6 +74,13 @@ void main() {
     expect(PageActiveTriggers.lifecycleBackground, 'lifecycle_background');
     expect(InteractionEndReasons.autoWindow, 'auto_window');
     expect(InteractionEndReasons.timeout, 'timeout');
+    expect(SdkOutputModes.consoleOnly, 'consoleOnly');
+    expect(SdkOutputModes.localLive, 'localLive');
+    expect(SdkOutputModes.production, 'production');
+    expect(SdkFlushReasons.criticalEvent, 'critical_event');
+    expect(SdkDropReasons.queueFull, 'queue_full');
+    expect(SdkRetryReasons.rateLimited, 'rate_limited');
+    expect(SdkConfigSources.cachedRemote, 'cached_remote');
   });
 
   test('exposes stable wire values for memory and native protocol enums', () {

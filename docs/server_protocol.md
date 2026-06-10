@@ -369,6 +369,18 @@ Native 信号必须通过统一 envelope 上报。
 
 Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运行；默认配置必须隐私安全、流量克制。
 
+客户端只暴露三种输出模式：`consoleOnly`、`localLive` 和 `production`。服务端 remote config 可以修改模式、collector 开关、采样、限流、queue、batch、flush 和 retry 参数，但这些参数仍是 SDK production policy 的输入，不是新的事件模型。配置必须包含版本号；如设置过期时间，SDK 应在过期后回退到本地默认或上一套仍有效配置，并记录 `sdk.config.applied`。
+
+生产上报必须使用 batch。SDK 根据服务端响应执行确定动作：
+
+- 2xx：ack 已接受事件；
+- 400/401/403：不可重试，按 `non_retryable_rejected` 记录 drop；
+- 413：先拆分 batch 或裁剪单事件 payload，仍失败则按 priority/drop policy 丢弃；
+- 429：按 `retryAfterMs` 或 `Retry-After` 计划重试；
+- 5xx、超时、断网：指数退避加 jitter，保留队列。
+
+SDK self-monitoring 使用统一 `sdk.*` envelope 上报，字段包括 `sdk.output.mode`、`sdk.queue.*`、`sdk.batch.*`、`sdk.flush.*`、`sdk.retry.*`、`sdk.drop.*` 和 `sdk.config.*`。服务端和 Workbench 不应根据 HTTP 响应或 UI 状态重新发明另一套 drop/retry/queue 协议。
+
 ## 服务端聚合维度
 
 服务端应支持按以下维度查询和聚合：

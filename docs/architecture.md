@@ -437,13 +437,14 @@ Pipeline 要求：
 
 ## 输出层
 
-Outputs 由 `flutter_monitor_sdk` 实现。
+Outputs 由 `flutter_monitor_sdk` 实现。public 接入面收敛为 `MonitorMode.consoleOnly`、`MonitorMode.localLive` 和 `MonitorMode.production`；普通业务不需要手动组合多个 output。
 
 目标 outputs：
 
-- `LogOutput`
-- `HttpOutput`
-- `CustomOutput`
+- `LogOutput`：服务 `consoleOnly` 和本地调试 compact log
+- `LocalLiveOutput`：服务 `localLive`，小 batch 写入 Workbench service
+- `ProductionDelivery`：服务 `production`，内置 SQLite offline queue、batch、retry、sampling、rate limit 和 priority drop
+- `CustomOutput`：仅用于测试、企业内部桥接或非常规场景，不作为真实 App 默认路径
 - `DevToolsOutput`
 - `FileExportOutput`
 - future `OpenTelemetryOutput`
@@ -453,6 +454,8 @@ Outputs 由 `flutter_monitor_sdk` 实现。
 - Output 只能消费 event envelope。
 - Output 不修改事件语义。
 - Output 不重新读取未脱敏原始数据。
+- 离线队列只保存完成 privacy filtering 后的 envelope JSON。
+- 真实 App 默认使用 batch，不采用一事件一请求发送方式。
 - HTTP output 使用 `docs/server_protocol.md`。
 - 后台和退出前 flush 由 Reporter / pipeline 统一协调，Output 只实现被动 `flush`，不得各自监听 App lifecycle。
 - DevTools/File export 使用 `docs/devtools_integration.md` 的导出格式。

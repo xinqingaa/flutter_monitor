@@ -108,6 +108,40 @@ void main() {
       FieldValueType.durationMs,
     );
     expect(
+      registry.lookup(FieldPaths.sdkOutputMode)?.valueType,
+      FieldValueType.string,
+    );
+    expect(registry.lookup(FieldPaths.sdkOutputMode)?.indexed, isTrue);
+    expect(
+      registry.lookup(FieldPaths.sdkQueueLength)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.sdkQueueBytes)?.privacyLevel,
+      PrivacyLevel.safe,
+    );
+    expect(
+      registry.lookup(FieldPaths.sdkBatchSize)?.valueType,
+      FieldValueType.number,
+    );
+    expect(
+      registry.lookup(FieldPaths.sdkFlushDurationMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
+      registry.lookup(FieldPaths.sdkRetryDelayMs)?.valueType,
+      FieldValueType.durationMs,
+    );
+    expect(
+      registry.lookup(FieldPaths.sdkDropReason)?.valueType,
+      FieldValueType.string,
+    );
+    expect(registry.lookup(FieldPaths.sdkDropReason)?.indexed, isTrue);
+    expect(
+      registry.lookup(FieldPaths.sdkConfigAppliedAt)?.valueType,
+      FieldValueType.timestamp,
+    );
+    expect(
       registry.lookup(FieldPaths.nativeStartElapsedMs)?.privacyLevel,
       PrivacyLevel.safe,
     );
@@ -293,6 +327,24 @@ void main() {
       FieldPaths.appFirstFrameMs,
       FieldPaths.appInteractiveMs,
       FieldPaths.sdkInitDurationMs,
+      FieldPaths.sdkOutputMode,
+      FieldPaths.sdkQueueLength,
+      FieldPaths.sdkQueueBytes,
+      FieldPaths.sdkQueueMaxEvents,
+      FieldPaths.sdkQueueMaxBytes,
+      FieldPaths.sdkBatchSize,
+      FieldPaths.sdkBatchBytes,
+      FieldPaths.sdkFlushReason,
+      FieldPaths.sdkFlushDurationMs,
+      FieldPaths.sdkRetryCount,
+      FieldPaths.sdkRetryDelayMs,
+      FieldPaths.sdkRetryReason,
+      FieldPaths.sdkDropCount,
+      FieldPaths.sdkDropReason,
+      FieldPaths.sdkConfigVersion,
+      FieldPaths.sdkConfigSource,
+      FieldPaths.sdkConfigAppliedAt,
+      FieldPaths.sdkConfigExpiresAt,
       FieldPaths.nativeStartElapsedMs,
       FieldPaths.pageFirstFrameMs,
       FieldPaths.pageInteractiveMs,

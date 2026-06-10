@@ -6,6 +6,8 @@ import 'package:flutter_monitor_sdk/src/core/monitor_binding.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/native/native_bridge_controller.dart';
+import 'package:flutter_monitor_sdk/src/delivery/memory_offline_event_queue.dart';
+import 'package:flutter_monitor_sdk/src/delivery/queued_monitor_event.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/performance_monitor.dart';
@@ -59,8 +61,8 @@ class _FakeHttpClient extends http.BaseClient {
   }
 }
 
-class _RecordingHttpClient extends http.BaseClient {
-  _RecordingHttpClient(this.handler);
+class _RecordingResponseClient extends http.BaseClient {
+  _RecordingResponseClient(this.handler);
 
   final Future<http.Response> Function(http.BaseRequest request) handler;
   final requests = <http.BaseRequest>[];
@@ -77,6 +79,27 @@ class _RecordingHttpClient extends http.BaseClient {
       request: request,
     );
   }
+}
+
+Map<String, dynamic> _eventJson(String eventId, EventPriority priority) {
+  return <String, dynamic>{
+    'schemaVersion': flutterMonitorSchemaVersion,
+    'eventId': eventId,
+    'timestamp': DateTime.now().toIso8601String(),
+    'signalType': SignalType.breadcrumb.toJson(),
+    'name': 'business.action',
+    'status': EventStatus.ok.toJson(),
+    'priority': priority.toJson(),
+    'sessionId': 'session_1',
+    'resource': <String, Object?>{},
+    'context': <String, Object?>{},
+    'attributes': <String, Object?>{FieldPaths.eventPhase: EventPhases.instant},
+    'payload': <String, Object?>{},
+  };
+}
+
+QueuedMonitorEvent _queuedEvent(String eventId, EventPriority priority) {
+  return QueuedMonitorEvent.fromEnvelope(_eventJson(eventId, priority));
 }
 
 class _FakeNativeBridge implements MonitorNativeBridge {
@@ -236,86 +259,270 @@ void main() {
     expect(messages, isEmpty);
   });
 
+  test('monitor modes expose low-friction production configuration', () {
+    final production = MonitorMode.production(
+      endpoint: Uri.parse('https://monitor.example.com/api/monitor/v1/events'),
+      policy: MonitorProductionPolicy.conservative(),
+    );
+    expect(production.name, SdkOutputModes.production);
+    expect(production.endpoint?.host, 'monitor.example.com');
+    expect(production.productionPolicy.maxBatchEvents, 30);
+    expect(production.productionPolicy.maxTrackEventsPerMinute, 60);
+
+    final localLive = MonitorMode.localLive();
+    expect(localLive.name, SdkOutputModes.localLive);
+    expect(localLive.endpoint?.port, 3700);
+    expect(
+      localLive.productionPolicy.flushInterval,
+      const Duration(seconds: 3),
+    );
+
+    final console = MonitorMode.consoleOnly(
+      logMode: LogMonitorOutputMode.silent,
+    );
+    expect(console.name, SdkOutputModes.consoleOnly);
+    expect(console.logMode, LogMonitorOutputMode.silent);
+  });
+
   test(
-    'http output cools down after failures to avoid repeated flushes',
-    () async {
-      final messages = <String>[];
-      final previousDebugPrint = debugPrint;
-      debugPrint = (String? message, {int? wrapWidth}) {
-        if (message != null) messages.add(message);
-      };
-      addTearDown(() {
-        debugPrint = previousDebugPrint;
-      });
-
-      final client = _RecordingHttpClient((request) async {
-        return http.Response('down', 500);
-      });
-      final output = HttpOutput(
-        serverUrl: 'http://localhost:3700/api/monitor/v1/events',
-        client: client,
-        batchReportSize: 1,
-        failureCooldown: const Duration(minutes: 1),
+    'monitor config uses console output by mode and custom output for tests',
+    () {
+      final consoleConfig = MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        mode: MonitorMode.consoleOnly(logMode: LogMonitorOutputMode.silent),
       );
+      final consoleOutputs = consoleConfig.effectiveOutputs;
+      expect(consoleOutputs, hasLength(1));
+      expect(consoleOutputs.single, isA<LogMonitorOutput>());
 
-      output.add(<String, dynamic>{'eventId': 'evt_1'});
+      final output = RecordingOutput();
+      final customConfig = MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        customOutputs: <MonitorOutput>[output],
+      );
+      expect(customConfig.effectiveOutputs.single, same(output));
+    },
+  );
+
+  test('memory offline queue drops lower priority events first', () async {
+    const policy = MonitorProductionPolicy(
+      maxQueueEvents: 2,
+      maxQueueBytes: 1024 * 1024,
+    );
+    final queue = MemoryOfflineEventQueue(policy: policy);
+    await queue.init();
+
+    await queue.enqueue(_queuedEvent('low', EventPriority.low));
+    await queue.enqueue(_queuedEvent('normal', EventPriority.normal));
+    final result = await queue.enqueue(
+      _queuedEvent('critical', EventPriority.critical),
+    );
+
+    expect(result.dropped.map((event) => event.eventId), contains('low'));
+    final batch = await queue.nextBatch(
+      maxEvents: 10,
+      maxBytes: 1024 * 1024,
+      now: DateTime.now(),
+    );
+    expect(
+      batch.map((event) => event.eventId),
+      orderedEquals(<String>['critical', 'normal']),
+    );
+  });
+
+  test('reliable output acks 2xx and retries 5xx batches', () async {
+    final responses = <http.Response>[
+      http.Response('down', 500),
+      http.Response('ok', 202),
+    ];
+    final client = _RecordingResponseClient((request) async {
+      return responses.removeAt(0);
+    });
+    const policy = MonitorProductionPolicy(
+      maxBatchEvents: 10,
+      maxBatchBytes: 1024 * 1024,
+      retryBaseDelay: Duration.zero,
+      retryMaxDelay: Duration.zero,
+      flushInterval: Duration(hours: 1),
+    );
+    final queue = MemoryOfflineEventQueue(policy: policy);
+    final output = ReliableHttpOutput(
+      endpoint: Uri.parse('http://localhost:3700/api/monitor/v1/events'),
+      mode: SdkOutputModes.production,
+      policy: policy,
+      queue: queue,
+      client: client,
+    )..init();
+    addTearDown(output.dispose);
+
+    output.add(_eventJson('evt_retry', EventPriority.normal));
+    await output.flush();
+
+    var stats = await queue.stats();
+    expect(stats.length, 1);
+
+    await output.flush();
+
+    stats = await queue.stats();
+    expect(stats.length, 0);
+    expect(client.requests, hasLength(2));
+  });
+
+  test(
+    'reliable output emits health events for retry flush and drop',
+    () async {
+      final healthEvents = <OutputHealthEvent>[];
+      final responses = <http.Response>[
+        http.Response('down', 500),
+        http.Response('ok', 202),
+        http.Response('bad request', 400),
+      ];
+      final client = _RecordingResponseClient((request) async {
+        return responses.removeAt(0);
+      });
+      const policy = MonitorProductionPolicy(
+        maxBatchEvents: 10,
+        maxBatchBytes: 1024 * 1024,
+        retryBaseDelay: Duration.zero,
+        retryMaxDelay: Duration.zero,
+        flushInterval: Duration(hours: 1),
+      );
+      final queue = MemoryOfflineEventQueue(policy: policy);
+      final output =
+          ReliableHttpOutput(
+              endpoint: Uri.parse(
+                'http://localhost:3700/api/monitor/v1/events',
+              ),
+              mode: SdkOutputModes.production,
+              policy: policy,
+              queue: queue,
+              client: client,
+            )
+            ..onHealthEvent = healthEvents.add
+            ..init();
+      addTearDown(output.dispose);
+
+      output.add(_eventJson('evt_health_retry', EventPriority.normal));
       await output.flush();
-      output.add(<String, dynamic>{'eventId': 'evt_2'});
+      await output.flush();
+      output.add(_eventJson('evt_health_drop', EventPriority.normal));
       await output.flush();
 
-      expect(client.requests, hasLength(1));
       expect(
-        messages.where((message) => message.startsWith('Failed to report')),
-        hasLength(1),
+        healthEvents.map((event) => event.name),
+        containsAll(<String>[
+          EventNames.sdkRetrySchedule,
+          EventNames.sdkOutputFlush,
+          EventNames.sdkQueueDrop,
+        ]),
+      );
+      final retry = healthEvents.firstWhere(
+        (event) => event.name == EventNames.sdkRetrySchedule,
+      );
+      expect(
+        retry.attributes[FieldPaths.sdkRetryReason],
+        SdkRetryReasons.serverError,
+      );
+      final drop = healthEvents.firstWhere(
+        (event) => event.name == EventNames.sdkQueueDrop,
+      );
+      expect(
+        drop.attributes[FieldPaths.sdkDropReason],
+        SdkDropReasons.nonRetryableRejected,
       );
     },
   );
 
-  test('http output allows one active flush at a time', () async {
-    final completer = Completer<http.Response>();
-    final client = _RecordingHttpClient((request) => completer.future);
-    final output = HttpOutput(
-      serverUrl: 'http://localhost:3700/api/monitor/v1/events',
-      client: client,
-      batchReportSize: 10,
-    );
-
-    output.add(<String, dynamic>{'eventId': 'evt_1'});
-    final firstFlush = output.flush();
-    final secondFlush = output.flush();
-
-    expect(client.requests, hasLength(1));
-
-    completer.complete(http.Response('ok', 202));
-    await firstFlush;
-    await secondFlush;
-
-    expect(client.requests, hasLength(1));
-  });
-
-  testWidgets('http output does not listen to app lifecycle directly', (
-    tester,
-  ) async {
-    final client = _RecordingHttpClient((request) async {
-      return http.Response('ok', 202);
+  test('reliable output drops non-retryable 4xx batches', () async {
+    final client = _RecordingResponseClient((request) async {
+      return http.Response('bad request', 400);
     });
-    final output = HttpOutput(
-      serverUrl: 'http://localhost:3700/api/monitor/v1/events',
-      client: client,
-      batchReportSize: 10,
+    const policy = MonitorProductionPolicy(
+      maxBatchEvents: 10,
+      maxBatchBytes: 1024 * 1024,
+      flushInterval: Duration(hours: 1),
     );
-
-    output.init();
+    final queue = MemoryOfflineEventQueue(policy: policy);
+    final output = ReliableHttpOutput(
+      endpoint: Uri.parse('http://localhost:3700/api/monitor/v1/events'),
+      mode: SdkOutputModes.production,
+      policy: policy,
+      queue: queue,
+      client: client,
+    )..init();
     addTearDown(output.dispose);
 
-    output.add(<String, dynamic>{'eventId': 'evt_lifecycle'});
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    await tester.pump();
+    output.add(_eventJson('evt_bad', EventPriority.high));
+    await output.flush();
 
-    expect(client.requests, isEmpty);
+    final stats = await queue.stats();
+    expect(stats.length, 0);
+  });
 
-    await output.flush(isAppExiting: true);
-    expect(client.requests, hasLength(1));
+  test(
+    'production sampling drops low value memory samples with sdk evidence',
+    () {
+      final output = RecordingOutput();
+      final reporter = Reporter(
+        MonitorConfig(
+          appInfo: const AppInfo(appKey: 'app_key'),
+          mode: MonitorMode.production(
+            endpoint: Uri.parse('https://monitor.example.com/events'),
+            policy: const MonitorProductionPolicy(memorySampleRate: 0),
+          ),
+          outputs: <MonitorOutput>[output],
+        ),
+      );
+
+      final result = reporter.recordMemorySample(rssMb: 123);
+
+      expect(result.dropped, isTrue);
+      expect(result.dropReason, SdkDropReasons.sampledOut);
+      expect(
+        output.events.where(
+          (event) => event['name'] == EventNames.memorySample,
+        ),
+        isEmpty,
+      );
+      final drop = output.events.singleWhere(
+        (event) => event['name'] == EventNames.sdkQueueDrop,
+      );
+      final attributes = drop['attributes'] as Map;
+      expect(attributes[FieldPaths.sdkDropReason], SdkDropReasons.sampledOut);
+      expect(attributes[FieldPaths.sdkOutputMode], SdkOutputModes.production);
+    },
+  );
+
+  test('production rate limits high frequency track events', () {
+    final output = RecordingOutput();
+    final reporter = Reporter(
+      MonitorConfig(
+        appInfo: const AppInfo(appKey: 'app_key'),
+        mode: MonitorMode.production(
+          endpoint: Uri.parse('https://monitor.example.com/events'),
+          policy: const MonitorProductionPolicy(maxTrackEventsPerMinute: 1),
+        ),
+        outputs: <MonitorOutput>[output],
+      ),
+    );
+
+    final first = reporter.track(action: 'checkout.submit');
+    final second = reporter.track(action: 'checkout.submit');
+
+    expect(first.accepted, isTrue);
+    expect(second.dropped, isTrue);
+    expect(second.dropReason, SdkDropReasons.rateLimited);
+    expect(
+      output.events.where((event) => event['name'] == 'checkout.submit').length,
+      1,
+    );
+    final drop = output.events.singleWhere(
+      (event) => event['name'] == EventNames.sdkQueueDrop,
+    );
+    expect(
+      (drop['attributes'] as Map)[FieldPaths.sdkDropReason],
+      SdkDropReasons.rateLimited,
+    );
   });
 
   test('context is captured when the event is reported', () {

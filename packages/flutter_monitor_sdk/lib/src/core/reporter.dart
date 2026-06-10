@@ -10,6 +10,7 @@ import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
+import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
@@ -37,6 +38,7 @@ class Reporter {
   late final TraceManager _traceManager;
   late final BreadcrumbStore _breadcrumbStore;
   late final EventPipeline _pipeline;
+  late final List<MonitorOutput> _outputs;
   final NativeSignalMapper _nativeSignalMapper = const NativeSignalMapper();
 
   /// 缓存的设备信息，避免每次上报都重新获取。
@@ -65,18 +67,32 @@ class Reporter {
     _breadcrumbStore = BreadcrumbStore(
       capacity: _config.effectiveQueueConfig.maxQueueSize,
     );
+    _outputs = _config.effectiveOutputs;
     _pipeline = EventPipeline(
       contextManager: _contextManager,
       sessionManager: _sessionManager,
       traceManager: _traceManager,
       breadcrumbStore: _breadcrumbStore,
-      outputs: _config.effectiveOutputs,
+      outputs: _outputs,
+      mode: _config.mode,
     );
 
     // 初始化所有在配置中提供的输出器
-    for (final output in _config.effectiveOutputs) {
+    for (final output in _outputs) {
+      output.onHealthEvent = _handleOutputHealthEvent;
       output.init();
     }
+  }
+
+  void _handleOutputHealthEvent(OutputHealthEvent event) {
+    reportSdkEvent(
+      event.name,
+      level: event.level,
+      status: event.status,
+      priority: event.priority,
+      attributes: event.attributes,
+      payload: event.payload,
+    );
   }
 
   /// 解析首批 envelope 前应具备的资源信息。
@@ -1495,7 +1511,7 @@ class Reporter {
     finishActivePageTraces(endReason: PageEndReasons.appDispose);
     await flush(isAppExiting: true);
     // 调用所有输出器的 dispose 方法，让它们清理自己的资源。
-    for (final output in _config.effectiveOutputs) {
+    for (final output in _outputs) {
       try {
         output.dispose();
       } catch (error) {

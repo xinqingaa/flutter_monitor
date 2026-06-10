@@ -48,6 +48,7 @@ import type {
   PagePerformanceSummary,
   PerformanceMetricSummary,
   PerformanceOverview,
+  SdkReliabilitySummary,
   SessionSummary,
   StartupPerformanceSummary,
 } from './event-types.js';
@@ -262,12 +263,14 @@ export class SqliteMonitorStore implements MonitorStore {
     const httpEvents = events.filter(isHttpEvent);
     const jankEvents = events.filter(isJankEvent);
     const errorEvents = events.filter(isStabilityErrorEvent);
+    const sdkEvents = events.filter(isSdkReliabilityEvent);
     return {
       startup: summarizeStartup(startupEvents, events, limit),
       pages: summarizePages(pageEvents, limit),
       http: summarizeHttp(httpEvents, limit),
       jank: summarizeJank(jankEvents, limit),
       errors: summarizeErrors(errorEvents, limit),
+      sdk: summarizeSdkReliability(sdkEvents, limit),
     };
   }
 
@@ -829,6 +832,20 @@ function isHttpEvent(event: MonitorEvent): boolean {
   return isCompletedHttpEvent(event);
 }
 
+function isSdkReliabilityEvent(event: MonitorEvent): boolean {
+  if (signalTypeOf(event) !== 'sdk') return false;
+  const name = nameOf(event);
+  return name === 'sdk.lifecycle.flush' ||
+    name === 'sdk.output.flush' ||
+    name === 'sdk.output.dispatch_failed' ||
+    name === 'sdk.output.flush_failed' ||
+    name === 'sdk.output.dispose_failed' ||
+    name === 'sdk.queue.drop' ||
+    name === 'sdk.queue.state' ||
+    name === 'sdk.retry.schedule' ||
+    name === 'sdk.config.applied';
+}
+
 function summarizeStartup(
   startupEvents: MonitorEvent[],
   allEvents: MonitorEvent[],
@@ -990,6 +1007,62 @@ function summarizeErrors(events: MonitorEvent[], limit: number): ErrorPerformanc
       '未知页面',
     ),
     recent: base.events,
+  };
+}
+
+function summarizeSdkReliability(events: MonitorEvent[], limit: number): SdkReliabilitySummary {
+  const base = summarizeMetric(events, limit);
+  const flushEvents = events.filter((event) => (
+    nameOf(event) === 'sdk.lifecycle.flush' ||
+    nameOf(event) === 'sdk.output.flush' ||
+    nameOf(event) === 'sdk.output.flush_failed'
+  ));
+  const retryEvents = events.filter((event) => nameOf(event) === 'sdk.retry.schedule');
+  const dropEvents = events.filter((event) => nameOf(event) === 'sdk.queue.drop');
+  const queueStateEvents = events.filter((event) => nameOf(event) === 'sdk.queue.state');
+  const configAppliedEvents = events.filter((event) => nameOf(event) === 'sdk.config.applied');
+  const latestQueueState = [...events]
+    .sort((a, b) => eventTimeValue(b) - eventTimeValue(a))
+    .find((event) => (
+      numericAttribute(event, 'sdk.queue.length') !== undefined ||
+      numericAttribute(event, 'sdk.queue.bytes') !== undefined
+    ));
+
+  return {
+    ...base,
+    flushCount: flushEvents.length,
+    flushFailureCount: flushEvents.filter((event) => statusOf(event) !== 'ok').length,
+    retryCount: retryEvents.length,
+    dropCount: dropEvents.length,
+    droppedEventCount: sumValues(dropEvents.map((event) => numericAttribute(event, 'sdk.drop.count'))),
+    queueStateCount: queueStateEvents.length,
+    configAppliedCount: configAppliedEvents.length,
+    latestQueueLength: latestQueueState ? numericAttribute(latestQueueState, 'sdk.queue.length') : undefined,
+    latestQueueBytes: latestQueueState ? numericAttribute(latestQueueState, 'sdk.queue.bytes') : undefined,
+    dropReasonSummaries: groupMetric(
+      dropEvents,
+      (event) => stringAttribute(event, 'sdk.drop.reason') ?? '未知原因',
+      (event) => numericAttribute(event, 'sdk.drop.count'),
+      '未知原因',
+    ),
+    retryReasonSummaries: groupMetric(
+      retryEvents,
+      (event) => stringAttribute(event, 'sdk.retry.reason') ?? '未知原因',
+      (event) => numericAttribute(event, 'sdk.retry.delay_ms'),
+      '未知原因',
+    ),
+    flushReasonSummaries: groupMetric(
+      flushEvents,
+      (event) => stringAttribute(event, 'sdk.flush.reason') ?? '未知原因',
+      (event) => numericAttribute(event, 'sdk.flush.duration_ms') ?? durationOf(event),
+      '未知原因',
+    ),
+    outputModeSummaries: groupMetric(
+      events,
+      (event) => stringAttribute(event, 'sdk.output.mode') ?? '未知模式',
+      undefined,
+      '未知模式',
+    ),
   };
 }
 

@@ -88,6 +88,24 @@ try {
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
     assert.equal(data.count, 5);
   });
+  await postSdkReliabilityEvents();
+  await assertJson('/api/monitor/v1/performance/overview', (data) => {
+    assert.equal(data.sdk.count, 5);
+    assert.equal(data.sdk.flushCount, 1);
+    assert.equal(data.sdk.flushFailureCount, 1);
+    assert.equal(data.sdk.retryCount, 1);
+    assert.equal(data.sdk.dropCount, 1);
+    assert.equal(data.sdk.droppedEventCount, 3);
+    assert.equal(data.sdk.queueStateCount, 1);
+    assert.equal(data.sdk.configAppliedCount, 1);
+    assert.equal(data.sdk.latestQueueLength, 12);
+    assert.equal(data.sdk.latestQueueBytes, 4096);
+    assert.equal(data.sdk.dropReasonSummaries[0].key, 'rate_limited');
+    assert.equal(data.sdk.retryReasonSummaries[0].key, 'server_error');
+    assert.equal(data.sdk.flushReasonSummaries[0].key, 'interval');
+    assert.equal(data.sdk.outputModeSummaries[0].key, 'production');
+    assert.equal(data.sdk.events.some((event: any) => event.eventId === 'evt_sdk_drop'), true);
+  });
   await postRetentionEvents();
   await assertJson('/api/monitor/v1/health', (data) => {
     assert.equal(data.eventCount, 5);
@@ -297,6 +315,94 @@ async function assertMissingEventId(): Promise<void> {
   assert.equal(response.status, 400);
   const data = await response.json();
   assert.equal(data.error, 'missing_event_id');
+}
+
+async function postSdkReliabilityEvents(): Promise<void> {
+  const baseEvent = {
+    signalType: 'sdk',
+    sessionId: 'ses_sdk',
+    resource: {
+      app: { appKey: 'smoke_app', appName: 'Smoke App', appVersion: '1.0.0', environment: 'dev' },
+      device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
+    },
+    context: { user: { userId: 'user_smoke' }, route: { name: '/detail' }, native: { available: false, platform: 'android' } },
+    payload: {},
+  };
+  const response = await fetch(`${baseUrl}/api/monitor/v1/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      events: [
+        {
+          ...baseEvent,
+          eventId: 'evt_sdk_config',
+          timestamp: '2026-05-29T10:00:02.000Z',
+          name: 'sdk.config.applied',
+          status: 'ok',
+          attributes: {
+            'sdk.output.mode': 'production',
+            'sdk.config.version': 'local-1',
+            'sdk.config.source': 'local',
+          },
+        },
+        {
+          ...baseEvent,
+          eventId: 'evt_sdk_state',
+          timestamp: '2026-05-29T10:00:02.100Z',
+          name: 'sdk.queue.state',
+          status: 'ok',
+          attributes: {
+            'sdk.output.mode': 'production',
+            'sdk.queue.length': 12,
+            'sdk.queue.bytes': 4096,
+          },
+        },
+        {
+          ...baseEvent,
+          eventId: 'evt_sdk_retry',
+          timestamp: '2026-05-29T10:00:02.200Z',
+          name: 'sdk.retry.schedule',
+          status: 'ok',
+          attributes: {
+            'sdk.output.mode': 'production',
+            'sdk.retry.count': 2,
+            'sdk.retry.delay_ms': 800,
+            'sdk.retry.reason': 'server_error',
+            'sdk.batch.size': 4,
+          },
+        },
+        {
+          ...baseEvent,
+          eventId: 'evt_sdk_drop',
+          timestamp: '2026-05-29T10:00:02.300Z',
+          name: 'sdk.queue.drop',
+          status: 'error',
+          attributes: {
+            'sdk.output.mode': 'production',
+            'sdk.drop.count': 3,
+            'sdk.drop.reason': 'rate_limited',
+            'sdk.queue.length': 12,
+            'sdk.queue.bytes': 4096,
+          },
+        },
+        {
+          ...baseEvent,
+          eventId: 'evt_sdk_flush',
+          timestamp: '2026-05-29T10:00:02.400Z',
+          name: 'sdk.output.flush',
+          status: 'timeout',
+          attributes: {
+            'sdk.output.mode': 'production',
+            'sdk.flush.reason': 'interval',
+            'sdk.flush.duration_ms': 1200,
+            'sdk.batch.size': 4,
+            'sdk.batch.bytes': 2048,
+          },
+        },
+      ],
+    }),
+  });
+  assert.equal(response.status, 202);
 }
 
 async function postRetentionEvents(): Promise<void> {

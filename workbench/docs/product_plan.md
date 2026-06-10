@@ -403,12 +403,18 @@ Workbench 第一版 UI 应优先使用“展示名 + 原始字段口径”的双
 | `jankCount` | 卡顿次数 | 当前范围内卡顿事件数量 |
 | `failedHttpCount` | 失败请求 | 当前范围内失败 HTTP 数量 |
 | `businessFailureCount` | 业务失败 | 当前范围内 `business.result=failed` 的业务动作或交互观测数量，用于诊断业务路径，不作为崩溃/异常统计 |
+| `sdk.drop.count` | SDK 丢弃事件 | 当前范围内 SDK 采样、限流、队列满、payload 过大或不可重试拒绝导致的丢弃事件数 |
+| `sdk.retry.count` | SDK 重试 | 当前范围内 SDK delivery 计划重试的次数 |
+| `sdk.flushFailureCount` | SDK Flush 失败 | 当前范围内 `sdk.output.flush` 或 `sdk.lifecycle.flush` 未成功的次数 |
+| `sdk.queue.length` | SDK 队列长度 | 最近一条 SDK self-monitoring envelope 携带的队列事件数 |
 | `affectedSessionCount` | 问题 Session | 受影响 session 数 |
 | `affectedUserCount` | 影响用户 | 受影响用户数；无 `userId` 时不展示或显示不可用 |
 
 性能类卡片优先使用：次数、平均耗时、中位耗时、慢端耗时、最慢一次、慢次数。问题类卡片优先使用：问题次数、问题 Session、最近一次、高频页面或高频接口。
 
 Workbench 的错误页和首页“错误/稳定性”只承接程序与稳定性错误，例如 `signalType=error` 或带 `error.*` 语义的非 HTTP envelope。业务 API 的 `track(action, result=failed)` 和 `measure(action, result=failed)` 表示业务结果失败，应在 session/page 链路中以“业务失败”告警展示，并可通过 `problemType=business_failure` 筛选，但不能推高 session 的异常状态或错误页统计。
+
+首页 SDK 健康卡片只承接 `signalType=sdk` 的自监控 envelope，例如 `sdk.output.flush`、`sdk.queue.drop`、`sdk.retry.schedule`、`sdk.queue.state` 和 `sdk.config.applied`。它用于判断采集链路本身是否可靠，不应与业务 HTTP 失败、页面性能或稳定性错误混成同一个问题数。
 
 如果确实需要展示分位数术语，应该放在高级详情、tooltip 或字段说明中，而不是首页卡片主标题。
 

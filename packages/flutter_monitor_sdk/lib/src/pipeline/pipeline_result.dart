@@ -7,12 +7,20 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 class PipelineResult {
   const PipelineResult._({
     required this.accepted,
+    this.dropped = false,
+    this.dropReason,
     this.envelope,
     this.issues = const <SchemaValidationIssue>[],
   });
 
   /// 事件是否被 pipeline 接受并分发给 outputs。
   final bool accepted;
+
+  /// 事件是否被采样/限流/drop policy 丢弃。
+  final bool dropped;
+
+  /// 丢弃原因，例如 sampled_out 或 rate_limited。
+  final String? dropReason;
 
   /// 成功构建的 envelope；仅 [accepted] 为 true 时存在。
   final EventEnvelope? envelope;
@@ -26,5 +34,14 @@ class PipelineResult {
 
   factory PipelineResult.rejected(List<SchemaValidationIssue> issues) {
     return PipelineResult._(accepted: false, issues: issues);
+  }
+
+  factory PipelineResult.dropped(EventEnvelope envelope, String? reason) {
+    return PipelineResult._(
+      accepted: false,
+      dropped: true,
+      dropReason: reason,
+      envelope: envelope,
+    );
   }
 }

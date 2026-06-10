@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:example/home_page.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 import 'complex_list_page.dart';
@@ -52,32 +51,13 @@ void main() async {
   // 确保Flutter绑定
   WidgetsFlutterBinding.ensureInitialized();
 
-  final List<MonitorOutput> monitorOutputs = [];
-
-  // 自测阶段默认使用 compact 控制台预览；完整 JSON 通过 HttpOutput / Workbench 查询。
-  if (kDebugMode) {
-    monitorOutputs.add(LogMonitorOutput());
-  }
-
-  // 自定义日志系统输出 可选与默认日志选一个
-  // if (kDebugMode) {
-  //   monitorOutputs.add(
-  //     CustomLogOutput(onLog: handleMonitorEvent),
-  //   );
-  // }
-
-  // 配置服务端上报。启动时传入：
-  // --dart-define=FM_SERVER_URL=http://<your-host-ip>:3700/api/monitor/v1/events
-  if (monitorServerUrl.isNotEmpty) {
-    monitorOutputs.add(
-      HttpOutput(
-        serverUrl: monitorServerUrl,
-        enablePeriodicReporting: true,
-        periodicReportDuration: const Duration(seconds: 5),
-        batchReportSize: 5,
-      ),
-    );
-  }
+  // 输出模式：
+  // - 不传 FM_SERVER_URL 时使用 consoleOnly，适合本地 compact log。
+  // - 传入 FM_SERVER_URL 时使用 localLive，后续由 Phase 5 reliable delivery
+  //   统一负责 batch、flush、retry 和离线队列。
+  final monitorMode = monitorServerUrl.isEmpty
+      ? MonitorMode.consoleOnly()
+      : MonitorMode.localLive(endpoint: Uri.parse(monitorServerUrl));
 
   // 自动获取应用信息
   final appInfo = await AppInfo.fromPackageInfo(appKey: 'TEST_APP_KEY');
@@ -90,8 +70,8 @@ void main() async {
     // ),
     // 自动获取配置
     appInfo: appInfo,
+    mode: monitorMode,
     jankConfig: JankConfig.lenient(),
-    outputs: monitorOutputs,
   );
 
   // 或者使用完整配置（可选）
@@ -112,7 +92,10 @@ void main() async {
   //   // 运行时变化再通过 FlutterMonitorSDK.setContext(...) 调整。
   //   enableJankMonitor: true,
   //   jankConfig: JankConfig.lenient(),
-  //   outputs: monitorOutputs, // 可选，不传则使用默认输出
+  //   mode: MonitorMode.production(
+  //     endpoint: Uri.parse('https://monitor.example.com/api/monitor/v1/events'),
+  //     policy: MonitorProductionPolicy.conservative(),
+  //   ),
   // );
 
   // 初始化监控SDK

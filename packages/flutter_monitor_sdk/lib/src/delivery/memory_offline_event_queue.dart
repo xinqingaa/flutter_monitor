@@ -1,0 +1,152 @@
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+
+import 'offline_event_queue.dart';
+import 'queued_monitor_event.dart';
+
+class MemoryOfflineEventQueue implements OfflineEventQueue {
+  MemoryOfflineEventQueue({required MonitorProductionPolicy policy})
+    : _policy = policy;
+
+  final MonitorProductionPolicy _policy;
+  final List<QueuedMonitorEvent> _events = <QueuedMonitorEvent>[];
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<OfflineQueueEnqueueResult> enqueue(QueuedMonitorEvent event) async {
+    if (event.bytes > _policy.maxEventBytes) {
+      return OfflineQueueEnqueueResult(
+        accepted: false,
+        reason: SdkDropReasons.payloadTooLarge,
+        dropped: <QueuedMonitorEvent>[event],
+      );
+    }
+
+    final existingIndex = _events.indexWhere(
+      (queued) => queued.eventId == event.eventId,
+    );
+    if (existingIndex >= 0) {
+      _events[existingIndex] = event;
+    } else {
+      _events.add(event);
+    }
+    final dropped = await trimToLimits();
+    return OfflineQueueEnqueueResult(accepted: true, dropped: dropped);
+  }
+
+  @override
+  Future<List<QueuedMonitorEvent>> nextBatch({
+    required int maxEvents,
+    required int maxBytes,
+    required DateTime now,
+  }) async {
+    final ready =
+        _events.where((event) => !event.nextAttemptAt.isAfter(now)).toList()
+          ..sort(_deliveryCompare);
+    final batch = <QueuedMonitorEvent>[];
+    var bytes = 0;
+    for (final event in ready) {
+      if (batch.isNotEmpty &&
+          (batch.length >= maxEvents || bytes + event.bytes > maxBytes)) {
+        break;
+      }
+      if (event.bytes > maxBytes && batch.isNotEmpty) break;
+      batch.add(event);
+      bytes += event.bytes;
+      if (batch.length >= maxEvents || bytes >= maxBytes) break;
+    }
+    return batch;
+  }
+
+  @override
+  Future<void> ack(List<String> eventIds) async {
+    final ids = eventIds.toSet();
+    _events.removeWhere((event) => ids.contains(event.eventId));
+  }
+
+  @override
+  Future<void> scheduleRetry(
+    List<String> eventIds, {
+    required DateTime nextAttemptAt,
+  }) async {
+    final ids = eventIds.toSet();
+    for (var i = 0; i < _events.length; i++) {
+      final event = _events[i];
+      if (!ids.contains(event.eventId)) continue;
+      _events[i] = event.copyWith(
+        attemptCount: event.attemptCount + 1,
+        nextAttemptAt: nextAttemptAt,
+      );
+    }
+  }
+
+  @override
+  Future<List<QueuedMonitorEvent>> trimToLimits() async {
+    final dropped = <QueuedMonitorEvent>[];
+    while (_events.length > _policy.maxQueueEvents ||
+        _totalBytes > _policy.maxQueueBytes) {
+      final index = _dropCandidateIndex();
+      if (index < 0) break;
+      dropped.add(_events.removeAt(index));
+    }
+    return dropped;
+  }
+
+  @override
+  Future<int> deleteExpired(DateTime expireBefore) async {
+    final before = _events.length;
+    _events.removeWhere((event) => event.createdAt.isBefore(expireBefore));
+    return before - _events.length;
+  }
+
+  @override
+  Future<OfflineQueueStats> stats() async {
+    return OfflineQueueStats(length: _events.length, bytes: _totalBytes);
+  }
+
+  @override
+  Future<void> dispose() async {
+    _events.clear();
+  }
+
+  int get _totalBytes =>
+      _events.fold<int>(0, (sum, event) => sum + event.bytes);
+
+  int _dropCandidateIndex() {
+    if (_events.isEmpty) return -1;
+    var candidateIndex = 0;
+    for (var i = 1; i < _events.length; i++) {
+      if (_dropCompare(_events[i], _events[candidateIndex]) < 0) {
+        candidateIndex = i;
+      }
+    }
+    return candidateIndex;
+  }
+
+  int _dropCompare(QueuedMonitorEvent a, QueuedMonitorEvent b) {
+    final priority = _priorityRank(
+      a.priority,
+    ).compareTo(_priorityRank(b.priority));
+    if (priority != 0) return priority;
+    return a.createdAt.compareTo(b.createdAt);
+  }
+
+  int _deliveryCompare(QueuedMonitorEvent a, QueuedMonitorEvent b) {
+    final priority = _priorityRank(
+      b.priority,
+    ).compareTo(_priorityRank(a.priority));
+    if (priority != 0) return priority;
+    return a.createdAt.compareTo(b.createdAt);
+  }
+
+  int _priorityRank(EventPriority priority) {
+    return switch (priority) {
+      EventPriority.low => 0,
+      EventPriority.normal => 1,
+      EventPriority.high => 2,
+      EventPriority.critical => 3,
+    };
+  }
+}

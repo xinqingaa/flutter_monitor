@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Gauge, Globe2, Rocket } from 'lucide-react';
+import { Activity, AlertTriangle, Gauge, Globe2, Rocket, ShieldCheck } from 'lucide-react';
 import { MetricCard } from '../performance/metric-card';
 import type { PerformanceOverview } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
@@ -14,7 +14,7 @@ export function OverviewMetrics({
     <div
       className={cn(
         'grid grid-cols-1 gap-2 sm:grid-cols-2',
-        variant === 'compact' && 'xl:grid-cols-5',
+        variant === 'compact' && 'xl:grid-cols-6',
         variant === 'focus' && 'xl:grid-cols-2 2xl:grid-cols-3 [&>a:first-child]:2xl:col-span-2',
       )}
     >
@@ -23,6 +23,7 @@ export function OverviewMetrics({
       <MetricCard kind="network" title="网络请求" icon={Globe2} summary={overview?.http} emphasis="HTTP" to="/network" />
       <MetricCard kind="jank" title="卡顿" icon={Activity} summary={overview?.jank} emphasis="帧耗时" to="/jank" />
       <MetricCard kind="errors" title="稳定性错误" icon={AlertTriangle} summary={overview?.errors} emphasis="稳定性" to="/errors" />
+      <MetricCard kind="sdk" title="SDK 健康" icon={ShieldCheck} summary={overview?.sdk} emphasis="队列 / 重试" />
     </div>
   );
 }

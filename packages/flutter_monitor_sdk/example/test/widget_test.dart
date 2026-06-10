@@ -10,7 +10,7 @@ void main() {
     final appStartTime = DateTime.now();
     final monitorConfig = MonitorConfig(
       appInfo: const AppInfo(appKey: 'TEST_APP_KEY'),
-      outputs: [LogMonitorOutput()],
+      mode: MonitorMode.consoleOnly(logMode: LogMonitorOutputMode.silent),
     );
 
     await FlutterMonitorSDK.init(

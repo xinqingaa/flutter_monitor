@@ -1,8 +1,11 @@
+import '../outputs/log_monitor_output.dart';
 import '../outputs/monitor_output.dart';
 import '../modules/jank_monitor.dart';
 import '../native/monitor_native_bridge.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter_monitor_sdk/src/delivery/reliable_http_output.dart';
+import 'package:flutter_monitor_sdk/src/delivery/sqlite_offline_event_queue.dart';
 
 /// 监控队列配置。
 ///
@@ -19,6 +22,149 @@ class MonitorQueueConfig {
 
   /// 默认队列配置。
   static const MonitorQueueConfig defaultConfig = MonitorQueueConfig();
+}
+
+/// SDK 运行模式。
+///
+/// 普通业务只需要选择模式，不需要手动组合 queue、batch、retry、sampling
+/// 等底层策略。`production` 使用 SDK 内置可靠上报策略；`localLive` 用于
+/// QA/Workbench；`consoleOnly` 用于本地开发 compact log。
+class MonitorMode {
+  const MonitorMode._({
+    required this.name,
+    this.endpoint,
+    this.authTokenProvider,
+    this.productionPolicy = MonitorProductionPolicy.defaultPolicy,
+    this.logMode = LogMonitorOutputMode.compact,
+  });
+
+  /// wire value，进入 `sdk.output.mode`。
+  final String name;
+
+  /// local live 或 production 的 batch 上报地址。
+  final Uri? endpoint;
+
+  /// 可选鉴权 token provider，production delivery 发送前调用。
+  final Future<String?> Function()? authTokenProvider;
+
+  /// production/local live 的可靠性策略。普通接入方通常不需要覆盖。
+  final MonitorProductionPolicy productionPolicy;
+
+  /// consoleOnly 下的日志输出模式。
+  final LogMonitorOutputMode logMode;
+
+  /// 本地开发模式，只打印 compact log。
+  factory MonitorMode.consoleOnly({
+    LogMonitorOutputMode logMode = LogMonitorOutputMode.compact,
+  }) {
+    return MonitorMode._(name: SdkOutputModes.consoleOnly, logMode: logMode);
+  }
+
+  /// QA/Workbench live 模式，小 batch 写入本地 service。
+  factory MonitorMode.localLive({
+    Uri? endpoint,
+    MonitorProductionPolicy policy = MonitorProductionPolicy.localLive,
+  }) {
+    return MonitorMode._(
+      name: SdkOutputModes.localLive,
+      endpoint:
+          endpoint ?? Uri.parse('http://localhost:3700/api/monitor/v1/events'),
+      productionPolicy: policy,
+    );
+  }
+
+  /// 真实 App 灰度或线上模式。
+  factory MonitorMode.production({
+    required Uri endpoint,
+    Future<String?> Function()? authToken,
+    MonitorProductionPolicy policy = MonitorProductionPolicy.defaultPolicy,
+  }) {
+    return MonitorMode._(
+      name: SdkOutputModes.production,
+      endpoint: endpoint,
+      authTokenProvider: authToken,
+      productionPolicy: policy,
+    );
+  }
+}
+
+/// 生产可靠性策略。
+///
+/// 该对象刻意合并 queue、batch、retry、sampling 和 rate limit 配置，避免
+/// 普通使用者在初始化时维护一组彼此相关的细碎配置。后续实现 SQLite 离线
+/// 队列和 production delivery 时会消费这些默认值。
+class MonitorProductionPolicy {
+  final int maxQueueEvents;
+  final int maxQueueBytes;
+  final int maxEventBytes;
+  final int maxBatchEvents;
+  final int maxBatchBytes;
+  final Duration flushInterval;
+  final Duration quickFlushDelay;
+  final Duration requestTimeout;
+  final int maxRetryAttempts;
+  final Duration retryBaseDelay;
+  final Duration retryMaxDelay;
+  final Duration maxEventAge;
+  final double defaultSampleRate;
+  final double lowPrioritySampleRate;
+  final double successfulHttpSampleRate;
+  final double memorySampleRate;
+  final int maxTrackEventsPerMinute;
+
+  const MonitorProductionPolicy({
+    this.maxQueueEvents = 5000,
+    this.maxQueueBytes = 8 * 1024 * 1024,
+    this.maxEventBytes = 128 * 1024,
+    this.maxBatchEvents = 50,
+    this.maxBatchBytes = 512 * 1024,
+    this.flushInterval = const Duration(seconds: 15),
+    this.quickFlushDelay = const Duration(seconds: 2),
+    this.requestTimeout = const Duration(seconds: 8),
+    this.maxRetryAttempts = 8,
+    this.retryBaseDelay = const Duration(seconds: 2),
+    this.retryMaxDelay = const Duration(minutes: 5),
+    this.maxEventAge = const Duration(days: 3),
+    this.defaultSampleRate = 1.0,
+    this.lowPrioritySampleRate = 0.2,
+    this.successfulHttpSampleRate = 0.2,
+    this.memorySampleRate = 0.1,
+    this.maxTrackEventsPerMinute = 120,
+  });
+
+  /// 真实 App 默认策略：尽量保留关键事件，同时限制磁盘、网络和重试开销。
+  static const defaultPolicy = MonitorProductionPolicy();
+
+  /// QA/Workbench 策略：更短 flush 间隔，更小 batch，便于近实时查看。
+  static const localLive = MonitorProductionPolicy(
+    maxQueueEvents: 1000,
+    maxQueueBytes: 2 * 1024 * 1024,
+    maxBatchEvents: 20,
+    maxBatchBytes: 256 * 1024,
+    flushInterval: Duration(seconds: 3),
+    quickFlushDelay: Duration(milliseconds: 500),
+    requestTimeout: Duration(seconds: 5),
+    maxEventAge: Duration(hours: 12),
+    lowPrioritySampleRate: 1.0,
+    successfulHttpSampleRate: 1.0,
+    memorySampleRate: 1.0,
+  );
+
+  /// 更保守策略：适合首轮灰度或弱网风险较高的 App。
+  factory MonitorProductionPolicy.conservative() {
+    return const MonitorProductionPolicy(
+      maxQueueEvents: 2000,
+      maxQueueBytes: 4 * 1024 * 1024,
+      maxBatchEvents: 30,
+      maxBatchBytes: 256 * 1024,
+      flushInterval: Duration(seconds: 30),
+      quickFlushDelay: Duration(seconds: 3),
+      lowPrioritySampleRate: 0.1,
+      successfulHttpSampleRate: 0.1,
+      memorySampleRate: 0.05,
+      maxTrackEventsPerMinute: 60,
+    );
+  }
 }
 
 /// Session 与生命周期配置。
@@ -202,7 +348,7 @@ class AppInfo {
 
 /// SDK 初始化配置。
 ///
-/// `MonitorConfig` 只描述采集能力、输出、队列、native bridge 等 SDK 行为。
+/// `MonitorConfig` 只描述采集能力、输出模式、队列、native bridge 等 SDK 行为。
 /// 用户、模块、发布、网络等运行时上下文请使用 `initialContext` 或
 /// `FlutterMonitorSDK.setContext(...)`，不要塞进任意 custom map。
 class MonitorConfig {
@@ -220,10 +366,17 @@ class MonitorConfig {
   /// 是否启用 UI 卡顿采集。
   final bool enableJankMonitor;
 
-  /// 输出配置。
+  /// 输出模式。
   ///
-  /// 每个 output 都会收到经过 schema 校验和隐私过滤后的 envelope JSON。
-  final List<MonitorOutput>? outputs;
+  /// 普通接入方只需要选择 `consoleOnly`、`localLive` 或 `production`。
+  /// SDK 会根据模式选择日志、本地 Workbench 或生产可靠上报策略。
+  final MonitorMode mode;
+
+  /// 高级/测试输出配置。
+  ///
+  /// 每个 custom output 都会收到经过 schema 校验和隐私过滤后的 envelope JSON。
+  /// 真实 App 推荐优先使用 [mode]，不要把自定义 HTTP output 作为默认生产路径。
+  final List<MonitorOutput>? customOutputs;
 
   /// 卡顿监控配置，仅在 [enableJankMonitor] 为 true 时生效。
   final JankConfig? jankConfig;
@@ -249,10 +402,12 @@ class MonitorConfig {
   /// 创建 SDK 初始化配置。
   const MonitorConfig({
     required this.appInfo,
+    this.mode = const MonitorMode._(name: SdkOutputModes.consoleOnly),
     this.enableErrorMonitor = true,
     this.enablePerformanceMonitor = true,
     this.enableJankMonitor = true,
-    this.outputs,
+    List<MonitorOutput>? customOutputs,
+    List<MonitorOutput>? outputs,
     this.jankConfig,
     this.queueConfig,
     this.sessionConfig,
@@ -260,26 +415,36 @@ class MonitorConfig {
     this.frameConfig,
     this.interactionConfig,
     this.nativeBridge,
-  });
+  }) : customOutputs = customOutputs ?? outputs;
 
   /// 获取实际使用的输出列表。
   ///
   /// output 是 envelope 离开 SDK 的唯一出口，例如日志、HTTP 或自定义调试输出。
   List<MonitorOutput> get effectiveOutputs {
-    if (outputs != null && outputs!.isNotEmpty) {
-      return outputs!;
+    if (customOutputs != null && customOutputs!.isNotEmpty) {
+      return customOutputs!;
     }
 
-    // 默认输出配置
-    final defaultOutputs = <MonitorOutput>[];
-
-    // 开发环境默认使用日志输出
-    if (kDebugMode) {
-      // 这里需要导入 LogMonitorOutput，暂时注释掉
-      // defaultOutputs.add(LogMonitorOutput());
+    if (mode.name == SdkOutputModes.consoleOnly) {
+      return <MonitorOutput>[LogMonitorOutput(mode: mode.logMode)];
     }
 
-    return defaultOutputs;
+    final endpoint = mode.endpoint;
+    if (endpoint != null &&
+        (mode.name == SdkOutputModes.localLive ||
+            mode.name == SdkOutputModes.production)) {
+      return <MonitorOutput>[
+        ReliableHttpOutput(
+          endpoint: endpoint,
+          mode: mode.name,
+          policy: mode.productionPolicy,
+          authTokenProvider: mode.authTokenProvider,
+          queue: SqliteOfflineEventQueue(policy: mode.productionPolicy),
+        ),
+      ];
+    }
+
+    return const <MonitorOutput>[];
   }
 
   /// 获取实际使用的卡顿配置。

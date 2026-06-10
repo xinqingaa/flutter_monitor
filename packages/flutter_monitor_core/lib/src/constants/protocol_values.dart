@@ -50,6 +50,47 @@ abstract final class PlatformSignalSources {
   static const unknown = 'unknown';
 }
 
+abstract final class SdkConfigSources {
+  static const defaultConfig = 'default';
+  static const local = 'local';
+  static const remote = 'remote';
+  static const cachedRemote = 'cached_remote';
+}
+
+abstract final class SdkDropReasons {
+  static const sampledOut = 'sampled_out';
+  static const rateLimited = 'rate_limited';
+  static const queueFull = 'queue_full';
+  static const payloadTooLarge = 'payload_too_large';
+  static const nonRetryableRejected = 'non_retryable_rejected';
+  static const storeCorrupted = 'store_corrupted';
+  static const expired = 'expired';
+  static const killSwitch = 'kill_switch';
+}
+
+abstract final class SdkFlushReasons {
+  static const batchSize = 'batch_size';
+  static const interval = 'interval';
+  static const background = 'background';
+  static const appExit = 'app_exit';
+  static const criticalEvent = 'critical_event';
+  static const manual = 'manual';
+}
+
+abstract final class SdkOutputModes {
+  static const consoleOnly = 'consoleOnly';
+  static const localLive = 'localLive';
+  static const production = 'production';
+}
+
+abstract final class SdkRetryReasons {
+  static const timeout = 'timeout';
+  static const offline = 'offline';
+  static const rateLimited = 'rate_limited';
+  static const serverError = 'server_error';
+  static const partialRetryable = 'partial_retryable';
+}
+
 abstract final class SignalSources {
   static const sdkApi = 'sdk.api';
   static const sdkHttp = 'sdk.http';

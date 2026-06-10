@@ -12,6 +12,7 @@ import type {
   PagePerformanceSummary,
   PerformanceMetricSummary,
   StartupPerformanceSummary,
+  SdkReliabilitySummary,
 } from '../../shared/datasource/types';
 import {
   extractFrameEvidence,
@@ -22,7 +23,7 @@ import {
   isStartupTraceEnd,
 } from './performance-evidence';
 
-export type MetricKind = 'startup' | 'pages' | 'network' | 'jank' | 'errors';
+export type MetricKind = 'startup' | 'pages' | 'network' | 'jank' | 'errors' | 'sdk';
 
 export function MetricCard({
   title,
@@ -42,11 +43,18 @@ export function MetricCard({
   panelAction?: React.ReactNode;
 }) {
   const errorCount = summary?.errorCount ?? 0;
-  const issueLabel = kind === 'errors' ? '错误数' : '问题数';
-  const issueField = kind === 'errors' ? 'signalType=error / attributes["error.*"]' : 'problem_type';
+  const issueLabel = kind === 'errors' ? '错误数' : kind === 'sdk' ? '可靠性问题' : '问题数';
+  const issueField = kind === 'errors'
+    ? 'signalType=error / attributes["error.*"]'
+    : kind === 'sdk'
+      ? 'sdk.queue.drop / sdk.retry.schedule / failed sdk.* flush'
+      : 'problem_type';
   const issueHint = kind === 'errors'
     ? '来源：稳定性错误 envelope；不包含 completed HTTP 失败，也不包含 business.result=failed 的业务失败。'
-    : '来源：Workbench query summary 的问题分类计数。';
+    : kind === 'sdk'
+      ? '来源：SDK self-monitoring envelope，统计队列丢弃、重试计划和失败 flush。'
+      : '来源：Workbench query summary 的问题分类计数。';
+  const primaryIssueCount = kind === 'sdk' ? sdkIssueCount(summary as SdkReliabilitySummary | undefined) : errorCount;
   const body = (
     <Card className="min-w-0">
       <CardContent className="grid gap-3 p-3.5">
@@ -62,7 +70,7 @@ export function MetricCard({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <MetricNumber label="事件数" field="events.length" hint="来源：当前筛选范围内匹配该类 signal 的 SDK envelope 数量" value={summary?.count ?? 0} />
-          <MetricNumber label={issueLabel} field={issueField} hint={issueHint} value={errorCount} tone={errorCount > 0 ? 'danger' : 'normal'} />
+          <MetricNumber label={issueLabel} field={issueField} hint={issueHint} value={primaryIssueCount} tone={primaryIssueCount > 0 ? 'danger' : 'normal'} />
         </div>
         <KindSummary kind={kind ?? kindFromTitle(title)} summary={summary} />
       </CardContent>
@@ -83,6 +91,7 @@ function KindSummary({ kind, summary }: { kind: MetricKind; summary?: Performanc
   if (kind === 'pages') return <PagesSummary summary={summary as PagePerformanceSummary | undefined} />;
   if (kind === 'network') return <NetworkSummary summary={summary as HttpPerformanceSummary | undefined} />;
   if (kind === 'jank') return <JankSummary summary={summary as JankPerformanceSummary | undefined} />;
+  if (kind === 'sdk') return <SdkSummary summary={summary as SdkReliabilitySummary | undefined} />;
   return <ErrorsSummary summary={summary as ErrorPerformanceSummary | undefined} />;
 }
 
@@ -187,6 +196,50 @@ function ErrorsSummary({ summary }: { summary?: ErrorPerformanceSummary }) {
       <MetricPlain label="高频类型" value={summary?.typeSummaries[0]?.key ?? '-'} />
       <MetricPlain label="高频机制" value={summary?.mechanismSummaries[0]?.key ?? '-'} />
       <MetricPlain label="高频页面" value={summary?.routeSummaries[0]?.key ?? '-'} />
+    </div>
+  );
+}
+
+function SdkSummary({ summary }: { summary?: SdkReliabilitySummary }) {
+  return (
+    <div className="grid gap-1 text-xs">
+      <MetricPlainWithHint
+        label="丢弃事件"
+        value={compactNumber(summary?.droppedEventCount ?? 0)}
+        field={'attributes["sdk.drop.count"]'}
+        hint="对 sdk.queue.drop envelope 的 sdk.drop.count 求和；用于判断采样、限流、队列满或不可重试拒绝造成的丢弃。"
+      />
+      <MetricPlainWithHint
+        label="重试计划"
+        value={compactNumber(summary?.retryCount ?? 0)}
+        field="name=sdk.retry.schedule"
+        hint="当前范围内 SDK 因超时、限流、服务端错误或断网等原因安排下一次发送的次数。"
+      />
+      <MetricPlainWithHint
+        label="Flush 失败"
+        value={compactNumber(summary?.flushFailureCount ?? 0)}
+        field="name=sdk.output.flush / sdk.lifecycle.flush · status != ok"
+        hint="当前范围内 SDK output flush 或退出前 flush 未成功的次数。"
+      />
+      <MetricPlainWithHint
+        label="队列长度"
+        value={formatOptionalNumber(summary?.latestQueueLength)}
+        field={'attributes["sdk.queue.length"]'}
+        hint="按事件时间取最近一条携带 sdk.queue.length 的 SDK self-monitoring envelope。"
+      />
+      <MetricPlainWithHint
+        label="队列字节"
+        value={formatByteCount(summary?.latestQueueBytes)}
+        field={'attributes["sdk.queue.bytes"]'}
+        hint="按事件时间取最近一条携带 sdk.queue.bytes 的 SDK self-monitoring envelope。"
+      />
+      <MetricPlainWithHint
+        label="输出模式"
+        value={summary?.outputModeSummaries[0]?.key ?? '-'}
+        field={'attributes["sdk.output.mode"]'}
+        hint="当前范围内出现次数最多的 SDK 输出模式，例如 consoleOnly、localLive 或 production。"
+      />
+      <MetricPlain label="高频丢弃" value={summary?.dropReasonSummaries[0]?.key ?? '-'} />
     </div>
   );
 }
@@ -404,6 +457,17 @@ function formatOptionalNumber(value?: number): string {
   return typeof value === 'number' && Number.isFinite(value) ? compactNumber(value) : '-';
 }
 
+function formatByteCount(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  if (value < 1024) return `${compactNumber(value)} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function sdkIssueCount(summary?: SdkReliabilitySummary): number {
+  return (summary?.dropCount ?? 0) + (summary?.retryCount ?? 0) + (summary?.flushFailureCount ?? 0);
+}
+
 function averagePerformanceEvidence(
   events: NonNullable<PerformanceMetricSummary['events']>,
   mode: 'startup' | 'page',
@@ -436,5 +500,6 @@ function kindFromTitle(title: string): MetricKind {
   if (title.includes('页面')) return 'pages';
   if (title.includes('网络')) return 'network';
   if (title.includes('卡顿')) return 'jank';
+  if (title.includes('SDK')) return 'sdk';
   return 'errors';
 }

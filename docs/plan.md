@@ -8,11 +8,11 @@
 
 重构过程中必须保留基础信号源的价值：错误、启动、页面加载、API 耗时、卡顿、用户点击、PV、页面停留都应在新模型中找到归属。任何删除都必须有替代方案和验收证明。
 
-## 当前状态总览
+## 状态总览
 
-当前项目已经完成从早期 Flutter 监控 SDK 到统一 workspace 的核心迁移：`flutter_monitor_core` 提供统一 event envelope、schema、字段注册、privacy、summary 和 export；`flutter_monitor_sdk` 已形成 runtime pipeline、context/session/trace/breadcrumb、启动、页面、HTTP、错误、行为、交互、卡顿、memory/lifecycle 等 Flutter-only 主链路；Workbench 已能消费 raw envelope，展示 session list、session timeline、性能概览、event detail 和 raw JSON 回查。
+项目主线已经迁入统一 workspace：`flutter_monitor_core` 提供 event envelope、schema、字段注册、privacy、summary 和 export；`flutter_monitor_sdk` 承担 runtime pipeline、context/session/trace/breadcrumb 和 Flutter-only 信号采集；Workbench 消费 raw envelope，提供 session list、session timeline、性能概览、event detail 和 raw JSON 回查。
 
-当前最高优先级不是继续扩大采集面，也不是继续投入 native 深度能力，而是把 Flutter-only SDK 做到真实 App 可安全接入：生产级离线队列、可靠重试、采样、限流、优先级、远程配置最小集、SDK self-monitoring、NestJS Monitor Service ingest 和真实 App 灰度验证。
+近期重点是让 Flutter-only SDK 以较低接入成本进入真实 App 验证：输出模式收敛、端侧队列和重试、采样限流、SDK 自监控、Monitor Service ingest、Workbench 回查和压测记录。
 
 | 阶段 | 当前状态 | 说明 |
 |---|---|---|
@@ -21,7 +21,7 @@
 | Phase 2 SDK runtime pipeline | 基本完成，持续维护 | raw signal -> context/trace snapshot -> envelope -> validation -> privacy -> breadcrumb -> output 主流程已建立。 |
 | Phase 3 现有 Flutter 信号接入 | 主链路完成 | 启动、页面、HTTP、错误、行为、交互、卡顿、lifecycle、memory 线索已进入 session timeline。 |
 | Phase 4 Memory / Native / Lifecycle | Flutter 侧完成主线，native 暂停 | Flutter/Dart memory sample/growth/lifecycle 已推进；native 保留 optional/experimental，不作为近期主线。 |
-| Phase 5 Flutter-only 生产接入能力 | 下一步最高优先级 | 补齐 production mode、离线队列、重试、采样、限流、优先级、remote config 和压测。 |
+| Phase 5 Flutter-only 生产接入能力 | 进行中 | 收敛输出模式、离线队列、重试、采样限流、优先级、SDK 自监控、Workbench 回查和压测。 |
 | Phase 6 NestJS Monitor Service、Evidence Pack 与真实 App 灰度验证 | 紧随 Phase 5 | 独立 `services/monitor_service`，搬迁现有 Workbench service，新增 evidence pack，支撑真实 App QA/灰度接入。 |
 | Phase 7 DevTools 桥接与会话导出 | 后置 | 等真实 App 接入闭环稳定后再做 Timeline、bridge、export/import。 |
 | Phase 8 工具入口扩展 | 后置 | CLI、MCP、独立 DevTools tooling 等只消费 core envelope/export，不承担 runtime 采集。 |
@@ -236,7 +236,7 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 完整 JSON 获取路径：
 
 - 控制台 compact 行必须包含可回查的 `event`、`session` 和 `trace`，有 span 时包含 `span`。
-- `HttpBatchOutput` 将完整 `EventEnvelope` 批量发送到 local workbench service 或正式服务端。
+- `MonitorMode.localLive` / `MonitorMode.production` 将完整 `EventEnvelope` 批量发送到 local workbench service 或正式服务端。
 - 只要 SDK 装入真实 App，就不应默认一条事件一个请求。近实时写入 Workbench 可以存在，但必须由初始化配置显式开启，并使用小 batch、短 flush 间隔、关键事件立即 flush 等策略。
 - Workbench Web 的实时刷新来自 service 到 web 的 SSE，不代表 SDK 必须逐条 HTTP 实时请求。
 - local workbench service 在本地调试阶段至少支持：
@@ -337,179 +337,102 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 
 ## Phase 5：Flutter-only 生产接入能力
 
-目标：
+目标是让 Flutter-only SDK 可以以较低心智负担接入真实 App，并在弱网、后台、退出、高频事件和服务不可用时保持可控。Native 继续作为可选增强层，不作为基础接入前置条件。
 
-- 暂停 native 深度投入，把 `flutter_monitor_native` 保持为可选、实验性增强层；主线聚焦 Flutter-only SDK 在真实 App 中的安全接入。
-- 将 SDK 从“本地诊断可用”推进到“真实中大型 App 可开启灰度验证”的端侧准备状态：
-  - 端侧开销可控；
-  - 弱网、断网、后台、退出和长 session 下关键事件不轻易丢失；
-  - 高频事件不会撑爆内存、磁盘、网络或 Workbench 查询；
-  - 出现问题时可以通过远程配置或初始化配置快速降级。
-- 建立生产级输出策略：
-  - `consoleOnly`：本地开发，只输出 compact log 或自定义 output。
-  - `localLive`：QA/本地复现，批量写入 Workbench service。
-  - `production`：真实 App 灰度或线上，使用离线队列、采样、限流、重试和优先级。
-- 输出可复查的端侧压测结果，用数据证明 SDK 的初始化开销、运行时开销、队列策略、丢弃策略和降级策略。
+### 接入模式
 
-本阶段不要求：
+普通使用者只需要选择输出模式：
 
-- 恢复 native 深度能力建设；native crash、OOM、ANR 可靠捕获继续后置。
-- 建设完整生产服务端、告警、多租户、权限、计费或长期治理平台。
-- 完成真实 App 端到端灰度闭环；真实 App 接入放在 Phase 6，与 Monitor Service 和 evidence pack 一起验证。
-- 完整 DevTools extension 体验；DevTools 桥接顺延到 Phase 7。
-- 追求采集面继续扩张。新增信号必须先证明对真实 App 排查有直接价值。
+| 模式 | 场景 | 行为 |
+|---|---|---|
+| `consoleOnly` | 本地开发 | 输出 compact log 或自定义本地 output |
+| `localLive` | QA / 本地复现 | 批量写入 Workbench service，使用短 flush 间隔和关键事件快速 flush |
+| `production` | 灰度 / 线上 | 使用 SDK 内置队列、batch、retry、采样限流、优先级和自监控 |
 
-### Native 暂停策略
+高级使用者可以通过单一 `MonitorProductionPolicy` 覆盖队列、batch、retry、采样和限流参数。普通业务不需要手动组合多个 output，也不需要理解内部队列实现。
 
-当前 native 包已提供 Android/iOS 基础 bridge，但短期主线暂停，原因是：
+### 可靠性策略
 
-- native 初始化成本明显高于 Flutter-only 模式，例如 4ms 提升到 40ms 量级时，会直接影响 SDK 接入阻力。
-- Android 与 iOS 的系统事件、回调名、生命周期语义和内存指标存在细微差异，SDK 虽可兼容，但会显著增加模型解释、测试矩阵和长期维护成本。
-- 对当前阶段而言，Flutter-only 的启动、页面、HTTP、行为、交互、卡顿、错误、内存 RSS 线索和 Workbench session timeline 已能覆盖大部分可验证价值。
+- 队列只保存完成 schema validation 和 privacy filtering 的 `EventEnvelope` JSON，不保存未过滤 raw signal。
+- 队列按 priority、大小上限、TTL 和重试状态管理待发送事件；critical/high、错误、失败 HTTP、严重卡顿、memory pressure 和 SDK self-monitoring 优先保留。
+- `localLive` 和 `production` 默认 batch，不把一事件一请求作为真实 App 默认发送方式。
+- flush 触发来自 batch size、flush interval、background、app exit、critical/high 事件短延迟和业务主动 `FlutterMonitorSDK.flush(...)`。
+- 2xx ack 删除；400/401/403 按不可重试拒绝处理；413 触发拆分或裁剪；429 使用 `Retry-After` 或退避；5xx、超时、断网进入退避重试。
+- memory sample、成功 HTTP、低价值 low priority event 可采样；高频 `track` 按配置限流。
+- 采样、限流、队列满、payload 过大、不可重试拒绝、store 损坏和 flush 失败都通过 `sdk.*` self-monitoring envelope 留下证据。
+- Remote config 只修改 mode、collector 开关、采样、限流、queue、batch、flush 和 retry 参数，不改变事件模型。
 
-约束：
+### 接入最小集
 
-- `flutter_monitor_native` 保留 optional/experimental 定位，不作为真实 App 基础接入前置条件。
-- SDK 初始化默认不启用 native bridge；未配置 native 时必须清楚表达 `context.native.available = false`，但不能降低 Flutter-only 链路质量。
-- 文档、example、Workbench 不得暗示 native crash/OOM/ANR 已完整可靠支持。
-- 后续只有当真实 App 的问题定位明确需要 Flutter-only 无法提供的 native 证据，并且初始化成本和兼容矩阵可被控制时，才重新评估 native 投入。
-
-### 生产级端侧可靠性
-
-#### 离线队列
-
-- 新增持久化事件队列，用于保存尚未成功送达的 `EventEnvelope` batch。
-- 队列必须保存已经隐私过滤后的 envelope，不保存未过滤 raw signal。
-- 队列存储应有总大小、事件数、单事件大小和单 batch 大小上限。
-- 队列按 priority 驱逐：
-  - 优先保留 `critical`、`high`、错误、关键慢页面、失败 HTTP、严重卡顿、memory pressure、SDK self-monitoring。
-  - 普通 breadcrumb、成功 HTTP、低价值 debug event 可优先丢弃或采样。
-- 持久化格式必须复用统一 envelope，不引入第二套本地缓存协议。
-- 队列损坏、反序列化失败或磁盘不可用时，SDK 应记录 self-monitoring 事件并降级，不得影响 App 主流程。
-
-#### 批量与 flush 策略
-
-- 所有生产和 local live 上报都应默认 batch，不允许真实 App 默认一事件一请求。
-- 支持以下 flush 触发：
-  - batch size 达到阈值；
-  - flush interval 到达；
-  - App 进入后台或退出前；
-  - critical/high 事件触发短延迟快速 flush；
-  - 业务主动调用 `FlutterMonitorSDK.flush(...)`。
-- `isAppExiting = true` 时采用尽力发送，不得因等待网络阻塞主线程或明显拖慢退出。
-- flush 成功、失败、跳过、部分成功、丢弃数量都应进入 SDK self-monitoring 或可查询 health 状态。
-
-#### 可靠重试
-
-- 按响应类型处理：
-  - 2xx：确认成功，删除对应 batch。
-  - 400/401/403：默认不可重试，记录 rejected 原因并按策略丢弃或保留少量诊断。
-  - 413：拆分 batch 或降低单事件大小，仍失败则按优先级丢弃。
-  - 429：按 `Retry-After` 或指数退避重试。
-  - 5xx、超时、断网：指数退避 + jitter，保留队列。
-- 重试必须有最大尝试次数、最大保留时间和失败冷却，避免弱网下持续耗电、耗流量或刷屏。
-- 重试状态不得破坏事件幂等，`eventId` 是服务端和本地去重键。
-
-#### 采样、限流和优先级
-
-- 支持按 signal type、event name、route、status、priority 配置采样率。
-- 默认策略：
-  - 错误、严重卡顿、失败 HTTP、关键慢页面、启动 trace end、SDK self-monitoring 尽量保留。
-  - 成功 HTTP、普通 breadcrumb、低频价值不高的 memory sample 可采样。
-  - 高频业务 track 必须限流，避免业务误用导致队列爆炸。
-- 限流应记录被丢弃数量和原因，例如 `sampled_out`、`rate_limited`、`queue_full`、`payload_too_large`。
-- 采样和限流不能让错误、失败 HTTP 或卡顿失去最近 breadcrumbs 和 page trace 归属。
-
-#### 远程配置最小集
-
-远程配置不追求复杂控制台，但必须预留真实 App 安全接入所需的最小能力：
-
-- 全局 kill switch。
-- output mode：`consoleOnly`、`localLive`、`production`。
-- 各 collector 开关：startup、page、http、error、track、interaction、jank、memory、lifecycle、native。
-- 各 signal 采样率、限流阈值、queue 上限、batch size、flush interval、retry 参数。
-- 配置拉取失败时使用本地默认配置或上一次有效配置。
-- 配置必须有版本号、过期时间和生效时间，便于定位某次 session 使用了哪套策略。
-- 远程配置本身不得引入第二套事件模型；配置变化可通过 SDK self-monitoring event 记录。
-
-### 真实 App 接入最小集
-
-Phase 5 只定义真实 App 首轮接入最小集，实际接入与灰度验证在 Phase 6 执行。首轮只启用 Flutter-only 最小闭环：
+真实 App 首轮接入只启用 Flutter-only 最小闭环：
 
 - 启动：`app.cold_start`、`app.hot_start`、`sdk.init`。
 - 页面：`page.visit`、`page.load`、`page.stay`、`page.view`。
-- 网络：Dio 或 `http` 的 `http.client` span，包含耗时、状态码、失败类型和 normalized URL。
+- 网络：Dio 或 `http` 的 `http.client` span。
 - 错误：Flutter framework error、Dart uncaught error、业务手动 `recordError`。
 - 行为：`FlutterMonitorSDK.track(...)`。
-- 交互性能：`FlutterMonitorSDK.measure(...)`，优先接入关键业务操作，不做全量自动拦截。
-- 卡顿：保守配置启用，重点关联 route、page trace、frame summary 和 breadcrumbs。
-- 内存：低频 RSS sample、页面/启动边界 RSS delta、growth 线索；不得宣称确定泄漏。
+- 交互性能：`FlutterMonitorSDK.measure(...)`。
+- 卡顿：保守配置启用，关联 route、page trace、frame summary 和 breadcrumbs。
+- 内存：低频 RSS sample、页面/启动边界 RSS delta、growth 线索。
 - lifecycle：前后台切换、background/foreground duration、退出前 flush。
-- native：默认关闭，仅保留 Flutter-only 降级标识。
 
-接入方式：
+接入顺序建议：
 
-- 先接 QA/debug 包，再接内部灰度包，不直接全量线上开启。
-- 先选择 1-2 条高价值业务链路，例如启动 -> 首页 -> 详情页 -> 关键请求 -> 用户操作 -> 返回。
-- 每个业务链路必须能在 Workbench 中看到 session timeline、页面区段、HTTP、行为、错误/卡顿上下文和 raw envelope。
-- 对真实 App 代码的侵入应控制在初始化、navigator observer、HTTP interceptor/client、少量 `track`/`measure`/`setContext`。
+1. 先接 QA/debug 包，再接内部灰度包。
+2. 先选择 1-2 条高价值业务链路，例如启动 -> 首页 -> 详情页 -> 关键请求 -> 用户操作 -> 返回。
+3. 确认 Workbench 能看到 session timeline、页面区段、HTTP、行为、错误/卡顿上下文和 raw envelope。
+4. 控制真实 App 代码侵入面：初始化、Navigator observer、HTTP interceptor/client、少量 `track` / `measure` / `setContext`。
 
-### 压测与灰度验证矩阵
-
-必须建立可重复执行的验证矩阵，而不是只看一次 demo：
+### 压测矩阵
 
 | 场景 | 验证目标 |
 |---|---|
-| 初始化 | Flutter-only 初始化 P50/P95、是否明显影响冷启动 |
+| 初始化 | Flutter-only 初始化 P50/P95、冷启动影响 |
 | 高频事件 | 高频 HTTP、track、breadcrumb 下队列是否稳定 |
-| 弱网/断网 | 断网 30 分钟、弱网恢复后关键事件是否可送达 |
+| 弱网/断网 | 断网、弱网恢复后关键事件是否可送达 |
 | 后台/恢复 | background duration、hot start、exit flush 是否准确 |
-| 长 session | 1 小时、3 小时 session 下内存、磁盘、队列是否稳定 |
-| 低端机 | CPU、内存、帧耗时和掉帧影响是否可接受 |
-| 大 payload | 大错误栈、大 breadcrumbs、大属性 map 是否被裁剪 |
-| 服务不可用 | 5xx/超时/429 下是否退避，是否影响 App 主流程 |
+| 长 session | 内存、磁盘、队列是否稳定 |
+| 低端机 | CPU、内存、帧耗时和掉帧影响 |
+| 大 payload | 错误栈、breadcrumbs、属性 map 是否被裁剪 |
+| 服务不可用 | 5xx、超时、429 下是否退避，是否影响 App 主流程 |
 | 查询性能 | Workbench 对数千/数万 envelope 的 session、trace、event 查询是否可用 |
 | 隐私过滤 | token、cookie、body、手机号等敏感字段是否不会进入 output 和离线队列 |
 
 建议目标：
 
-- Flutter-only SDK 初始化 P50 < 5ms，P95 < 10ms；若真实 App 环境无法满足，必须说明原因和优化计划。
+- Flutter-only SDK 初始化 P50 < 5ms，P95 < 10ms；无法满足时需要记录原因和优化计划。
 - SDK 采集对页面切换、滑动和关键交互无肉眼可感影响。
 - 弱网或服务不可用时，SDK 不持续刷请求、不阻塞 UI、不导致内存持续增长。
 - 队列达到上限时，保留关键事件并记录丢弃原因。
 - Workbench 能从 `userId + 时间范围`、sessionId、eventId、traceId、页面、错误、失败 HTTP、卡顿进入排查。
 
-### Workbench 在 Phase 5 的职责
+### Workbench 职责
 
-- 作为真实 App QA/灰度验证的主要本地诊断入口。
-- 继续只消费统一 envelope，不补写 SDK 字段，不成为第二套协议。
-- 支持查看 SDK self-monitoring：队列长度、丢弃数、重试数、flush 失败、采样/限流原因。
-- 支持按真实 App 的 appKey、environment、version、device、route、userId、problem type 过滤 session。
-- 在性能概览中区分“采集到的业务问题”和“SDK 自身可靠性问题”。
+- 作为 QA/灰度验证的本地诊断入口。
+- 只消费统一 envelope，不补写 SDK 字段，不成为第二套协议。
+- 在 Overview 展示 SDK self-monitoring：队列长度、丢弃数、重试数、flush 失败、采样/限流原因。
+- 支持按 appKey、environment、version、device、route、userId、problem type 过滤 session。
+- 区分业务问题和 SDK 自身可靠性问题。
 
-### 实施顺序
+### 待办
 
-1. 梳理 `MonitorConfig` 输出模式和生产配置入口，明确 `consoleOnly`、`localLive`、`production` 三类策略。
-2. 抽象 production queue/output：内存队列、持久化队列、batch builder、flush coordinator、retry policy、drop policy。
-3. 实现 priority-aware queue 和 drop reason 统计。
-4. 实现采样与限流策略，先支持本地配置，再接入远程配置预留。
-5. 增强 SDK self-monitoring envelope 和 Workbench 展示。
-6. 补充端侧单测和集成测试：队列、重试、采样、限流、隐私过滤、退出 flush。
-7. 建立压测脚本或 example stress mode，生成可复查结果。
-8. 固化真实 App 接入最小集、初始化示例、接入 checklist 和回滚策略，为 Phase 6 接入做准备。
-9. 复盘端侧压测数据，修正字段、采样、限流、timeline 展示和接入文档。
+| 项目 | 说明 |
+|---|---|
+| Remote config / kill switch | 补齐远程开关、采样、限流、队列、batch、flush、retry 参数下发和过期降级 |
+| 退出 flush | 收紧 background / detached / dispose 下的短超时和失败证据 |
+| 压测脚本 | 建立可重复的高频、弱网、断网、长 session、大 payload 和服务不可用验证 |
+| 真实 App checklist | 固化初始化、Navigator、HTTP、track、measure、context、回滚和隐私检查 |
+| 灰度记录 | 输出 SDK 开销、队列行为、丢弃原因、服务端接收和 Workbench 回查结果 |
 
 验收：
 
-- 不启用 native 时，Flutter-only SDK 的启动、页面、HTTP、错误、行为、交互、卡顿、内存和 lifecycle 仍能形成完整 session timeline。
-- production mode 下所有上报默认 batch，支持离线队列、重试、采样、限流、优先级和退出前 flush。
+- 不启用 native 时，Flutter-only SDK 的启动、页面、HTTP、错误、行为、交互、卡顿、内存和 lifecycle 能形成完整 session timeline。
+- `production` 下默认 batch，支持离线队列、重试、采样、限流、优先级和退出前 flush。
 - SDK 能处理 2xx、4xx、413、429、5xx、超时和断网，不因服务不可用影响 App 主流程。
 - 队列满、采样、限流、payload 裁剪、隐私过滤、flush 失败都有可回查的 self-monitoring 证据。
-- critical/high 事件优先保留，普通 breadcrumb、成功 HTTP、低价值 sample 可按策略丢弃。
-- 远程配置最小集可控制全局开关、collector 开关、采样率、限流、队列、batch、flush 和 retry 参数；配置失败时可降级。
-- 真实 App 接入方案、初始化配置、最小接入点、回滚策略和验证清单准备完成，可直接进入 Phase 6 QA/灰度。
-- 压测矩阵有记录，覆盖初始化、弱网、长 session、低端机、高频事件、服务不可用、隐私过滤和 Workbench 查询性能。
-- 文档和 example 明确 native 当前为 optional/experimental，不把 native 作为 Flutter-only 生产接入前置条件。
+- 远程配置最小集可控制全局开关、collector 开关、采样率、限流、队列、batch、flush 和 retry 参数。
+- 接入 checklist、回滚策略和压测记录足以支撑进入 Monitor Service + 真实 App QA/灰度验证。
+- 文档和 example 明确 native 是 optional/experimental，不把 native 作为 Flutter-only 接入前置条件。
 
 ## Phase 6：NestJS Monitor Service、Evidence Pack 与真实 App 灰度验证
 
@@ -518,7 +441,7 @@ Phase 5 只定义真实 App 首轮接入最小集，实际接入与灰度验证�
 - 新建独立 `services/monitor_service`，采用 NestJS 技术栈，承接现有 `workbench/service` 的 ingest、storage、query、SSE、performance overview 和 smoke test。
 - 明确 SDK 职责减轻：SDK 只采集、组装、过滤和上报 raw `EventEnvelope`，不生成聚合类证据，不生成 issue group，不承担 agent-oriented diagnostics。
 - 将 Workbench 降级为独立 Web UI，后续迁出 `workbench/web` 到 `web`，只消费 `services/monitor_service` API，不再持有服务端诊断逻辑。
-- 与 Phase 5 的端侧可靠上报策略对齐，验证 SDK 能可靠发送、Monitor Service 能可靠接收、Workbench 或查询 API 能可靠回查。
+- 与端侧可靠上报策略对齐，验证 SDK 能可靠发送、Monitor Service 能可靠接收、Workbench 或查询 API 能可靠回查。
 - 新增一个 evidence pack 接口，把 raw envelope 派生为可追溯的问题索引和证据包，用于人 review、Workbench 展示和未来 Agent 辅助定位代码上下文。
 - 接入一个真实中大型 App 或同等级业务工程的 QA/灰度包，验证启动、页面、HTTP、错误、行为、交互、卡顿、内存和 lifecycle 在真实业务流中的链路价值。
 - 输出端到端灰度验证结果，用数据证明 SDK 的开销、可靠性、丢弃策略、服务端接收语义、evidence pack 质量和排查价值。
@@ -668,7 +591,7 @@ src/
 - `store`：封装 SQLite 和未来数据库，提供 raw envelope 读写能力。
 - `query`：提供 session、trace、event、recent、dimensions、performance overview 和 search。
 - `diagnostics`：只读 raw envelope，派生 evidence pack，不回写 raw envelope，不创造第二套事实。
-- `config`：提供 remote config 最小接口，先满足 Phase 5 SDK 生产接入参数。
+- `config`：提供 remote config 最小接口，覆盖 SDK 生产接入参数。
 - `stream`：继续提供本地/QA live refresh。
 - `health`：服务状态、storage 状态、ingest 统计、SSE client 统计。
 
@@ -890,7 +813,7 @@ Agent 边界：
 目标：
 
 - 为 Monitor Service 增加 ingest validation、eventId 幂等、batch 处理和稳定错误码。
-- 与 Phase 5 SDK retry/drop policy 对齐，让端侧能根据服务端响应做确定动作。
+- 与 SDK retry/drop policy 对齐，让端侧能根据服务端响应做确定动作。
 
 交付物：
 
@@ -904,7 +827,7 @@ Agent 边界：
 - 合法 batch 可写入并返回 accepted count。
 - 重复 eventId 不重复入库，返回幂等结果。
 - 缺少 required field、非法 signal type、超大 payload、非法 phase 能被拒绝并给出可定位错误。
-- SDK 在 2xx、4xx、413、429、5xx、超时、断网下的行为与 Phase 5 retry/drop 设计一致。
+- SDK 在 2xx、4xx、413、429、5xx、超时、断网下的行为与 retry/drop 设计一致。
 
 #### 6.3 查询、聚合与 SDK Health
 
@@ -986,7 +909,7 @@ Agent 边界：
 - 至少一条关键业务链路可还原：启动 -> 页面 -> HTTP -> 用户行为 -> 交互性能 -> 错误/卡顿/内存线索 -> lifecycle。
 - 弱网、断网恢复、后台恢复、长 session、高频事件、服务不可用、大 payload、隐私过滤都留下可回查结果。
 - 对真实问题或人工制造问题，evidence pack 能把排查范围缩小到相关 route、action、HTTP、stack file 或 raw event。
-- 如果发现无法定位的问题，报告中必须说明缺失的字段、链路断点或采集策略，并回写 Phase 5/6 backlog。
+- 如果发现无法定位的问题，报告中必须说明缺失的字段、链路断点或采集策略，并回写后续 backlog。
 
 ### 实施顺序
 
@@ -999,7 +922,7 @@ Agent 边界：
 7. 新增 `diagnostics/evidence` 接口和 evidence pack DTO。
 8. 实现第一批确定性 issue group 规则：error、failed HTTP、slow HTTP、slow page、slow interaction、jank、memory、lifecycle。
 9. 在 Web 中增加 evidence pack 入口，先用于 session detail 或 event detail 的“诊断证据”面板。
-10. 接入真实 App QA/debug 包，使用 Phase 5 production mode 向 Monitor Service 上报。
+10. 接入真实 App QA/debug 包，使用 `production` mode 向 Monitor Service 上报。
 11. 输出灰度验证报告，覆盖端侧、服务端、evidence pack 和 Web 查询。
 
 ### 最终验收结果
@@ -1015,7 +938,7 @@ Phase 6 完成时应满足：
 - evidence pack 至少覆盖 error、failed HTTP、slow HTTP、slow page、slow interaction、jank、memory、lifecycle/session anomaly。
 - 每个 issue group 都有 raw refs，可回查 eventId/sessionId/traceId。
 - evidence pack 输出 `agentHints`，但不宣称确定 root cause。
-- remote config 最小接口可为 Phase 5 SDK 提供开关、采样、限流、队列、batch、flush 和 retry 参数。
+- remote config 最小接口可为 SDK 提供开关、采样、限流、队列、batch、flush 和 retry 参数。
 - 真实 App QA/灰度包至少完成一条关键业务链路接入，并能通过 Monitor Service 和 Web 还原 session timeline、raw envelope 和 evidence pack。
 - 验证命令覆盖 service smoke、web typecheck/build，以及旧引用清理。
 
@@ -1044,7 +967,7 @@ Phase 6 完成时应满足：
 
 ## Workbench：本地调试、QA 复现与统一排查入口
 
-Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。当前决策是先暂停继续推进完整 DevTools 体验，优先把 Workbench 从“前后端一体工作台”收敛为独立 Web UI，用于本地调试、QA 复现、session timeline、raw JSON 回查和 evidence pack review。
+Workbench 是横跨本地调试、QA 复现和灰度验证的消费侧能力，但不等同于 DevTools extension，也不等同于生产服务端。当前决策是先暂停继续推进完整 DevTools 体验，优先把 Workbench 从“前后端一体工作台”收敛为独立 Web UI，用于本地调试、QA 复现、session timeline、raw JSON 回查和 evidence pack review。
 
 目标：
 
@@ -1089,11 +1012,11 @@ Workbench 横跨 Phase 5 / Phase 6 的消费侧能力，但不等同于 DevTools
 
 优先级：
 
-- 放在 Phase 5/6 之后。当前优先级低于 production mode、离线队列、server ingest 和真实 App 灰度验证。
+- 放在 production mode、离线队列、server ingest 和真实 App 灰度验证之后。
 
 ### 待补展示：业务交互性能窗口
 
-当前 SDK 已提供 `FlutterMonitorSDK.measure(...)` 语义，用于业务主动标记 TabBar 切换、图表缩放、图表渲染、复杂滚动、筛选刷新等不切路由的关键交互，并把交互期间的帧表现回连到当前 session、route 和 `page.instance_id`。
+`FlutterMonitorSDK.measure(...)` 用于业务主动标记 TabBar 切换、图表缩放、图表渲染、复杂滚动、筛选刷新等不切路由的关键交互，并把交互期间的帧表现回连到 session、route 和 `page.instance_id`。
 
 推荐 API：
 
@@ -1150,7 +1073,7 @@ measure.finish();
 要求：
 
 - 文档、Workbench 和 compact log 必须使用“growth”“suspect”“evidence”等措辞，不得把 RSS 增长宣称为确定泄漏。
-- Phase 5/6 压测必须覆盖 memory sample 频率、队列影响和长 session 内存稳定性。
+- 压测必须覆盖 memory sample 频率、队列影响和长 session 内存稳定性。
 
 ### 待验证：Lifecycle、热重启与 Session 边界
 

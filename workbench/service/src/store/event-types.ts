@@ -169,12 +169,29 @@ export interface ErrorPerformanceSummary extends PerformanceMetricSummary {
   recent: PerformanceMetricSummary['events'];
 }
 
+export interface SdkReliabilitySummary extends PerformanceMetricSummary {
+  flushCount: number;
+  flushFailureCount: number;
+  retryCount: number;
+  dropCount: number;
+  droppedEventCount: number;
+  queueStateCount: number;
+  configAppliedCount: number;
+  latestQueueLength?: number;
+  latestQueueBytes?: number;
+  dropReasonSummaries: MetricGroupSummary[];
+  retryReasonSummaries: MetricGroupSummary[];
+  flushReasonSummaries: MetricGroupSummary[];
+  outputModeSummaries: MetricGroupSummary[];
+}
+
 export interface PerformanceOverview {
   startup: StartupPerformanceSummary;
   pages: PagePerformanceSummary;
   http: HttpPerformanceSummary;
   jank: JankPerformanceSummary;
   errors: ErrorPerformanceSummary;
+  sdk: SdkReliabilitySummary;
 }
 
 export interface DimensionAppOption {

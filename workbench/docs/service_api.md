@@ -376,6 +376,26 @@ Workbench 错误页关注稳定性错误，不混入 completed HTTP 失败，也
 | `routeSummaries` | 按 `context.route.name` 分组。 |
 | `recent` | 最近稳定性错误事件轻量 view model。 |
 
+`sdk` 额外字段：
+
+Workbench SDK 健康摘要只消费 `signalType=sdk` 的统一 envelope，不根据 HTTP 响应、service 状态或 UI 状态补写可靠性字段。它用于把 SDK 自身可靠性问题与业务性能、HTTP 失败和稳定性错误分开展示。
+
+| 字段 | 来源 / 计算口径 |
+|---|---|
+| `flushCount` | `name=sdk.output.flush`、`name=sdk.lifecycle.flush` 或 `name=sdk.output.flush_failed` 的数量。 |
+| `flushFailureCount` | 上述 flush 事件中 `status != ok` 的数量。 |
+| `retryCount` | `name=sdk.retry.schedule` 的数量。 |
+| `dropCount` | `name=sdk.queue.drop` 的数量。 |
+| `droppedEventCount` | 对 `sdk.queue.drop` 的 `attributes["sdk.drop.count"]` 求和。 |
+| `queueStateCount` | `name=sdk.queue.state` 的数量。 |
+| `configAppliedCount` | `name=sdk.config.applied` 的数量。 |
+| `latestQueueLength` | 按事件时间倒序，最近一条携带 `attributes["sdk.queue.length"]` 的值。 |
+| `latestQueueBytes` | 按事件时间倒序，最近一条携带 `attributes["sdk.queue.bytes"]` 的值。 |
+| `dropReasonSummaries` | 按 `attributes["sdk.drop.reason"]` 分组，数值使用 `attributes["sdk.drop.count"]`。 |
+| `retryReasonSummaries` | 按 `attributes["sdk.retry.reason"]` 分组，数值使用 `attributes["sdk.retry.delay_ms"]`。 |
+| `flushReasonSummaries` | 按 `attributes["sdk.flush.reason"]` 分组，数值使用 `attributes["sdk.flush.duration_ms"]`。 |
+| `outputModeSummaries` | 按 `attributes["sdk.output.mode"]` 分组。 |
+
 `events` 是轻量 view model，不是完整 envelope。字段来自：
 
 | 字段 | 来源 |

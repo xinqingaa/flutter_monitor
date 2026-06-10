@@ -901,6 +901,26 @@ FlutterMonitorSDK.clearContext(
 
 采样和限流由 pipeline 统一执行。collector 可以提供 priority suggestion，由 pipeline 映射为 event envelope 的 `priority`。collector 不自行丢弃 critical/high 事件，除非为保护 App 稳定性必须降级。
 
+### Flutter-only 输出策略
+
+SDK 的 public 接入面收敛为三种模式：`consoleOnly`、`localLive` 和 `production`。普通业务只需要选择模式；queue、batch、flush、retry、sampling、rate limit 和 drop policy 使用 SDK 默认策略。高级使用者可通过单一 production policy 覆盖默认值，但不需要手动组合多个 output。
+
+`production` 默认使用 SDK 自带 SQLite 离线队列。队列只保存已经完成 schema validation 和 privacy filtering 的 `EventEnvelope` JSON，不保存 raw signal，不引入第二套本地缓存协议。队列表至少应能支持按 `eventId` 幂等、按 priority 驱逐、按 `createdAt` / `nextAttemptAt` 取 batch、ack 删除、retry 计划更新、TTL 清理和大小统计。
+
+所有 production / local live 上报默认 batch。flush 触发包括 batch size、flush interval、background、app exit、critical/high 事件短延迟快速 flush 和业务手动 `FlutterMonitorSDK.flush(...)`。`isAppExiting = true` 时采用短超时尽力发送，不得阻塞 UI 或明显拖慢退出。
+
+SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
+
+- output mode、batch size、flush reason、flush duration；
+- queue length、queue bytes、queue limit；
+- retry count、retry delay、retry reason；
+- drop count、drop reason；
+- config version、config source、applied/expires time。
+
+采样、限流、队列满、payload 过大、服务端不可重试拒绝、SQLite store 损坏或不可用，都必须留下可回查的 SDK self-monitoring 证据。Workbench 和服务端只能消费这些 envelope，不得补写 SDK 字段或另建可靠性协议。
+
+默认保留 critical/high、error、失败 HTTP、严重卡顿、memory pressure 和启动 trace end。memory sample、成功 HTTP 和 low priority event 可按采样率丢弃；高频 `track` 按配置限流。被采样或限流的事件不进入 breadcrumb store 或 output，并通过 `sdk.queue.drop` self-monitoring envelope 留下可回查证据。remote config 只修改这些 policy 输入，不改变 pipeline 事件模型。
+
 ## 限制与降级策略
 
 通用降级：

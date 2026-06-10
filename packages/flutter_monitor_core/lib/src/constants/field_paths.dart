@@ -87,6 +87,24 @@ abstract final class FieldPaths {
   static const appFirstFrameMs = 'app.first_frame_ms';
   static const appInteractiveMs = 'app.interactive_ms';
   static const sdkInitDurationMs = 'sdk.init.duration_ms';
+  static const sdkOutputMode = 'sdk.output.mode';
+  static const sdkQueueLength = 'sdk.queue.length';
+  static const sdkQueueBytes = 'sdk.queue.bytes';
+  static const sdkQueueMaxEvents = 'sdk.queue.max_events';
+  static const sdkQueueMaxBytes = 'sdk.queue.max_bytes';
+  static const sdkBatchSize = 'sdk.batch.size';
+  static const sdkBatchBytes = 'sdk.batch.bytes';
+  static const sdkFlushReason = 'sdk.flush.reason';
+  static const sdkFlushDurationMs = 'sdk.flush.duration_ms';
+  static const sdkRetryCount = 'sdk.retry.count';
+  static const sdkRetryDelayMs = 'sdk.retry.delay_ms';
+  static const sdkRetryReason = 'sdk.retry.reason';
+  static const sdkDropCount = 'sdk.drop.count';
+  static const sdkDropReason = 'sdk.drop.reason';
+  static const sdkConfigVersion = 'sdk.config.version';
+  static const sdkConfigSource = 'sdk.config.source';
+  static const sdkConfigAppliedAt = 'sdk.config.applied_at';
+  static const sdkConfigExpiresAt = 'sdk.config.expires_at';
   static const nativeStartElapsedMs = 'native.start.elapsed_ms';
 
   static const pageFirstFrameMs = 'page.first_frame_ms';

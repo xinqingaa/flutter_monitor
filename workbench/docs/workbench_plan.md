@@ -51,7 +51,7 @@ consoleOnly
 localLive
   SDK collectors
     -> EventEnvelope
-    -> HttpOutput small batch / short flush
+    -> SDK localLive batch output
     -> local workbench service
     -> SQLite store + SQL query index
     -> SSE
@@ -255,7 +255,7 @@ QA 提供 userId 和大概时间
 
 ### API
 
-service 接收 SDK `HttpOutput` 写入的统一 envelope。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `workbench/docs/service_api.md`。这里仅保留设计边界：
+service 接收 SDK 批量写入的统一 envelope。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `workbench/docs/service_api.md`。这里仅保留设计边界：
 
 - 写入接口接收完整 SDK `EventEnvelope`，缺少 `eventId` 的事件不得被 service 补写成 SDK 字段。
 - raw envelope 查询接口返回入库 envelope 本身，例如 recent、event detail、session detail、trace detail 和 search。
@@ -705,7 +705,7 @@ Phase 6 Monitor Service 承担：
 
 ### Phase W7：性能概览
 
-- 增加启动、页面、HTTP、错误、卡顿的本地轻量聚合。
+- 增加启动、页面、HTTP、错误、卡顿和 SDK 健康的本地轻量聚合。
 - 聚合结果必须能回查原始 session、trace 或 event。
 
 ### Phase W8：Remote datasource 预留
@@ -728,7 +728,8 @@ Workbench MVP 完成时应满足：
 - startup trace 能展示 `app.cold_start`、`sdk.init`，并从 `app.cold_start` / `app.hot_start` trace end 展示启动 RSS 变化；启动不展示 FPS 或帧稳定性。
 - 页面性能能从 `page.visit` trace end 展示页面帧表现和 RSS 变化；同 route 多次进入内部按页面链路区分，主界面优先展示 `context.route.fullName`，`page.instance_id` 只在 Inspector/raw JSON 中作为诊断字段。
 - 业务 `track` 事件能展示 `business.action`、`business.result`、`ui.target` 和 `payload.properties`。
-- service API 接收 SDK `HttpOutput` 写入的统一 envelope。
+- Overview 能展示 SDK self-monitoring 健康摘要，包括队列长度、丢弃数、重试数、flush 失败、输出模式和主要 drop/retry/flush reason。
+- service API 接收 SDK 批量写入的统一 envelope。
 - service SSE 推送不改变 envelope 本体。
 - SDK 到 service 的近实时写入必须使用显式配置和批量语义。
 - Workbench 不引入第二套事件模型。

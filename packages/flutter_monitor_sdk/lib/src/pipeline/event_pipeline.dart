@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
+import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/pipeline_control.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
 import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
@@ -23,26 +25,32 @@ class EventPipeline {
     required TraceManager traceManager,
     required BreadcrumbStore breadcrumbStore,
     required List<MonitorOutput> outputs,
+    required MonitorMode mode,
     EnvelopeBuilder? envelopeBuilder,
     SchemaValidator? schemaValidator,
     PrivacyFilter? privacyFilter,
+    PipelineControl? control,
   }) : _contextManager = contextManager,
        _sessionManager = sessionManager,
        _traceManager = traceManager,
        _breadcrumbStore = breadcrumbStore,
        _outputs = outputs,
+       _mode = mode,
        _envelopeBuilder = envelopeBuilder ?? EnvelopeBuilder(),
        _schemaValidator = schemaValidator ?? SchemaValidator(),
-       _privacyFilter = privacyFilter ?? PrivacyFilter();
+       _privacyFilter = privacyFilter ?? PrivacyFilter(),
+       _control = control ?? PipelineControl(mode: mode);
 
   final ContextManager _contextManager;
   final SessionManager _sessionManager;
   final TraceManager _traceManager;
   final BreadcrumbStore _breadcrumbStore;
   final List<MonitorOutput> _outputs;
+  final MonitorMode _mode;
   final EnvelopeBuilder _envelopeBuilder;
   final SchemaValidator _schemaValidator;
   final PrivacyFilter _privacyFilter;
+  final PipelineControl _control;
 
   /// 使用当前 session 捕获一个信号。
   ///
@@ -115,6 +123,11 @@ class EventPipeline {
       }
 
       final filtered = _privacyFilter.filterEnvelope(built);
+      final decision = _control.evaluate(filtered);
+      if (!decision.keep) {
+        _emitDropSelfMonitoring(filtered, decision);
+        return PipelineResult.dropped(filtered, decision.reason);
+      }
       _recordBreadcrumb(filtered);
       _dispatch(filtered);
       return PipelineResult.accepted(filtered);
@@ -136,6 +149,28 @@ class EventPipeline {
         ),
       ]);
     }
+  }
+
+  void _emitDropSelfMonitoring(
+    EventEnvelope dropped,
+    PipelineDecision decision,
+  ) {
+    _emitSelfMonitoring(
+      name: EventNames.sdkQueueDrop,
+      level: EventLevel.warning,
+      status: EventStatus.ok,
+      priority: EventPriority.normal,
+      attributes: <String, Object?>{
+        FieldPaths.sdkOutputMode: _mode.name,
+        FieldPaths.sdkDropReason: decision.reason,
+        FieldPaths.sdkDropCount: 1,
+      },
+      payload: <String, Object?>{
+        PayloadKeys.signalName: dropped.name,
+        PayloadKeys.source: dropped.signalType.toJson(),
+        if (decision.sampleRate != null) 'sample.rate': decision.sampleRate,
+      },
+    );
   }
 
   /// 将已经过滤后的 envelope 分发给所有 output。
@@ -280,6 +315,10 @@ class EventPipeline {
 
   void _emitSelfMonitoring({
     required String name,
+    EventLevel level = EventLevel.warning,
+    EventStatus status = EventStatus.error,
+    EventPriority priority = EventPriority.high,
+    Map<String, Object?> attributes = const <String, Object?>{},
     Map<String, Object?> payload = const <String, Object?>{},
     bool dispatch = true,
   }) {
@@ -288,9 +327,9 @@ class EventPipeline {
       timestamp: DateTime.now(),
       signalType: SignalType.sdk,
       name: name,
-      level: EventLevel.warning,
-      status: EventStatus.error,
-      priority: EventPriority.high,
+      level: level,
+      status: status,
+      priority: priority,
       sessionId: _sessionManager.currentSessionId,
       resource: _contextManager.capture().resource,
       context: const MonitorContext(
@@ -298,6 +337,7 @@ class EventPipeline {
         missingReason: ContextMissingReasons.sdkBootstrapIncomplete,
       ),
       payload: payload,
+      attributes: attributes,
     );
     final filtered = _privacyFilter.filterEnvelope(event);
     if (dispatch) {

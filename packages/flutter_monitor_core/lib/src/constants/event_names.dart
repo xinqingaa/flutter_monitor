@@ -18,6 +18,11 @@ abstract final class EventNames {
   static const sdkTraceEndUnknown = 'sdk.trace.end_unknown';
   static const sdkSpanEndUnknown = 'sdk.span.end_unknown';
   static const sdkHttpSpanEndFailed = 'sdk.http.span_end_failed';
+  static const sdkOutputFlush = 'sdk.output.flush';
+  static const sdkQueueDrop = 'sdk.queue.drop';
+  static const sdkQueueState = 'sdk.queue.state';
+  static const sdkRetrySchedule = 'sdk.retry.schedule';
+  static const sdkConfigApplied = 'sdk.config.applied';
 
   static const pageVisit = 'page.visit';
   static const pageView = 'page.view';
