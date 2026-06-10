@@ -104,14 +104,15 @@ void main() {
     await tester.pump();
 
     expect(find.text('视频频道'), findsOneWidget);
-    expect(find.text('启动链路复盘'), findsOneWidget);
+    expect(find.text('Flutter Bee Sample'), findsOneWidget);
 
     await tester.drag(find.byType(PageView), const Offset(-500, 0));
-    await tester.pumpAndSettle();
-    expect(find.text('复杂列表卡顿分析'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(find.text('重复初始化压力'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1300));
 
     await tester.tap(find.text('评论'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 320));
     expect(find.text('评论内容'), findsOneWidget);
     expect(find.text('提交评论'), findsOneWidget);
   });

@@ -2,6 +2,7 @@ import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
+import 'package:video_player/video_player.dart';
 
 class VideoPage extends StatefulWidget {
   const VideoPage({super.key});
@@ -13,20 +14,131 @@ class VideoPage extends StatefulWidget {
 class _VideoPageState extends State<VideoPage> {
   final _pageController = PageController(viewportFraction: 0.88);
   final _commentController = TextEditingController();
+  VideoPlayerController? _videoController;
   var _currentIndex = 0;
-  var _playing = false;
+  var _initializing = false;
+  var _playbackError = '';
 
-  static const _videos = <_VideoItem>[
-    _VideoItem('launch_review', '启动链路复盘', '02:48'),
-    _VideoItem('jank_case', '复杂列表卡顿分析', '04:12'),
-    _VideoItem('release_check', '灰度发布检查', '03:36'),
+  static final _videos = <_VideoItem>[
+    _VideoItem(
+      id: 'bee_remote',
+      title: 'Flutter Bee Sample',
+      duration: '00:09',
+      url: Uri.parse(
+        'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+      ),
+    ),
+    _VideoItem(
+      id: 'bee_remote_repeat',
+      title: '重复初始化压力',
+      duration: '00:09',
+      url: Uri.parse(
+        'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+      ),
+    ),
+    _VideoItem(
+      id: 'bee_remote_sheet',
+      title: '弹层评论场景',
+      duration: '00:09',
+      url: Uri.parse(
+        'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+      ),
+    ),
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _prepareVideo(0, reason: 'initial');
+  }
+
+  @override
   void dispose() {
+    _disposeVideoController(reason: 'page_dispose');
     _pageController.dispose();
     _commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _prepareVideo(int index, {required String reason}) async {
+    final video = _videos[index];
+    setState(() {
+      _initializing = true;
+      _playbackError = '';
+    });
+    FlutterMonitorSDK.track(
+      action: 'video.controller.prepare',
+      result: MonitorTrackResult.started,
+      target: 'video_player',
+      properties: <String, Object?>{
+        'video.id': video.id,
+        'video.reason': reason,
+      },
+    );
+
+    _disposeVideoController(reason: 'switch_prepare');
+    final controller = VideoPlayerController.networkUrl(video.url);
+    _videoController = controller;
+
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      if (!mounted || _videoController != controller) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _initializing = false;
+      });
+      FlutterMonitorSDK.track(
+        action: 'video.controller.prepare',
+        result: MonitorTrackResult.success,
+        target: 'video_player',
+        properties: <String, Object?>{
+          'video.id': video.id,
+          'video.duration_ms': controller.value.duration.inMilliseconds,
+          'video.url': video.url.toString(),
+        },
+      );
+    } catch (error, stackTrace) {
+      if (_videoController == controller) {
+        _videoController = null;
+      }
+      await controller.dispose();
+      if (!mounted) return;
+      setState(() {
+        _initializing = false;
+        _playbackError = error.toString();
+      });
+      FlutterMonitorSDK.recordError(
+        error,
+        stackTrace: stackTrace,
+        type: 'video_prepare_failed',
+        handled: true,
+        properties: <String, Object?>{
+          'video.id': video.id,
+          'video.url': video.url.toString(),
+        },
+      );
+    }
+  }
+
+  void _disposeVideoController({required String reason}) {
+    final controller = _videoController;
+    if (controller == null) return;
+    final video = _videos[_currentIndex];
+    FlutterMonitorSDK.track(
+      action: 'video.controller.dispose',
+      result: MonitorTrackResult.success,
+      target: 'video_player',
+      properties: <String, Object?>{
+        'video.id': video.id,
+        'video.reason': reason,
+        'video.position_ms': controller.value.position.inMilliseconds,
+      },
+    );
+    _videoController = null;
+    controller.dispose();
   }
 
   void _onPageChanged(int index) {
@@ -38,19 +150,29 @@ class _VideoPageState extends State<VideoPage> {
         'video.to': _videos[index].id,
       },
     );
-    setState(() {
-      _currentIndex = index;
-      _playing = false;
-    });
+    setState(() => _currentIndex = index);
+    _prepareVideo(index, reason: 'page_switch');
   }
 
-  void _togglePlay() {
-    setState(() => _playing = !_playing);
+  Future<void> _togglePlay() async {
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return;
+    final video = _videos[_currentIndex];
+    if (controller.value.isPlaying) {
+      await controller.pause();
+    } else {
+      await controller.play();
+    }
+    if (!mounted) return;
+    setState(() {});
     FlutterMonitorSDK.track(
-      action: _playing ? 'video.play' : 'video.pause',
+      action: controller.value.isPlaying ? 'video.play' : 'video.pause',
       result: MonitorTrackResult.success,
-      target: 'video_card',
-      properties: <String, Object?>{'video.id': _videos[_currentIndex].id},
+      target: 'video_player',
+      properties: <String, Object?>{
+        'video.id': video.id,
+        'video.position_ms': controller.value.position.inMilliseconds,
+      },
     );
   }
 
@@ -66,53 +188,58 @@ class _VideoPageState extends State<VideoPage> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) {
-        return Padding(
+        return AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
           padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('发表评论', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _commentController,
-                autofocus: true,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '评论内容',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () {
-                  final text = _commentController.text.trim();
-                  FlutterMonitorSDK.track(
-                    action: 'video.comment.submit',
-                    result: text.isEmpty
-                        ? MonitorTrackResult.failed
-                        : MonitorTrackResult.success,
-                    level: text.isEmpty ? MonitorEventLevel.warning : null,
-                    target: 'comment_submit_button',
-                    error: text.isEmpty ? 'empty_comment' : null,
-                    properties: <String, Object?>{
-                      'video.id': _videos[_currentIndex].id,
-                      'comment.length': text.length,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('发表评论', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _commentController,
+                    autofocus: true,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '评论内容',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () {
+                      final text = _commentController.text.trim();
+                      FlutterMonitorSDK.track(
+                        action: 'video.comment.submit',
+                        result: text.isEmpty
+                            ? MonitorTrackResult.failed
+                            : MonitorTrackResult.success,
+                        level: text.isEmpty ? MonitorEventLevel.warning : null,
+                        target: 'comment_submit_button',
+                        error: text.isEmpty ? 'empty_comment' : null,
+                        properties: <String, Object?>{
+                          'video.id': _videos[_currentIndex].id,
+                          'comment.length': text.length,
+                        },
+                      );
+                      if (text.isNotEmpty) {
+                        _commentController.clear();
+                        Navigator.pop(context);
+                      }
                     },
-                  );
-                  if (text.isNotEmpty) {
-                    _commentController.clear();
-                    Navigator.pop(context);
-                  }
-                },
-                icon: const Icon(Icons.send_outlined),
-                label: const Text('提交评论'),
+                    icon: const Icon(Icons.send_outlined),
+                    label: const Text('提交评论'),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
@@ -121,6 +248,9 @@ class _VideoPageState extends State<VideoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final controller = _videoController;
+    final isReady = controller != null && controller.value.isInitialized;
+    final isPlaying = isReady && controller.value.isPlaying;
     return AppPage(
       routeName: AppRoutes.video,
       moduleName: 'content',
@@ -139,7 +269,9 @@ class _VideoPageState extends State<VideoPage> {
                   return _VideoCard(
                     video: video,
                     active: index == _currentIndex,
-                    playing: index == _currentIndex && _playing,
+                    controller: index == _currentIndex ? controller : null,
+                    initializing: index == _currentIndex && _initializing,
+                    error: index == _currentIndex ? _playbackError : '',
                   );
                 },
               ),
@@ -150,9 +282,9 @@ class _VideoPageState extends State<VideoPage> {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _togglePlay,
-                      icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
-                      label: Text(_playing ? '暂停' : '播放'),
+                      onPressed: isReady ? _togglePlay : null,
+                      icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                      label: Text(isPlaying ? '暂停' : '播放'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -174,27 +306,39 @@ class _VideoPageState extends State<VideoPage> {
 }
 
 class _VideoItem {
-  const _VideoItem(this.id, this.title, this.duration);
+  const _VideoItem({
+    required this.id,
+    required this.title,
+    required this.duration,
+    required this.url,
+  });
 
   final String id;
   final String title;
   final String duration;
+  final Uri url;
 }
 
 class _VideoCard extends StatelessWidget {
   const _VideoCard({
     required this.video,
     required this.active,
-    required this.playing,
+    required this.controller,
+    required this.initializing,
+    required this.error,
   });
 
   final _VideoItem video;
   final bool active;
-  final bool playing;
+  final VideoPlayerController? controller;
+  final bool initializing;
+  final String error;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final value = controller?.value;
+    final isReady = value != null && value.isInitialized;
     return AnimatedScale(
       duration: const Duration(milliseconds: 220),
       scale: active ? 1 : 0.94,
@@ -213,11 +357,7 @@ class _VideoCard extends StatelessWidget {
                     top: Radius.circular(8),
                   ),
                 ),
-                child: Icon(
-                  playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                  size: 80,
-                  color: colorScheme.onInverseSurface,
-                ),
+                child: _buildVideoSurface(context, isReady),
               ),
             ),
             Padding(
@@ -231,12 +371,49 @@ class _VideoCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text('视频时长 ${video.duration} · ${video.id}'),
+                  const SizedBox(height: 6),
+                  Text(
+                    video.url.toString(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildVideoSurface(BuildContext context, bool isReady) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (initializing) {
+      return const SizedBox.square(
+        dimension: 36,
+        child: CircularProgressIndicator(strokeWidth: 3),
+      );
+    }
+    if (error.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          '视频加载失败',
+          style: TextStyle(color: colorScheme.onInverseSurface),
+        ),
+      );
+    }
+    if (!isReady || controller == null) {
+      return Icon(
+        Icons.smart_display_outlined,
+        size: 80,
+        color: colorScheme.onInverseSurface,
+      );
+    }
+    return AspectRatio(
+      aspectRatio: controller!.value.aspectRatio,
+      child: VideoPlayer(controller!),
     );
   }
 }

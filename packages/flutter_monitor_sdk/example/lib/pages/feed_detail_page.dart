@@ -58,6 +58,7 @@ class _FeedDetailPageState extends State<FeedDetailPage> {
     );
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => _ShareSheet(
         onCancel: () {
@@ -179,40 +180,46 @@ class _ShareSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('分享内容', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: '分享备注',
-                border: OutlineInputBorder(),
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('分享内容', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              const TextField(
+                decoration: InputDecoration(
+                  labelText: '分享备注',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onCancel,
-                    child: const Text('取消'),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onCancel,
+                      child: const Text('取消'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: onSubmit,
-                    child: const Text('复制链接'),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: onSubmit,
+                      child: const Text('复制链接'),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
