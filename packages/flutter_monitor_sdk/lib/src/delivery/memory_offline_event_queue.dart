@@ -95,10 +95,12 @@ class MemoryOfflineEventQueue implements OfflineEventQueue {
   }
 
   @override
-  Future<int> deleteExpired(DateTime expireBefore) async {
-    final before = _events.length;
+  Future<List<QueuedMonitorEvent>> deleteExpired(DateTime expireBefore) async {
+    final dropped = _events
+        .where((event) => event.createdAt.isBefore(expireBefore))
+        .toList(growable: false);
     _events.removeWhere((event) => event.createdAt.isBefore(expireBefore));
-    return before - _events.length;
+    return dropped;
   }
 
   @override

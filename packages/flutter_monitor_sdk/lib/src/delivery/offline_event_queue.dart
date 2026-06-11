@@ -23,7 +23,7 @@ abstract class OfflineEventQueue {
 
   Future<List<QueuedMonitorEvent>> trimToLimits();
 
-  Future<int> deleteExpired(DateTime expireBefore);
+  Future<List<QueuedMonitorEvent>> deleteExpired(DateTime expireBefore);
 
   Future<OfflineQueueStats> stats();
 

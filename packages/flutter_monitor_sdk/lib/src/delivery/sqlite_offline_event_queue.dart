@@ -171,14 +171,25 @@ CREATE TABLE $_table (
   }
 
   @override
-  Future<int> deleteExpired(DateTime expireBefore) async {
+  Future<List<QueuedMonitorEvent>> deleteExpired(DateTime expireBefore) async {
     final fallback = _fallback;
     if (fallback != null) return fallback.deleteExpired(expireBefore);
-    return _requireDatabase().delete(
+    final db = _requireDatabase();
+    final records = await db.query(
       _table,
       where: 'createdAt < ?',
       whereArgs: <Object?>[expireBefore.millisecondsSinceEpoch],
     );
+    final dropped = records
+        .map(QueuedMonitorEvent.fromRecord)
+        .toList(growable: false);
+    if (dropped.isEmpty) return dropped;
+    await db.delete(
+      _table,
+      where: 'createdAt < ?',
+      whereArgs: <Object?>[expireBefore.millisecondsSinceEpoch],
+    );
+    return dropped;
   }
 
   @override

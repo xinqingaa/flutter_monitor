@@ -333,7 +333,47 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
 
   if (name === 'sdk.lifecycle.flush') {
     const success = readCanonicalPath(event, 'attributes.app.exit_flush.success');
-    return { ...base, title: success === false ? '退出前 flush 失败' : '退出前 flush', summaryItems: compactItems(statusLabel(status ?? '')) };
+    return { ...base, title: success === false ? '退出前发送回执失败' : '退出前发送回执', summaryItems: compactItems(statusLabel(status ?? '')) };
+  }
+
+  if (name === 'sdk.queue.drop') {
+    const reason = readStringPath(event, 'attributes.sdk.drop.reason');
+    const count = readCanonicalPath(event, 'attributes.sdk.drop.count');
+    const dropped = droppedEventSummaryItems(event);
+    return {
+      ...base,
+      kindLabel: 'SDK',
+      title: 'SDK 丢弃事件',
+      durationLabel: typeof count === 'number' ? `${Math.round(count)} 条` : undefined,
+      summaryItems: compactItems(reason ? `原因 ${reason}` : undefined, ...dropped),
+    };
+  }
+
+  if (name === 'sdk.retry.schedule') {
+    const reason = readStringPath(event, 'attributes.sdk.retry.reason');
+    const delay = formatNumberMetric(event, 'attributes.sdk.retry.delay_ms', 'ms');
+    return {
+      ...base,
+      kindLabel: 'SDK',
+      title: 'SDK 计划重试',
+      durationLabel: delay,
+      summaryItems: compactItems(reason ? `原因 ${reason}` : undefined),
+    };
+  }
+
+  if (name === 'sdk.output.flush') {
+    const reason = readStringPath(event, 'attributes.sdk.flush.reason');
+    const batchSize = readCanonicalPath(event, 'attributes.sdk.batch.size');
+    return {
+      ...base,
+      kindLabel: 'SDK',
+      title: status === 'ok' ? 'SDK 发送回执' : 'SDK 发送回执异常',
+      durationLabel: duration ?? formatNumberMetric(event, 'attributes.sdk.flush.duration_ms', 'ms'),
+      summaryItems: compactItems(
+        reason ? `触发 ${reason}` : undefined,
+        typeof batchSize === 'number' ? `Batch ${Math.round(batchSize)}` : undefined,
+      ),
+    };
   }
 
   if (kind === 'error') {
@@ -469,6 +509,32 @@ function formatNumberPayload(event: MonitorEvent, path: string, unit: string, di
   const value = readCanonicalPath(event, path);
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
   return `${value.toFixed(digits)}${unit}`;
+}
+
+function droppedEventSummaryItems(event: MonitorEvent): string[] {
+  const summary = readCanonicalPath(event, 'payload.dropped.summary');
+  if (Array.isArray(summary)) {
+    return summary
+      .map((item) => {
+        if (!isRecord(item)) return undefined;
+        const name = typeof item.name === 'string' ? item.name : undefined;
+        const count = typeof item.count === 'number' && Number.isFinite(item.count) ? item.count : undefined;
+        const route = typeof item.route === 'string' ? item.route : undefined;
+        const module = typeof item.module === 'string' ? item.module : undefined;
+        const scene = typeof item.scene === 'string' ? item.scene : undefined;
+        const context = [route, module && scene ? `${module}/${scene}` : module ?? scene].filter(Boolean).join(' · ');
+        return name ? `${name}${count !== undefined ? ` ${Math.round(count)}` : ''}${context ? ` · ${context}` : ''}` : undefined;
+      })
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 4);
+  }
+
+  const name = readStringPath(event, 'payload.signal.name');
+  return name ? [name] : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function compactActivity(value: string): string {
@@ -771,7 +837,7 @@ function nameDescription(name: string): string | undefined {
     'app.lifecycle': '生命周期变化',
     'app.foreground_duration': '前台停留时间',
     'app.background_duration': '后台停留时间',
-    'sdk.lifecycle.flush': '退出前 flush',
+    'sdk.lifecycle.flush': '退出前发送回执',
     'memory.sample': '内存采样',
     'http.client': '网络请求',
     'interaction.measure': '交互性能观测',

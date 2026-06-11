@@ -917,9 +917,9 @@ SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 - drop count、drop reason；
 - config version、config source、applied/expires time。
 
-采样、限流、队列满、payload 过大、服务端不可重试拒绝、SQLite store 损坏或不可用，都必须留下可回查的 SDK self-monitoring 证据。Workbench 和服务端只能消费这些 envelope，不得补写 SDK 字段或另建可靠性协议。
+采样、限流、队列满、payload 过大、服务端不可重试拒绝、重试超过上限、事件超过队列保留时间、SQLite store 损坏或不可用，都必须留下可回查的 SDK self-monitoring 证据。Workbench 和服务端只能消费这些 envelope，不得补写 SDK 字段或另建可靠性协议。
 
-默认保留 critical/high、error、失败 HTTP、严重卡顿、memory pressure 和启动 trace end。memory sample、成功 HTTP 和 low priority event 可按采样率丢弃；高频 `track` 按配置限流。被采样或限流的事件不进入 breadcrumb store 或 output，并通过 `sdk.queue.drop` self-monitoring envelope 留下可回查证据。remote config 只修改这些 policy 输入，不改变 pipeline 事件模型。
+默认保留 critical/high、error、失败 HTTP、严重卡顿、memory pressure 和启动 trace end。memory sample、成功 HTTP 和 low priority event 可按采样率丢弃；高频 `track` 按配置限流。被采样或限流的事件不进入 breadcrumb store 或 output，并通过 `sdk.queue.drop` self-monitoring envelope 留下可回查证据。drop envelope 的 payload 应使用 `dropped.summary` 按事件名、signal type、priority、source、route、module 和 scene 聚合被丢弃事件，不保存完整 envelope。remote config 只修改这些 policy 输入，不改变 pipeline 事件模型。
 
 ## 限制与降级策略
 

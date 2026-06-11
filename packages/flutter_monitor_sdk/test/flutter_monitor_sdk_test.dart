@@ -2,6 +2,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/delivery/memory_offline_event_queue.dart';
+import 'package:flutter_monitor_sdk/src/delivery/reliable_http_output.dart';
+import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart'
     show PageActivitySnapshot;
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
@@ -11,6 +14,8 @@ import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_snapshot.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   test('envelope builder keeps registered attributes and payload overflow', () {
@@ -186,6 +191,143 @@ void main() {
     },
   );
 
+  test(
+    'reliable output coalesces queue drops without recursive drop storm',
+    () async {
+      final output = ReliableHttpOutput(
+        endpoint: Uri.parse('https://monitor.example.com/events'),
+        mode: SdkOutputModes.production,
+        policy: const MonitorProductionPolicy(
+          maxQueueEvents: 1,
+          maxQueueBytes: 1024 * 1024,
+          quickFlushDelay: Duration(milliseconds: 1),
+        ),
+        queue: MemoryOfflineEventQueue(
+          policy: const MonitorProductionPolicy(
+            maxQueueEvents: 1,
+            maxQueueBytes: 1024 * 1024,
+          ),
+        ),
+      );
+      final healthEvents = <OutputHealthEvent>[];
+      output.onHealthEvent = healthEvents.add;
+      output.init();
+
+      output.add(_testEnvelope('evt_1', 'business.one'));
+      output.add(_testEnvelope('evt_2', 'business.two'));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(
+        healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
+        hasLength(1),
+      );
+      expect(
+        healthEvents.single.attributes[FieldPaths.sdkDropReason],
+        SdkDropReasons.queueFull,
+      );
+      expect(healthEvents.single.attributes[FieldPaths.sdkDropCount], 1);
+      expect(
+        healthEvents.single.payload[PayloadKeys.droppedSummary],
+        contains(
+          allOf(
+            containsPair('name', 'business.one'),
+            containsPair('signalType', SignalType.breadcrumb.toJson()),
+            containsPair('priority', EventPriority.normal.toJson()),
+            containsPair('source', 'test'),
+            containsPair('route', '/test'),
+            containsPair('module', 'test_module'),
+            containsPair('scene', 'test_scene'),
+          ),
+        ),
+      );
+      expect(
+        healthEvents.single.payload[PayloadKeys.droppedSummary],
+        contains(containsPair('count', 1)),
+      );
+
+      output.add(_testEnvelope('evt_drop', EventNames.sdkQueueDrop));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(
+        healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
+        hasLength(1),
+      );
+      output.dispose();
+    },
+  );
+
+  test('reliable output drops batch after max retry attempts', () async {
+    final output = ReliableHttpOutput(
+      endpoint: Uri.parse('https://monitor.example.com/events'),
+      mode: SdkOutputModes.production,
+      policy: const MonitorProductionPolicy(
+        maxRetryAttempts: 0,
+        quickFlushDelay: Duration(milliseconds: 1),
+      ),
+      queue: MemoryOfflineEventQueue(
+        policy: const MonitorProductionPolicy(maxRetryAttempts: 0),
+      ),
+      client: MockClient((_) async => http.Response('server error', 500)),
+    );
+    final healthEvents = <OutputHealthEvent>[];
+    output.onHealthEvent = healthEvents.add;
+    output.init();
+
+    output.add(_testEnvelope('evt_retry', 'business.retry'));
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await output.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+
+    final drop = healthEvents.singleWhere(
+      (event) => event.name == EventNames.sdkQueueDrop,
+    );
+    expect(
+      drop.attributes[FieldPaths.sdkDropReason],
+      SdkDropReasons.nonRetryableRejected,
+    );
+    expect(drop.attributes[FieldPaths.sdkDropCount], 1);
+    expect(
+      drop.payload[PayloadKeys.droppedSummary],
+      contains(containsPair('name', 'business.retry')),
+    );
+
+    output.dispose();
+  });
+
+  test('reliable output records expired queue drops', () async {
+    final output = ReliableHttpOutput(
+      endpoint: Uri.parse('https://monitor.example.com/events'),
+      mode: SdkOutputModes.production,
+      policy: const MonitorProductionPolicy(
+        maxEventAge: Duration.zero,
+        quickFlushDelay: Duration(milliseconds: 1),
+      ),
+      queue: MemoryOfflineEventQueue(
+        policy: const MonitorProductionPolicy(maxEventAge: Duration.zero),
+      ),
+    );
+    final healthEvents = <OutputHealthEvent>[];
+    output.onHealthEvent = healthEvents.add;
+    output.init();
+
+    output.add(_testEnvelope('evt_expired', 'business.expired'));
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await output.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+
+    final drop = healthEvents.singleWhere(
+      (event) => event.name == EventNames.sdkQueueDrop,
+    );
+    expect(drop.attributes[FieldPaths.sdkDropReason], SdkDropReasons.expired);
+    expect(drop.attributes[FieldPaths.sdkDropCount], 1);
+    expect(
+      drop.payload[PayloadKeys.droppedSummary],
+      contains(containsPair('name', 'business.expired')),
+    );
+
+    output.dispose();
+  });
+
   test('frame window collector emits page frame evidence', () {
     TestWidgetsFlutterBinding.ensureInitialized();
     final snapshots = <FrameStatsSnapshot>[];
@@ -295,4 +437,25 @@ void main() {
       MemoryPressureLevel.critical.toJson(),
     );
   });
+}
+
+Map<String, dynamic> _testEnvelope(String eventId, String name) {
+  return <String, dynamic>{
+    'schemaVersion': '1.0',
+    'eventId': eventId,
+    'timestamp': DateTime.now().toIso8601String(),
+    'signalType': name == EventNames.sdkQueueDrop ? 'sdk' : 'breadcrumb',
+    'name': name,
+    'level': 'info',
+    'status': 'ok',
+    'priority': 'normal',
+    'sessionId': 'ses_test',
+    'resource': const <String, Object?>{},
+    'context': const <String, Object?>{
+      'route': <String, Object?>{'name': '/test'},
+      'module': <String, Object?>{'name': 'test_module', 'scene': 'test_scene'},
+    },
+    'attributes': const <String, Object?>{},
+    'payload': const <String, Object?>{PayloadKeys.source: 'test'},
+  };
 }

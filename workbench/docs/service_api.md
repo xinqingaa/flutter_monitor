@@ -382,8 +382,8 @@ Workbench SDK 健康摘要只消费 `signalType=sdk` 的统一 envelope，不根
 
 | 字段 | 来源 / 计算口径 |
 |---|---|
-| `flushCount` | `name=sdk.output.flush`、`name=sdk.lifecycle.flush` 或 `name=sdk.output.flush_failed` 的数量。 |
-| `flushFailureCount` | 上述 flush 事件中 `status != ok` 的数量。 |
+| `flushCount` | `name=sdk.output.flush`、`name=sdk.lifecycle.flush` 或 `name=sdk.output.flush_failed` 的数量；UI 可展示为发送回执。 |
+| `flushFailureCount` | 上述发送回执事件中 `status != ok` 的数量。 |
 | `retryCount` | `name=sdk.retry.schedule` 的数量。 |
 | `dropCount` | `name=sdk.queue.drop` 的数量。 |
 | `droppedEventCount` | 对 `sdk.queue.drop` 的 `attributes["sdk.drop.count"]` 求和。 |
@@ -395,6 +395,8 @@ Workbench SDK 健康摘要只消费 `signalType=sdk` 的统一 envelope，不根
 | `retryReasonSummaries` | 按 `attributes["sdk.retry.reason"]` 分组，数值使用 `attributes["sdk.retry.delay_ms"]`。 |
 | `flushReasonSummaries` | 按 `attributes["sdk.flush.reason"]` 分组，数值使用 `attributes["sdk.flush.duration_ms"]`。 |
 | `outputModeSummaries` | 按 `attributes["sdk.output.mode"]` 分组。 |
+
+`sdk.queue.drop` 可在 raw envelope 的 `payload["dropped.summary"]` 中携带被丢弃事件的安全聚合摘要，包括事件名、signal type、priority、source、route、module、scene 和 count。Workbench service 不根据该字段重写 drop count；web 可读取它展示“丢弃了哪些事件”，并兼容旧的 `payload["signal.name"]`。
 
 `events` 是轻量 view model，不是完整 envelope。字段来自：
 

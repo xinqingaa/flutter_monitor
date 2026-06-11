@@ -168,6 +168,20 @@ class EventPipeline {
       payload: <String, Object?>{
         PayloadKeys.signalName: dropped.name,
         PayloadKeys.source: dropped.signalType.toJson(),
+        PayloadKeys.droppedSummary: <Object?>[
+          <String, Object?>{
+            'name': dropped.name,
+            'signalType': dropped.signalType.toJson(),
+            'priority': dropped.priority.toJson(),
+            if (dropped.context.route?.name != null)
+              'route': dropped.context.route!.name,
+            if (dropped.context.module?.name != null)
+              'module': dropped.context.module!.name,
+            if (dropped.context.module?.scene != null)
+              'scene': dropped.context.module!.scene,
+            'count': 1,
+          },
+        ],
         if (decision.sampleRate != null) 'sample.rate': decision.sampleRate,
       },
     );

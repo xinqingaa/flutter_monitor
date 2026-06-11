@@ -16,6 +16,7 @@ abstract final class PayloadKeys {
   static const traceId = 'traceId';
   static const spanId = 'spanId';
   static const signalName = 'signal.name';
+  static const droppedSummary = 'dropped.summary';
   static const isAppExiting = 'isAppExiting';
 
   static const type = 'type';

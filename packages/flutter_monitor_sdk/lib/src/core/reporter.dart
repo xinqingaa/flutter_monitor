@@ -1290,7 +1290,10 @@ class Reporter {
         await flush(isAppExiting: state == LifecycleStates.detached);
         reportSdkEvent(
           EventNames.sdkLifecycleFlush,
-          attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: true},
+          attributes: <String, Object?>{
+            FieldPaths.sdkOutputMode: _config.mode.name,
+            FieldPaths.appExitFlushSuccess: true,
+          },
           payload: <String, Object?>{
             PayloadKeys.lifecycleTriggerState: state,
             if (contextState != null)
@@ -1302,7 +1305,10 @@ class Reporter {
           EventNames.sdkLifecycleFlush,
           level: EventLevel.warning,
           status: EventStatus.error,
-          attributes: <String, Object?>{FieldPaths.appExitFlushSuccess: false},
+          attributes: <String, Object?>{
+            FieldPaths.sdkOutputMode: _config.mode.name,
+            FieldPaths.appExitFlushSuccess: false,
+          },
           payload: <String, Object?>{
             PayloadKeys.lifecycleTriggerState: state,
             if (contextState != null)

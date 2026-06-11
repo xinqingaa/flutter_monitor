@@ -38,39 +38,39 @@ MonitorMode buildMonitorMode() {
   //   endpoint: Uri.parse(monitorServerUrl),
   // );
 
-  // 3. 生产默认策略：SDK 内置 batch、retry、offline queue、sampling。
-  final monitorMode = MonitorMode.production(
-    endpoint: Uri.parse(productionMonitorUrl),
-  );
+  // 3. 生产默认策略：队列 5000/8MB、flush 15s、成功 HTTP 20%、memory sample 10%。
+  // final monitorMode = MonitorMode.production(
+  //   endpoint: Uri.parse(productionMonitorUrl),
+  // );
 
-  // 4. 生产灰度策略：更小队列、更低采样、更慢 flush。
+  // 4. 生产灰度策略：队列更小、flush 更慢、采样更低，适合首轮灰度。
   // final monitorMode = MonitorMode.production(
   //   endpoint: Uri.parse(productionMonitorUrl),
   //   policy: MonitorProductionPolicy.conservative(),
   // );
 
-  // 5. 生产鉴权策略：发送前获取 token。
+  // 5. 生产鉴权策略：默认生产策略 + 发送前获取 token。
   // final monitorMode = MonitorMode.production(
   //   endpoint: Uri.parse(productionMonitorUrl),
   //   authToken: monitorAuthToken,
   // );
 
-  // 6. 生产压测策略：高采样、小间隔，适合验证队列和 Workbench 展示。
-  // final monitorMode = MonitorMode.production(
-  //   endpoint: Uri.parse(productionMonitorUrl),
-  //   policy: const MonitorProductionPolicy(
-  //     maxQueueEvents: 12000,
-  //     maxQueueBytes: 16 * 1024 * 1024,
-  //     maxBatchEvents: 80,
-  //     maxBatchBytes: 768 * 1024,
-  //     flushInterval: Duration(seconds: 5),
-  //     quickFlushDelay: Duration(milliseconds: 800),
-  //     successfulHttpSampleRate: 1,
-  //     lowPrioritySampleRate: 1,
-  //     memorySampleRate: 1,
-  //     maxTrackEventsPerMinute: 600,
-  //   ),
-  // );
+  // 6. 生产压测策略：全量成功 HTTP / memory / low priority，短 flush，高限流。
+  final monitorMode = MonitorMode.production(
+    endpoint: Uri.parse(productionMonitorUrl),
+    policy: const MonitorProductionPolicy(
+      maxQueueEvents: 12000,
+      maxQueueBytes: 16 * 1024 * 1024,
+      maxBatchEvents: 80,
+      maxBatchBytes: 768 * 1024,
+      flushInterval: Duration(seconds: 5),
+      quickFlushDelay: Duration(milliseconds: 800),
+      successfulHttpSampleRate: 1,
+      lowPrioritySampleRate: 1,
+      memorySampleRate: 1,
+      maxTrackEventsPerMinute: 600,
+    ),
+  );
 
   return monitorMode;
 }

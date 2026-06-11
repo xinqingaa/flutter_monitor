@@ -118,7 +118,7 @@ class MonitorProductionPolicy {
   /// 单次上报请求超时时间。
   final Duration requestTimeout;
 
-  /// 同一批事件最多重试次数，超过后按策略丢弃。
+  /// 同一批事件最多重试次数，超过后丢弃该 batch 并记录 `sdk.queue.drop`。
   final int maxRetryAttempts;
 
   /// 重试退避的基础延迟。

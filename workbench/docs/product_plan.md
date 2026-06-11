@@ -318,8 +318,9 @@ Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view m
 - `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init` 和启动完成前的启动期 `memory.sample`。`app.first_frame_ms` 是启动 trace 上的字段，不作为独立 timeline 事件展示。
 - `页面 ${route}`：只由明确页面导航可见证据开启，即 `page.visit` 的 `event.phase=start`、`route.push`，或 `page.view` 且 `page.active_phase=page.resume`、`page.active_trigger=route_pop`。同一 `page.instance_id + traceId` 可以有多个导航可见区段：首次进入区段由 `page.enter + route_push` 表达，返回上一级后的新区段由 `page.resume + route_pop` 表达；后续 HTTP、业务足迹、交互性能、错误、卡顿和页面停留归入最近一个可见区段。归属优先使用 `page.instance_id + traceId`，业务/交互/请求/错误/卡顿节点缺少 `page.instance_id` 时可以用同一页面 `traceId` 回挂。例如 `/detail?id=2 -> /complex_list -> 返回 /detail?id=2` 时，返回后的 `interaction.measure` 应显示在 `页面 /detail?id=2 · 返回后继续` 区段，而不是回挂到首次进入区段。`page.resume + lifecycle_resumed` 只表示 App 前台恢复，不开启页面区段。
 - 页面区段标题可根据内容追加诊断语义，但不改变底层数据归属。优先级为：错误/业务失败、交互性能、业务操作、失败请求、卡顿、内存/生命周期。例如 `页面 /detail?id=1 · 业务失败 · 业务操作`、`页面 /detail?id=2 · 交互性能`。
-- `页面活动 ${route}`：只用于无法绑定到具体页面实例或不应开启页面区段的当前 route 非页面事件窗口，包括跨页面生命周期、热重启、SDK 自监控、前台恢复 `page.resume + lifecycle_resumed`、缺少 `page.instance_id` 的内存采样等。具体问题类型仍放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
+- `页面活动 ${route}`：只用于无法绑定到具体页面实例或不应开启页面区段的当前 route 非页面事件窗口，包括跨页面生命周期、热重启、前台恢复 `page.resume + lifecycle_resumed`、缺少 `page.instance_id` 的内存采样等。具体问题类型仍放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
 - `会话活动`：缺少 route 上下文的非页面事件窗口。
+- `SDK 活动`：`signalType=sdk` 的自监控窗口，例如 `sdk.queue.drop`、`sdk.retry.schedule` 和 `sdk.output.flush`。这类事件不应因为缺少 route 被展示为“未知页面”；如果区段内 SDK 事件带有 route，应展示为 `SDK 活动 · ${route}`。`sdk.queue.drop` 应展示 drop reason、drop count 和 `payload["dropped.summary"]` 中的被丢弃事件摘要。
 
 页面离开与停留的展示按语义区分：`route.pop` 是导航返回动作，`page.visit end` 是被 pop 页面实例闭合，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时和首帧耗时读取 `page.load` 上的 `page.load_ms` / `page.first_frame_ms`；页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`。同 route 多次进入时，Workbench 内部可用 `page.instance_id + traceId` 合并事件，但主界面优先展示 `context.route.fullName`，实例 id 只在 Inspector/raw JSON 诊断中出现。
 
@@ -405,7 +406,7 @@ Workbench 第一版 UI 应优先使用“展示名 + 原始字段口径”的双
 | `businessFailureCount` | 业务失败 | 当前范围内 `business.result=failed` 的业务动作或交互观测数量，用于诊断业务路径，不作为崩溃/异常统计 |
 | `sdk.drop.count` | SDK 丢弃事件 | 当前范围内 SDK 采样、限流、队列满、payload 过大或不可重试拒绝导致的丢弃事件数 |
 | `sdk.retry.count` | SDK 重试 | 当前范围内 SDK delivery 计划重试的次数 |
-| `sdk.flushFailureCount` | SDK Flush 失败 | 当前范围内 `sdk.output.flush` 或 `sdk.lifecycle.flush` 未成功的次数 |
+| `sdk.flushFailureCount` | SDK 发送失败 | 当前范围内 `sdk.output.flush` 或 `sdk.lifecycle.flush` 未成功的次数 |
 | `sdk.queue.length` | SDK 队列长度 | 最近一条 SDK self-monitoring envelope 携带的队列事件数 |
 | `affectedSessionCount` | 问题 Session | 受影响 session 数 |
 | `affectedUserCount` | 影响用户 | 受影响用户数；无 `userId` 时不展示或显示不可用 |

@@ -378,6 +378,8 @@ Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运�
 - 413：先拆分 batch 或裁剪单事件 payload，仍失败则按 priority/drop policy 丢弃；
 - 429：按 `retryAfterMs` 或 `Retry-After` 计划重试；
 - 5xx、超时、断网：指数退避加 jitter，保留队列。
+- 超过 `maxRetryAttempts`：ack 队列中的 batch，并按 `non_retryable_rejected` 记录 drop；
+- 超过 `maxEventAge`：从队列移除，并按 `expired` 记录 drop。
 
 SDK self-monitoring 使用统一 `sdk.*` envelope 上报，字段包括 `sdk.output.mode`、`sdk.queue.*`、`sdk.batch.*`、`sdk.flush.*`、`sdk.retry.*`、`sdk.drop.*` 和 `sdk.config.*`。服务端和 Workbench 不应根据 HTTP 响应或 UI 状态重新发明另一套 drop/retry/queue 协议。
 

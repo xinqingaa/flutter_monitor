@@ -27,6 +27,17 @@ class QueuedMonitorEvent {
   String get traceId => _stringValue('traceId') ?? '';
   String get name => _stringValue('name') ?? '';
   String get signalType => _stringValue('signalType') ?? '';
+  String get routeName => _nestedString('context', 'route', 'name') ?? '';
+  String get moduleName => _nestedString('context', 'module', 'name') ?? '';
+  String get moduleScene => _nestedString('context', 'module', 'scene') ?? '';
+  String get source {
+    final payload = envelope['payload'];
+    if (payload is Map) {
+      final value = payload[PayloadKeys.source];
+      if (value is String) return value;
+    }
+    return '';
+  }
 
   QueuedMonitorEvent copyWith({
     Map<String, dynamic>? envelope,
@@ -97,6 +108,15 @@ class QueuedMonitorEvent {
   String? _stringValue(String key) {
     final value = envelope[key];
     return value is String ? value : null;
+  }
+
+  String? _nestedString(String first, String second, String third) {
+    final firstValue = envelope[first];
+    if (firstValue is! Map) return null;
+    final secondValue = firstValue[second];
+    if (secondValue is! Map) return null;
+    final thirdValue = secondValue[third];
+    return thirdValue is String && thirdValue.isNotEmpty ? thirdValue : null;
   }
 }
 

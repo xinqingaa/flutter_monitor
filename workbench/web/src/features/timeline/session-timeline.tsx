@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, AlertTriangle, AppWindow, ChevronDown, ChevronRight, Clock3, Rocket } from 'lucide-react';
+import { Activity, AlertTriangle, AppWindow, ChevronDown, ChevronRight, Clock3, Rocket, ShieldCheck } from 'lucide-react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -84,7 +84,7 @@ export function SessionTimeline({
       <CardHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <CardTitle>会话链路</CardTitle>
-          <CardDescription>时间自上而下，启动、页面和会话活动形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
+          <CardDescription>时间自上而下，启动、页面、会话活动和 SDK 活动形成区段；阶段、请求、错误、卡顿和足迹挂在所属区段下。</CardDescription>
         </div>
         <IconTooltipButton
           type="button"
@@ -138,11 +138,13 @@ function SegmentView({
   selectedNodeRef: React.MutableRefObject<HTMLButtonElement | null>;
   onSelectEvent?: (event: MonitorEvent) => void;
 }) {
-  const Icon = segment.kind === 'startup' ? Rocket : segment.kind === 'activity' ? Activity : AppWindow;
+  const Icon = segment.kind === 'startup' ? Rocket : segment.kind === 'sdk' ? ShieldCheck : segment.kind === 'activity' ? Activity : AppWindow;
   const issueTone = segment.severity === 'error' ? 'danger' : 'warn';
-  const accentClass = segment.severity === 'error' ? 'border-l-red-400' : segment.severity === 'warn' ? 'border-l-amber-400' : segment.kind === 'startup' ? 'border-l-teal-400' : segment.kind === 'activity' ? 'border-l-violet-300' : 'border-l-blue-300';
+  const accentClass = segment.severity === 'error' ? 'border-l-red-400' : segment.severity === 'warn' ? 'border-l-amber-400' : segment.kind === 'startup' ? 'border-l-teal-400' : segment.kind === 'sdk' ? 'border-l-zinc-400' : segment.kind === 'activity' ? 'border-l-violet-300' : 'border-l-blue-300';
   const heading = segment.kind === 'startup'
     ? '启动链路'
+    : segment.kind === 'sdk'
+      ? segment.title
     : segment.kind === 'activity'
       ? segment.title
       : `页面 ${segment.title}`;
@@ -157,6 +159,7 @@ function SegmentView({
             segment.severity === 'error' && 'border-red-200 bg-red-50 text-red-600',
             segment.severity === 'warn' && 'border-amber-200 bg-amber-50 text-amber-700',
             segment.severity === 'normal' && segment.kind === 'startup' && 'border-teal-200 bg-teal-50 text-teal-700',
+            segment.severity === 'normal' && segment.kind === 'sdk' && 'border-zinc-200 bg-zinc-50 text-zinc-700',
             segment.severity === 'normal' && segment.kind === 'activity' && 'border-violet-200 bg-violet-50 text-violet-700',
             segment.severity === 'normal' && segment.kind === 'page' && 'border-blue-200 bg-blue-50 text-blue-700',
           )}>

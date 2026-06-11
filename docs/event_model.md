@@ -292,7 +292,7 @@ SDK 对业务侧只暴露三种稳定输出模式，普通接入方不需要分�
 | `sdk.retry.delay_ms` | duration_ms | safe | 是 | 下次重试延迟 |
 | `sdk.retry.reason` | string | safe | 是 | 重试原因，例如 `timeout`、`offline`、`rate_limited`、`server_error`、`partial_retryable` |
 | `sdk.drop.count` | number | safe | 是 | 本次策略动作丢弃的事件数 |
-| `sdk.drop.reason` | string | safe | 是 | 丢弃原因，例如 `sampled_out`、`rate_limited`、`queue_full`、`payload_too_large`、`non_retryable_rejected`、`store_corrupted` |
+| `sdk.drop.reason` | string | safe | 是 | 丢弃原因，例如 `sampled_out`、`rate_limited`、`queue_full`、`payload_too_large`、`non_retryable_rejected`、`store_corrupted`、`expired` |
 | `sdk.config.version` | string | safe | 是 | 当前本地或 remote config 版本 |
 | `sdk.config.source` | string | safe | 是 | 配置来源：`default`、`local`、`remote`、`cached_remote` |
 | `sdk.config.applied_at` | timestamp | safe | 否 | 配置生效时间 |
@@ -478,16 +478,18 @@ Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中
 | `app.foreground_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.state` | 一段前台 activity window 的持续时间 |
 | `app.background_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.previousState` | 一段后台停留时间，可辅助 hot start 和 session 切分 |
 | `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot`、`app.start.end_reason` | 后台恢复到前台后的热重启链路，`durationMs` 不得表示后台停留间隔 |
-| `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果；成功为 normal，失败为 high |
-| `sdk.output.flush` | `sdk` | `instant` | `ok` / `error` / `timeout` | `normal` / `high` | `sdk.output.mode`、`sdk.flush.reason`、`sdk.batch.size`、`sdk.flush.duration_ms` | output flush 结果，包含 production/localLive batch 发送状态 |
+| `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.output.mode`、`app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果；成功为 normal，失败为 high |
+| `sdk.output.flush` | `sdk` | `instant` | `ok` / `error` / `timeout` | `normal` / `high` | `sdk.output.mode`、`sdk.flush.reason`、`sdk.batch.size`、`sdk.flush.duration_ms` | output flush 发送回执，表示某个 batch 已完成发送 |
 | `sdk.queue.drop` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.drop.reason`、`sdk.drop.count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | 采样、限流、队列满、payload 过大、不可重试拒绝等导致的丢弃证据 |
 | `sdk.queue.state` | `sdk` | `instant` | `ok` / `warning` / `error` | `normal` / `high` | `sdk.queue.length`、`sdk.queue.bytes`、`sdk.output.mode` | 队列健康状态；损坏、反序列化失败或磁盘不可用时应为 high |
 | `sdk.retry.schedule` | `sdk` | `instant` | `ok` / `warning` | `normal` | `sdk.retry.count`、`sdk.retry.delay_ms`、`sdk.retry.reason` | 429、5xx、超时、断网或部分可重试失败后的下一次发送计划 |
 | `sdk.config.applied` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.config.version`、`sdk.config.source` | 本地或 remote config 生效、过期、失败降级的证据 |
 
-`sdk.lifecycle.flush` 是 SDK self-monitoring 事件，不是业务事件。触发状态、flush 错误摘要等诊断信息可放在 `payload`，但 `app.exit_flush.success` 必须放在 attributes，方便 DevTools 和服务端判断 flush 是否成功。
+`sdk.lifecycle.flush` 是 SDK self-monitoring 事件，不是业务事件。触发状态、flush 错误摘要等诊断信息可放在 `payload`，但 `sdk.output.mode` 和 `app.exit_flush.success` 必须放在 attributes，方便 DevTools 和服务端判断 flush 是否成功。
 
 所有 SDK self-monitoring 事件也必须进入统一 event envelope。它们可以缺少普通业务 trace，但必须尽量保留 `sessionId`、`resource.app.*`、`sdk.output.mode` 和可回查的 `eventId`。Workbench 和服务端不得根据 UI 展示重新计算另一套 drop/retry/queue 字段。
+
+`sdk.queue.drop` 的 `payload["dropped.summary"]` 可记录被丢弃事件的安全聚合摘要。SDK 不写入完整 envelope，不复制 attributes 或业务 payload；只按 `name`、`signalType`、`priority`、`source` 和安全上下文 `route`、`module`、`scene` 聚合并记录 `count`，用于回答“哪些事件在哪个页面/模块被丢弃”。采样/限流丢弃可同时保留历史字段 `payload["signal.name"]`、`payload["source"]` 和 `payload["sample.rate"]`，Workbench 应优先读取 `dropped.summary`，再兼容旧字段。
 
 ### Native Bridge 事件
 

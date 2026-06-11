@@ -14,7 +14,7 @@ import {
   isStartupTraceEnd,
 } from '../performance/performance-evidence';
 
-export type SegmentKind = 'startup' | 'page' | 'activity';
+export type SegmentKind = 'startup' | 'page' | 'activity' | 'sdk';
 export type SegmentSeverity = 'normal' | 'warn' | 'error';
 
 export interface TimelineSegment {
@@ -55,6 +55,7 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
 
   for (const event of prepared) {
     const route = realRoute(event);
+    const isSdk = isSdkTimelineEvent(event);
     const isEntry = isPageEntry(event);
     const isResume = isPageResume(event);
 
@@ -71,14 +72,14 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
 
     if (isEntry || isResume) seenPageEntry = true;
 
-    const targetPageSegment = isResume ? undefined : pageSegmentForEvent(event, pageSegments);
+    const targetPageSegment = isSdk ? undefined : isResume ? undefined : pageSegmentForEvent(event, pageSegments);
     if (targetPageSegment && targetPageSegment !== current) {
       targetPageSegment.events.push(event);
       continue;
     }
 
     if (!current) {
-      current = makeRaw(isEntry || isResume ? 'page' : 'activity', route, event);
+      current = makeRaw(isSdk ? 'sdk' : isEntry || isResume ? 'page' : 'activity', route, event);
       if (isResume) current.resumed = true;
       registerPageSegment(current, pageSegments);
       raw.push(current);
@@ -95,13 +96,16 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
       const leavesPageForActivity = current.kind === 'page' && !isPageTimelineEvent(event) && !belongsToCurrentPage;
       const activityRouteChanged = current.kind === 'activity' && route !== undefined && route !== current.route;
 
-      if (explicitNewPage || leavesStartupViaPage) {
+      if (isSdk && current.kind !== 'sdk') {
+        current = makeRaw('sdk', undefined, event);
+        raw.push(current);
+      } else if (explicitNewPage || leavesStartupViaPage) {
         current = makeRaw('page', route ?? current.route, event);
         current.pageKey = entryPageKey;
         current.resumed = isResume;
         registerPageSegment(current, pageSegments);
         raw.push(current);
-      } else if (leavesPageForActivity || activityRouteChanged) {
+      } else if (!isSdk && (leavesPageForActivity || activityRouteChanged)) {
         current = makeRaw('activity', route ?? current.route, event);
         raw.push(current);
       }
@@ -177,7 +181,7 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
   const first = events[0];
   const issueCount = events.filter((event) => issueLabels(event).length > 0 || eventKind(event) === 'error').length;
   const severity = segmentSeverity(events);
-  const route = segment.route ?? events.map(realRoute).find(Boolean);
+  const route = segment.route ?? events.map(segmentRoute).find(Boolean);
 
   return {
     id: `${index}-${first?.eventId ?? 'segment'}`,
@@ -205,6 +209,7 @@ export function firstTimelineEvent(events: MonitorEvent[]): MonitorEvent | undef
 function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string | undefined): string {
   if (kind === 'startup') return '启动';
   if (kind === 'page') return [route ?? '页面', pageResumed(events) ? '返回后继续' : undefined, ...pageDiagnosticLabels(events)].filter(isString).join(' · ');
+  if (kind === 'sdk') return [`页面 ${route}`,  'SDK 活动'].filter(isString).join(' · ');
   return route ? `页面活动 ${route}` : '会话活动';
 }
 
@@ -259,6 +264,11 @@ function segmentSummaryItems(kind: SegmentKind, events: MonitorEvent[]): string[
     .filter((event) => event.name === 'app.background_duration' && typeof event.durationMs === 'number')
     .map((event) => event.durationMs as number);
   const memorySamples = events.filter((event) => event.name === 'memory.sample').length;
+  const sdkDrops = events
+    .filter((event) => event.name === 'sdk.queue.drop')
+    .reduce((sum, event) => sum + (numberAttribute(event, 'sdk.drop.count') ?? 1), 0);
+  const sdkRetries = events.filter((event) => event.name === 'sdk.retry.schedule').length;
+  const sdkFlushes = events.filter((event) => event.name === 'sdk.output.flush' || event.name === 'sdk.lifecycle.flush').length;
   const nativeLifecycle = events.filter(isNativeLifecycleEvent).length;
   const nativeMemory = events.filter(isNativeMemoryEvent).length;
   const lifecycle = events.filter((event) => event.name === 'app.lifecycle').length;
@@ -267,6 +277,9 @@ function segmentSummaryItems(kind: SegmentKind, events: MonitorEvent[]): string[
   const slowInteractions = events.filter(isSlowInteractionEvent).length;
 
   const items: string[] = [...performanceItems];
+  if (sdkDrops > 0) items.push(`丢弃 ${sdkDrops}`);
+  if (sdkRetries > 0) items.push(`重试 ${sdkRetries}`);
+  if (sdkFlushes > 0) items.push(`发送回执 ${sdkFlushes}`);
   if (interactions > 0) items.push(`交互 ${interactions}`);
   if (slowInteractions > 0) items.push(`慢交互 ${slowInteractions}`);
   if (business > 0) items.push(`业务操作 ${business}`);
@@ -380,6 +393,10 @@ function isPageTimelineEvent(event: MonitorEvent): boolean {
     event.name === 'page.view' || event.name === 'page.stay';
 }
 
+function isSdkTimelineEvent(event: MonitorEvent): boolean {
+  return event.signalType === 'sdk';
+}
+
 function eventBelongsToPageSegment(event: MonitorEvent, segment: RawSegment): boolean {
   if (segment.kind !== 'page') return false;
   if (isLifecycleResumePageView(event)) return false;
@@ -407,8 +424,17 @@ function isInitialStartupEvent(
 }
 
 function realRoute(event: MonitorEvent): string | undefined {
+  if (isSdkTimelineEvent(event)) return undefined;
+  return routeForDisplay(event);
+}
+
+function segmentRoute(event: MonitorEvent): string | undefined {
+  return routeForDisplay(event);
+}
+
+function routeForDisplay(event: MonitorEvent): string | undefined {
   const route = routeDisplayName(event);
-  return route && route !== '-' ? route : undefined;
+  return route && route !== '-' && route !== '未知页面' ? route : undefined;
 }
 
 function eventPhase(event: MonitorEvent): string | undefined {
