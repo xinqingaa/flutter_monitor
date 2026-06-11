@@ -13,8 +13,6 @@ import 'package:flutter_monitor_sdk/src/utils/monitored_http_client.dart';
 export 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 export 'package:flutter_monitor_sdk/src/context/monitor_initial_context.dart';
 export 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
-export 'package:flutter_monitor_sdk/src/modules/jank_monitor.dart'
-    show JankConfig;
 export 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart'
     show MonitorMeasureHandle;
 export 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
@@ -57,6 +55,13 @@ class FlutterMonitorSDK {
   /// 页面停留、页面加载、route stack 相关上下文，并把后续 HTTP、卡顿、
   /// 错误等事件关联到当前页面 trace。
   ///
+  /// 用法：
+  /// ```dart
+  /// MaterialApp(
+  ///   navigatorObservers: [FlutterMonitorSDK.routeObserver],
+  /// )
+  /// ```
+  ///
   /// 必须在 [init] 成功后获取，否则会抛出 [SDKNotInitializedException]。
   static RouteObserver<PageRoute<dynamic>> get routeObserver {
     if (!_isInitialized) {
@@ -67,7 +72,7 @@ class FlutterMonitorSDK {
     return MonitorBinding.instance.performanceMonitor.routeObserver;
   }
 
-  /// 创建一个 Dio interceptor，用于自动采集 Dio 请求。
+  /// 创建 Dio interceptor，用于自动采集 Dio 请求。
   ///
   /// 每次调用都会返回新的 interceptor 实例。建议在 [init] 完成后调用，
   /// 再添加到业务自己的 Dio 实例中：
@@ -78,6 +83,8 @@ class FlutterMonitorSDK {
   ///
   /// 采集结果会以 `http.client` span 进入统一 envelope，并自动关联当前
   /// session、trace、route、context 和 breadcrumbs。
+  ///
+  /// 参数：无。Dio 实例仍由业务方持有和配置。
   static Interceptor createDioInterceptor() {
     if (!_isInitialized) {
       throw SDKNotInitializedException(
@@ -87,7 +94,7 @@ class FlutterMonitorSDK {
     return MonitorDioInterceptor(MonitorBinding.instance.reporter);
   }
 
-  /// 创建一个受监控的 `package:http` client。
+  /// 创建受监控的 `package:http` client。
   ///
   /// 如果传入 [inner]，SDK 会包装该 client；否则内部创建默认 `http.Client`。
   /// 调用方仍然负责在不再使用时关闭返回的 client。
@@ -108,7 +115,10 @@ class FlutterMonitorSDK {
   /// 标记指定 route 的页面首帧已渲染完成。
   ///
   /// RouteObserver 默认会在下一帧自动兜底完成页面首帧统计。业务方只有在需要
-  /// 更明确地标记页面关键内容完成时才调用该方法。传入值应与 route name 保持一致。
+  /// 更明确地标记页面关键内容完成时才调用该方法。
+  ///
+  /// 参数：
+  /// - [routeName]：页面 route 名，应与 `RouteSettings.name` 保持一致。
   static void markPageRendered(String routeName) {
     if (!_isInitialized) return;
     MonitorBinding.instance.performanceMonitor.routeObserver.onPageRendered(
@@ -126,6 +136,12 @@ class FlutterMonitorSDK {
   /// App、设备、runtime、route 等上下文优先由 SDK 自动采集。
   ///
   /// 只传入某个 scope 的字段时，只会更新该 scope；未传入的 scope 保持不变。
+  ///
+  /// 参数分组：
+  /// - 用户：[userId]、[userType]、[userTags]、[cohort]。
+  /// - 模块：[moduleName]、[moduleScene]。
+  /// - 发布：[releaseId]、[featureFlags]、[experiments]。
+  /// - 网络：[networkType]、[isWeakNetwork]。
   static void setContext({
     String? userId,
     String? userType,
@@ -173,6 +189,13 @@ class FlutterMonitorSDK {
   /// [action] 必须是稳定低基数字符串，例如 `checkout.submit`，不要包含订单号、
   /// 用户 ID 等动态值。[properties] 只作为本次动作详情进入 `payload.properties`，
   /// 默认不作为聚合索引。
+  ///
+  /// 参数：
+  /// - [action]：稳定动作名，例如 `checkout.submit`。
+  /// - [result]：动作结果，默认 unknown。
+  /// - [target]：可选 UI 目标，例如按钮或列表项名称。
+  /// - [level] / [error]：动作异常时补充级别和错误摘要。
+  /// - [properties]：本次动作详情，会经过隐私过滤。
   static void track({
     required String action,
     MonitorTrackResult result = MonitorTrackResult.unknown,
@@ -201,6 +224,13 @@ class FlutterMonitorSDK {
   /// 该 API 不接收回调函数，也不执行正式业务逻辑。common 模式只需调用一次，
   /// SDK 会围绕调用点自动观察短窗口；stage 模式返回 handle，业务在明确完成或
   /// 取消时调用 [MonitorMeasureHandle.finish] / [MonitorMeasureHandle.cancel]。
+  ///
+  /// 参数：
+  /// - [action]：稳定交互名。
+  /// - [mode]：common 自动闭合，stage 由业务显式 finish/cancel。
+  /// - [target]：可选 UI 目标。
+  /// - [properties]：交互详情。
+  /// - [observeFor] / [timeout]：覆盖默认观测窗口和超时。
   static MonitorMeasureHandle measure({
     required String action,
     MonitorMeasureMode mode = MonitorMeasureMode.common,
@@ -222,7 +252,7 @@ class FlutterMonitorSDK {
     );
   }
 
-  /// 手动记录一个业务侧已捕获错误。
+  /// 手动记录业务侧已捕获错误。
   ///
   /// 自动错误采集覆盖 Flutter framework error 和 Dart uncaught error；业务已经
   /// catch 住但仍希望进入 session timeline 的错误，应通过该方法上报。
@@ -230,6 +260,13 @@ class FlutterMonitorSDK {
   /// 该方法会生成标准 `signalType = error` envelope，携带当前 context、trace
   /// 和 recent breadcrumbs。[type] 应是稳定错误类型；[properties] 放本次错误
   /// 的诊断详情，仍会经过隐私过滤。
+  ///
+  /// 参数：
+  /// - [error] / [stackTrace]：业务捕获的异常和堆栈。
+  /// - [type]：稳定错误类型，例如 `PaymentException`。
+  /// - [handled]：是否已被业务捕获处理。
+  /// - [level]：错误级别，默认 error。
+  /// - [properties]：本次错误的诊断详情。
   static void recordError(
     Object error, {
     StackTrace? stackTrace,
@@ -270,10 +307,29 @@ class FlutterMonitorSDK {
 
   /// 初始化 Flutter Monitor SDK。
   ///
-  /// [config] 提供采集开关、输出、队列、native bridge 等配置。
-  /// [appStartTime] 是 App 启动起点，用于冷启动 trace。
-  /// [initialContext] 用于在首批 bootstrap 事件发出前写入已知上下文，
-  /// 例如 QA 用户、发布批次、feature flags、初始模块或网络状态。
+  /// 应在 `main()` 中、`runApp` 前调用。SDK 会创建 reporter/pipeline，应用
+  /// 初始上下文，解析设备和 native bootstrap resource，然后启动错误、启动、
+  /// 页面、卡顿、memory、lifecycle 等核心采集。
+  ///
+  /// 用法：
+  /// ```dart
+  /// final appStartTime = DateTime.now();
+  /// WidgetsFlutterBinding.ensureInitialized();
+  ///
+  /// await FlutterMonitorSDK.init(
+  ///   config: MonitorConfig(
+  ///     appInfo: AppInfo(appKey: 'my_app'),
+  ///     mode: MonitorMode.localLive(endpoint: Uri.parse(serverUrl)),
+  ///   ),
+  ///   appStartTime: appStartTime,
+  /// );
+  /// ```
+  ///
+  /// 参数：
+  /// - [config]：SDK 初始化主配置，包含 App 信息、输出模式、采集策略和 native bridge。
+  /// - [appStartTime]：App 启动起点，用于冷启动 trace 和 SDK init span。
+  /// - [initialContext]：首批 bootstrap 事件前写入的已知上下文，例如 QA 用户、
+  ///   发布批次、feature flags、初始模块或网络状态。
   ///
   /// 同一进程内重复调用会直接返回，不会重新初始化内部绑定。
   static Future<void> init({

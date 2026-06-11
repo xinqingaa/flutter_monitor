@@ -134,10 +134,10 @@ void main() {
       TestWidgetsFlutterBinding.ensureInitialized();
       final snapshots = <InteractionMeasureSnapshot>[];
       final collector = InteractionMeasureCollector(
-        config: const MonitorInteractionConfig(
+        config: const MonitorPerformanceConfig(
           commonObserveFor: Duration(milliseconds: 1),
           stageSettleWindow: Duration(milliseconds: 1),
-          stageTimeout: Duration(seconds: 1),
+          interactionTimeout: Duration(seconds: 1),
         ),
         onFinished: snapshots.add,
       );
@@ -171,9 +171,9 @@ void main() {
       TestWidgetsFlutterBinding.ensureInitialized();
       final snapshots = <InteractionMeasureSnapshot>[];
       final collector = InteractionMeasureCollector(
-        config: const MonitorInteractionConfig(
+        config: const MonitorPerformanceConfig(
           commonObserveFor: Duration(milliseconds: 1),
-          maxConcurrent: 0,
+          maxConcurrentInteractions: 0,
         ),
         onFinished: snapshots.add,
       );

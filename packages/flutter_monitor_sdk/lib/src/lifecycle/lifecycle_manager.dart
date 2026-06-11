@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
-import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 
 /// lifecycle 状态变化回调。
 ///
@@ -16,19 +15,14 @@ typedef LifecycleStateHandler =
 /// 后台 duration 和 flush 语义都在 MonitorBinding / Reporter 中处理。
 class LifecycleManager {
   /// 创建 lifecycle manager。
-  LifecycleManager({
-    required MonitorSessionConfig config,
-    required LifecycleStateHandler onStateChanged,
-  }) : _config = config,
-       _onStateChanged = onStateChanged;
+  LifecycleManager({required LifecycleStateHandler onStateChanged})
+    : _onStateChanged = onStateChanged;
 
-  final MonitorSessionConfig _config;
   final LifecycleStateHandler _onStateChanged;
   AppLifecycleListener? _listener;
 
   /// 根据配置注册 lifecycle 监听。
   void init() {
-    if (!_config.enableLifecycleTracking) return;
     _listener = AppLifecycleListener(
       onResume: () => _onStateChanged(LifecycleStates.resumed),
       onInactive: () => _onStateChanged(LifecycleStates.inactive),

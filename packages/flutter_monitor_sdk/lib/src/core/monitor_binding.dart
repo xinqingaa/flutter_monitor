@@ -88,7 +88,7 @@ class MonitorBinding {
 
     _frameTimingDispatcher = FrameTimingDispatcher();
 
-    if (config.effectiveFrameConfig.enabled) {
+    if (config.effectivePerformanceConfig.collectPageFrameStats) {
       try {
         _frameWindowCollector = FrameWindowCollector(
           onPageWindowFinished: reporter.addPageFrameStats,
@@ -101,18 +101,16 @@ class MonitorBinding {
       }
     }
 
-    if (config.effectiveInteractionConfig.enabled) {
-      try {
-        _interactionMeasureCollector = InteractionMeasureCollector(
-          config: config.effectiveInteractionConfig,
-          onFinished: reporter.recordInteractionMeasure,
-        );
-        _frameTimingDispatcher?.addListener(
-          _interactionMeasureCollector!.recordTimings,
-        );
-      } catch (e) {
-        debugPrint("错误: InteractionMeasureCollector 初始化失败: $e");
-      }
+    try {
+      _interactionMeasureCollector = InteractionMeasureCollector(
+        config: config.effectivePerformanceConfig,
+        onFinished: reporter.recordInteractionMeasure,
+      );
+      _frameTimingDispatcher?.addListener(
+        _interactionMeasureCollector!.recordTimings,
+      );
+    } catch (e) {
+      debugPrint("错误: InteractionMeasureCollector 初始化失败: $e");
     }
 
     try {
@@ -134,7 +132,7 @@ class MonitorBinding {
                 Future<void>.value(),
           );
         },
-        config: config.effectiveJankConfig,
+        config: config.effectivePerformanceConfig,
       );
       _jankMonitor!.init();
       _frameTimingDispatcher?.addListener(_jankMonitor!.recordTimings);
@@ -145,26 +143,22 @@ class MonitorBinding {
 
     _frameTimingDispatcher?.init();
 
-    if (config.effectiveMemoryConfig.enabled) {
-      try {
-        _memoryCollector = MemoryCollector(
-          reporter,
-          config: config.effectiveMemoryConfig,
-        );
-        unawaited(
-          _memoryCollector!.recordSample(trigger: TriggerValues.sessionStart),
-        );
-        debugPrint("✅ MemoryCollector 初始化成功");
-      } catch (e) {
-        debugPrint("错误: MemoryCollector 初始化失败: $e");
-      }
+    try {
+      _memoryCollector = MemoryCollector(
+        reporter,
+        config: config.effectiveMemoryConfig,
+      );
+      unawaited(
+        _memoryCollector!.recordSample(trigger: TriggerValues.sessionStart),
+      );
+      debugPrint("✅ MemoryCollector 初始化成功");
+    } catch (e) {
+      debugPrint("错误: MemoryCollector 初始化失败: $e");
     }
 
     try {
-      _lifecycleManager = LifecycleManager(
-        config: config.effectiveSessionConfig,
-        onStateChanged: handleLifecycleState,
-      )..init();
+      _lifecycleManager = LifecycleManager(onStateChanged: handleLifecycleState)
+        ..init();
       debugPrint("✅ LifecycleManager 初始化成功");
     } catch (e) {
       debugPrint("错误: LifecycleManager 初始化失败: $e");

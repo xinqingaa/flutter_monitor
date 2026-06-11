@@ -58,15 +58,15 @@ class Reporter {
     _init();
   }
 
-  /// 获取最大队列大小
-  int get maxQueueSize => _config.effectiveQueueConfig.maxQueueSize;
+  /// recent breadcrumb store 容量。
+  int get maxQueueSize => MonitorConfig.defaultBreadcrumbCapacity;
 
   void _init() {
     _contextManager = ContextManager(_config);
     _sessionManager = SessionManager();
     _traceManager = TraceManager();
     _breadcrumbStore = BreadcrumbStore(
-      capacity: _config.effectiveQueueConfig.maxQueueSize,
+      capacity: MonitorConfig.defaultBreadcrumbCapacity,
     );
     _outputs = resolveMonitorOutputs(_config);
     _pipeline = EventPipeline(
@@ -1086,7 +1086,8 @@ class Reporter {
         FieldPaths.uiTarget: snapshot.target,
       if (page != null) FieldPaths.pageInstanceId: page.pageInstanceId,
       ...snapshot.frameAttributes(
-        minSampleCount: _config.effectiveInteractionConfig.minSampleCount,
+        minSampleCount:
+            _config.effectivePerformanceConfig.interactionMinSampleCount,
       ),
     };
     final payloadProperties = <String, Object?>{
@@ -1247,8 +1248,7 @@ class Reporter {
         backgroundSessionTimeout:
             _config.effectiveSessionConfig.backgroundSessionTimeout,
       );
-      if (_config.effectiveSessionConfig.enableHotStartTrace &&
-          resume.backgroundDuration != null) {
+      if (resume.backgroundDuration != null) {
         _recordLifecycleDuration(
           name: EventNames.appBackgroundDuration,
           startedAt: occurredAt.subtract(resume.backgroundDuration!),
@@ -1282,7 +1282,7 @@ class Reporter {
       );
     }
 
-    if (_config.effectiveSessionConfig.flushOnBackground &&
+    if (_config.mode.productionPolicy.flushOnBackground &&
         isBackgroundState &&
         !_backgroundFlushPending) {
       _backgroundFlushPending = true;

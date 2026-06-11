@@ -1006,7 +1006,7 @@ Workbench 是横跨本地调试、QA 复现和灰度验证的消费侧能力，�
 
 待设计：
 
-- `MonitorFrameConfig` 中的页面切片开关、间隔、最小样本数和最大切片数。
+- `MonitorPerformanceConfig` 中的页面切片开关、间隔、最小样本数和最大切片数。
 - `page.visit` payload 中切片结构的字段、大小上限和裁剪策略。
 - 长停留切片与 `ui.jank.sequence` 的关系：切片描述普通性能画像，卡顿序列仍是问题事件。
 
@@ -1101,7 +1101,7 @@ measure.finish();
 
 - 每轮复现前清空或标记 Workbench/server 数据，记录绝对操作时间：启动、首次进入后台、首次恢复、第二次进入后台、第二次恢复。
 - 同时保留 Workbench/server raw 查询结果和控制台 compact log，重点对比 `eventId` 计数是否连续、`sessionId` 生成时间、`app.hot_start.payload.session.started_new`、`app.background_duration.durationMs`、`app.foreground_duration.durationMs`。
-- 分别测试：`consoleOnly`、`localLive`、`production`；`MonitorSessionConfig.flushOnBackground` 开关；生产策略中的 batch 上限与较短 flush 间隔。
+- 分别测试：`consoleOnly`、`localLive`、`production`；`MonitorProductionPolicy.flushOnBackground` 开关；生产策略中的 batch 上限与较短 flush 间隔。
 - 用明确的 `backgroundSessionTimeout` 做对照：短阈值验证 session 切分，长阈值验证普通热恢复是否保持同一 session。
 
 候选修复方向，待证据确认后再实施：

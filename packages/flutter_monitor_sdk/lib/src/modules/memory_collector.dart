@@ -21,9 +21,6 @@ class MemoryCollector {
   _MemorySample? _baseline;
   _MemorySample? _lastSample;
 
-  /// 当前是否启用 memory 采集。
-  bool get enabled => _config.enabled;
-
   /// 记录一次 memory sample。
   ///
   /// [trigger] 表示采样触发源，例如 session start、page enter、manual。
@@ -33,7 +30,6 @@ class MemoryCollector {
     DateTime? timestamp,
     bool force = false,
   }) async {
-    if (!_config.enabled) return;
     final occurredAt = timestamp ?? DateTime.now();
     if (!force && !_shouldSample(trigger, occurredAt)) return;
     final sample = await _captureSample(occurredAt);
@@ -68,7 +64,6 @@ class MemoryCollector {
     bool force = false,
     bool emitSample = false,
   }) async {
-    if (!_config.enabled) return;
     final occurredAt = timestamp ?? DateTime.now();
     final sample = await _captureSample(occurredAt);
     if (sample == null) return;
@@ -125,7 +120,6 @@ class MemoryCollector {
     String trigger = TriggerValues.manual,
     DateTime? timestamp,
   }) {
-    if (!_config.enabled) return;
     _reporter.recordMemoryPressure(
       level: level,
       source: MemorySampleSource.dart,
@@ -137,7 +131,7 @@ class MemoryCollector {
   bool _shouldSample(String trigger, DateTime timestamp) {
     final lastAt = _lastSampleAt[trigger];
     if (lastAt == null) return true;
-    return timestamp.difference(lastAt) >= _config.minSampleInterval;
+    return timestamp.difference(lastAt) >= _config.sampleInterval;
   }
 
   Future<_MemorySample?> _captureSample(DateTime timestamp) async {

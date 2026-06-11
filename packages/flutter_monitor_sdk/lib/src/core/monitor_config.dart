@@ -1,31 +1,13 @@
 import '../outputs/log_monitor_output.dart';
-import '../modules/jank_monitor.dart';
 import '../native/monitor_native_bridge.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// 监控队列配置。
+/// SDK 输出模式。
 ///
-/// 控制 SDK 内部 breadcrumb store 和部分 output 队列的容量上限，避免端侧
-/// 因监控数据过多造成内存压力。
-class MonitorQueueConfig {
-  /// 最大队列大小。
-  ///
-  /// 当前用于 breadcrumb store 和部分 output 缓存的默认上限，避免端侧监控数据无限增长。
-  final int maxQueueSize;
-
-  /// 创建监控队列配置。
-  const MonitorQueueConfig({this.maxQueueSize = 50});
-
-  /// 默认队列配置。
-  static const MonitorQueueConfig defaultConfig = MonitorQueueConfig();
-}
-
-/// SDK 运行模式。
-///
-/// 普通业务只需要选择模式，不需要手动组合 queue、batch、retry、sampling
-/// 等底层策略。`production` 使用 SDK 内置可靠上报策略；`localLive` 用于
-/// QA/Workbench；`consoleOnly` 用于本地开发 compact log。
+/// 用来决定事件输出到哪里，以及是否启用可靠投递策略。普通接入方通常只需要
+/// 在 [consoleOnly]、[localLive] 和 [production] 中选一个，不需要手动组合
+/// output、队列、batch、retry 或采样策略。
 class MonitorMode {
   const MonitorMode._({
     required this.name,
@@ -50,14 +32,26 @@ class MonitorMode {
   /// consoleOnly 下的日志输出模式。
   final LogMonitorOutputMode logMode;
 
-  /// 本地开发模式，只打印 compact log。
+  /// 本地开发模式。
+  ///
+  /// 只输出 console log，不启用本地 Workbench 或生产离线队列。
+  ///
+  /// 参数：
+  /// - [logMode]：控制 console 输出格式，默认使用 compact log。
   factory MonitorMode.consoleOnly({
     LogMonitorOutputMode logMode = LogMonitorOutputMode.compact,
   }) {
     return MonitorMode._(name: SdkOutputModes.consoleOnly, logMode: logMode);
   }
 
-  /// QA/Workbench live 模式，小 batch 写入本地 service。
+  /// QA 或本地 Workbench live 模式。
+  ///
+  /// 将完整 `EventEnvelope` 小 batch 写入本地 Workbench service，便于实时查看
+  /// session timeline、raw JSON 和页面/API/卡顿等链路。
+  ///
+  /// 参数：
+  /// - [endpoint]：Workbench service events API，默认是本机 `3700` 端口。
+  /// - [policy]：live 调试用的 flush、batch 和采样策略，通常不需要覆盖。
   factory MonitorMode.localLive({
     Uri? endpoint,
     MonitorProductionPolicy policy = MonitorProductionPolicy.localLive,
@@ -71,6 +65,15 @@ class MonitorMode {
   }
 
   /// 真实 App 灰度或线上模式。
+  ///
+  /// 使用 SDK 内置可靠上报策略，包括离线队列、batch、重试、采样、限流和
+  /// output self-monitoring。
+  ///
+  /// 参数：
+  /// - [endpoint]：生产监控服务端 events API。
+  /// - [authToken]：发送前获取鉴权 token 的回调，可为空。
+  /// - [policy]：生产投递策略，默认适合多数 App；灰度期可使用
+  ///   [MonitorProductionPolicy.conservative]。
   factory MonitorMode.production({
     required Uri endpoint,
     Future<String?> Function()? authToken,
@@ -85,11 +88,11 @@ class MonitorMode {
   }
 }
 
-/// 生产可靠性策略。
+/// 输出可靠性策略。
 ///
-/// 该对象刻意合并 queue、batch、retry、sampling 和 rate limit 配置，避免
-/// 普通使用者在初始化时维护一组彼此相关的细碎配置。后续实现 SQLite 离线
-/// 队列和 production delivery 时会消费这些默认值。
+/// 用于 [MonitorMode.localLive] 和 [MonitorMode.production]，只控制事件如何
+/// 被缓存、批量发送、重试、采样和限流，不控制端上采集阈值。普通业务一般使用
+/// SDK 默认值；需要控制网络、磁盘或灰度成本时再覆盖。
 class MonitorProductionPolicy {
   /// 离线队列最多保留的事件数，超过后按优先级和时间淘汰。
   final int maxQueueEvents;
@@ -142,6 +145,20 @@ class MonitorProductionPolicy {
   /// 单分钟最多接收的业务 track 事件数，超过后丢弃并记录 SDK 自监控。
   final int maxTrackEventsPerMinute;
 
+  /// App 进入后台或退出时是否触发 flush。
+  final bool flushOnBackground;
+
+  /// 创建输出可靠性策略。
+  ///
+  /// 参数分组：
+  /// - 队列容量：[maxQueueEvents]、[maxQueueBytes]、[maxEventBytes]。
+  /// - 批量发送：[maxBatchEvents]、[maxBatchBytes]、[flushInterval]、
+  ///   [quickFlushDelay]、[flushOnBackground]。
+  /// - 请求与重试：[requestTimeout]、[maxRetryAttempts]、
+  ///   [retryBaseDelay]、[retryMaxDelay]、[maxEventAge]。
+  /// - 成本控制：[defaultSampleRate]、[lowPrioritySampleRate]、
+  ///   [successfulHttpSampleRate]、[memorySampleRate]、
+  ///   [maxTrackEventsPerMinute]。
   const MonitorProductionPolicy({
     this.maxQueueEvents = 5000,
     this.maxQueueBytes = 8 * 1024 * 1024,
@@ -160,6 +177,7 @@ class MonitorProductionPolicy {
     this.successfulHttpSampleRate = 0.2,
     this.memorySampleRate = 0.1,
     this.maxTrackEventsPerMinute = 120,
+    this.flushOnBackground = true,
   });
 
   /// 真实 App 默认策略：尽量保留关键事件，同时限制磁盘、网络和重试开销。
@@ -197,29 +215,21 @@ class MonitorProductionPolicy {
   }
 }
 
-/// Session 与生命周期配置。
+/// Session 配置。
 ///
-/// 用于控制前后台切换时是否切分 session、是否生成热启动 trace，以及进入后台
-/// 或退出前是否主动 flush。
+/// 用于控制用户会话边界。Flutter lifecycle 监听和 hot start trace 是 SDK 核心
+/// 链路能力，默认启用，不作为普通业务开关暴露。
 class MonitorSessionConfig {
   /// 后台超过该时间后恢复前台会切分新 session。
   final Duration backgroundSessionTimeout;
 
-  /// 是否监听 Flutter lifecycle。
-  final bool enableLifecycleTracking;
-
-  /// 是否在后台恢复时生成 app.hot_start trace。
-  final bool enableHotStartTrace;
-
-  /// 进入后台或退出时是否触发 flush。
-  final bool flushOnBackground;
-
-  /// 创建 session 与生命周期配置。
+  /// 创建 Session 配置。
+  ///
+  /// 参数：
+  /// - [backgroundSessionTimeout]：App 进入后台超过该时长后再回前台，会开启
+  ///   新 session；短时间切后台恢复仍归属同一 session。
   const MonitorSessionConfig({
     this.backgroundSessionTimeout = const Duration(minutes: 30),
-    this.enableLifecycleTracking = true,
-    this.enableHotStartTrace = true,
-    this.flushOnBackground = true,
   });
 
   /// 默认 session 配置。
@@ -231,11 +241,8 @@ class MonitorSessionConfig {
 /// 控制 Flutter/Dart 层 memory sample、growth 和 suspect leak 线索的采集频率
 /// 与阈值。SDK 只上报可获得的事实，不把增长直接断言为确定泄漏。
 class MonitorMemoryConfig {
-  /// 是否启用 Flutter/Dart 层 memory 线索采集。
-  final bool enabled;
-
   /// 同类采样最小间隔，避免页面/lifecycle 高频变化导致过量事件。
-  final Duration minSampleInterval;
+  final Duration sampleInterval;
 
   /// 生成 `memory.growth` 所需的最小增长量，单位 MB。
   final num growthThresholdMb;
@@ -243,10 +250,15 @@ class MonitorMemoryConfig {
   /// 生成 `memory.leak.suspect` 所需的最小增长量，单位 MB。
   final num suspectLeakThresholdMb;
 
-  /// 创建 memory 采样配置。
+  /// 创建 Memory 采样配置。
+  ///
+  /// 参数：
+  /// - [sampleInterval]：同类 memory sample 的最小间隔。
+  /// - [growthThresholdMb]：相邻样本增长超过该值时生成 `memory.growth`。
+  /// - [suspectLeakThresholdMb]：增长超过该值时额外生成
+  ///   `memory.leak.suspect` 线索。
   const MonitorMemoryConfig({
-    this.enabled = true,
-    this.minSampleInterval = const Duration(seconds: 30),
+    this.sampleInterval = const Duration(seconds: 30),
     this.growthThresholdMb = 16,
     this.suspectLeakThresholdMb = 64,
   });
@@ -255,57 +267,91 @@ class MonitorMemoryConfig {
   static const MonitorMemoryConfig defaultConfig = MonitorMemoryConfig();
 }
 
-/// 帧窗口聚合配置。
+/// 性能采集配置。
 ///
-/// 开启后 SDK 会按页面活动窗口聚合 frame stats，并在页面 trace 结束时合并
-/// 页面帧表现证据。
-class MonitorFrameConfig {
-  /// 是否生成 App/page 帧窗口摘要指标。
-  final bool enabled;
+/// 聚合三类性能能力：页面 frame window 摘要、UI 卡顿识别和
+/// `FlutterMonitorSDK.measure(...)` 业务交互性能观测。默认配置适合多数 App，
+/// 需要更敏感或更宽松时优先使用 [strict] / [lenient]。
+class MonitorPerformanceConfig {
+  /// 单帧卡顿阈值乘数，实际阈值为当前刷新率 frame budget 乘以该值。
+  final double jankFrameTimeMultiplier;
 
-  /// 创建帧窗口聚合配置。
-  const MonitorFrameConfig({this.enabled = true});
+  /// 连续卡顿帧数阈值，达到该数量后生成一次 jank sequence。
+  final int consecutiveJankThreshold;
 
-  /// 默认帧窗口聚合配置。
-  static const MonitorFrameConfig defaultConfig = MonitorFrameConfig();
-}
+  /// 抖动容忍时间，单位毫秒，用于过滤设备正常调度波动。
+  final double jitterToleranceMs;
 
-/// 业务交互性能观测配置。
-///
-/// 控制 `FlutterMonitorSDK.measure(...)` 的 common/stage 观测窗口、并发上限和
-/// 样本门槛。该能力只旁路观察业务交互，不接管业务逻辑。
-class MonitorInteractionConfig {
-  /// 是否启用业务交互性能观测。
-  final bool enabled;
+  /// 卡顿事件防抖窗口，避免短时间内重复上报同类卡顿。
+  final Duration jankDebounce;
 
-  /// common 模式调用后自动观察的窗口。
+  /// 是否启用基于刷新率的自适应卡顿阈值。
+  final bool adaptiveJankThresholds;
+
+  /// 是否采集页面级 frame window 摘要。
+  final bool collectPageFrameStats;
+
+  /// common 模式调用后自动观察的交互窗口。
   final Duration commonObserveFor;
 
-  /// stage 模式 finish 后追加观察的 settle 窗口。
+  /// stage 模式 finish 后追加观察的交互 settle 窗口。
   final Duration stageSettleWindow;
 
-  /// stage 模式未显式结束时的自动闭合超时。
-  final Duration stageTimeout;
+  /// stage 模式未显式结束时的交互自动闭合超时。
+  final Duration interactionTimeout;
 
-  /// 同时存在的最大交互窗口数。
-  final int maxConcurrent;
+  /// 同时存在的最大交互观测窗口数。
+  final int maxConcurrentInteractions;
 
-  /// 输出 frame 摘要所需的最小样本数。
-  final int minSampleCount;
+  /// 交互事件输出 frame 摘要所需的最小样本数。
+  final int interactionMinSampleCount;
 
-  /// 创建业务交互性能观测配置。
-  const MonitorInteractionConfig({
-    this.enabled = true,
+  /// 创建性能采集配置。
+  ///
+  /// 参数分组：
+  /// - 卡顿识别：[jankFrameTimeMultiplier]、[consecutiveJankThreshold]、
+  ///   [jitterToleranceMs]、[jankDebounce]、[adaptiveJankThresholds]。
+  /// - 页面帧摘要：[collectPageFrameStats]。
+  /// - 交互性能：[commonObserveFor]、[stageSettleWindow]、
+  ///   [interactionTimeout]、[maxConcurrentInteractions]、
+  ///   [interactionMinSampleCount]。
+  const MonitorPerformanceConfig({
+    this.jankFrameTimeMultiplier = 2.5,
+    this.consecutiveJankThreshold = 4,
+    this.jitterToleranceMs = 8.0,
+    this.jankDebounce = const Duration(milliseconds: 1000),
+    this.adaptiveJankThresholds = true,
+    this.collectPageFrameStats = true,
     this.commonObserveFor = const Duration(milliseconds: 1200),
     this.stageSettleWindow = const Duration(milliseconds: 250),
-    this.stageTimeout = const Duration(seconds: 5),
-    this.maxConcurrent = 4,
-    this.minSampleCount = 3,
+    this.interactionTimeout = const Duration(seconds: 5),
+    this.maxConcurrentInteractions = 4,
+    this.interactionMinSampleCount = 3,
   });
 
-  /// 默认业务交互性能观测配置。
-  static const MonitorInteractionConfig defaultConfig =
-      MonitorInteractionConfig();
+  /// 默认配置，适合多数设备和业务场景。
+  static const MonitorPerformanceConfig defaultConfig =
+      MonitorPerformanceConfig();
+
+  /// 严格配置，适合高端设备或更敏感的性能告警。
+  factory MonitorPerformanceConfig.strict() {
+    return const MonitorPerformanceConfig(
+      jankFrameTimeMultiplier: 2.0,
+      consecutiveJankThreshold: 3,
+      jitterToleranceMs: 5.0,
+      jankDebounce: Duration(milliseconds: 500),
+    );
+  }
+
+  /// 宽松配置，适合低端设备或噪声较大的测试环境。
+  factory MonitorPerformanceConfig.lenient() {
+    return const MonitorPerformanceConfig(
+      jankFrameTimeMultiplier: 3.0,
+      consecutiveJankThreshold: 5,
+      jitterToleranceMs: 12.0,
+      jankDebounce: Duration(milliseconds: 2000),
+    );
+  }
 }
 
 /// 应用信息配置。
@@ -378,10 +424,12 @@ class AppInfo {
 
 /// SDK 初始化配置。
 ///
-/// `MonitorConfig` 只描述采集能力、输出模式、队列、native bridge 等 SDK 行为。
-/// 用户、模块、发布、网络等运行时上下文请使用 `initialContext` 或
-/// `FlutterMonitorSDK.setContext(...)`，不要塞进任意 custom map。
+/// 传给 `FlutterMonitorSDK.init(...)` 的主配置，只描述 App 信息、输出模式、
+/// 采集策略和 native bridge。用户、模块、发布、网络等运行时上下文请使用
+/// `initialContext` 或 `FlutterMonitorSDK.setContext(...)`。
 class MonitorConfig {
+  static const int defaultBreadcrumbCapacity = 50;
+
   /// 应用信息。
   ///
   /// 这些字段进入 `resource.app.*`，用于版本、环境、渠道等稳定维度聚合。
@@ -393,67 +441,56 @@ class MonitorConfig {
   /// SDK 会根据模式选择日志、本地 Workbench 或生产可靠上报策略。
   final MonitorMode mode;
 
-  /// 卡顿监控配置。
-  final JankConfig? jankConfig;
-
-  /// 队列配置。
-  final MonitorQueueConfig? queueConfig;
-
   /// Session 与生命周期配置。
-  final MonitorSessionConfig? sessionConfig;
+  final MonitorSessionConfig? session;
 
   /// Memory 采样配置。
-  final MonitorMemoryConfig? memoryConfig;
+  final MonitorMemoryConfig? memory;
 
-  /// Frame window 聚合配置。
-  final MonitorFrameConfig? frameConfig;
-
-  /// 业务交互性能观测配置。
-  final MonitorInteractionConfig? interactionConfig;
+  /// 性能采集配置。
+  final MonitorPerformanceConfig? performance;
 
   /// 可选 native bridge。未提供时 SDK 只保留 Flutter/Dart 层能力。
   final MonitorNativeBridge? nativeBridge;
 
   /// 创建 SDK 初始化配置。
+  ///
+  /// 常用写法：
+  /// ```dart
+  /// MonitorConfig(
+  ///   appInfo: AppInfo(appKey: 'my_app'),
+  ///   mode: MonitorMode.production(endpoint: Uri.parse(serverUrl)),
+  /// )
+  /// ```
+  ///
+  /// 参数：
+  /// - [appInfo]：App 稳定资源信息，会进入 `resource.app.*`。
+  /// - [mode]：输出模式，决定 console、Workbench live 或生产上报。
+  /// - [session]：session 边界配置；不传时后台 30 分钟切新 session。
+  /// - [performance]：卡顿、页面 frame stats 和交互性能配置。
+  /// - [memory]：memory sample、growth 和 suspect leak 线索配置。
+  /// - [nativeBridge]：可选 native 增强信号入口；不传时保留 Flutter-only 能力。
   const MonitorConfig({
     required this.appInfo,
     this.mode = const MonitorMode._(name: SdkOutputModes.consoleOnly),
-    this.jankConfig,
-    this.queueConfig,
-    this.sessionConfig,
-    this.memoryConfig,
-    this.frameConfig,
-    this.interactionConfig,
+    this.session,
+    this.memory,
+    this.performance,
     this.nativeBridge,
   });
 
-  /// 获取实际使用的卡顿配置。
-  JankConfig get effectiveJankConfig {
-    return jankConfig ?? JankConfig.defaultConfig();
-  }
-
-  /// 获取实际使用的队列配置。
-  MonitorQueueConfig get effectiveQueueConfig {
-    return queueConfig ?? MonitorQueueConfig.defaultConfig;
-  }
-
   /// 获取实际使用的 session 配置。
   MonitorSessionConfig get effectiveSessionConfig {
-    return sessionConfig ?? MonitorSessionConfig.defaultConfig;
+    return session ?? MonitorSessionConfig.defaultConfig;
   }
 
   /// 获取实际使用的 memory 配置。
   MonitorMemoryConfig get effectiveMemoryConfig {
-    return memoryConfig ?? MonitorMemoryConfig.defaultConfig;
+    return memory ?? MonitorMemoryConfig.defaultConfig;
   }
 
-  /// 获取实际使用的帧窗口聚合配置。
-  MonitorFrameConfig get effectiveFrameConfig {
-    return frameConfig ?? MonitorFrameConfig.defaultConfig;
-  }
-
-  /// 获取实际使用的业务交互性能观测配置。
-  MonitorInteractionConfig get effectiveInteractionConfig {
-    return interactionConfig ?? MonitorInteractionConfig.defaultConfig;
+  /// 获取实际使用的性能采集配置。
+  MonitorPerformanceConfig get effectivePerformanceConfig {
+    return performance ?? MonitorPerformanceConfig.defaultConfig;
   }
 }

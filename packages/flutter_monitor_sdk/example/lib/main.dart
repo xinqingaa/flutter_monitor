@@ -83,7 +83,7 @@ Future<void> main() async {
   final monitorConfig = MonitorConfig(
     appInfo: appInfo,
     mode: buildMonitorMode(),
-    jankConfig: JankConfig.lenient(),
+    performance: MonitorPerformanceConfig.lenient(),
     // nativeBridge: FlutterMonitorNativeBridge(),
   );
 

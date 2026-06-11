@@ -180,19 +180,16 @@ class MonitorMeasureHandle {
 /// 业务交互性能观测窗口聚合器。
 class InteractionMeasureCollector {
   InteractionMeasureCollector({
-    required MonitorInteractionConfig config,
+    required MonitorPerformanceConfig config,
     required void Function(InteractionMeasureSnapshot snapshot) onFinished,
   }) : _config = config,
        _onFinished = onFinished;
 
-  final MonitorInteractionConfig _config;
+  final MonitorPerformanceConfig _config;
   final void Function(InteractionMeasureSnapshot snapshot) _onFinished;
   final Map<String, _InteractionWindow> _windows =
       <String, _InteractionWindow>{};
   var _nextId = 0;
-
-  /// 当前是否启用业务交互性能观测。
-  bool get enabled => _config.enabled;
 
   /// 当前视图刷新率。
   double get refreshRate {
@@ -212,9 +209,7 @@ class InteractionMeasureCollector {
     Duration? observeFor,
     Duration? timeout,
   }) {
-    if (!_config.enabled ||
-        _config.maxConcurrent <= 0 ||
-        action.trim().isEmpty) {
+    if (_config.maxConcurrentInteractions <= 0 || action.trim().isEmpty) {
       return MonitorMeasureHandle._(
         id: '',
         action: action,
@@ -222,7 +217,7 @@ class InteractionMeasureCollector {
         collector: this,
       );
     }
-    if (_windows.length >= _config.maxConcurrent) {
+    if (_windows.length >= _config.maxConcurrentInteractions) {
       _finishOldest(
         InteractionEndReasons.timeout,
         MonitorMeasureResult.timeout,
@@ -235,7 +230,7 @@ class InteractionMeasureCollector {
         (mode == MonitorMeasureMode.common
             ? _config.commonObserveFor
             : _config.stageSettleWindow);
-    final effectiveTimeout = timeout ?? _config.stageTimeout;
+    final effectiveTimeout = timeout ?? _config.interactionTimeout;
     final window = _InteractionWindow(
       id: id,
       action: action,
@@ -351,7 +346,7 @@ class InteractionMeasureCollector {
         endReason: endReason,
         endedAt: endedAt,
         observedUntil: observedUntil,
-        minSampleCount: _config.minSampleCount,
+        minSampleCount: _config.interactionMinSampleCount,
       ),
     );
   }

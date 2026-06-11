@@ -1,5 +1,6 @@
 import 'dart:math';
-import '../modules/jank_monitor.dart';
+
+import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 
 /// 性能监控工具方法集合。
 ///
@@ -34,15 +35,17 @@ class PerformanceUtils {
     }
   }
 
-  /// 根据设备性能等级推荐卡顿配置。
-  static JankConfig recommendJankConfig(DevicePerformanceLevel level) {
+  /// 根据设备性能等级推荐性能配置。
+  static MonitorPerformanceConfig recommendPerformanceConfig(
+    DevicePerformanceLevel level,
+  ) {
     switch (level) {
       case DevicePerformanceLevel.high:
-        return JankConfig.strict();
+        return MonitorPerformanceConfig.strict();
       case DevicePerformanceLevel.medium:
-        return JankConfig.defaultConfig();
+        return MonitorPerformanceConfig.defaultConfig;
       case DevicePerformanceLevel.low:
-        return JankConfig.lenient();
+        return MonitorPerformanceConfig.lenient();
     }
   }
 
