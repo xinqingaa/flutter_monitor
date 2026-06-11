@@ -2,6 +2,30 @@
 
 这个 example 是一个模拟真实业务的 Flutter App，用来验证 SDK 在启动、页面、网络、业务动作、交互性能、卡顿、内存和错误场景下的事件链路。
 
+## 启动流程
+
+```text
+Splash → Login（输入 2-3 位 userId 或随机生成）→ 首页 Tab App
+```
+
+登录成功后会写入 `context.user.userId`，首页默认展示「我的事件」，可切换到「全部事件」。
+
+## Workbench 依赖
+
+首页从本地 Workbench service 读取原始 envelope：
+
+- `GET http://127.0.0.1:3700/api/monitor/v1/health`
+- `GET http://127.0.0.1:3700/api/monitor/v1/recent?limit=50`
+
+请先启动 Workbench：
+
+```sh
+bash scripts/workbench.sh
+```
+
+- Web 入口：`http://localhost:4700`
+- API 入口：`http://localhost:3700/api/monitor/v1/*`
+
 ## Output 模式
 
 输出模式集中在 `lib/main.dart` 的 `buildMonitorMode()` 中。
@@ -18,16 +42,16 @@
 
 - 路由集中在 `lib/router/app_routes.dart`。
 - 页面跳转集中在 `lib/router/app_navigation.dart`。
-- 页面监控封装在 `lib/widgets/app_page.dart`，业务页面只传 `routeName`，按需传 `moduleName` 和 `moduleScene`。
-- 启动页：模拟启动恢复和首屏闭合。
-- 首页：tab 首页，支持左右滑动，加载 GitHub 和 JSONPlaceholder 公开接口。
-- 我的：用户、网络上下文切换，反馈失败和 Flutter error 场景。
-- 登录注册：验证码输入、登录成功、注册成功和用户上下文写入。
-- 内容详情：收藏、分享半屏弹层、优惠券失败和订单入口。
-- 订单结算：校验失败、替换优惠券、重试成功。
+- 页面监控封装在 `lib/widgets/app_page.dart`。
+- 业务埋点反馈使用 `lib/widgets/app_track.dart` 的 `appTrack(...)`。
+- 启动页：SDK 冷启动后进入登录。
+- 登录页：userId 输入 / 随机，写入用户上下文后进入首页。
+- 首页：Workbench health + recent 事件列表，点击进入事件详情。
+- 我的：上下文模拟、监控场景入口、切换账号 / 退出登录。
+- 订单结算：校验失败、替换优惠券、重试成功（measure）。
 - 数据同步中心：Dio/http 成功、404、timeout 和本地慢请求。
-- 视频频道：真实远程 mp4、横滑 PageView、播放暂停、评论半屏弹层和播放器释放。
-- 内容创作中心：交互性能、复杂内容流卡顿和 retained memory。
+- 视频频道：横滑 PageView、播放暂停、评论（appTrack）。
+- 内容创作中心：图表交互、故意卡顿、retained memory。
 
 ## 运行
 
@@ -46,4 +70,10 @@ http://127.0.0.1:3700/api/monitor/v1/events
 ```sh
 fvm flutter run packages/flutter_monitor_sdk/example \
   --dart-define=FM_SERVER_URL=http://127.0.0.1:3700/api/monitor/v1/events
+```
+
+## 测试
+
+```sh
+fvm flutter test packages/flutter_monitor_sdk/example/test
 ```

@@ -1,222 +1,219 @@
-import 'package:example/data/demo_api.dart';
-import 'package:example/models/demo_models.dart';
+import 'package:example/data/workbench_api.dart';
+import 'package:example/models/monitor_event_models.dart';
 import 'package:example/router/app_navigation.dart';
-import 'package:example/widgets/app_section.dart';
+import 'package:example/session/app_session.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key, required this.api});
 
-  final DemoApi api;
+  final WorkbenchApi api;
 
   @override
-  State<HomeTab> createState() => _HomeTabState();
+  State<HomeTab> createState() => HomeTabState();
 }
 
-class _HomeTabState extends State<HomeTab> {
-  late Future<HomeFeedState> _feedFuture;
-  var _refreshCount = 0;
+class HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
+  MonitorHomeState? _cachedState;
+  Object? _error;
+  var _loading = false;
+  var _showMineOnly = true;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _feedFuture = _loadFeed(reason: 'initial');
-  }
-
-  Future<HomeFeedState> _loadFeed({required String reason}) async {
-    FlutterMonitorSDK.track(
-      action: 'home.feed.load',
-      result: MonitorTrackResult.started,
-      target: 'home_feed',
-      properties: <String, Object?>{'reason': reason},
-    );
-    try {
-      final state = await widget.api.loadHomeFeed();
-      FlutterMonitorSDK.track(
-        action: 'home.feed.load',
-        result: MonitorTrackResult.success,
-        target: 'home_feed',
-        properties: <String, Object?>{
-          'reason': reason,
-          'repo.count': state.repos.length,
-          'post.count': state.posts.length,
-        },
-      );
-      return state;
-    } catch (error, stackTrace) {
-      FlutterMonitorSDK.recordError(
-        error,
-        stackTrace: stackTrace,
-        type: 'home_feed_load_failed',
-        properties: <String, Object?>{'reason': reason},
-      );
-      rethrow;
+    if (_cachedState == null) {
+      _load(force: true);
     }
   }
 
-  Future<void> _refreshFeed() async {
-    final measure = FlutterMonitorSDK.measure(
-      action: 'home.feed.refresh',
-      mode: MonitorMeasureMode.stage,
-      target: 'feed_refresh',
-      properties: <String, Object?>{'refresh.count': _refreshCount + 1},
-    );
+  Future<void> _load({bool force = false}) async {
+    if (_loading) return;
+    if (!force && _cachedState != null) return;
+
     setState(() {
-      _refreshCount += 1;
-      _feedFuture = _loadFeed(reason: 'pull_refresh');
+      _loading = true;
+      _error = null;
     });
+
     try {
-      await _feedFuture;
-      measure.finish(properties: <String, Object?>{'result': 'success'});
+      final state = await widget.api.loadHomeState(
+        showMineOnly: _showMineOnly,
+        currentUserId: AppSession.userId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _cachedState = state.copyWith(showMineOnly: _showMineOnly);
+        _loading = false;
+      });
     } catch (error) {
-      measure.cancel(reason: 'request_failed');
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
     }
   }
 
-  void _openItem(DemoFeedItem item) {
-    FlutterMonitorSDK.track(
-      action: 'home.feed.item.open',
-      result: MonitorTrackResult.success,
-      target: 'feed_card',
-      properties: <String, Object?>{
-        'feed.item_id': item.id,
-        'feed.source': item.source,
-      },
-    );
-    AppNavigation.openFeedDetail(context, item);
+  Future<void> _refresh() => _load(force: true);
+
+  void _toggleFilter(bool mineOnly) {
+    if (_showMineOnly == mineOnly) return;
+    setState(() {
+      _showMineOnly = mineOnly;
+      if (_cachedState != null) {
+        _cachedState = _cachedState!.copyWith(showMineOnly: mineOnly);
+      }
+    });
+  }
+
+  void _openEvent(MonitorEventItem item) {
+    AppNavigation.openEventDetail(context, item);
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final state = _cachedState;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('首页'),
+        title: const Text('监控事件'),
         actions: [
           IconButton(
-            tooltip: '数据中心',
-            onPressed: () => AppNavigation.openApiLab(context),
-            icon: const Icon(Icons.sync_alt),
+            tooltip: '打开 Workbench Web',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Workbench Web: http://localhost:4700'),
+                ),
+              );
+            },
+            icon: const Icon(Icons.open_in_browser),
           ),
           IconButton(
-            tooltip: '视频',
-            onPressed: () => AppNavigation.openVideo(context),
-            icon: const Icon(Icons.play_circle_outline),
+            tooltip: '刷新',
+            onPressed: _loading ? null : _refresh,
+            icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _refreshFeed,
-        child: FutureBuilder<HomeFeedState>(
-          future: _feedFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const _LoadingFeed();
-            }
-            if (snapshot.hasError) {
-              return _FeedError(onRetry: _refreshFeed);
-            }
-            final feed = snapshot.requireData;
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _HeroPanel(profile: feed.profile),
-                AppSection(
-                  title: '今日推荐',
-                  subtitle: '公开 API 数据混排，用于验证真实请求、列表和详情链路。',
-                  children: [
-                    for (final item in feed.items)
-                      _FeedCard(item: item, onTap: () => _openItem(item)),
-                  ],
-                ),
-              ],
-            );
-          },
-        ),
+        onRefresh: _refresh,
+        child: _buildBody(context, colorScheme, state),
       ),
     );
   }
-}
 
-class _HeroPanel extends StatelessWidget {
-  const _HeroPanel({required this.profile});
-
-  final GithubProfile profile;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundImage: profile.avatarUrl.isEmpty
-                ? null
-                : NetworkImage(profile.avatarUrl),
-            child: profile.avatarUrl.isEmpty ? const Icon(Icons.code) : null,
+  Widget _buildBody(
+    BuildContext context,
+    ColorScheme colorScheme,
+    MonitorHomeState? state,
+  ) {
+    if (_loading && state == null) {
+      return const CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            child: Center(child: CircularProgressIndicator()),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  profile.name,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 4),
-                Text('@${profile.login} · ${profile.publicRepos} repos'),
-                const SizedBox(height: 8),
-                Text('${profile.followers} followers on GitHub'),
-              ],
+        ],
+      );
+    }
+
+    if (_error != null && state == null) {
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            child: _ConnectionError(
+              message: _error.toString(),
+              onRetry: _refresh,
             ),
           ),
         ],
-      ),
+      );
+    }
+
+    if (state == null) {
+      return const SizedBox.shrink();
+    }
+
+    final events = state.visibleEvents;
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(child: _HealthBanner(health: state.health)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('我的事件')),
+                ButtonSegment(value: false, label: Text('全部事件')),
+              ],
+              selected: {_showMineOnly},
+              onSelectionChanged: (values) => _toggleFilter(values.first),
+            ),
+          ),
+        ),
+        if (events.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text(
+                _showMineOnly
+                    ? '当前 userId 暂无事件，去其它页面操作后再刷新'
+                    : 'Workbench 暂无事件',
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            sliver: SliverList.builder(
+              itemCount: events.length,
+              itemBuilder: (context, index) {
+                final item = events[index];
+                return _EventCard(
+                  item: item,
+                  onTap: () => _openEvent(item),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 }
 
-class _FeedCard extends StatelessWidget {
-  const _FeedCard({required this.item, required this.onTap});
+class _HealthBanner extends StatelessWidget {
+  const _HealthBanner({required this.health});
 
-  final DemoFeedItem item;
-  final VoidCallback onTap;
+  final WorkbenchHealth health;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
+    final lastIngest = health.lastIngestAt;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Card(
+        color: health.ok
+            ? colorScheme.primaryContainer
+            : colorScheme.errorContainer,
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  item.source == 'GitHub'
-                      ? Icons.data_object
-                      : Icons.article_outlined,
-                ),
+              Icon(
+                health.ok ? Icons.cloud_done : Icons.cloud_off,
+                color: health.ok
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onErrorContainer,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -224,40 +221,16 @@ class _FeedCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      health.ok ? 'Workbench 已连接' : 'Workbench 异常',
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    const SizedBox(height: 4),
                     Text(
-                      item.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      '${health.eventCount} events · ${health.sessionCount} sessions'
+                      '${lastIngest != null ? ' · ${_formatRelative(lastIngest)}' : ''}',
                       style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    item.metricLabel,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                  Text(
-                    item.metricValue,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ],
               ),
             ],
           ),
@@ -267,42 +240,134 @@ class _FeedCard extends StatelessWidget {
   }
 }
 
-class _LoadingFeed extends StatelessWidget {
-  const _LoadingFeed();
+class _EventCard extends StatelessWidget {
+  const _EventCard({required this.item, required this.onTap});
+
+  final MonitorEventItem item;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: const [
-        SizedBox(height: 120),
-        Center(child: CircularProgressIndicator()),
-      ],
+    final colorScheme = Theme.of(context).colorScheme;
+    final accent = _signalColor(colorScheme, item.signalType);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: accent, width: 4)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name ?? '(unnamed)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${item.signalType ?? '-'} · ${item.status ?? '-'} · ${_formatRelative(item.timestamp)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      if (item.routeName != null)
+                        _ChipLabel(text: item.routeName!),
+                      if (item.userId != null) _ChipLabel(text: item.userId!),
+                      _ChipLabel(text: _truncate(item.eventId, 18)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _FeedError extends StatelessWidget {
-  const _FeedError({required this.onRetry});
+class _ChipLabel extends StatelessWidget {
+  const _ChipLabel({required this.text});
 
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(text, style: Theme.of(context).textTheme.labelSmall),
+    );
+  }
+}
+
+class _ConnectionError extends StatelessWidget {
+  const _ConnectionError({required this.message, required this.onRetry});
+
+  final String message;
   final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    return Padding(
       padding: const EdgeInsets.all(24),
-      children: [
-        const SizedBox(height: 100),
-        const Icon(Icons.cloud_off, size: 48),
-        const SizedBox(height: 16),
-        Text(
-          '首页数据加载失败',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 16),
-        FilledButton(onPressed: onRetry, child: const Text('重试')),
-      ],
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.dns_outlined, size: 48),
+          const SizedBox(height: 16),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text(
+            'Workbench API :3700 · Web :4700',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
     );
   }
+}
+
+Color _signalColor(ColorScheme colorScheme, String? signalType) {
+  return switch (signalType) {
+    'trace' => colorScheme.primary,
+    'span' => colorScheme.secondary,
+    'error' => colorScheme.error,
+    'breadcrumb' => colorScheme.tertiary,
+    'metric' => colorScheme.outline,
+    _ => colorScheme.outlineVariant,
+  };
+}
+
+String _formatRelative(DateTime? time) {
+  if (time == null) return '-';
+  final diff = DateTime.now().difference(time);
+  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
+}
+
+String _truncate(String value, int maxLength) {
+  if (value.length <= maxLength) return value;
+  return '${value.substring(0, maxLength)}…';
 }

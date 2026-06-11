@@ -38,12 +38,6 @@ class _ApiLabPageState extends State<ApiLabPage> {
   Future<void> _run(String key, Future<void> Function() task) async {
     if (_running.contains(key)) return;
     setState(() => _running.add(key));
-    FlutterMonitorSDK.track(
-      action: 'api.sync.run',
-      result: MonitorTrackResult.started,
-      target: key,
-      properties: <String, Object?>{'api.case': key},
-    );
     try {
       await task();
       _append('$key success');
@@ -68,6 +62,7 @@ class _ApiLabPageState extends State<ApiLabPage> {
         level: MonitorEventLevel.warning,
         target: key,
         error: error.runtimeType.toString(),
+        properties: <String, Object?>{'api.case': key},
       );
     } finally {
       if (mounted) setState(() => _running.remove(key));

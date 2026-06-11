@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:example/widgets/app_section.dart';
+import 'package:example/widgets/app_track.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
@@ -23,15 +25,15 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
   var _chartExpanded = false;
   var _selectedSegment = 0;
   var _chartValues = const <double>[42, 58, 36, 74, 52];
+  var _memoryBusy = false;
 
   @override
   void initState() {
     super.initState();
-    _jankController =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2))
-          ..addListener(() {
-            if (mounted) setState(() {});
-          });
+    _jankController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
     _chartController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 360),
@@ -46,27 +48,25 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
     super.dispose();
   }
 
-  void _blockWhileAnimating() {
-    if (!_jankController.isAnimating) return;
+  void _blockMainThreadBriefly() {
     final start = DateTime.now();
-    while (DateTime.now().difference(start).inMilliseconds < 45) {
-      _retainedMb += 0;
-    }
+    while (DateTime.now().difference(start).inMilliseconds < 45) {}
   }
 
   void _refreshImageWall() {
-    FlutterMonitorSDK.track(
+    if (_jankController.isAnimating) return;
+    _blockMainThreadBriefly();
+    appTrack(
+      context,
       action: 'gallery.image_wall.refresh',
-      result: MonitorTrackResult.started,
       target: 'image_wall',
+      message: '已触发图片墙卡顿场景',
     );
-    if (!_jankController.isAnimating) {
-      _jankController.forward(from: 0);
-    }
+    _jankController.forward(from: 0);
   }
 
   Future<void> _refreshReport() async {
-    final measure = FlutterMonitorSDK.measure(
+    final measure = appMeasure(
       action: 'gallery.report.refresh',
       mode: MonitorMeasureMode.stage,
       target: 'report_chart',
@@ -88,14 +88,6 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
 
   void _switchSegment(int index) {
     if (_selectedSegment == index) return;
-    FlutterMonitorSDK.measure(
-      action: 'gallery.segment.switch',
-      target: 'segment_$index',
-      properties: <String, Object?>{
-        'segment.from': _selectedSegment,
-        'segment.to': index,
-      },
-    );
     setState(() {
       _selectedSegment = index;
       _chartValues = _valuesForSegment(index);
@@ -104,51 +96,43 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
   }
 
   void _toggleReportPanel() {
-    final nextExpanded = !_chartExpanded;
-    final measure = FlutterMonitorSDK.measure(
-      action: 'gallery.report.panel',
-      mode: MonitorMeasureMode.stage,
-      target: 'report_panel',
-      properties: <String, Object?>{
-        'panel.next_state': nextExpanded ? 'expanded' : 'collapsed',
-      },
-    );
-    setState(() => _chartExpanded = nextExpanded);
-    Future<void>.delayed(const Duration(milliseconds: 260)).then((_) {
-      measure.finish(
-        properties: <String, Object?>{'panel.expanded': _chartExpanded},
-      );
-    });
+    setState(() => _chartExpanded = !_chartExpanded);
   }
 
-  void _generateOfflineReports() {
+  Future<void> _generateOfflineReports() async {
+    if (_memoryBusy) return;
+    setState(() => _memoryBusy = true);
     const mb = 24;
     for (var index = 0; index < mb; index++) {
       final chunk = Uint8List(1024 * 1024);
       chunk.fillRange(0, chunk.length, index % 255);
       _retainedReports.add(chunk);
     }
-    setState(() => _retainedMb += mb);
-    FlutterMonitorSDK.track(
+    if (!mounted) return;
+    setState(() {
+      _retainedMb += mb;
+      _memoryBusy = false;
+    });
+    appTrack(
+      context,
       action: 'gallery.offline_report.generate',
-      result: MonitorTrackResult.success,
       target: 'offline_report_button',
-      properties: <String, Object?>{
-        'allocated_mb': mb,
-        'retained_mb': _retainedMb,
-      },
+      properties: <String, Object?>{'allocated_mb': mb, 'retained_mb': _retainedMb},
+      message: '已分配 ${mb}MB retained memory',
     );
   }
 
   void _releaseOfflineReports() {
+    if (_retainedReports.isEmpty || _memoryBusy) return;
     final released = _retainedMb;
     _retainedReports.clear();
     setState(() => _retainedMb = 0);
-    FlutterMonitorSDK.track(
+    appTrack(
+      context,
       action: 'gallery.offline_report.release',
-      result: MonitorTrackResult.success,
       target: 'release_report_button',
       properties: <String, Object?>{'released_mb': released},
+      message: '已释放 ${released}MB',
     );
   }
 
@@ -171,7 +155,6 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
 
   @override
   Widget build(BuildContext context) {
-    _blockWhileAnimating();
     return AppPage(
       routeName: AppRoutes.performanceGallery,
       moduleName: 'content',
@@ -198,14 +181,16 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 240),
                   height: _chartExpanded ? 280 : 200,
-                  child: AnimatedBuilder(
-                    animation: _chartController,
-                    builder: (context, _) {
-                      return _MetricChart(
-                        values: _animatedChartValues,
-                        expanded: _chartExpanded,
-                      );
-                    },
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _chartController,
+                      builder: (context, _) {
+                        return _MetricChart(
+                          values: _animatedChartValues,
+                          expanded: _chartExpanded,
+                        );
+                      },
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -231,7 +216,7 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
             ),
             AppSection(
               title: '复杂内容流',
-              subtitle: '刷新图片墙会制造连续 45ms 帧阻塞，用于验证卡顿链路。',
+              subtitle: '刷新图片墙会制造连续帧阻塞，用于验证卡顿链路。',
               children: [
                 FilledButton.icon(
                   onPressed: _jankController.isAnimating
@@ -241,16 +226,23 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
                   label: Text(_jankController.isAnimating ? '刷新中' : '刷新图片墙'),
                 ),
                 const SizedBox(height: 12),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: 18,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                  ),
-                  itemBuilder: (context, index) => _GalleryTile(index: index),
+                AnimatedBuilder(
+                  animation: _jankController,
+                  builder: (context, _) {
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: 18,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                          ),
+                      itemBuilder: (context, index) =>
+                          _GalleryTile(index: index, progress: _jankController.value),
+                    );
+                  },
                 ),
               ],
             ),
@@ -265,12 +257,12 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
                   runSpacing: 8,
                   children: [
                     FilledButton.icon(
-                      onPressed: _generateOfflineReports,
+                      onPressed: _memoryBusy ? null : _generateOfflineReports,
                       icon: const Icon(Icons.save_alt),
-                      label: const Text('生成离线报表'),
+                      label: Text(_memoryBusy ? '分配中…' : '生成离线报表'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _retainedReports.isEmpty
+                      onPressed: _retainedReports.isEmpty || _memoryBusy
                           ? null
                           : _releaseOfflineReports,
                       icon: const Icon(Icons.delete_outline),
@@ -295,9 +287,10 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
 }
 
 class _GalleryTile extends StatelessWidget {
-  const _GalleryTile({required this.index});
+  const _GalleryTile({required this.index, required this.progress});
 
   final int index;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
@@ -307,7 +300,7 @@ class _GalleryTile extends StatelessWidget {
         color: Color.lerp(
           colorScheme.primaryContainer,
           colorScheme.tertiaryContainer,
-          (index % 6) / 5,
+          ((index % 6) / 5 + progress * 0.2).clamp(0.0, 1.0),
         ),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -347,7 +340,7 @@ class _MetricChart extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         border: Border.all(color: colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: CustomPaint(
         painter: _BarChartPainter(

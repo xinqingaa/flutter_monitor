@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:example/router/app_routes.dart';
+import 'package:example/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
@@ -39,9 +40,9 @@ MonitorMode buildMonitorMode() {
   // );
 
   // 3. 生产默认策略：队列 5000/8MB、flush 15s、成功 HTTP 20%、memory sample 10%。
-  // final monitorMode = MonitorMode.production(
-  //   endpoint: Uri.parse(productionMonitorUrl),
-  // );
+  final monitorMode = MonitorMode.production(
+    endpoint: Uri.parse(productionMonitorUrl),
+  );
 
   // 4. 生产灰度策略：队列更小、flush 更慢、采样更低，适合首轮灰度。
   // final monitorMode = MonitorMode.production(
@@ -56,21 +57,21 @@ MonitorMode buildMonitorMode() {
   // );
 
   // 6. 生产压测策略：全量成功 HTTP / memory / low priority，短 flush，高限流。
-  final monitorMode = MonitorMode.production(
-    endpoint: Uri.parse(productionMonitorUrl),
-    policy: const MonitorProductionPolicy(
-      maxQueueEvents: 12000,
-      maxQueueBytes: 16 * 1024 * 1024,
-      maxBatchEvents: 80,
-      maxBatchBytes: 768 * 1024,
-      flushInterval: Duration(seconds: 5),
-      quickFlushDelay: Duration(milliseconds: 800),
-      successfulHttpSampleRate: 1,
-      lowPrioritySampleRate: 1,
-      memorySampleRate: 1,
-      maxTrackEventsPerMinute: 600,
-    ),
-  );
+  // final monitorMode = MonitorMode.production(
+  //   endpoint: Uri.parse(productionMonitorUrl),
+  //   policy: const MonitorProductionPolicy(
+  //     maxQueueEvents: 12000,
+  //     maxQueueBytes: 16 * 1024 * 1024,
+  //     maxBatchEvents: 80,
+  //     maxBatchBytes: 768 * 1024,
+  //     flushInterval: Duration(seconds: 5),
+  //     quickFlushDelay: Duration(milliseconds: 800),
+  //     successfulHttpSampleRate: 1,
+  //     lowPrioritySampleRate: 1,
+  //     memorySampleRate: 1,
+  //     maxTrackEventsPerMinute: 600,
+  //   ),
+  // );
 
   return monitorMode;
 }
@@ -113,10 +114,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Monitor Shop',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF146C5A)),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
       navigatorObservers: [FlutterMonitorSDK.routeObserver],
       routes: AppRouter.routes(dio: dio),
       initialRoute: AppRoutes.splash,

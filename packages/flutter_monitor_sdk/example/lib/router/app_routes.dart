@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:example/pages/api_lab_page.dart';
 import 'package:example/pages/app_shell.dart';
 import 'package:example/pages/checkout_page.dart';
-import 'package:example/pages/feed_detail_page.dart';
+import 'package:example/pages/event_detail_page.dart';
 import 'package:example/pages/login_page.dart';
 import 'package:example/pages/performance_gallery_page.dart';
 import 'package:example/pages/splash_page.dart';
@@ -15,12 +15,15 @@ class AppRoutes {
 
   static const splash = '/';
   static const app = '/app';
-  static const feedDetail = '/feed_detail';
+  static const eventDetail = '/event_detail';
   static const apiLab = '/api_lab';
   static const checkout = '/checkout';
   static const performanceGallery = '/performance_gallery';
   static const login = '/login';
   static const video = '/video';
+
+  @Deprecated('Use eventDetail')
+  static const feedDetail = eventDetail;
 }
 
 class AppRouter {
@@ -47,10 +50,10 @@ class AppRouter {
         builder: (_) => AppShell(dio: dio),
       ),
       const AppRoute(
-        name: AppRoutes.feedDetail,
+        name: AppRoutes.eventDetail,
         moduleName: 'content',
-        moduleScene: 'detail',
-        builder: _buildFeedDetail,
+        moduleScene: 'event_detail',
+        builder: _buildEventDetail,
       ),
       AppRoute(
         name: AppRoutes.apiLab,
@@ -87,8 +90,8 @@ class AppRouter {
 
   static Widget _buildSplash(BuildContext context) => const SplashPage();
 
-  static Widget _buildFeedDetail(BuildContext context) =>
-      const FeedDetailPage();
+  static Widget _buildEventDetail(BuildContext context) =>
+      const EventDetailPage();
 
   static Widget _buildCheckout(BuildContext context) => const CheckoutPage();
 

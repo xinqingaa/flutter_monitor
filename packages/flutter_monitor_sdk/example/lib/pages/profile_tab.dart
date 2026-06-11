@@ -1,49 +1,39 @@
-import 'package:example/data/demo_api.dart';
 import 'package:example/router/app_navigation.dart';
+import 'package:example/session/app_session.dart';
 import 'package:example/widgets/app_section.dart';
+import 'package:example/widgets/app_track.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class ProfileTab extends StatefulWidget {
-  const ProfileTab({super.key, required this.api});
-
-  final DemoApi api;
+  const ProfileTab({super.key});
 
   @override
   State<ProfileTab> createState() => _ProfileTabState();
 }
 
-class _ProfileTabState extends State<ProfileTab> {
+class _ProfileTabState extends State<ProfileTab>
+    with AutomaticKeepAliveClientMixin {
   var _premium = false;
   var _weakNetwork = false;
 
-  void _togglePremium() {
-    setState(() => _premium = !_premium);
+  @override
+  bool get wantKeepAlive => true;
+
+  void _togglePremium(bool value) {
+    setState(() => _premium = value);
     FlutterMonitorSDK.setContext(
-      userId: _premium ? 'qa_premium_001' : 'qa_free_001',
-      userType: _premium ? 'premium' : 'free',
-      userTags: _premium ? const ['vip', 'qa'] : const ['qa'],
-      cohort: _premium ? 'example_premium' : 'example_free',
-    );
-    FlutterMonitorSDK.track(
-      action: 'profile.membership.toggle',
-      result: MonitorTrackResult.success,
-      target: 'membership_switch',
-      properties: <String, Object?>{'membership.premium': _premium},
+      userType: value ? 'premium' : 'qa',
+      userTags: value ? const ['vip', 'qa'] : const ['qa'],
+      cohort: value ? 'example_premium' : 'example_session',
     );
   }
 
-  void _toggleNetwork() {
-    setState(() => _weakNetwork = !_weakNetwork);
+  void _toggleNetwork(bool value) {
+    setState(() => _weakNetwork = value);
     FlutterMonitorSDK.setContext(
-      networkType: _weakNetwork ? 'cellular' : 'wifi',
-      isWeakNetwork: _weakNetwork,
-    );
-    FlutterMonitorSDK.track(
-      action: 'profile.network.toggle',
-      result: MonitorTrackResult.success,
-      target: 'network_switch',
-      properties: <String, Object?>{'network.weak': _weakNetwork},
+      networkType: value ? 'cellular' : 'wifi',
+      isWeakNetwork: value,
     );
   }
 
@@ -65,11 +55,6 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   void _triggerLayoutError() {
-    FlutterMonitorSDK.track(
-      action: 'profile.debug.layout_overflow',
-      result: MonitorTrackResult.started,
-      target: 'layout_dialog',
-    );
     showDialog<void>(
       context: context,
       builder: (context) => const AlertDialog(
@@ -83,66 +68,85 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  void _switchAccount() {
+    AppNavigation.openLogin(context);
+  }
+
   void _logout() {
-    setState(() => _premium = false);
+    setState(() {
+      _premium = false;
+      _weakNetwork = false;
+    });
+    AppSession.clearUser();
     FlutterMonitorSDK.clearContext(scopes: {MonitorContextScope.user});
-    FlutterMonitorSDK.track(
+    appTrack(
+      context,
       action: 'profile.logout',
-      result: MonitorTrackResult.success,
       target: 'logout_button',
+      message: '已退出登录',
     );
+    AppNavigation.openLogin(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    final userId = AppSession.userId ?? '未登录';
     return Scaffold(
       appBar: AppBar(title: const Text('我的')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text('userId: $userId'),
+              subtitle: Text(_premium ? 'premium · qa' : 'qa · free tier'),
+            ),
+          ),
+          const SizedBox(height: 8),
           AppSection(
-            title: '用户状态',
-            subtitle: '切换后影响后续事件携带的 context.user 和 context.network。',
+            title: '上下文模拟',
+            subtitle: '仅 setContext，不产生额外 track。',
             children: [
               SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 value: _premium,
-                onChanged: (_) => _togglePremium(),
+                onChanged: _togglePremium,
                 title: const Text('会员用户'),
-                subtitle: Text(_premium ? 'premium / vip' : 'free / qa'),
+                subtitle: Text(_premium ? 'premium / vip' : 'qa / free'),
               ),
               SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 value: _weakNetwork,
-                onChanged: (_) => _toggleNetwork(),
+                onChanged: _toggleNetwork,
                 title: const Text('弱网状态'),
                 subtitle: Text(_weakNetwork ? 'cellular weak' : 'wifi normal'),
               ),
             ],
           ),
           AppSection(
-            title: '业务流程',
+            title: '监控场景',
             children: [
-              FilledButton.icon(
-                onPressed: () => AppNavigation.openCheckout(context),
-                icon: const Icon(Icons.shopping_bag_outlined),
-                label: const Text('进入订单结算'),
+              _ScenarioTile(
+                icon: Icons.shopping_bag_outlined,
+                label: '订单结算',
+                onTap: () => AppNavigation.openCheckout(context),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => AppNavigation.openPerformanceGallery(context),
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('打开内容创作中心'),
+              _ScenarioTile(
+                icon: Icons.query_stats,
+                label: '内容创作中心',
+                onTap: () => AppNavigation.openPerformanceGallery(context),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => AppNavigation.openApiLab(context),
-                icon: const Icon(Icons.sync_alt),
-                label: const Text('打开数据同步中心'),
+              _ScenarioTile(
+                icon: Icons.sync_alt,
+                label: '数据同步中心',
+                onTap: () => AppNavigation.openApiLab(context),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => AppNavigation.openVideo(context),
-                icon: const Icon(Icons.smart_display_outlined),
-                label: const Text('打开视频频道'),
+              _ScenarioTile(
+                icon: Icons.smart_display_outlined,
+                label: '视频频道',
+                onTap: () => AppNavigation.openVideo(context),
               ),
             ],
           ),
@@ -150,9 +154,9 @@ class _ProfileTabState extends State<ProfileTab> {
             title: '账号',
             children: [
               FilledButton.icon(
-                onPressed: () => AppNavigation.openLogin(context),
-                icon: const Icon(Icons.login),
-                label: const Text('登录或注册'),
+                onPressed: _switchAccount,
+                icon: const Icon(Icons.switch_account),
+                label: const Text('切换账号'),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
@@ -163,7 +167,7 @@ class _ProfileTabState extends State<ProfileTab> {
             ],
           ),
           AppSection(
-            title: '异常和反馈',
+            title: '异常演示',
             children: [
               OutlinedButton.icon(
                 onPressed: _recordHandledError,
@@ -180,6 +184,29 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ScenarioTile extends StatelessWidget {
+  const _ScenarioTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(label),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }

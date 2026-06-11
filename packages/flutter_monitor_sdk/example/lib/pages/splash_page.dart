@@ -2,7 +2,6 @@ import 'package:example/router/app_navigation.dart';
 import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -16,25 +15,14 @@ class _SplashPageState extends State<SplashPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _enterApp();
+      _enterLogin();
     });
   }
 
-  Future<void> _enterApp() async {
-    FlutterMonitorSDK.track(
-      action: 'launch.bootstrap.start',
-      result: MonitorTrackResult.started,
-      target: 'splash',
-    );
+  Future<void> _enterLogin() async {
     await Future<void>.delayed(const Duration(milliseconds: 650));
     if (!mounted) return;
-    FlutterMonitorSDK.track(
-      action: 'launch.bootstrap.finish',
-      result: MonitorTrackResult.success,
-      target: 'splash',
-      properties: const <String, Object?>{'next_route': AppRoutes.app},
-    );
-    AppNavigation.replaceToApp(context);
+    AppNavigation.replaceToLogin(context);
   }
 
   @override
@@ -69,7 +57,7 @@ class _SplashPageState extends State<SplashPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '正在恢复会话和业务上下文',
+                      '正在启动监控 SDK',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),

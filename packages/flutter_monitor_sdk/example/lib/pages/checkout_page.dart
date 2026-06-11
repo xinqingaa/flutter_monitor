@@ -1,6 +1,7 @@
 import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:example/widgets/app_section.dart';
+import 'package:example/widgets/app_track.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
@@ -18,7 +19,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _submitOrder() async {
     if (_submitting) return;
-    final measure = FlutterMonitorSDK.measure(
+    final measure = appMeasure(
       action: 'checkout.submit',
       mode: MonitorMeasureMode.stage,
       target: 'submit_order_button',
@@ -28,12 +29,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _submitting = true;
       _message = '正在校验订单';
     });
-    FlutterMonitorSDK.track(
-      action: 'checkout.submit',
-      result: MonitorTrackResult.started,
-      target: 'submit_order_button',
-      properties: <String, Object?>{'cart.items': 3, 'coupon.code': _coupon},
-    );
     await Future<void>.delayed(const Duration(milliseconds: 280));
     if (!mounted) {
       measure.cancel(reason: 'page_disposed');
@@ -44,14 +39,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _submitting = false;
         _message = '优惠券已过期，请更换后重试';
       });
-      FlutterMonitorSDK.track(
-        action: 'checkout.validate_coupon',
-        result: MonitorTrackResult.failed,
-        level: MonitorEventLevel.warning,
-        target: 'coupon_field',
-        error: 'coupon_expired',
-        properties: <String, Object?>{'coupon.code': _coupon},
-      );
       measure.cancel(reason: 'coupon_expired');
       return;
     }
@@ -65,12 +52,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _submitting = false;
       _message = '订单提交成功';
     });
-    FlutterMonitorSDK.track(
-      action: 'checkout.submit',
-      result: MonitorTrackResult.success,
-      target: 'submit_order_button',
-      properties: const <String, Object?>{'cart.items': 3, 'order.mock': true},
-    );
     measure.finish(properties: const <String, Object?>{'result': 'success'});
   }
 
@@ -79,12 +60,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _coupon = 'DEMO_OK';
       _message = '优惠券已替换';
     });
-    FlutterMonitorSDK.track(
-      action: 'checkout.coupon.replace',
-      result: MonitorTrackResult.success,
-      target: 'coupon_field',
-      properties: <String, Object?>{'coupon.code': _coupon},
-    );
   }
 
   @override
@@ -100,7 +75,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           children: [
             AppSection(
               title: '订单商品',
-              subtitle: '模拟真实业务链路：校验、失败、重试、成功。',
+              subtitle: '模拟校验、失败、重试、成功链路。',
               children: const [
                 _OrderRow(name: 'Flutter 专题内容包', price: '¥128'),
                 _OrderRow(name: '离线性能报告', price: '¥36'),

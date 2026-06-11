@@ -38,19 +38,6 @@ class DemoApi {
     defaultValue: 'http://127.0.0.1:3700',
   );
 
-  Future<HomeFeedState> loadHomeFeed() async {
-    final results = await Future.wait<Object>([
-      fetchGithubProfile(),
-      fetchGithubRepos(),
-      fetchPosts(),
-    ]);
-    return HomeFeedState(
-      profile: results[0] as GithubProfile,
-      repos: results[1] as List<GithubRepo>,
-      posts: results[2] as List<DemoPost>,
-    );
-  }
-
   Future<GithubProfile> fetchGithubProfile() async {
     final response = await _dio.getUri<Map<String, dynamic>>(githubUserUri);
     final data = response.data;

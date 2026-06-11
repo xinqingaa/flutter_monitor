@@ -1,36 +1,33 @@
 import 'package:example/main.dart';
-import 'package:example/models/demo_models.dart';
+import 'package:example/models/monitor_event_models.dart';
 import 'package:example/pages/checkout_page.dart';
-import 'package:example/pages/feed_detail_page.dart';
-import 'package:example/pages/login_page.dart';
+import 'package:example/pages/event_detail_page.dart';
 import 'package:example/pages/performance_gallery_page.dart';
 import 'package:example/pages/video_page.dart';
 import 'package:example/router/app_routes.dart';
+import 'package:example/session/app_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  setUp(() {
+    AppSession.clearUser();
+  });
+
   setUpAll(() async {
     await _initSdk();
   });
 
-  testWidgets('renders splash and enters swipeable tab app after SDK init', (
-    tester,
-  ) async {
+  testWidgets('renders splash and enters login after SDK init', (tester) async {
     await tester.pumpWidget(const MyApp());
     expect(find.text('Flutter Monitor Shop'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 700));
     await tester.pumpAndSettle();
 
-    expect(find.text('首页'), findsWidgets);
-    expect(find.text('我的'), findsOneWidget);
-
-    await tester.drag(find.byType(PageView), const Offset(-500, 0));
-    await tester.pumpAndSettle();
-    expect(find.text('用户状态'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 1300));
+    expect(find.text('输入 QA 用户 ID 进入监控工作台'), findsOneWidget);
+    expect(find.text('进入首页'), findsOneWidget);
   });
 
   test('app router keeps route module metadata beside builders', () {
@@ -56,30 +53,28 @@ void main() {
     expect(byName[AppRoutes.video]?.moduleScene, 'video');
     expect(byName[AppRoutes.login]?.moduleName, 'auth');
     expect(byName[AppRoutes.login]?.moduleScene, 'login');
-    expect(byName[AppRoutes.feedDetail]?.moduleName, 'content');
-    expect(byName[AppRoutes.feedDetail]?.moduleScene, 'detail');
+    expect(byName[AppRoutes.eventDetail]?.moduleName, 'content');
+    expect(byName[AppRoutes.eventDetail]?.moduleScene, 'event_detail');
   });
 
-  testWidgets('feed detail renders business actions and share sheet', (
+  testWidgets('event detail renders envelope fields and json toggle', (
     tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        initialRoute: AppRoutes.feedDetail,
-        onGenerateRoute: _feedDetailRoute,
+        initialRoute: AppRoutes.eventDetail,
+        onGenerateRoute: _eventDetailRoute,
       ),
     );
     await tester.pump();
 
-    expect(find.text('内容详情'), findsOneWidget);
-    expect(find.text('收藏'), findsOneWidget);
-    expect(find.text('分享'), findsOneWidget);
-    expect(find.text('基于内容创建订单'), findsOneWidget);
+    expect(find.text('事件详情'), findsOneWidget);
+    expect(find.text('app.cold_start'), findsOneWidget);
+    expect(find.text('Raw Envelope JSON'), findsOneWidget);
 
-    await tester.tap(find.text('分享'));
+    await tester.tap(find.text('Raw Envelope JSON'));
     await tester.pumpAndSettle();
-    expect(find.text('分享备注'), findsOneWidget);
-    expect(find.text('复制链接'), findsOneWidget);
+    expect(find.textContaining('"eventId"'), findsOneWidget);
   });
 
   testWidgets('checkout page renders submit flow', (tester) async {
@@ -108,20 +103,23 @@ void main() {
     expect(find.text('生成离线报表'), findsOneWidget);
   });
 
-  testWidgets('login page writes auth context through form flow', (
-    tester,
-  ) async {
-    await tester.pumpWidget(const MaterialApp(home: LoginPage()));
+  testWidgets('login page accepts userId and enters home', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        routes: AppRouter.routes(dio: dio),
+        initialRoute: AppRoutes.login,
+      ),
+    );
     await tester.pump();
 
-    expect(find.text('登录注册'), findsOneWidget);
-    await tester.enterText(find.byType(TextField).last, '1234');
-    await tester.tap(find.text('提交'));
-    await tester.pump(const Duration(milliseconds: 420));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('进入首页'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '42');
+    await tester.tap(find.text('进入首页'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('登录成功，用户上下文已写入'), findsOneWidget);
+    expect(find.text('监控事件'), findsOneWidget);
+    expect(AppSession.userId, '42');
   });
 
   testWidgets('video page supports page view and comment sheet', (
@@ -157,7 +155,7 @@ Future<void> _initSdk() async {
   );
 }
 
-Route<void> _feedDetailRoute(RouteSettings settings) {
+Route<void> _eventDetailRoute(RouteSettings settings) {
   if (settings.name == AppRoutes.checkout) {
     return MaterialPageRoute<void>(builder: (_) => const CheckoutPage());
   }
@@ -168,17 +166,20 @@ Route<void> _feedDetailRoute(RouteSettings settings) {
   }
   return MaterialPageRoute<void>(
     settings: RouteSettings(
-      name: AppRoutes.feedDetail,
-      arguments: const DemoFeedItem(
-        id: 'repo_1',
-        title: 'flutter',
-        subtitle: 'flutter/flutter',
-        description: 'Flutter makes it easy and fast to build beautiful apps.',
-        source: 'GitHub',
-        metricLabel: 'Stars',
-        metricValue: '1',
+      name: AppRoutes.eventDetail,
+      arguments: MonitorEventItem(
+        eventId: 'evt_test_001',
+        raw: const <String, dynamic>{
+          'eventId': 'evt_test_001',
+          'name': 'app.cold_start',
+          'signalType': 'trace',
+          'status': 'ok',
+        },
+        name: 'app.cold_start',
+        signalType: 'trace',
+        status: 'ok',
       ),
     ),
-    builder: (_) => const FeedDetailPage(),
+    builder: (_) => const EventDetailPage(),
   );
 }
