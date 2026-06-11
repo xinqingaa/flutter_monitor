@@ -33,6 +33,33 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1300));
   });
 
+  test('app router keeps route module metadata beside builders', () {
+    final routes = AppRouter.routeDefinitions(dio: dio);
+    final byName = <String, AppRoute>{
+      for (final route in routes) route.name: route,
+    };
+
+    expect(byName[AppRoutes.splash]?.moduleName, 'launch');
+    expect(byName[AppRoutes.splash]?.moduleScene, 'splash');
+    expect(byName[AppRoutes.app]?.moduleName, 'home');
+    expect(byName[AppRoutes.app]?.moduleScene, 'feed');
+    expect(byName[AppRoutes.apiLab]?.moduleName, 'ops');
+    expect(byName[AppRoutes.apiLab]?.moduleScene, 'api_lab');
+    expect(byName[AppRoutes.checkout]?.moduleName, 'commerce');
+    expect(byName[AppRoutes.checkout]?.moduleScene, 'checkout');
+    expect(byName[AppRoutes.performanceGallery]?.moduleName, 'content');
+    expect(
+      byName[AppRoutes.performanceGallery]?.moduleScene,
+      'performance_gallery',
+    );
+    expect(byName[AppRoutes.video]?.moduleName, 'content');
+    expect(byName[AppRoutes.video]?.moduleScene, 'video');
+    expect(byName[AppRoutes.login]?.moduleName, 'auth');
+    expect(byName[AppRoutes.login]?.moduleScene, 'login');
+    expect(byName[AppRoutes.feedDetail]?.moduleName, 'content');
+    expect(byName[AppRoutes.feedDetail]?.moduleScene, 'detail');
+  });
+
   testWidgets('feed detail renders business actions and share sheet', (
     tester,
   ) async {

@@ -12,8 +12,8 @@ const monitorServerUrl = String.fromEnvironment(
 );
 
 const productionMonitorUrl = String.fromEnvironment(
-  'FM_PRODUCTION_SERVER_URL',
-  defaultValue: 'https://monitor.example.com/api/monitor/v1/events',
+  'FM_SERVER_URL',
+  defaultValue: 'http://127.0.0.1:3700/api/monitor/v1/events',
 );
 
 Future<String?> monitorAuthToken() async {
@@ -34,14 +34,14 @@ MonitorMode buildMonitorMode() {
   // final monitorMode = MonitorMode.consoleOnly();
 
   // 2. Workbench live 模式：适合接入本地 workbench service。
-  final monitorMode = MonitorMode.localLive(
-    endpoint: Uri.parse(monitorServerUrl),
-  );
+  // final monitorMode = MonitorMode.localLive(
+  //   endpoint: Uri.parse(monitorServerUrl),
+  // );
 
   // 3. 生产默认策略：SDK 内置 batch、retry、offline queue、sampling。
-  // final monitorMode = MonitorMode.production(
-  //   endpoint: Uri.parse(productionMonitorUrl),
-  // );
+  final monitorMode = MonitorMode.production(
+    endpoint: Uri.parse(productionMonitorUrl),
+  );
 
   // 4. 生产灰度策略：更小队列、更低采样、更慢 flush。
   // final monitorMode = MonitorMode.production(
