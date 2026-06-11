@@ -11,6 +11,7 @@ import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.da
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
+import 'package:flutter_monitor_sdk/src/outputs/monitor_output_resolver.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
@@ -67,7 +68,7 @@ class Reporter {
     _breadcrumbStore = BreadcrumbStore(
       capacity: _config.effectiveQueueConfig.maxQueueSize,
     );
-    _outputs = _config.effectiveOutputs;
+    _outputs = resolveMonitorOutputs(_config);
     _pipeline = EventPipeline(
       contextManager: _contextManager,
       sessionManager: _sessionManager,

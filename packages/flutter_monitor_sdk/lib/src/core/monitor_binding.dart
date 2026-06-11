@@ -23,7 +23,7 @@ import '../modules/performance_monitor.dart';
 ///
 /// 业务侧不应直接依赖该类；public API 通过 `FlutterMonitorSDK` 转发到这里。
 class MonitorBinding {
-  late final JankMonitor jankMonitor; // JankMonitor 实例
+  JankMonitor? _jankMonitor;
   LifecycleManager? _lifecycleManager;
   MemoryCollector? _memoryCollector;
   NativeBridgeController? _nativeBridgeController;
@@ -55,54 +55,38 @@ class MonitorBinding {
   /// resource。该方法会发出冷启动、SDK init、memory sample 等首批事件，
   /// 因此初始化顺序对 envelope 上下文完整性非常关键。
   Future<void> _start({required DateTime appStartTime}) async {
-    if (config.enablePerformanceMonitor) {
-      _startupTraceController = StartupTraceController(
-        reporter: reporter,
-        appStartTime: appStartTime,
-      )..startSdkInit();
-    }
+    _startupTraceController = StartupTraceController(
+      reporter: reporter,
+      appStartTime: appStartTime,
+    )..startSdkInit();
 
-    // 2. 根据配置，决定是否初始化各个监控模块。
     reporter.onPageActivity = _handlePageActivity;
 
-    if (config.enableErrorMonitor) {
-      try {
-        errorMonitor = ErrorMonitor(reporter);
-        errorMonitor.init();
-        debugPrint("✅ ErrorMonitor 初始化成功");
-      } catch (e) {
-        debugPrint("错误: ErrorMonitor 初始化失败: $e");
-      }
+    try {
+      errorMonitor = ErrorMonitor(reporter);
+      errorMonitor.init();
+      debugPrint("✅ ErrorMonitor 初始化成功");
+    } catch (e) {
+      debugPrint("错误: ErrorMonitor 初始化失败: $e");
     }
 
-    //  3. Performance Monitor 先于 JankMonitor 初始化
-    if (config.enablePerformanceMonitor) {
-      try {
-        performanceMonitor = PerformanceMonitor(
-          reporter,
-          startupTraceController: _startupTraceController,
-        );
-        // 将 App 启动时间传递给性能监控器，用于计算启动耗时。
-        performanceMonitor.init(appStartTime);
-        // 监听路由变化，更新当前页面
-        performanceMonitor.routeObserver.onPageRoutePushed = (name) {
-          if (name != null) {
-            _currentPage = name;
-          }
-        };
-        debugPrint("✅ PerformanceMonitor 初始化成功");
-      } catch (e) {
-        debugPrint("错误: PerformanceMonitor 初始化失败: $e");
-      }
+    try {
+      performanceMonitor = PerformanceMonitor(
+        reporter,
+        startupTraceController: _startupTraceController,
+      );
+      performanceMonitor.init(appStartTime);
+      performanceMonitor.routeObserver.onPageRoutePushed = (name) {
+        if (name != null) {
+          _currentPage = name;
+        }
+      };
+      debugPrint("✅ PerformanceMonitor 初始化成功");
+    } catch (e) {
+      debugPrint("错误: PerformanceMonitor 初始化失败: $e");
     }
 
-    final needsFrameTimings =
-        config.enableJankMonitor ||
-        config.effectiveFrameConfig.enabled ||
-        config.effectiveInteractionConfig.enabled;
-    if (needsFrameTimings) {
-      _frameTimingDispatcher = FrameTimingDispatcher();
-    }
+    _frameTimingDispatcher = FrameTimingDispatcher();
 
     if (config.effectiveFrameConfig.enabled) {
       try {
@@ -131,35 +115,32 @@ class MonitorBinding {
       }
     }
 
-    // 4. enableJankMonitor 初始化UI卡顿
-    if (config.enableJankMonitor) {
-      try {
-        jankMonitor = JankMonitor(
-          reporter,
-          getCurrentPage: () => _currentPage ?? 'unknown',
-          onJankSequenceReported: () {
-            unawaited(
-              _memoryCollector?.recordGrowth(
-                    trigger: TriggerValues.jankSequence,
-                    emitSample: true,
-                  ) ??
-                  Future<void>.value(),
-            );
-            unawaited(
-              _nativeBridgeController?.recordMemorySample(
-                    trigger: TriggerValues.jankSequence,
-                  ) ??
-                  Future<void>.value(),
-            );
-          },
-          config: config.effectiveJankConfig,
-        );
-        jankMonitor.init();
-        _frameTimingDispatcher?.addListener(jankMonitor.recordTimings);
-        debugPrint("✅ JankMonitor 初始化成功");
-      } catch (e) {
-        debugPrint("错误: JankMonitor 初始化失败: $e");
-      }
+    try {
+      _jankMonitor = JankMonitor(
+        reporter,
+        getCurrentPage: () => _currentPage ?? 'unknown',
+        onJankSequenceReported: () {
+          unawaited(
+            _memoryCollector?.recordGrowth(
+                  trigger: TriggerValues.jankSequence,
+                  emitSample: true,
+                ) ??
+                Future<void>.value(),
+          );
+          unawaited(
+            _nativeBridgeController?.recordMemorySample(
+                  trigger: TriggerValues.jankSequence,
+                ) ??
+                Future<void>.value(),
+          );
+        },
+        config: config.effectiveJankConfig,
+      );
+      _jankMonitor!.init();
+      _frameTimingDispatcher?.addListener(_jankMonitor!.recordTimings);
+      debugPrint("✅ JankMonitor 初始化成功");
+    } catch (e) {
+      debugPrint("错误: JankMonitor 初始化失败: $e");
     }
 
     _frameTimingDispatcher?.init();
@@ -374,6 +355,11 @@ class MonitorBinding {
 
   Future<void> dispose() async {
     try {
+      errorMonitor.dispose();
+    } catch (e) {
+      debugPrint("错误: ErrorMonitor dispose 失败: $e");
+    }
+    try {
       _interactionMeasureCollector?.dispose();
     } catch (e) {
       debugPrint("错误: InteractionMeasureCollector dispose 失败: $e");
@@ -384,12 +370,10 @@ class MonitorBinding {
     } catch (e) {
       debugPrint("错误: Reporter dispose 失败: $e");
     }
-    if (config.enableJankMonitor) {
-      try {
-        jankMonitor.dispose();
-      } catch (e) {
-        debugPrint("错误: JankMonitor dispose 失败: $e");
-      }
+    try {
+      _jankMonitor?.dispose();
+    } catch (e) {
+      debugPrint("错误: JankMonitor dispose 失败: $e");
     }
     try {
       _frameTimingDispatcher?.dispose();

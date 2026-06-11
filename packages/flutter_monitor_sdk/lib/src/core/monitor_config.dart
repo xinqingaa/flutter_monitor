@@ -1,11 +1,8 @@
 import '../outputs/log_monitor_output.dart';
-import '../outputs/monitor_output.dart';
 import '../modules/jank_monitor.dart';
 import '../native/monitor_native_bridge.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:flutter_monitor_sdk/src/delivery/reliable_http_output.dart';
-import 'package:flutter_monitor_sdk/src/delivery/sqlite_offline_event_queue.dart';
 
 /// 监控队列配置。
 ///
@@ -94,22 +91,55 @@ class MonitorMode {
 /// 普通使用者在初始化时维护一组彼此相关的细碎配置。后续实现 SQLite 离线
 /// 队列和 production delivery 时会消费这些默认值。
 class MonitorProductionPolicy {
+  /// 离线队列最多保留的事件数，超过后按优先级和时间淘汰。
   final int maxQueueEvents;
+
+  /// 离线队列最多占用的字节数，避免监控数据无限增长。
   final int maxQueueBytes;
+
+  /// 单个 envelope 的最大字节数，超限事件会被丢弃并产生 SDK 自监控事件。
   final int maxEventBytes;
+
+  /// 单次 flush 最多发送的事件数。
   final int maxBatchEvents;
+
+  /// 单次 flush 最多发送的字节数。
   final int maxBatchBytes;
+
+  /// 常规后台 flush 间隔。
   final Duration flushInterval;
+
+  /// 新事件入队后的快速 flush 延迟，用于兼顾实时性和批量效率。
   final Duration quickFlushDelay;
+
+  /// 单次上报请求超时时间。
   final Duration requestTimeout;
+
+  /// 同一批事件最多重试次数，超过后按策略丢弃。
   final int maxRetryAttempts;
+
+  /// 重试退避的基础延迟。
   final Duration retryBaseDelay;
+
+  /// 重试退避的最大延迟。
   final Duration retryMaxDelay;
+
+  /// 事件在离线队列中的最长保留时间。
   final Duration maxEventAge;
+
+  /// 默认采样率，作用于未被更具体规则覆盖的普通事件。
   final double defaultSampleRate;
+
+  /// 低优先级事件采样率，用于控制噪声和网络成本。
   final double lowPrioritySampleRate;
+
+  /// 成功 HTTP 事件采样率，失败 HTTP 不受该字段影响。
   final double successfulHttpSampleRate;
+
+  /// memory sample 采样率，growth、pressure 等关键内存事件不按普通 sample 处理。
   final double memorySampleRate;
+
+  /// 单分钟最多接收的业务 track 事件数，超过后丢弃并记录 SDK 自监控。
   final int maxTrackEventsPerMinute;
 
   const MonitorProductionPolicy({
@@ -357,28 +387,13 @@ class MonitorConfig {
   /// 这些字段进入 `resource.app.*`，用于版本、环境、渠道等稳定维度聚合。
   final AppInfo appInfo;
 
-  /// 是否启用 Flutter/Dart 错误自动采集。
-  final bool enableErrorMonitor;
-
-  /// 是否启用启动、页面和 route 性能采集。
-  final bool enablePerformanceMonitor;
-
-  /// 是否启用 UI 卡顿采集。
-  final bool enableJankMonitor;
-
   /// 输出模式。
   ///
   /// 普通接入方只需要选择 `consoleOnly`、`localLive` 或 `production`。
   /// SDK 会根据模式选择日志、本地 Workbench 或生产可靠上报策略。
   final MonitorMode mode;
 
-  /// 高级/测试输出配置。
-  ///
-  /// 每个 custom output 都会收到经过 schema 校验和隐私过滤后的 envelope JSON。
-  /// 真实 App 推荐优先使用 [mode]，不要把自定义 HTTP output 作为默认生产路径。
-  final List<MonitorOutput>? customOutputs;
-
-  /// 卡顿监控配置，仅在 [enableJankMonitor] 为 true 时生效。
+  /// 卡顿监控配置。
   final JankConfig? jankConfig;
 
   /// 队列配置。
@@ -403,11 +418,6 @@ class MonitorConfig {
   const MonitorConfig({
     required this.appInfo,
     this.mode = const MonitorMode._(name: SdkOutputModes.consoleOnly),
-    this.enableErrorMonitor = true,
-    this.enablePerformanceMonitor = true,
-    this.enableJankMonitor = true,
-    List<MonitorOutput>? customOutputs,
-    List<MonitorOutput>? outputs,
     this.jankConfig,
     this.queueConfig,
     this.sessionConfig,
@@ -415,43 +425,10 @@ class MonitorConfig {
     this.frameConfig,
     this.interactionConfig,
     this.nativeBridge,
-  }) : customOutputs = customOutputs ?? outputs;
-
-  /// 获取实际使用的输出列表。
-  ///
-  /// output 是 envelope 离开 SDK 的唯一出口，例如日志、HTTP 或自定义调试输出。
-  List<MonitorOutput> get effectiveOutputs {
-    if (customOutputs != null && customOutputs!.isNotEmpty) {
-      return customOutputs!;
-    }
-
-    if (mode.name == SdkOutputModes.consoleOnly) {
-      return <MonitorOutput>[LogMonitorOutput(mode: mode.logMode)];
-    }
-
-    final endpoint = mode.endpoint;
-    if (endpoint != null &&
-        (mode.name == SdkOutputModes.localLive ||
-            mode.name == SdkOutputModes.production)) {
-      return <MonitorOutput>[
-        ReliableHttpOutput(
-          endpoint: endpoint,
-          mode: mode.name,
-          policy: mode.productionPolicy,
-          authTokenProvider: mode.authTokenProvider,
-          queue: SqliteOfflineEventQueue(policy: mode.productionPolicy),
-        ),
-      ];
-    }
-
-    return const <MonitorOutput>[];
-  }
+  });
 
   /// 获取实际使用的卡顿配置。
   JankConfig get effectiveJankConfig {
-    if (!enableJankMonitor) {
-      return JankConfig.defaultConfig();
-    }
     return jankConfig ?? JankConfig.defaultConfig();
   }
 

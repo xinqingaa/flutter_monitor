@@ -23,7 +23,7 @@
 - 通过 `MonitoredGestureDetector` 采集的关键用户行为；
 - 基于 Flutter frame timing 的 UI 连续卡顿序列；
 - app、user、device、platform、timestamp 和 custom context 补充；
-- log、HTTP 和 custom output。
+- consoleOnly、localLive 和 production 三种输出模式。
 
 明确判断：现有代码的大部分不应该移除。错误、启动耗时、页面加载、API 耗时、卡顿、用户点击、PV、页面停留，这些都是非常有价值的信号源。
 
@@ -48,7 +48,7 @@
 | `MonitoredGestureDetector` | ui tap breadcrumb 或业务 action trace 入口 |
 | `JankMonitor` | frame/jank 信号源，关联页面、操作、设备等级和 breadcrumbs |
 | `Reporter` | 从事件分发器升级为 envelope 构建和 pipeline 入口 |
-| `MonitorOutput` | 统一事件模型的输出插件体系 |
+| `MonitorMode` | 统一事件模型的输出模式，负责选择 consoleOnly、localLive 或 production |
 
 这张表只说明迁移归位，不要求一次性重命名或重写所有模块。
 

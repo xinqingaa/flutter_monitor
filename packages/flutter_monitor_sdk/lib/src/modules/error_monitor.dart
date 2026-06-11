@@ -8,6 +8,9 @@ import 'package:flutter_monitor_sdk/src/core/reporter.dart';
 /// `FlutterMonitorSDK.recordError` 主动上报。
 class ErrorMonitor {
   final Reporter _reporter;
+  FlutterExceptionHandler? _previousFlutterOnError;
+  bool Function(Object error, StackTrace stack)? _previousPlatformOnError;
+  var _initialized = false;
 
   /// 创建错误采集器。
   ErrorMonitor(this._reporter);
@@ -17,6 +20,11 @@ class ErrorMonitor {
   /// Flutter framework error 仍保留默认控制台输出；Dart 顶层错误被视为已由 SDK
   /// 捕获并返回 true。
   void init() {
+    if (_initialized) return;
+    _initialized = true;
+    _previousFlutterOnError = FlutterError.onError;
+    _previousPlatformOnError = PlatformDispatcher.instance.onError;
+
     // 1. 捕获Flutter框架错误
     FlutterError.onError = (FlutterErrorDetails details) {
       // 可以在这里处理，或者直接上报
@@ -29,6 +37,16 @@ class ErrorMonitor {
       _reportDartError(error, stack);
       return true; // 返回true表示错误已经被处理
     };
+  }
+
+  /// 恢复 SDK 初始化前的错误回调。
+  void dispose() {
+    if (!_initialized) return;
+    FlutterError.onError = _previousFlutterOnError;
+    PlatformDispatcher.instance.onError = _previousPlatformOnError;
+    _previousFlutterOnError = null;
+    _previousPlatformOnError = null;
+    _initialized = false;
   }
 
   void _reportFlutterError(FlutterErrorDetails details) {

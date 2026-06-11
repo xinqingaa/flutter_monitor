@@ -21,11 +21,8 @@ export 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
 export 'package:flutter_monitor_sdk/src/utils/page_render_monitor.dart';
 export 'package:flutter_monitor_sdk/src/utils/monitor_page_scope.dart';
 export 'package:flutter_monitor_sdk/src/utils/performance_utils.dart';
-export 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
-export 'package:flutter_monitor_sdk/src/outputs/log_monitor_output.dart';
-export 'package:flutter_monitor_sdk/src/outputs/custom_log_output.dart';
-export 'package:flutter_monitor_sdk/src/delivery/reliable_http_output.dart'
-    show ReliableHttpOutput;
+export 'package:flutter_monitor_sdk/src/outputs/log_monitor_output.dart'
+    show LogMonitorOutputMode;
 export 'package:flutter_monitor_core/flutter_monitor_core.dart'
     show
         EventLevel,
