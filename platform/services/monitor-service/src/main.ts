@@ -32,7 +32,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(port, '0.0.0.0');
 
-  const sqlitePath = process.env.FM_WORKBENCH_SQLITE_PATH || '(default workbench/.data/events.sqlite)';
+  const sqlitePath = process.env.FM_WORKBENCH_SQLITE_PATH || '(default platform/.data/events.sqlite)';
   console.log(`Flutter Monitor service listening at http://localhost:${port}`);
   console.log(`Swagger docs: http://localhost:${port}/docs`);
   console.log(`SQLite store: ${sqlitePath}`);
@@ -57,7 +57,7 @@ bootstrap().catch((error) => {
   if (error && typeof error === 'object' && 'code' in error && error.code === 'EADDRINUSE') {
     const port = process.env.PORT || '3700';
     console.error(`Flutter Monitor service could not start because port ${port} is already in use.`);
-    console.error('Run "bash scripts/workbench.sh stop" or set FM_SERVER_PORT to another port.');
+    console.error('Run "bash scripts/platform.sh stop" or set FM_SERVER_PORT to another port.');
     process.exit(1);
   }
   throw error;

@@ -1,13 +1,21 @@
-# Workbench Service API
+# Workbench Service API（已废弃）
 
-本文档描述当前本地 `workbench/service` 的 HTTP API。它服务于本地调试、QA 复现和 Workbench Web 查询。Phase 6 会将这部分服务端能力迁移到 `services/monitor_service`，并在 `docs/server_protocol.md` 中收口 Monitor Service 协议。
+> **Deprecated**：本地 HTTP API 位于 `platform/services/monitor-service`（NestJS）。
+>
+> - Swagger UI：`http://localhost:3700/docs`
+> - OpenAPI JSON：`http://localhost:3700/docs-json`
+> - 数据边界：`platform/services/monitor-service/docs/boundaries.md`
+> - 协议说明：`docs/server_protocol.md`
+
+本文档保留历史 endpoint 说明供对照；新开发请以 Swagger 为准。
 
 ## 端口与入口
 
 | 地址 | 用途 | 说明 |
 |---|---|---|
-| `http://localhost:4700/` | Workbench Web 开发入口 | Vite dev server，读取 `workbench/web/src`，开发时优先访问这里。 |
-| `http://localhost:3700/` | Workbench service 静态入口 | service 会优先托管 `workbench/web/dist`，否则使用 `workbench/service/public` 中的静态占位页。 |
+| `http://localhost:4700/` | Workbench Web 开发入口 | Vite dev server，读取 `platform/web/src`，开发时优先访问这里。 |
+| `http://localhost:3700/` | Monitor Service 静态入口 | service 会优先托管 `platform/web/dist`，否则使用 `platform/services/monitor-service/public` 中的静态占位页。 |
+| `http://localhost:3700/docs` | Swagger API 文档 | 开发时查看 endpoint 与请求/响应 schema。 |
 | `http://localhost:3700/api/monitor/v1/*` | Workbench service API | SDK 写入、Workbench 查询和 SSE 都走这里。 |
 
 开发阶段应把 `4700` 作为主工作台入口，把 `3700` 作为 API service。`3700 /` 只适合 build 后预览或静态占位页，不代表当前前端源码。

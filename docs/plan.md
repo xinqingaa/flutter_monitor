@@ -22,7 +22,7 @@ Flutter-only SDK 的本地生产接入闭环已经完成：输出模式收敛、
 | Phase 3 现有 Flutter 信号接入 | 主链路完成 | 启动、页面、HTTP、错误、行为、交互、卡顿、lifecycle、memory 线索已进入 session timeline。 |
 | Phase 4 Memory / Native / Lifecycle | Flutter 侧完成主线，native 暂停 | Flutter/Dart memory sample/growth/lifecycle 已推进；native 保留 optional/experimental，不作为近期主线。 |
 | Phase 5 Flutter-only 生产接入能力 | 完成 | 输出模式、production policy、离线队列、重试、采样限流、优先级、SDK 自监控、Workbench 回查、example 真实场景和多策略手工验证已完成。 |
-| Phase 6 NestJS Monitor Service、Evidence Pack 与真实 App 灰度验证 | 紧随 Phase 5 | 独立 `services/monitor_service`，搬迁现有 Workbench service，新增 evidence pack，支撑真实 App QA/灰度接入。 |
+| Phase 6 Platform Monitor Service、Evidence Pack 与真实 App 灰度验证 | 紧随 Phase 5 | `platform/services/monitor-service`，Evidence API，支撑真实 App QA/灰度接入。 |
 | Phase 7 DevTools 桥接与会话导出 | 后置 | 等真实 App 接入闭环稳定后再做 Timeline、bridge、export/import。 |
 | Phase 8 工具入口扩展 | 后置 | CLI、MCP、独立 DevTools tooling 等只消费 core envelope/export，不承担 runtime 采集。 |
 
@@ -451,9 +451,9 @@ kind, name, status, phase, route, duration_ms, session, trace, span, event
 
 目标：
 
-- 新建独立 `services/monitor_service`，采用 NestJS 技术栈，承接现有 `workbench/service` 的 ingest、storage、query、SSE、performance overview 和 smoke test。
+- Monitor Service 位于 `platform/services/monitor-service`（NestJS），承接 ingest、storage、query、SSE、performance overview 和 smoke test。
 - 明确 SDK 职责减轻：SDK 只采集、组装、过滤和上报 raw `EventEnvelope`，不生成聚合类证据，不生成 issue group，不承担 agent-oriented diagnostics。
-- 将 Workbench 降级为独立 Web UI，后续迁出 `workbench/web` 到 `web`，只消费 `services/monitor_service` API，不再持有服务端诊断逻辑。
+- 将 Workbench 降级为独立 Web UI，后续迁出 `platform/web` 到 `web`，只消费 `platform/services/monitor-service` API，不再持有服务端诊断逻辑。
 - 与端侧可靠上报策略对齐，验证 SDK 能可靠发送、Monitor Service 能可靠接收、Workbench 或查询 API 能可靠回查。
 - 新增一个 evidence pack 接口，把 raw envelope 派生为可追溯的问题索引和证据包，用于人 review、Workbench 展示和未来 Agent 辅助定位代码上下文。
 - 接入一个真实中大型 App 或同等级业务工程的 QA/灰度包，验证启动、页面、HTTP、错误、行为、交互、卡顿、内存和 lifecycle 在真实业务流中的链路价值。
@@ -536,7 +536,7 @@ web/
 边界：
 
 - `packages/flutter_monitor_sdk`：只负责 Flutter runtime 采集、raw envelope 构建、隐私过滤、采样限流、离线队列和可靠上报。
-- `services/monitor_service`：负责接收、存储、查询、聚合、evidence pack 和 remote config。
+- `platform/services/monitor-service`：负责接收、存储、查询、聚合、evidence pack 和 remote config。
 - `web`：负责人类 review 的 UI，不拥有 ingest、storage、diagnostics 规则。
 - `packages/flutter_monitor_core`：继续承载 Dart 侧唯一模型、字段注册、schema validation、privacy、summary 和 export。
 - `packages/flutter_monitor_mcp` 或未来 MCP：暂定，不在 Phase 6 实施；后续只能消费 Monitor Service API，不直接读数据库或复制 diagnostics 规则。
@@ -786,17 +786,17 @@ Agent 边界：
 
 目标：
 
-- `workbench/web` 迁移为独立 `web`。
+- `platform/web` 迁移为独立 `web`。
 - 去除 `workbench` workspace 配置。
-- Web datasource 指向 `services/monitor_service`。
+- Web datasource 指向 `platform/services/monitor-service`。
 - UI 产品名仍可叫 Flutter Monitor Workbench，但代码目录不再承担 service 职责。
 
 迁移步骤：
 
-1. 移动 `workbench/web` 到 `web`。
-2. 如 `workbench/shared` 只被 Web 使用，合并到 `web/src/shared`。
+1. 移动 `platform/web` 到 `web`。
+2. 如 `platform/shared` 只被 Web 使用，合并到 `web/src/shared`。
 3. 更新 `package.json`、Vite proxy、端口和脚本。
-4. 更新 README、AGENTS、SKILL、workbench/docs 和 plan 引用。
+4. 更新 README、AGENTS、SKILL、platform/docs 和 plan 引用。
 5. 保持 Web 默认端口 `4700`，service 默认端口 `3700`。
 
 ### Phase 6 分阶段交付
@@ -805,13 +805,13 @@ Agent 边界：
 
 目标：
 
-- 新建 `services/monitor_service` NestJS 项目。
+- 新建 `platform/services/monitor-service` NestJS 项目。
 - 无行为变化地搬迁现有 ingest、SQLite store、query、SSE、performance overview 和 smoke test。
 - 保持现有 Web 能通过配置切换到新 service。
 
 交付物：
 
-- `services/monitor_service/src/main.ts`、`app.module.ts` 和基础模块目录。
+- `platform/services/monitor-service/src/main.ts`、`app.module.ts` 和基础模块目录。
 - 等价的 `POST /api/monitor/v1/events`、`GET /recent`、`GET /sessions`、`GET /events/:eventId`、`GET /traces/:traceId`、`GET /stream`。
 - service smoke test 覆盖 ingest -> query -> SSE publish 的基础链路。
 
@@ -887,7 +887,7 @@ Agent 边界：
 
 目标：
 
-- 将 `workbench/web` 迁移为独立 `web`。
+- 将 `platform/web` 迁移为独立 `web`。
 - 移除 Workbench 前后端 workspace 耦合。
 - Web 只通过 Monitor Service API 读取数据。
 
@@ -926,12 +926,12 @@ Agent 边界：
 
 ### 实施顺序
 
-1. 新建 `services/monitor_service` NestJS 项目，保留当前 Node/TS 生态。
+1. 新建 `platform/services/monitor-service` NestJS 项目，保留当前 Node/TS 生态。
 2. 搬运 `workbench/service` 的 store、ingest、query、SSE、performance overview 和 smoke test，不改变 API 语义。
 3. 建立 `schemas/event_envelope.schema.json` 第一版，并在 ingest 中执行 schema 校验。
 4. 保持现有 Workbench API 兼容，确保原 Web 可以切到新 service。
-5. 将 `workbench/web` 迁移为独立 `web`，移除 workspace 配置。
-6. 更新 scripts，使本地开发能分别启动 `services/monitor_service` 和 `web`，并保留端口复用规则。
+5. 将 `platform/web` 迁移为独立 `web`，移除 workspace 配置。
+6. 更新 scripts，使本地开发能分别启动 `platform/services/monitor-service` 和 `web`，并保留端口复用规则。
 7. 新增 `diagnostics/evidence` 接口和 evidence pack DTO。
 8. 实现第一批确定性 issue group 规则：error、failed HTTP、slow HTTP、slow page、slow interaction、jank、memory、lifecycle。
 9. 在 Web 中增加 evidence pack 入口，先用于 session detail 或 event detail 的“诊断证据”面板。
@@ -942,7 +942,7 @@ Agent 边界：
 
 Phase 6 完成时应满足：
 
-- `services/monitor_service` 成为唯一服务端入口，当前 `workbench/service` 的能力已迁移或明确废弃。
+- `platform/services/monitor-service` 成为唯一服务端入口，当前 `workbench/service` 的能力已迁移或明确废弃。
 - `web` 成为独立 UI 应用，不再通过 workspace 与 service 绑定。
 - 旧 API 行为保持兼容，现有 raw envelope、session、trace、event、recent、dimensions、performance overview 查询可用。
 - ingest 支持 schema validation、eventId 幂等、batch 写入、明确错误码和 SSE publish。
@@ -984,8 +984,8 @@ Workbench 是横跨本地调试、QA 复现和灰度验证的消费侧能力，�
 
 目标：
 
-- 使用同一套 UI 消费 `services/monitor_service`、SSE live、session export、LocalStore 和未来远端查询 datasource。
-- 将现有 `workbench/service` 的服务端能力迁移到 `services/monitor_service`；将现有 `workbench/web` 迁移为独立 `web`。
+- 使用同一套 UI 消费 `platform/services/monitor-service`、SSE live、session export、LocalStore 和未来远端查询 datasource。
+- 将现有 `workbench/service` 的服务端能力迁移到 `platform/services/monitor-service`；将现有 `platform/web` 迁移为独立 `web`。
 - 保持所有数据为统一 `EventEnvelope` 或 core 定义的 session export，不定义第二套工作台协议。
 - 支持 session list、session timeline、trace detail、event detail、breadcrumb viewer、raw JSON、轻量性能概览和 evidence pack 面板。
 
@@ -994,10 +994,10 @@ Workbench 是横跨本地调试、QA 复现和灰度验证的消费侧能力，�
 - Web 可以近实时显示，但 SDK 到 Monitor Service 的写入仍必须遵守 batch 和 flush 策略。
 - 近实时写入必须通过初始化配置显式开启，不能成为真实 App 默认行为。
 - `web` 不承担 ingest、storage、diagnostics 规则、remote config 或 SDK 可靠性策略。
-- `services/monitor_service` 在 Phase 6 承担本地/QA/灰度服务端职责，但不要求一次性完成多租户、权限、告警和长期治理平台。
+- `platform/services/monitor-service` 在 Phase 6 承担本地/QA/灰度服务端职责，但不要求一次性完成多租户、权限、告警和长期治理平台。
 - Web UI 不直接读取数据库，不复制 evidence pack 规则；所有诊断数据从 Monitor Service API 获取。
 
-完整目录规划、技术选型、脚本编排、Service/Web MVP、实施顺序和验收标准需要在 Phase 6 随迁移更新到 `web/docs` 或新的 service docs。历史 `workbench/docs/workbench_plan.md` 只作为迁移前资料，不再作为新架构事实源。
+完整目录规划、技术选型、脚本编排、Service/Web MVP、实施顺序和验收标准见 `platform/docs/workbench_plan.md` 与 `docs/plan.md` Phase 6。
 
 ## 当前待办与验证清单
 

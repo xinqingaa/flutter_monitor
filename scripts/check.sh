@@ -18,8 +18,8 @@ if [ -d packages/flutter_monitor_native ]; then
   fvm flutter test packages/flutter_monitor_native/test
 fi
 
-if [ -d workbench ]; then
-  pnpm --dir workbench install
-  pnpm --dir workbench typecheck
-  pnpm --dir workbench --filter @flutter-monitor/workbench-service run smoke
+if [ -d platform ]; then
+  pnpm --dir platform install
+  pnpm --dir platform typecheck
+  pnpm --dir platform run smoke
 fi

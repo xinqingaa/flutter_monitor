@@ -1,4 +1,4 @@
 packages:
-  - "service"
   - "shared"
   - "web"
+  - "services/monitor-service"

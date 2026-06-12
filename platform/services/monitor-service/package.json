@@ -5,6 +5,7 @@
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
+    "dev-stable": "pnpm run build && node dist/main.js",
     "start": "node dist/main.js",
     "smoke": "pnpm run build && tsx test/smoke-test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -4,7 +4,7 @@ Workbench 是 Flutter Monitor 的统一链路排查工作台。它面向 `EventE
 
 Workbench 不是 SDK runtime，不是官方 Flutter DevTools extension，也不是生产服务端。它不定义事件模型，不定义上报协议，不改变 SDK 采集边界。
 
-本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `workbench/docs/product_plan.md`。当前本地 Workbench service 的具体 HTTP API、`3700` / `4700` 端口边界、raw envelope 与 query summary 响应口径见 `workbench/docs/service_api.md`。
+本文档负责 Workbench 架构、Service、Datasource、存储和协议边界。Workbench Web 的产品定位、页面展示原则、信息架构和交互设计见 `platform/docs/product_plan.md`。当前本地 Workbench service 的具体 HTTP API、`3700` / `4700` 端口边界、raw envelope 与 query summary 响应口径见 `platform/docs/service_api.md`。
 
 ## 三层概念
 
@@ -95,7 +95,7 @@ Workbench 与其他模块的边界：
 
 ## 架构
 
-Workbench 使用前后端分离结构。根目录仍是 Dart pub workspace root，`workbench/` 是独立 JS/TS workspace root。当前本地服务已收敛到 `workbench/service`，不保留旧本地 server 入口。
+Workbench 使用前后端分离结构。根目录仍是 Dart pub workspace root，`platform/` 是独立 JS/TS workspace root。本地 API 服务位于 `platform/services/monitor-services/monitor-service`（NestJS，端口 3700），Workbench Web 位于 `platform/web`（端口 4700）。
 
 ```text
 flutter_monitor/
@@ -105,7 +105,7 @@ flutter_monitor/
     flutter_monitor_sdk/
     flutter_monitor_native/
 
-workbench/
+platform/
   package.json
   pnpm-workspace.yaml
   tsconfig.base.json
@@ -142,7 +142,7 @@ workbench/
       summary/
 
 scripts/
-  workbench.sh
+  platform.sh
   run_example.sh
 ```
 
@@ -155,7 +155,7 @@ scripts/
 - 派生摘要不得成为第二套协议，必须能回查完整 envelope。
 - Workbench 的数据结构必须与 SDK HTTP 上报和 session export 使用同一套 envelope。
 - Workbench web 应按 datasource adapter 设计：本地 service、SSE live、session export、未来远端查询服务都应映射成同一组查询和展示模型。
-- `workbench/shared` 只能承载 TypeScript 侧 wire shape mirror、API client、datasource interface 和 UI helper，不能成为新的模型事实源。
+- `platform/shared` 只能承载 TypeScript 侧 wire shape mirror、API client、datasource interface 和 UI helper，不能成为新的模型事实源。
 
 推荐 datasource：
 
@@ -184,7 +184,7 @@ Workbench 采用 JS/TS 技术栈：
 
 | 层级 | 选择 | 说明 |
 |---|---|---|
-| workspace | pnpm | `workbench/` 内独立 JS/TS workspace，不污染 Dart pub workspace |
+| workspace | pnpm | `platform/` 内独立 JS/TS workspace，不污染 Dart pub workspace |
 | language | TypeScript | service、web、shared 共用类型约束 |
 | service | Express + TypeScript | 优先保持本地 collector/query service 简单可维护 |
 | web | React + Vite + TypeScript | 支撑高交互 timeline、detail、JSON viewer 和 datasource adapter |
@@ -196,7 +196,7 @@ Workbench 采用 JS/TS 技术栈：
 
 暂不引入 Nest、MySQL、Postgres、账号系统、权限系统和长期部署能力。Workbench 的第一阶段复杂度主要在诊断 UI 和 datasource 适配，不在重服务端框架。
 
-长期应由 `flutter_monitor_core` 导出 JSON schema、field registry 或 summary artifact 供 Workbench 消费。短期 `workbench/shared` 可以定义最小 `EventEnvelopeJson` mirror，但必须标记为 wire shape mirror，不得反向成为 core 的来源。
+长期应由 `flutter_monitor_core` 导出 JSON schema、field registry 或 summary artifact 供 Workbench 消费。短期 `platform/shared` 可以定义最小 `EventEnvelopeJson` mirror，但必须标记为 wire shape mirror，不得反向成为 core 的来源。
 
 ## 数据契约
 
@@ -255,7 +255,7 @@ QA 提供 userId 和大概时间
 
 ### API
 
-service 接收 SDK 批量写入的统一 envelope。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `workbench/docs/service_api.md`。这里仅保留设计边界：
+service 接收 SDK 批量写入的统一 envelope。当前本地 API 清单、请求参数、响应示例和字段来源统一维护在 `platform/docs/service_api.md`。这里仅保留设计边界：
 
 - 写入接口接收完整 SDK `EventEnvelope`，缺少 `eventId` 的事件不得被 service 补写成 SDK 字段。
 - raw envelope 查询接口返回入库 envelope 本身，例如 recent、event detail、session detail、trace detail 和 search。
@@ -315,7 +315,7 @@ MVP 存储策略：
 
 - SQLite 是 Workbench service 的唯一存储。
 - SQLite 同时承担持久化和查询引擎职责，不再使用内存 ring buffer 作为主存储或查询来源。
-- service 启动时必须打开 SQLite 数据库；未显式配置路径时使用 `workbench/.data/events.sqlite`。
+- service 启动时必须打开 SQLite 数据库；未显式配置路径时使用 `platform/.data/events.sqlite`。
 - 按 event、session、trace、userId + time、route、environment、appVersion、status、signalType 和 name 建立 SQLite 索引。
 - 支持最近数据、会话数据、trace 数据、用户时间范围和性能概览回查。
 - 通过保留策略限制本地数据库规模，避免长期本地调试导致 SQLite 文件无限增长。
@@ -357,7 +357,7 @@ Workbench Web 不应只是事件列表和 raw JSON viewer。前端需要形成�
 前端目录原则：
 
 ```text
-workbench/web/src/
+platform/web/src/
   app/
     router/
     providers/
@@ -503,16 +503,16 @@ web 不承担：
 
 | 命令 | 行为 |
 |---|---|
-| `bash scripts/workbench.sh install` | 安装 `workbench/` pnpm 依赖。 |
-| `bash scripts/workbench.sh dev` | 前台启动 service + web。 |
-| `bash scripts/workbench.sh start` | `dev` 的别名。 |
-| `bash scripts/workbench.sh web` | 当前也是 `dev` 的别名，会启动 service + web。 |
-| `bash scripts/workbench.sh service` | 只前台启动 service。 |
-| `bash scripts/workbench.sh background` | 后台启动 service + web，供 example 脚本复用。 |
-| `bash scripts/workbench.sh build` | 构建 service、shared 和 web。 |
-| `bash scripts/workbench.sh typecheck` | 运行 Workbench TypeScript 检查。 |
-| `bash scripts/workbench.sh status` | 查看默认端口上的 service/web 状态。 |
-| `bash scripts/workbench.sh stop` | 停止本项目 Workbench 进程。 |
+| `bash scripts/platform.sh install` | 安装 `platform/` pnpm 依赖。 |
+| `bash scripts/platform.sh dev` | 前台启动 service + web。 |
+| `bash scripts/platform.sh start` | `dev` 的别名。 |
+| `bash scripts/platform.sh web` | 当前也是 `dev` 的别名，会启动 service + web。 |
+| `bash scripts/platform.sh service` | 只前台启动 service。 |
+| `bash scripts/platform.sh background` | 后台启动 service + web，供 example 脚本复用。 |
+| `bash scripts/platform.sh build` | 构建 service、shared 和 web。 |
+| `bash scripts/platform.sh typecheck` | 运行 Workbench TypeScript 检查。 |
+| `bash scripts/platform.sh status` | 查看默认端口上的 service/web 状态。 |
+| `bash scripts/platform.sh stop` | 停止本项目 Workbench 进程。 |
 
 端口约定：
 
@@ -532,17 +532,17 @@ SSE:               /api/monitor/v1/stream
 开发态：
 
 ```text
-scripts/workbench.sh dev
-  -> pnpm --dir workbench install when needed
-  -> start workbench/service
-  -> start workbench/web
+scripts/platform.sh dev
+  -> pnpm --dir platform install when needed
+  -> start platform/services/monitor-service
+  -> start platform/web
 ```
 
 发布或演示态可以由 service 托管 web build：
 
 ```text
-workbench/web/dist
-  -> workbench/service static assets
+platform/web/dist
+  -> platform/services/monitor-service static assets
 ```
 
 `scripts/run_example.sh` 默认启动 Workbench：
@@ -642,8 +642,8 @@ Phase 6 Monitor Service 承担：
 
 第一版 Workbench 只交付本地诊断闭环：
 
-- 迁移 collector/query service 到 `workbench/service`。
-- 建立 `workbench/` JS/TS workspace。
+- 迁移 collector/query service 到 `platform/services/monitor-service`。
+- 建立 `platform/` JS/TS workspace。
 - 新增 SSE stream。
 - 新建 React/Vite web。
 - 支持 session list。
@@ -664,8 +664,8 @@ Phase 6 Monitor Service 承担：
 
 ### Phase W1：本地调试服务
 
-- 新建 `workbench/` JS/TS workspace。
-- 将本地 collector/query service 收敛为 `workbench/service`。
+- 新建 `platform/` JS/TS workspace。
+- 将本地 collector/query service 收敛为 `platform/services/monitor-service`。
 - 使用 `/api/monitor/v1/*` 作为唯一 Workbench service API。
 - 不保留其他本地写入入口，避免产生两套本地服务认知。
 
@@ -718,7 +718,7 @@ Phase 6 Monitor Service 承担：
 
 Workbench MVP 完成时应满足：
 
-- example 使用默认 `scripts/run_example.sh` 后，SDK 事件能进入 `workbench/service`。
+- example 使用默认 `scripts/run_example.sh` 后，SDK 事件能进入 `platform/services/monitor-service`。
 - web 能实时看到新事件，无需手动刷新接口。
 - web 能打开一个 session 并查看完整 timeline。
 - web 能通过 `userId + time range` 查到 session list；App 未提供 userId 时，应明确提示该条件不可用。

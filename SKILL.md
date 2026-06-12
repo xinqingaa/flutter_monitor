@@ -12,7 +12,7 @@
 - `packages/flutter_monitor_core` 是唯一约定来源，定义所有字段、状态、协议常量、字段注册、summary 和隐私规则。
 - `packages/flutter_monitor_sdk` 是 Flutter runtime 执行层，负责采集、链路管理、pipeline、outputs 和 example。
 - `packages/flutter_monitor_native` 是可选增强层，提供 native lifecycle、native memory、memory pressure 等平台能力。
-- `workbench` 是消费层，只做诊断展示、查询、SSE live 和 raw envelope 回查，不定义第二套事件模型。
+- `platform` 是 JS/TS workspace 消费层，承载 Monitor Service、Workbench Web、诊断与 Evidence 能力；只做展示、查询、SSE live 和 raw envelope 回查，不定义第二套事件模型。
 
 ## Triage Flow
 
@@ -20,13 +20,13 @@
 
 1. 纯 Workbench 展示问题
    - 例：布局、侧栏、颜色、卡片、图表、文案、筛选交互。
-   - 先看 `workbench/docs/README.md`、`workbench/docs/product_plan.md`、`workbench/docs/workbench_plan.md`。
-   - 通常只改 `workbench/web` 或 `workbench/service` 查询摘要。
+   - 先看 `platform/docs/README.md`、`platform/docs/product_plan.md`、`platform/docs/workbench_plan.md`。
+   - 通常只改 `platform/web` 或 `platform/services/monitor-service` 查询摘要。
 
 2. Workbench 数据展示不对
    - 先用 raw API 或 raw JSON 确认 envelope 本身是否正确。
    - 本地 raw API：`http://localhost:3700/api/monitor/v1/recent?limit=80`。
-   - 如果 raw envelope 正确，修 Workbench service/web。
+   - 如果 raw envelope 正确，修 Monitor Service / Workbench web。
    - 如果 raw envelope 错误，进入 Flutter runtime / core 流程。
 
 3. 字段、状态、事件名或链路语义不对
@@ -48,7 +48,7 @@
 
 1. Documentation
    - 项目级模型和采集：`docs/`。
-   - Workbench 专属架构、产品和 API：`workbench/docs/`。
+   - Workbench 专属架构、产品和 API：`platform/docs/`。
    - README 只做入口，不作为唯一事实源。
 
 2. Core
@@ -63,8 +63,8 @@
    - Native 负责 native lifecycle、native memory、memory pressure、OOM/ANR/crash 等增强。
    - SDK/native 不得发出 core 未注册或文档未解释的稳定字段。
 
-4. Workbench
-   - service 只能存储和查询 SDK envelope，不能补写 SDK 字段。
+4. Workbench / Monitor Service
+   - Monitor Service 只能存储和查询 SDK envelope，不能补写 SDK 字段。
    - web 可以构建 UI view model，但 view model 不能成为协议。
    - query summary 必须能回查原始 envelope。
 
@@ -78,6 +78,7 @@ Workbench 默认端口：
 
 - Web: `http://localhost:4700`
 - Service/API: `http://localhost:3700`
+- Swagger: `http://localhost:3700/docs`
 
 如果 `4700` 或 `3700` 已经活跃，默认认为用户正在调试：
 
@@ -86,7 +87,7 @@ Workbench 默认端口：
 - 不随意另起临时端口。
 - 如果端口不是本项目 Workbench 进程，再告知用户并让用户决定是换端口还是关闭占用进程。
 
-`scripts/workbench.sh` 已实现同项目 Workbench 端口复用和非 Workbench 占用报错。调试时优先使用该脚本。
+`scripts/platform.sh` 已实现同项目 platform 端口复用和非 platform 占用报错。调试时优先使用该脚本。
 
 ## Hot Start Semantics
 
@@ -108,9 +109,9 @@ fvm dart test packages/flutter_monitor_core/test
 fvm flutter test packages/flutter_monitor_sdk/test
 fvm flutter test packages/flutter_monitor_native/test
 
-pnpm --dir workbench typecheck
-pnpm --dir workbench build
-pnpm --dir workbench --filter @flutter-monitor/workbench-service run smoke
+pnpm --dir platform typecheck
+pnpm --dir platform build
+pnpm --dir platform run smoke
 ```
 
 全量检查：
@@ -122,8 +123,8 @@ bash scripts/check.sh
 文档迁移或链接调整后至少运行：
 
 ```sh
-rg "(^|[^/])docs/workbench_(plan|product_plan|service_api)\\.md|workbench_service_api|workbench_product_plan" README.md AGENTS.md docs workbench/docs
-rg "热恢复" docs workbench/docs workbench/README.md README.md AGENTS.md
+rg "(^|[^/])docs/workbench_(plan|product_plan|service_api)\\.md|workbench_service_api|workbench_product_plan" README.md AGENTS.md docs platform/docs
+rg "热恢复" docs platform/docs platform/README.md README.md AGENTS.md
 ```
 
 ## Stop Conditions

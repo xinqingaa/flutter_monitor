@@ -17,10 +17,28 @@ Splash → Login（输入 2-3 位 userId 或随机生成）→ 首页 Tab App
 - `GET http://127.0.0.1:3700/api/monitor/v1/health`
 - `GET http://127.0.0.1:3700/api/monitor/v1/recent?limit=50`
 
-请先启动 Workbench：
+请先启动 Platform（USB 真机联调推荐 dev-stable）：
 
 ```sh
-bash scripts/workbench.sh
+bash scripts/platform.sh dev-stable
+```
+
+日常改 service 代码可用 watch 模式：
+
+```sh
+bash scripts/platform.sh dev
+```
+
+若 platform 已在运行但刚插入手机，可补配 adb reverse：
+
+```sh
+bash scripts/platform.sh adb-reverse
+```
+
+或使用一键脚本（自动注入 dart-define）：
+
+```sh
+bash scripts/run_example.sh
 ```
 
 - Web 入口：`http://localhost:4700`

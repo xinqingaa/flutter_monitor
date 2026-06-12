@@ -33,8 +33,9 @@ migrate_working_dir/
 build/
 
 node_modules
-workbench/**/dist/
-workbench/.data/
+.pnpm-store
+platform/**/dist/
+platform/.data/
 *.sqlite
 *.sqlite3
 *.db

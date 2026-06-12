@@ -1,12 +1,14 @@
 {
-  "name": "flutter-monitor-workbench",
+  "name": "flutter-monitor-platform",
   "private": true,
   "version": "0.1.0",
   "scripts": {
     "build": "pnpm --recursive --if-present build",
-    "dev": "pnpm --parallel --filter @flutter-monitor/workbench-service --filter @flutter-monitor/workbench-web dev",
-    "service": "pnpm --filter @flutter-monitor/workbench-service dev",
-    "start": "pnpm --filter @flutter-monitor/workbench-service start",
+    "dev": "pnpm --parallel --filter @flutter-monitor/monitor-service --filter @flutter-monitor/workbench-web dev",
+    "service:stable": "pnpm --filter @flutter-monitor/monitor-service run dev-stable",
+    "web": "pnpm --filter @flutter-monitor/workbench-web dev",
+    "service": "pnpm --filter @flutter-monitor/monitor-service dev",
+    "smoke": "pnpm --filter @flutter-monitor/monitor-service run smoke",
     "typecheck": "pnpm --recursive --if-present typecheck"
   },
   "packageManager": "pnpm@10.33.2"

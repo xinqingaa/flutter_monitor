@@ -13,7 +13,8 @@ class HomeTab extends StatefulWidget {
   State<HomeTab> createState() => HomeTabState();
 }
 
-class HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
+class HomeTabState extends State<HomeTab>
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   MonitorHomeState? _cachedState;
   Object? _error;
   var _loading = false;
@@ -25,14 +26,28 @@ class HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (_cachedState == null) {
+      _load(force: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && (_error != null || _cachedState == null)) {
       _load(force: true);
     }
   }
 
   Future<void> _load({bool force = false}) async {
     if (_loading) return;
-    if (!force && _cachedState != null) return;
+    if (!force && _cachedState != null && _error == null) return;
 
     setState(() {
       _loading = true;

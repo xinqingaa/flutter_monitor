@@ -29,7 +29,7 @@ Options:
 Environment:
   FM_HOST_IP        Override the host IP injected into the Flutter example.
   FM_USE_ADB_REVERSE
-                    Set to 0 to disable Android adb reverse in workbench.sh.
+                    Set to 0 to disable Android adb reverse in platform.sh.
 EOF
 }
 
@@ -37,7 +37,7 @@ cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM HUP
   if [ "$WORKBENCH_STARTED" -eq 1 ]; then
-    bash "$ROOT_DIR/scripts/workbench.sh" stop >/dev/null 2>&1 || true
+    bash "$ROOT_DIR/scripts/platform.sh" stop >/dev/null 2>&1 || true
   fi
   exit "$exit_code"
 }
@@ -85,7 +85,16 @@ workbench_is_running() {
 }
 
 adb_reverse_is_configured() {
-  [ -s "$ADB_REVERSE_FILE" ]
+  if [ -s "$ADB_REVERSE_FILE" ]; then
+    return 0
+  fi
+  if [ -s "/tmp/flutter_monitor_platform/adb_reverse_${SERVER_PORT}.devices" ]; then
+    return 0
+  fi
+  if ! command -v adb >/dev/null 2>&1; then
+    return 1
+  fi
+  adb reverse --list 2>/dev/null | grep -q "tcp:${SERVER_PORT} tcp:${SERVER_PORT}"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -118,7 +127,8 @@ if [ "$START_WORKBENCH" -eq 1 ]; then
   if ! workbench_is_running; then
     WORKBENCH_STARTED=1
   fi
-  bash "$ROOT_DIR/scripts/workbench.sh" background
+  bash "$ROOT_DIR/scripts/platform.sh" background
+  bash "$ROOT_DIR/scripts/platform.sh" adb-reverse
   if adb_reverse_is_configured; then
     MONITOR_SERVER_URL="http://127.0.0.1:$SERVER_PORT/api/monitor/v1/events"
     TEST_API_BASE_URL="http://127.0.0.1:$SERVER_PORT"

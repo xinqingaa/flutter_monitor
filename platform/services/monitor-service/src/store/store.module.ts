@@ -49,16 +49,16 @@ export class StoreModule implements OnModuleDestroy {
   }
 }
 
-function repoRootFromCompiledStore(): string {
+function platformRootFromCompiledStore(): string {
   return resolve(dirname(__filename), '..', '..', '..', '..');
 }
 
 export function defaultSqlitePath(): string {
-  return resolve(repoRootFromCompiledStore(), 'workbench', '.data', 'events.sqlite');
+  return resolve(platformRootFromCompiledStore(), '.data', 'events.sqlite');
 }
 
 export function resolveWebDistDir(): string {
-  return resolve(repoRootFromCompiledStore(), 'workbench', 'web', 'dist');
+  return resolve(platformRootFromCompiledStore(), 'web', 'dist');
 }
 
 export function resolvePublicDir(): string {

@@ -14,12 +14,12 @@ flutter_monitor/
     flutter_monitor_sdk/        Flutter runtime SDK、采集器、pipeline、outputs
       example/                  SDK 接入示例 App
     flutter_monitor_native/     可选 native 生命周期和内存增强
-  workbench/                    本地调试和 QA 复现工作台
-    docs/                       Workbench 架构、产品和 service API 文档
-    service/                    本地写入、SQLite 存储、查询和 SSE
-    web/                        React/Vite 诊断界面
+  platform/                     JS/TS workspace：Monitor Service、Workbench Web、shared
+    docs/                       Platform 架构、Workbench 产品与 API 文档
+    services/monitor-service/ NestJS：ingest、SQLite、查询、SSE、Swagger
+    web/                        Workbench UI（React/Vite）
     shared/                     TypeScript wire mirror 和共享 helper
-  scripts/                      检查、Workbench 和 example 启动脚本
+  scripts/                      检查、platform 和 example 启动脚本
   SKILL.md                      本仓库变更工作流
   AGENTS.md                     项目方向和硬约束
 ```
@@ -29,19 +29,19 @@ flutter_monitor/
 - `packages/flutter_monitor_core` 是唯一模型来源，定义 `FieldPaths`、协议常量、字段注册、事件摘要、隐私等级和共享配置。它不依赖 Flutter，也不做采集、网络或 UI effect。
 - `packages/flutter_monitor_sdk` 是 Flutter 应用接入的主 SDK，负责错误、启动、页面、网络、行为、卡顿、内存、生命周期、自定义 trace、pipeline 和 output。
 - `packages/flutter_monitor_native` 是可选 Flutter plugin，提供 native lifecycle、native memory、memory pressure 等增强信号，并通过统一模型回到 SDK pipeline。
-- `workbench` 是诊断工作台，负责本地调试、QA 复现、session timeline、trace/event detail、性能分析和 raw envelope 回查。它不定义事件模型，不改写 SDK envelope。
+- `platform` 是 JS/TS workspace，承载 Monitor Service、Workbench Web 和 TypeScript 共享层。Workbench 是 UI 产品名；诊断规则与 Evidence API 也归属 platform，但不定义事件模型，不改写 SDK envelope。
 
 ## Change Workflow
 
 任何字段、事件语义、状态流转、链路关系、服务端协议或 Flutter runtime 行为变更，都按以下顺序推进：
 
-1. 审查并更新 `docs/` 或 `workbench/docs/`。
+1. 审查并更新 `docs/` 或 `platform/docs/`。
 2. 如涉及字段、状态或 summary，更新 `packages/flutter_monitor_core`。
 3. 如涉及 Flutter runtime 采集或 output，更新 `packages/flutter_monitor_sdk`。
 4. 如涉及 native 生命周期、内存或平台信号，更新 `packages/flutter_monitor_native`。
-5. 最后更新 Workbench service/web 展示、查询和说明。
+5. 最后更新 Monitor Service / Workbench web 展示、查询和说明。
 
-纯 Workbench UI 问题可以只改 `workbench`，但如果发现数据语义不对，必须先回到文档和 core/sdk/native 判断根因，不能在 Workbench 层补出第二套事实。
+纯 Workbench UI 问题可以只改 `platform/web`，但如果发现数据语义不对，必须先回到文档和 core/sdk/native 判断根因，不能在 UI 层补出第二套事实。
 
 详细执行规则见 [SKILL.md](SKILL.md)。
 
@@ -62,13 +62,14 @@ bash scripts/check.sh
 启动 Workbench：
 
 ```sh
-bash scripts/workbench.sh dev
+bash scripts/platform.sh dev
 ```
 
 默认端口：
 
 - Workbench Web: `http://localhost:4700`
-- Workbench Service/API: `http://localhost:3700`
+- Monitor Service/API: `http://localhost:3700`
+- Swagger API 文档: `http://localhost:3700/docs`
 - API 前缀：`http://localhost:3700/api/monitor/v1/*`
 
 如果 `4700` 或 `3700` 已经有本项目 Workbench 进程活跃，默认复用它，不主动关闭或另起临时端口。若端口被非 Workbench 进程占用，先确认归属再决定是否换端口。
@@ -93,9 +94,9 @@ fvm dart test packages/flutter_monitor_core/test
 fvm flutter test packages/flutter_monitor_sdk/test
 fvm flutter test packages/flutter_monitor_native/test
 
-pnpm --dir workbench typecheck
-pnpm --dir workbench build
-pnpm --dir workbench --filter @flutter-monitor/workbench-service run smoke
+pnpm --dir platform typecheck
+pnpm --dir platform build
+pnpm --dir platform run smoke
 ```
 
 ## Documentation
@@ -110,15 +111,16 @@ pnpm --dir workbench --filter @flutter-monitor/workbench-service run smoke
 - [DevTools 集成](docs/devtools_integration.md)
 - [实施计划](docs/plan.md)
 
-Workbench 文档：
+Platform / Workbench 文档：
 
-- [Workbench README](workbench/README.md)
-- [Workbench 文档索引](workbench/docs/README.md)
-- [Workbench 架构与计划](workbench/docs/workbench_plan.md)
-- [Workbench 产品计划](workbench/docs/product_plan.md)
-- [Workbench Service API](workbench/docs/service_api.md)
+- [Platform README](platform/README.md)
+- [Platform 文档索引](platform/docs/README.md)
+- [Platform 架构与计划](platform/docs/workbench_plan.md)
+- [Workbench 产品计划](platform/docs/product_plan.md)
+- [Monitor Service 数据边界](platform/services/monitor-service/docs/boundaries.md)
+- [Workbench Service API（已废弃，见 Swagger）](platform/docs/service_api.md)
 
-`README.md` 只作为项目入口。事件模型以 `docs/event_model.md` 为准；采集口径以 `docs/signal_collection.md` 为准；Workbench 边界以 `workbench/docs/` 为准。
+`README.md` 只作为项目入口。事件模型以 `docs/event_model.md` 为准；采集口径以 `docs/signal_collection.md` 为准；Platform 边界以 `platform/docs/` 为准。
 
 ## License
 

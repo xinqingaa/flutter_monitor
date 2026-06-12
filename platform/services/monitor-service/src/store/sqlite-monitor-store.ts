@@ -408,7 +408,7 @@ export class SqliteMonitorStore implements MonitorStore {
     const columns = this.selectRows<{ name: string }>('pragma table_info(events)');
     if (columns.length === 0) return;
     if (columns.some((column) => column.name === 'sequence')) return;
-    throw new Error('Unsupported Workbench SQLite schema. Remove workbench/.data/events.sqlite and collect fresh events.');
+    throw new Error('Unsupported Workbench SQLite schema. Remove platform/.data/events.sqlite and collect fresh events.');
   }
 
   private persistEvents(events: MonitorEvent[]): void {
