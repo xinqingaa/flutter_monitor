@@ -14,6 +14,8 @@ WEB_PID_FILE="$RUN_DIR/web_${WEB_PORT}.pid"
 LOG_FILE="${FM_WORKBENCH_LOG:-/tmp/flutter_monitor_workbench.log}"
 ADB_REVERSE_FILE="$RUN_DIR/adb_reverse_${SERVER_PORT}.devices"
 USE_ADB_REVERSE="${FM_USE_ADB_REVERSE:-1}"
+ADB_REVERSE_CONFIGURED=0
+ADB_REVERSE_ATTEMPTED=0
 
 run_pnpm() {
   if ! command -v pnpm >/dev/null 2>&1; then
@@ -24,6 +26,9 @@ run_pnpm() {
 }
 
 install_dependencies() {
+  if [ -d "$PLATFORM_DIR/node_modules" ]; then
+    return 0
+  fi
   run_pnpm install
 }
 
@@ -54,6 +59,19 @@ print_service_urls() {
 
 print_web_url() {
   echo "Workbench web: http://localhost:$WEB_PORT"
+}
+
+print_ready_summary() {
+  echo "Flutter Monitor platform is ready."
+  echo "Service: http://localhost:$SERVER_PORT"
+  echo "Swagger: http://localhost:$SERVER_PORT/docs"
+  echo "Web:     http://localhost:$WEB_PORT"
+  if [ "$ADB_REVERSE_ATTEMPTED" -eq 1 ] && [ "$ADB_REVERSE_CONFIGURED" -eq 1 ]; then
+    echo "Android: http://127.0.0.1:$SERVER_PORT via adb reverse"
+  elif [ "$ADB_REVERSE_ATTEMPTED" -eq 1 ]; then
+    echo "Android: adb reverse not configured; connect a device and rerun ./scripts/platform.sh"
+  fi
+  echo "Logs:    $LOG_FILE"
 }
 
 build_service() {
@@ -112,6 +130,7 @@ configure_adb_reverse() {
     return 0
   fi
 
+  ADB_REVERSE_ATTEMPTED=1
   mkdir -p "$RUN_DIR"
   : >"$ADB_REVERSE_FILE"
 
@@ -122,16 +141,9 @@ configure_adb_reverse() {
     if adb -s "$device" reverse "tcp:$SERVER_PORT" "tcp:$SERVER_PORT" >/dev/null 2>&1; then
       echo "$device" >>"$ADB_REVERSE_FILE"
       configured=1
+      ADB_REVERSE_CONFIGURED=1
     fi
   done < <(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')
-
-  if [ "$configured" -eq 1 ]; then
-    echo "Android adb reverse: device localhost:$SERVER_PORT -> host localhost:$SERVER_PORT"
-    echo "Android app can use http://127.0.0.1:$SERVER_PORT (USB adb reverse)"
-  else
-    echo "No Android device detected for adb reverse. USB 真机请插入后重跑: ./scripts/platform.sh"
-    echo "或运行: bash scripts/run_example.sh"
-  fi
 }
 
 adb_reverse_status() {
@@ -161,6 +173,7 @@ remove_adb_reverse() {
   fi
 
   local device
+  local listed_devices=""
   if [ -f "$ADB_REVERSE_FILE" ]; then
     while IFS= read -r device; do
       [ -z "$device" ] && continue
@@ -168,6 +181,17 @@ remove_adb_reverse() {
     done <"$ADB_REVERSE_FILE"
     rm -f "$ADB_REVERSE_FILE"
   fi
+
+  listed_devices="$(adb reverse --list 2>/dev/null | awk -v port="$SERVER_PORT" '$0 ~ "tcp:" port " tcp:" port { print $1 }' || true)"
+  while IFS= read -r device; do
+    [ -z "$device" ] && continue
+    adb -s "$device" reverse --remove "tcp:$SERVER_PORT" >/dev/null 2>&1 || true
+  done <<<"$listed_devices"
+
+  while IFS= read -r device; do
+    [ -z "$device" ] && continue
+    adb -s "$device" reverse --remove "tcp:$SERVER_PORT" >/dev/null 2>&1 || true
+  done < <(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')
 }
 
 start_service_background() {
@@ -176,19 +200,17 @@ start_service_background() {
   current_pid="$(listener_pid "$SERVER_PORT" || true)"
   if [ -n "$current_pid" ] && is_platform_pid "$current_pid"; then
     echo "$current_pid" >"$SERVICE_PID_FILE"
-    print_service_urls
     return 0
   fi
 
   ensure_port_available "$SERVER_PORT" "service"
-  echo "Starting Monitor service on port $SERVER_PORT..."
+  echo "Building and starting Monitor service on port $SERVER_PORT..."
   build_service >>"$LOG_FILE" 2>&1
   nohup env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
     node "$PLATFORM_DIR/services/monitor-service/dist/main.js" \
     >>"$LOG_FILE" 2>&1 </dev/null &
   echo "$!" >"$SERVICE_PID_FILE"
   wait_for_url "http://127.0.0.1:$SERVER_PORT/api/monitor/v1/health" "monitor service"
-  print_service_urls
 }
 
 start_web_background() {
@@ -197,18 +219,59 @@ start_web_background() {
   current_pid="$(listener_pid "$WEB_PORT" || true)"
   if [ -n "$current_pid" ] && is_platform_pid "$current_pid"; then
     echo "$current_pid" >"$WEB_PID_FILE"
-    print_web_url
     return 0
   fi
 
   ensure_port_available "$WEB_PORT" "web"
   echo "Starting Workbench web on port $WEB_PORT..."
-  nohup env FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" \
-    pnpm --dir "$PLATFORM_DIR" --filter @flutter-monitor/workbench-web dev \
-    >>"$LOG_FILE" 2>&1 </dev/null &
-  echo "$!" >"$WEB_PID_FILE"
+  (
+    cd "$PLATFORM_DIR/web"
+    nohup env FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" \
+      node "$PLATFORM_DIR/web/node_modules/vite/bin/vite.js" --host 0.0.0.0 \
+      >>"$LOG_FILE" 2>&1 </dev/null &
+    echo "$!" >"$WEB_PID_FILE"
+  )
   wait_for_url "http://127.0.0.1:$WEB_PORT/" "workbench web"
-  print_web_url
+}
+
+start_service_foreground_child() {
+  mkdir -p "$RUN_DIR" "$DATA_DIR"
+  local current_pid
+  current_pid="$(listener_pid "$SERVER_PORT" || true)"
+  if [ -n "$current_pid" ] && is_platform_pid "$current_pid"; then
+    echo "$current_pid" >"$SERVICE_PID_FILE"
+    return 0
+  fi
+
+  ensure_port_available "$SERVER_PORT" "service"
+  echo "Building and starting Monitor service on port $SERVER_PORT..."
+  build_service >>"$LOG_FILE" 2>&1
+  env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
+    node "$PLATFORM_DIR/services/monitor-service/dist/main.js" \
+    >>"$LOG_FILE" 2>&1 &
+  echo "$!" >"$SERVICE_PID_FILE"
+  wait_for_url "http://127.0.0.1:$SERVER_PORT/api/monitor/v1/health" "monitor service"
+}
+
+start_web_foreground_child() {
+  mkdir -p "$RUN_DIR"
+  local current_pid
+  current_pid="$(listener_pid "$WEB_PORT" || true)"
+  if [ -n "$current_pid" ] && is_platform_pid "$current_pid"; then
+    echo "$current_pid" >"$WEB_PID_FILE"
+    return 0
+  fi
+
+  ensure_port_available "$WEB_PORT" "web"
+  echo "Starting Workbench web on port $WEB_PORT..."
+  (
+    cd "$PLATFORM_DIR/web"
+    env FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" \
+      node "$PLATFORM_DIR/web/node_modules/vite/bin/vite.js" --host 0.0.0.0 \
+      >>"$LOG_FILE" 2>&1 &
+    echo "$!" >"$WEB_PID_FILE"
+  )
+  wait_for_url "http://127.0.0.1:$WEB_PORT/" "workbench web"
 }
 
 start_platform_background() {
@@ -217,34 +280,70 @@ start_platform_background() {
   start_service_background
   start_web_background
   configure_adb_reverse
+  print_ready_summary
+}
+
+cleanup_foreground_platform() {
+  local exit_code=$?
+  trap - EXIT INT TERM HUP
+  local web_pid=""
+  local service_pid=""
+  [ -f "$WEB_PID_FILE" ] && web_pid="$(cat "$WEB_PID_FILE")"
+  [ -f "$SERVICE_PID_FILE" ] && service_pid="$(cat "$SERVICE_PID_FILE")"
+
+  if [ -n "$web_pid" ] && kill -0 "$web_pid" >/dev/null 2>&1 && is_platform_pid "$web_pid"; then
+    echo "Stopping Flutter Monitor platform web pid=$web_pid..."
+    kill "$web_pid" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$service_pid" ] && kill -0 "$service_pid" >/dev/null 2>&1 && is_platform_pid "$service_pid"; then
+    echo "Stopping Flutter Monitor platform service pid=$service_pid..."
+    kill "$service_pid" >/dev/null 2>&1 || true
+  fi
+
+  sleep 0.3
+  if [ -n "$web_pid" ] && kill -0 "$web_pid" >/dev/null 2>&1 && is_platform_pid "$web_pid"; then
+    kill -9 "$web_pid" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$service_pid" ] && kill -0 "$service_pid" >/dev/null 2>&1 && is_platform_pid "$service_pid"; then
+    kill -9 "$service_pid" >/dev/null 2>&1 || true
+  fi
+
+  rm -f "$WEB_PID_FILE" "$SERVICE_PID_FILE"
+  stop_by_port_if_platform "$WEB_PORT" "web"
+  stop_by_port_if_platform "$SERVER_PORT" "service"
+  remove_adb_reverse
+  exit "$exit_code"
+}
+
+wait_for_platform_processes() {
+  while true; do
+    local service_pid=""
+    local web_pid=""
+    [ -f "$SERVICE_PID_FILE" ] && service_pid="$(cat "$SERVICE_PID_FILE")"
+    [ -f "$WEB_PID_FILE" ] && web_pid="$(cat "$WEB_PID_FILE")"
+
+    if [ -z "$service_pid" ] || ! kill -0 "$service_pid" >/dev/null 2>&1; then
+      echo "Monitor service stopped. See $LOG_FILE" >&2
+      return 1
+    fi
+    if [ -z "$web_pid" ] || ! kill -0 "$web_pid" >/dev/null 2>&1; then
+      echo "Workbench web stopped. See $LOG_FILE" >&2
+      return 1
+    fi
+    sleep 1
+  done
 }
 
 start_platform_foreground() {
   install_dependencies
-  mkdir -p "$DATA_DIR"
-  if is_port_used_by_platform "$SERVER_PORT" && is_port_used_by_platform "$WEB_PORT"; then
-    echo "Flutter Monitor platform is already running."
-    print_service_urls
-    print_web_url
-    configure_adb_reverse
-    return 0
-  fi
-  if is_port_used_by_platform "$SERVER_PORT" || is_port_used_by_platform "$WEB_PORT"; then
-    ensure_port_available "$SERVER_PORT" "service"
-    ensure_port_available "$WEB_PORT" "web"
-    start_service_background
-    start_web_background
-    configure_adb_reverse
-    return 0
-  fi
-  ensure_port_available "$SERVER_PORT" "service"
-  ensure_port_available "$WEB_PORT" "web"
-  print_service_urls
-  print_web_url
-  start_service_background
+  : >"$LOG_FILE"
+  trap cleanup_foreground_platform EXIT INT TERM HUP
+  start_service_foreground_child
+  start_web_foreground_child
   configure_adb_reverse
-  exec env FM_SERVER_PORT="$SERVER_PORT" FM_WORKBENCH_WEB_PORT="$WEB_PORT" \
-    pnpm --dir "$PLATFORM_DIR" --filter @flutter-monitor/workbench-web dev
+  print_ready_summary
+  echo "Press Ctrl+C to stop."
+  wait_for_platform_processes
 }
 
 start_service_foreground() {
