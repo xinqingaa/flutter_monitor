@@ -19,11 +19,11 @@ usage() {
 Usage: bash scripts/run_example.sh [--no-workbench] [--server-url URL] [flutter run args...]
 
 Default:
-  Starts Flutter Monitor Workbench, injects FM_SERVER_URL, runs the Flutter example,
-  and stops the Workbench when the Flutter run exits.
+  Starts Flutter Monitor platform, injects FM_SERVER_URL, runs the Flutter example,
+  and stops the platform when the Flutter run exits.
 
 Options:
-  --no-workbench    Run example without starting the local Workbench.
+  --no-workbench    Run example without starting the local platform.
   --server-url URL  Send full JSON envelopes to a custom monitor endpoint.
 
 Environment:
@@ -142,7 +142,7 @@ if [ "$START_WORKBENCH" -eq 1 ]; then
     MONITOR_SERVER_URL="http://$HOST_IP:$SERVER_PORT/api/monitor/v1/events"
     TEST_API_BASE_URL="http://$HOST_IP:$SERVER_PORT"
   fi
-  echo "Flutter Monitor Workbench: http://localhost:$WEB_PORT/"
+  echo "Flutter Monitor platform web: http://localhost:$WEB_PORT/"
 fi
 
 if [ -n "$MONITOR_SERVER_URL" ]; then

@@ -96,7 +96,7 @@ class WorkbenchApi {
   WorkbenchConnectionException _wrapConnectionError(DioException error) {
     return WorkbenchConnectionException(
       '无法连接 Workbench service（$baseUrl）。'
-      '请先运行：bash scripts/platform.sh dev-stable',
+      '请先运行：./scripts/platform.sh',
     );
   }
 }

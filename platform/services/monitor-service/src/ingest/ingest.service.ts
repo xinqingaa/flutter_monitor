@@ -6,7 +6,7 @@ import type { SseHub } from '../stream/sse-hub';
 
 export type IngestResult =
   | { ok: true; status: 202; body: Record<string, unknown> }
-  | { ok: false; status: 400; body: Record<string, unknown> };
+  | { ok: false; status: 400 | 500; body: Record<string, unknown> };
 
 @Injectable()
 export class IngestService {
@@ -22,7 +22,22 @@ export class IngestService {
     }
 
     const rejected = incoming.filter((event) => !hasEventId(event)).length;
-    const accepted = this.store.addEvents(incoming);
+    let accepted;
+    try {
+      accepted = this.store.addEvents(incoming);
+    } catch (error) {
+      console.error('[FM monitor-service] failed to store events', error);
+      return {
+        ok: false,
+        status: 500,
+        body: {
+          error: 'store_failed',
+          accepted: 0,
+          rejected: incoming.length,
+          errors: [{ code: 'STORE_FAILED', message: 'failed to store events', retryable: true }],
+        },
+      };
+    }
     if (accepted.length === 0) {
       return {
         ok: false,
@@ -39,7 +54,11 @@ export class IngestService {
       };
     }
 
-    this.sseHub.publishEvents(accepted);
+    try {
+      this.sseHub.publishEvents(accepted);
+    } catch (error) {
+      console.error('[FM monitor-service] failed to publish SSE events', error);
+    }
 
     console.log(
       `[FM monitor-service] accepted=${accepted.length} rejected=${rejected} total=${this.store.health().eventCount} ` +

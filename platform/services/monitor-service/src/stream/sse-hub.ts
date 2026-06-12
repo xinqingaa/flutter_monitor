@@ -55,8 +55,12 @@ export class SseHub {
   private broadcast(eventName: string, payload: unknown): void {
     const data = JSON.stringify(payload);
     for (const client of this.clients.values()) {
-      client.response.write(`event: ${eventName}\n`);
-      client.response.write(`data: ${data}\n\n`);
+      try {
+        client.response.write(`event: ${eventName}\n`);
+        client.response.write(`data: ${data}\n\n`);
+      } catch {
+        this.clients.delete(client.id);
+      }
     }
   }
 }

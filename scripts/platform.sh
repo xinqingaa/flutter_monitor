@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM_DIR="$ROOT_DIR/platform"
 COMMAND="${1:-dev}"
-PLATFORM_SERVICE_DEV="${PLATFORM_SERVICE_DEV:-dev}"
 SERVER_PORT="${FM_SERVER_PORT:-3700}"
 WEB_PORT="${FM_WORKBENCH_WEB_PORT:-4700}"
 DATA_DIR="${FM_WORKBENCH_DATA_DIR:-$PLATFORM_DIR/.data}"
@@ -55,6 +54,15 @@ print_service_urls() {
 
 print_web_url() {
   echo "Workbench web: http://localhost:$WEB_PORT"
+}
+
+build_service() {
+  run_pnpm --filter @flutter-monitor/monitor-service run build
+}
+
+run_service_command() {
+  exec env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
+    node "$PLATFORM_DIR/services/monitor-service/dist/main.js"
 }
 
 ensure_port_available() {
@@ -121,9 +129,29 @@ configure_adb_reverse() {
     echo "Android adb reverse: device localhost:$SERVER_PORT -> host localhost:$SERVER_PORT"
     echo "Android app can use http://127.0.0.1:$SERVER_PORT (USB adb reverse)"
   else
-    echo "No Android device detected for adb reverse. USB 真机请插入后重跑: bash scripts/platform.sh dev"
+    echo "No Android device detected for adb reverse. USB 真机请插入后重跑: ./scripts/platform.sh"
     echo "或运行: bash scripts/run_example.sh"
   fi
+}
+
+adb_reverse_status() {
+  if [ "$USE_ADB_REVERSE" = "0" ]; then
+    echo "Android adb reverse: disabled by FM_USE_ADB_REVERSE=0"
+    return 0
+  fi
+  if ! command -v adb >/dev/null 2>&1; then
+    echo "Android adb reverse: adb not found"
+    return 0
+  fi
+
+  local mappings
+  mappings="$(adb reverse --list 2>/dev/null | awk -v port="$SERVER_PORT" '$0 ~ "tcp:" port " tcp:" port { print }' || true)"
+  if [ -n "$mappings" ]; then
+    echo "Android adb reverse: configured for tcp:$SERVER_PORT"
+    return 0
+  fi
+
+  echo "Android adb reverse: not configured for tcp:$SERVER_PORT"
 }
 
 remove_adb_reverse() {
@@ -153,9 +181,10 @@ start_service_background() {
   fi
 
   ensure_port_available "$SERVER_PORT" "service"
-  echo "Starting Monitor service on port $SERVER_PORT ($PLATFORM_SERVICE_DEV)..."
+  echo "Starting Monitor service on port $SERVER_PORT..."
+  build_service >>"$LOG_FILE" 2>&1
   nohup env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
-    pnpm --dir "$PLATFORM_DIR" --filter @flutter-monitor/monitor-service run "$PLATFORM_SERVICE_DEV" \
+    node "$PLATFORM_DIR/services/monitor-service/dist/main.js" \
     >>"$LOG_FILE" 2>&1 </dev/null &
   echo "$!" >"$SERVICE_PID_FILE"
   wait_for_url "http://127.0.0.1:$SERVER_PORT/api/monitor/v1/health" "monitor service"
@@ -218,12 +247,6 @@ start_platform_foreground() {
     pnpm --dir "$PLATFORM_DIR" --filter @flutter-monitor/workbench-web dev
 }
 
-start_platform_foreground_stable() {
-  PLATFORM_SERVICE_DEV=dev-stable
-  echo "Monitor service: dev-stable (no watch, recommended for USB device debugging)"
-  start_platform_foreground
-}
-
 start_service_foreground() {
   install_dependencies
   mkdir -p "$DATA_DIR"
@@ -234,8 +257,8 @@ start_service_foreground() {
   fi
   ensure_port_available "$SERVER_PORT" "service"
   configure_adb_reverse
-  exec env PORT="$SERVER_PORT" FM_WORKBENCH_SQLITE_PATH="$SQLITE_PATH" \
-    pnpm --dir "$PLATFORM_DIR" --filter @flutter-monitor/monitor-service run "$PLATFORM_SERVICE_DEV"
+  build_service
+  run_service_command
 }
 
 descendant_pids() {
@@ -342,6 +365,7 @@ status_platform() {
   else
     echo "Workbench web is not running on port $WEB_PORT."
   fi
+  adb_reverse_status
 }
 
 case "$COMMAND" in
@@ -350,9 +374,6 @@ case "$COMMAND" in
     ;;
   dev|start|web)
     start_platform_foreground
-    ;;
-  dev-stable)
-    start_platform_foreground_stable
     ;;
   background)
     start_platform_background
@@ -382,7 +403,7 @@ case "$COMMAND" in
     configure_adb_reverse
     ;;
   *)
-    echo "Usage: bash scripts/platform.sh [install|dev|dev-stable|web|background|service|build|typecheck|status|stop|restart|adb-reverse]" >&2
+    echo "Usage: ./scripts/platform.sh [install|dev|start|web|background|service|build|typecheck|status|stop|restart|adb-reverse]" >&2
     exit 64
     ;;
 esac

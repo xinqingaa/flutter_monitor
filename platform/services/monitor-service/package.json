@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "build": "nest build",
-    "dev": "nest start --watch",
-    "dev-stable": "pnpm run build && node dist/main.js",
+    "dev": "pnpm run build && node dist/main.js",
+    "watch": "nest start --watch",
     "start": "node dist/main.js",
     "smoke": "pnpm run build && tsx test/smoke-test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -16,6 +16,7 @@
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/serve-static": "^4.0.2",
     "@nestjs/swagger": "^8.1.0",
+    "express": "^4.22.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sql.js": "^1.14.1"

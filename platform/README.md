@@ -16,9 +16,7 @@ platform/
 ## Quick Start
 
 ```sh
-bash scripts/platform.sh install
-bash scripts/platform.sh dev-stable   # USB 真机联调推荐（service 无 watch）
-bash scripts/platform.sh dev          # 改 service 代码时用 watch
+./scripts/platform.sh
 ```
 
 默认端口：
@@ -30,15 +28,12 @@ bash scripts/platform.sh dev          # 改 service 代码时用 watch
 ## Commands
 
 ```sh
-bash scripts/platform.sh install
-bash scripts/platform.sh dev-stable
-bash scripts/platform.sh dev
-bash scripts/platform.sh service
-bash scripts/platform.sh web
-bash scripts/platform.sh build
-bash scripts/platform.sh typecheck
-bash scripts/platform.sh status
-bash scripts/platform.sh stop
+./scripts/platform.sh
+./scripts/platform.sh service
+./scripts/platform.sh build
+./scripts/platform.sh typecheck
+./scripts/platform.sh status
+./scripts/platform.sh stop
 ```
 
 或直接使用 pnpm：

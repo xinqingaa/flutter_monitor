@@ -5,7 +5,6 @@
   "scripts": {
     "build": "pnpm --recursive --if-present build",
     "dev": "pnpm --parallel --filter @flutter-monitor/monitor-service --filter @flutter-monitor/workbench-web dev",
-    "service:stable": "pnpm --filter @flutter-monitor/monitor-service run dev-stable",
     "web": "pnpm --filter @flutter-monitor/workbench-web dev",
     "service": "pnpm --filter @flutter-monitor/monitor-service dev",
     "smoke": "pnpm --filter @flutter-monitor/monitor-service run smoke",
