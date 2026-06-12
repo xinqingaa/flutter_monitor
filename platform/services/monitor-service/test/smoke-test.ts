@@ -2,24 +2,29 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const port = Number.parseInt(process.env.FM_WORKBENCH_SMOKE_PORT || '3199', 10);
 const baseUrl = `http://127.0.0.1:${port}`;
 const dataDir = mkdtempSync(join(tmpdir(), 'fm-workbench-'));
 const sqlitePath = join(dataDir, 'events.sqlite');
+const serviceRoot = fileURLToPath(new URL('..', import.meta.url));
 
-let child = spawnService();
-
+let child: ReturnType<typeof spawnService>;
 let output = '';
-child.stdout.on('data', (chunk) => {
-  output += chunk.toString();
-});
-child.stderr.on('data', (chunk) => {
-  output += chunk.toString();
-});
 
-try {
+async function runSmokeTests(): Promise<void> {
+  child = spawnService();
+  output = '';
+  child.stdout.on('data', (chunk) => {
+    output += chunk.toString();
+  });
+  child.stderr.on('data', (chunk) => {
+    output += chunk.toString();
+  });
+
+  try {
   await waitForHealth();
   await postEvents();
   await assertMissingEventId();
@@ -114,13 +119,19 @@ try {
     assert.equal(data.count, 5);
   });
   await assertStatus('/api/monitor/v1/events/evt_smoke_start', 404);
-} finally {
-  child.kill('SIGTERM');
+  } finally {
+    child.kill('SIGTERM');
+  }
 }
 
+runSmokeTests().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+
 function spawnService() {
-  return spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
-    cwd: new URL('..', import.meta.url),
+  return spawn(process.execPath, [join(serviceRoot, 'dist/main.js')], {
+    cwd: serviceRoot,
     env: {
       ...process.env,
       PORT: String(port),

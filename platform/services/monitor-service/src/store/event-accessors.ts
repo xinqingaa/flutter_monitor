@@ -1,4 +1,4 @@
-import type { MonitorEvent } from './event-types.js';
+import type { MonitorEvent } from './event-types';
 
 export function eventTimeValue(event: MonitorEvent): number {
   const timestamp = readString(event, 'timestamp') ?? readString(event, 'startTime');

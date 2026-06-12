@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import initSqlJs, { type Database } from 'sql.js';
-import { hasEventId } from '../ingest/normalize-events.js';
+import { hasEventId } from '../ingest/normalize-events';
 import {
   appKeyOf,
   appNameOf,
@@ -33,7 +33,7 @@ import {
   signalTypeOf,
   statusOf,
   userIdOf,
-} from './event-accessors.js';
+} from './event-accessors';
 import type {
   DimensionAppOption,
   DimensionOption,
@@ -51,8 +51,8 @@ import type {
   SdkReliabilitySummary,
   SessionSummary,
   StartupPerformanceSummary,
-} from './event-types.js';
-import type { MonitorStore, MonitorStoreHealth } from './monitor-store.js';
+} from './event-types';
+import type { MonitorStore, MonitorStoreHealth } from './monitor-store';
 
 type SqlParam = string | number | null;
 

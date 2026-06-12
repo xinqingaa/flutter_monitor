@@ -4,7 +4,7 @@ import type {
   MonitorEvent,
   PerformanceOverview,
   SessionSummary,
-} from './event-types.js';
+} from './event-types';
 
 export interface MonitorStoreHealth {
   storageMode: string;

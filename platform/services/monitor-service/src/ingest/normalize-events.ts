@@ -1,4 +1,4 @@
-import type { MonitorEvent } from '../store/event-types.js';
+import type { MonitorEvent } from '../store/event-types';
 
 export function normalizeEvents(body: unknown): MonitorEvent[] {
   if (!body) return [];

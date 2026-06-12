@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import type { MonitorEvent } from '../store/event-types.js';
+import type { MonitorEvent } from '../store/event-types';
 
 type SseClient = {
   id: number;
