@@ -170,6 +170,44 @@ flowchart TB
 
 采集器只能提供 priority suggestion，最终 `priority` 由 pipeline 在构建 event envelope 时确定。缺省值为 `normal`。
 
+### 证据保留等级（retention）
+
+retention 是 SDK 端的本地降级策略概念，回答“资源紧张时这条事件可以被怎样处理”。它由 `flutter_monitor_core` 的 `RetentionRegistry` 按 `name` / `signalType` / 关键 attributes 推导，**不写入 wire 协议**，envelope 中没有 retention 字段，服务端也不消费它。
+
+| 等级 | 语义 | 压力下允许的动作 |
+|---|---|---|
+| `hard` | 硬证据，定位问题的事实依据 | 永不采样；只能剥离可压缩详情（如 `payload.http.detail`）；只有物理极限时才按最旧丢弃，且必须计入 `sdk.health.report` 审计计数 |
+| `compressible` | 有价值但可压缩 | 可剥离详情、可聚合为 summary 事件，尽量不整条丢弃 |
+| `sampleable` | 高频、可降采样 | 可被采样丢弃、限流丢弃，队列超限时最先驱逐 |
+
+完整三级映射表（与 core `RetentionRegistry` 逐条对应，互为镜像）：
+
+| 等级 | 事件 | 说明 |
+|---|---|---|
+| `hard` | 全部 `signalType = error` 事件 | 含 Flutter/Dart error、业务主动上报错误、native crash |
+| `hard` | `http.client` | 仅事实层；`payload.http.query` / `payload.http.detail` 详情层是 compressible，可剥离 |
+| `hard` | 携带 `business.action` 的 track breadcrumb | hard 准入规则的例外：速率不是结构性有界，以限流聚合为前提（见下） |
+| `hard` | `interaction.measure` | 业务交互性能观测 |
+| `hard` | `app.cold_start` / `app.hot_start` 的 **`end` phase** | start/中间 phase 是 compressible |
+| `hard` | `ui.jank.sequence` | 卡顿问题事件 |
+| `hard` | `memory.pressure`、`native.memory.pressure`、`memory.leak.suspect` | 内存问题事件；普通 `memory.growth` 不在 hard |
+| `hard` | `sdk.init`、`sdk.health.report` | 这两个之外的 `sdk.*` 不进 hard |
+| `hard` | `http.client.summary`、`business.action.summary` | 降级聚合产物，本身已压缩，速率结构性有界 |
+| `sampleable` | `memory.sample`、`native.memory.sample` | 周期采样信号，可降采样 |
+| `sampleable` | 除 `sdk.init` / `sdk.health.report` 外的全部 `sdk.*` | 自监控边沿/失败事件 |
+| `compressible` | **其余全部事件（默认等级）** | 例如 `page.visit` / `page.load` / `page.stay`、`route.*`、`app.lifecycle`、冷/热启动非 `end` phase、`memory.growth`、`app.foreground_duration` 等 |
+
+两条维护规则：
+
+- 未在表中列出的事件落入 `compressible` 是**默认值，不是遗漏**；只有满足 hard 准入规则（事件速率结构性有界，不会被业务循环放大到无界）的事件才允许提级。
+- 修改任何一级名单时，必须同步三处：本表、core `RetentionRegistry`、`packages/flutter_monitor_core/test/retention/retention_registry_test.dart`。
+
+track 事件速率不是结构性有界，因此 hard 身份以限流聚合为前提：超过 `maxTrackEventsPerMinute` 的部分聚合进 `business.action.summary` 而不是静默丢弃。
+
+诚实边界：hard 不等于“绝不丢失”。当离线队列达到物理极限且没有可驱逐的低等级事件时，SDK 仍会按最旧丢弃 hard 事件，但必须把丢弃计入 `sdk.health.report` 的 `drops.by_reason` 审计计数，让使用方知道证据缺口的存在和规模。
+
+retention 与 `priority` 的分工：`priority` 是 wire 字段，影响发送顺序和服务端处理；retention 是本地降级语义，影响采样豁免、队列驱逐顺序和压缩动作。两者由 core 统一定义，不允许各包自行发散。
+
 ### 输出模式与生产策略
 
 SDK 对业务侧只暴露三种稳定输出模式，普通接入方不需要分别理解 queue、batch、retry、sampling 和 rate limit 的全部细节：
@@ -292,7 +330,14 @@ SDK 对业务侧只暴露三种稳定输出模式，普通接入方不需要分�
 | `sdk.retry.delay_ms` | duration_ms | safe | 是 | 下次重试延迟 |
 | `sdk.retry.reason` | string | safe | 是 | 重试原因，例如 `timeout`、`offline`、`rate_limited`、`server_error`、`partial_retryable` |
 | `sdk.drop.count` | number | safe | 是 | 本次策略动作丢弃的事件数 |
-| `sdk.drop.reason` | string | safe | 是 | 丢弃原因，例如 `sampled_out`、`rate_limited`、`queue_full`、`payload_too_large`、`non_retryable_rejected`、`store_corrupted`、`expired` |
+| `sdk.drop.reason` | string | safe | 是 | 丢弃原因，例如 `sampled_out`、`rate_limited`、`queue_full`、`payload_too_large`、`non_retryable_rejected`、`retry_exhausted`、`store_corrupted`、`expired` |
+| `sdk.health.window_ms` | duration_ms | safe | 否 | 本次 `sdk.health.report` 统计窗口长度 |
+| `sdk.health.enqueued_count` | number | safe | 是 | 窗口内进入发送队列的事件数 |
+| `sdk.health.sent_count` | number | safe | 是 | 窗口内确认发送成功的事件数 |
+| `sdk.health.dropped_count` | number | safe | 是 | 窗口内全部原因合计丢弃的事件数 |
+| `sdk.health.retry_count` | number | safe | 是 | 窗口内安排重试的次数 |
+| `sdk.health.flush_success_count` | number | safe | 否 | 窗口内成功 flush 的批次数 |
+| `sdk.health.flush_failure_count` | number | safe | 是 | 窗口内失败 flush 的批次数 |
 | `sdk.config.version` | string | safe | 是 | 当前本地或 remote config 版本 |
 | `sdk.config.source` | string | safe | 是 | 配置来源：`default`、`local`、`remote`、`cached_remote` |
 | `sdk.config.applied_at` | timestamp | safe | 否 | 配置生效时间 |
@@ -315,6 +360,7 @@ SDK 对业务侧只暴露三种稳定输出模式，普通接入方不需要分�
 | `http.error_type` | string | queryable | 是 | 网络错误类型 |
 | `http.retry_count` | number | safe | 否 | 重试次数 |
 | `http.cache_status` | string | safe | 是 | hit/miss/bypass/unknown |
+| `http.request_id` | string | queryable | 否 | 服务端请求关联 ID，取自 `x-request-id` 等响应头，用于端到端排查 |
 | `request.size_bytes` | number | safe | 否 | 请求大小 |
 | `response.size_bytes` | number | safe | 否 | 响应大小 |
 | `ui.target` | string | queryable | 是 | 控件或交互目标标识 |
@@ -479,17 +525,24 @@ Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中
 | `app.background_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.previousState` | 一段后台停留时间，可辅助 hot start 和 session 切分 |
 | `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot`、`app.start.end_reason` | 后台恢复到前台后的热重启链路，`durationMs` 不得表示后台停留间隔 |
 | `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.output.mode`、`app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果；成功为 normal，失败为 high |
-| `sdk.output.flush` | `sdk` | `instant` | `ok` / `error` / `timeout` | `normal` / `high` | `sdk.output.mode`、`sdk.flush.reason`、`sdk.batch.size`、`sdk.flush.duration_ms` | output flush 发送回执，表示某个 batch 已完成发送 |
-| `sdk.queue.drop` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.drop.reason`、`sdk.drop.count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | 采样、限流、队列满、payload 过大、不可重试拒绝等导致的丢弃证据 |
-| `sdk.queue.state` | `sdk` | `instant` | `ok` / `warning` / `error` | `normal` / `high` | `sdk.queue.length`、`sdk.queue.bytes`、`sdk.output.mode` | 队列健康状态；损坏、反序列化失败或磁盘不可用时应为 high |
-| `sdk.retry.schedule` | `sdk` | `instant` | `ok` / `warning` | `normal` | `sdk.retry.count`、`sdk.retry.delay_ms`、`sdk.retry.reason` | 429、5xx、超时、断网或部分可重试失败后的下一次发送计划 |
+| `sdk.health.report` | `sdk` | `instant` | `ok` | `normal` | `sdk.output.mode`、`sdk.health.window_ms`、`sdk.health.enqueued_count`、`sdk.health.sent_count`、`sdk.health.dropped_count`、`sdk.health.retry_count`、`sdk.health.flush_success_count`、`sdk.health.flush_failure_count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | SDK 可靠性周期摘要；默认 60s 窗口聚合一次，进入后台/退出前强制补发，窗口内无任何活动时不产生。窗口内存在丢弃或 flush 失败时 level 为 warning |
+| `sdk.output.flush` | `sdk` | `instant` | `error` / `timeout` | `high` | `sdk.output.mode`、`sdk.flush.reason`、`sdk.batch.size`、`sdk.flush.duration_ms` | 只在 flush 失败时产生（例如退出前尽力发送失败）；成功 flush 不再逐条发事件，计入 `sdk.health.report` 的 `flush_success_count`/`sent_count` |
+| `sdk.queue.drop` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.drop.reason`、`sdk.drop.count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | 兼容保留的历史事件名；SDK 默认不再逐条产生，丢弃证据统一进入 `sdk.health.report` 的 `payload["drops.by_reason"]` |
+| `sdk.queue.state` | `sdk` | `instant` | `ok` / `warning` / `error` | `normal` / `high` | `sdk.queue.length`、`sdk.queue.bytes`、`sdk.output.mode` | 队列健康状态的边沿事件：队列首次进入饱和（每个 health 窗口至多一次）、SQLite store 损坏/不可用降级为内存队列（`payload.reason = store_fallback_memory`）时产生 |
+| `sdk.retry.schedule` | `sdk` | `instant` | `ok` / `warning` | `normal` | `sdk.retry.count`、`sdk.retry.delay_ms`、`sdk.retry.reason` | 边沿事件：从健康状态首次进入重试状态时产生一次；后续重试只累计进 `sdk.health.report` 的 `retry_count`，flush 成功后状态复位 |
 | `sdk.config.applied` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.config.version`、`sdk.config.source` | 本地或 remote config 生效、过期、失败降级的证据 |
 
 `sdk.lifecycle.flush` 是 SDK self-monitoring 事件，不是业务事件。触发状态、flush 错误摘要等诊断信息可放在 `payload`，但 `sdk.output.mode` 和 `app.exit_flush.success` 必须放在 attributes，方便 DevTools 和服务端判断 flush 是否成功。
 
 所有 SDK self-monitoring 事件也必须进入统一 event envelope。它们可以缺少普通业务 trace，但必须尽量保留 `sessionId`、`resource.app.*`、`sdk.output.mode` 和可回查的 `eventId`。Workbench 和服务端不得根据 UI 展示重新计算另一套 drop/retry/queue 字段。
 
-`sdk.queue.drop` 的 `payload["dropped.summary"]` 可记录被丢弃事件的安全聚合摘要。SDK 不写入完整 envelope，不复制 attributes 或业务 payload；只按 `name`、`signalType`、`priority`、`source` 和安全上下文 `route`、`module`、`scene` 聚合并记录 `count`，用于回答“哪些事件在哪个页面/模块被丢弃”。采样/限流丢弃可同时保留历史字段 `payload["signal.name"]`、`payload["source"]` 和 `payload["sample.rate"]`，Workbench 应优先读取 `dropped.summary`，再兼容旧字段。
+SDK 自监控采用“计数器 + 周期摘要 + 边沿触发”模型，不再为每次丢弃、每次成功 flush、每次重试逐条产生事件：
+
+- 周期摘要：`sdk.health.report` 按窗口（默认 60s）输出 enqueued/sent/dropped/retry/flush 计数和队列水位；进入后台或退出前强制补发当前窗口；窗口内无活动时跳过。
+- 边沿触发：状态发生跳变时立即产生一次事件——队列首次饱和或 store 降级用 `sdk.queue.state`，首次进入重试状态用 `sdk.retry.schedule`，flush 失败用 `sdk.output.flush`。
+- `payload["trigger"]` 标明摘要触发来源：`interval`、`background`、`app_exit`、`manual`。
+
+`sdk.health.report` 的 `payload["drops.by_reason"]` 按 drop reason 记录被丢弃事件的安全聚合摘要。SDK 不写入完整 envelope，不复制 attributes 或业务 payload；只按 `name`、`signalType`、`priority`、`source` 和安全上下文 `route`、`module`、`scene` 聚合并记录 `count`，用于回答“哪些事件因为什么原因在哪个页面/模块被丢弃”。历史 `sdk.queue.drop` 的 `payload["dropped.summary"]` 语义保持兼容，Workbench 应优先消费 `sdk.health.report`。
 
 ### Native Bridge 事件
 
@@ -771,11 +824,9 @@ FlutterMonitorSDK.clearContext(
 
 | 字段 | 说明 |
 |---|---|
-| `http.url.query` | 原始 URL query |
-| `http.request.body` | request body |
-| `http.response.body` | response body |
-| `http.request.headers.cookie` | Cookie |
 | `auth.token` | token |
+
+HTTP 的 query、headers、body 不再属于禁止字段：它们按“内部保真采集、可选 redactor”口径进入 `payload.http.query` 和 `payload.http.detail.*`（隐私等级 sensitive），默认不脱敏，接入方可通过 `MonitorHttpConfig.redactor` 自定义脱敏，详见“HTTP 详情分层”。历史路径 `http.url.query`、`http.request.body`、`http.response.body`、`http.request.headers.cookie` 同步调整为 sensitive，保留注册仅为兼容。
 
 ## Core Concepts
 
@@ -1046,15 +1097,14 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 |---|---|---|
 | `safe` | SDK、版本、设备等级、稳定枚举等低风险字段 | 可进入事件和索引 |
 | `queryable` | route、module、normalized URL、状态码、耗时等排查字段 | 可进入事件和索引，但应保持稳定和有限基数 |
-| `sensitive` | userId、业务 ID、搜索词、地理位置、原始 URL 等可能识别用户或业务的数据 | 默认脱敏、哈希或截断，需显式配置 |
-| `forbidden` | token、cookie、密码、身份证、手机号、完整地址、request/response body 等高风险数据 | 默认禁止进入事件 |
+| `sensitive` | userId、业务 ID、搜索词、地理位置、原始 URL、HTTP query/headers/body 等可能识别用户或业务的数据 | 不进入索引；payload 详情按“内部保真采集、可选 redactor”口径处理 |
+| `forbidden` | token、密码、身份证等高风险凭证数据 | 默认禁止进入事件 |
 
 隐私策略要求：
 
 - `attributes` 应优先使用低基数、可聚合字段。
-- `payload` 可以保存排查详情，但仍必须经过脱敏。
-- URL 默认只上报 normalized path，不上报 query。
-- request body 和 response body 默认禁止上报。
+- `payload` 可以保存排查详情；HTTP query/headers/body 默认保真采集（企业内部监控定位优先），接入方可配置可选 redactor 做自定义脱敏。
+- attributes 中的 URL 只允许 normalized path（`http.url.normalized`）；原始 URL 与 query 只进入 payload 详情层。
 - native crash payload 不应包含未经处理的寄存器、内存片段、用户输入或文件路径中的敏感信息。
 - DevTools 展示、session 导出和 HTTP 上报必须复用同一套 privacy filtering 结果。
 
@@ -1098,7 +1148,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 |---|---|---|
 | 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs`、`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` |
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.from_full_name`、`page.to`、`page.to_full_name`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
-| 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs` |
+| 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`http.request_id`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs`；详情见 `payload.url`、`payload.http.query`、`payload.http.detail.*` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
 | 业务交互性能 | `span interaction.measure` | `business.action`、`business.result`、`ui.target`、`interaction.mode`、`interaction.end_reason`、`interaction.active_ms`、`interaction.settle_ms`、`interaction.observe_ms`、`interaction.timeout_ms`、`page.instance_id`、`durationMs`、`frame.*` |
 | 卡顿 | `metric ui.jank.sequence`；页面帧摘要写入 `page.visit` trace end | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
@@ -1118,7 +1168,58 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | `bad_certificate` | 证书错误 |
 | `unknown_network` | 无法归类的网络错误 |
 
-完整 URL、query、body 默认不应直接上报。失败请求的原始错误文本只允许作为短摘要存在；长错误文本必须裁剪，并通过 `error.truncated`、`error.original_length` 表达裁剪状态。稳定检索和聚合必须依赖 `attributes.http.error_type`，不能依赖错误原文。
+失败请求的原始错误文本只允许作为短摘要存在；长错误文本必须裁剪，并通过 `error.truncated`、`error.original_length` 表达裁剪状态。稳定检索和聚合必须依赖 `attributes.http.error_type`，不能依赖错误原文。
+
+### HTTP 详情分层
+
+`http.client` 事件拆为两层：
+
+- 事实层（retention hard，永不剥离）：attributes 中的 `http.*`、`request.size_bytes`、`response.size_bytes`，加上 `payload.url`（**不含 query**）和错误短摘要。回答“哪个接口、什么结果、多慢”。
+- 详情层（retention compressible，压力下可剥离）：`payload.http.query` 与 `payload.http.detail`。回答“具体发了什么、收到了什么”。
+
+字段结构：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `payload.url` | string | 不含 query 的完整 URL |
+| `payload.http.query` | object | 结构化 query 参数 |
+| `payload.http.detail.request.headers` | object | 请求 headers |
+| `payload.http.detail.request.body` | string | 请求 body，超限截断 |
+| `payload.http.detail.request.body_truncated` | boolean | body 是否被截断 |
+| `payload.http.detail.request.body_original_length` | number | body 原始字节长度 |
+| `payload.http.detail.request.body_sha256` | string | body 全文 SHA-256，截断后仍可做一致性核对 |
+| `payload.http.detail.response.*` | 同 request | 响应 headers/body，成功与失败响应统一采集 |
+| `payload.http.detail_dropped` | boolean | 压力下详情层被剥离时置 true，事实层与 hash 保留 |
+
+采集口径：
+
+- query、headers、body 默认**保真采集，不脱敏**；接入方可配置可选 redactor（默认关闭）对敏感字段做自定义脱敏。
+- body 截断上限按输出模式：localLive 64KB、production 16KB；截断时保留 `body_original_length` 与 `body_sha256`。
+- 响应体成功/失败统一采集，production 默认开启，可通过 `MonitorHttpConfig` 配置关闭。
+- `http.request_id` 取自 `x-request-id` 等响应头，作为 queryable attribute 提升检索能力。
+
+### 压力降级与聚合 summary 事件
+
+离线队列超限时按降级阶梯执行，原则是“压缩而非丢弃”：
+
+1. 驱逐 sampleable 事件（计入 `sdk.health.report` 审计）。
+2. 剥离 `payload.http.detail` 详情层（置 `payload.http.detail_dropped = true`，保留 body hash 与原始长度）。
+3. 丢弃普通 compressible 事件（计入审计）；可聚合的 hard 事件先聚合为 summary 再让位。
+4. 物理极限时按最旧丢弃 hard 事件，必须计入审计计数。
+
+聚合 summary 事件注册：
+
+| name | signalType | status | priority 建议 | 关键字段 | 说明 |
+|---|---|---|---|---|---|
+| `http.client.summary` | `metric` | `ok` | `high` | `http.url.normalized`、`http.success`、`summary.count`、`summary.duration_p50_ms`、`summary.duration_p95_ms`、`summary.duration_max_ms`、`summary.bytes_total` | 队列压力下按 normalized URL + 成败聚合的 HTTP 摘要 |
+| `business.action.summary` | `metric` | `ok` | `high` | `business.action`、`summary.count`、`summary.duration_p50_ms`、`summary.duration_p95_ms`、`summary.duration_max_ms`、`summary.bytes_total` | track 超 `maxTrackEventsPerMinute` 或队列压力下按 action 聚合的业务动作摘要 |
+
+公共约定：
+
+- `payload["exemplar.event_ids"]` 保留最多 5 个被聚合事件的 eventId 作为 exemplar。
+- `payload["summary.durations_ms"]` 保留有界 duration 样本（上限 128），用于增量重算分位数。
+- summary 事件本身 retention 为 hard（聚合产物速率结构性有界）。
+- track 超限不再静默丢弃：超出部分按 `business.action` 聚合进 `business.action.summary`，由 pipeline 在窗口结束或 flush 时发出。
 
 业务侧普通接入推荐 `FlutterMonitorSDK.track(...)` 和 `FlutterMonitorSDK.measure(...)`。`measure` 也不接受回调函数；业务逻辑保持在业务代码中执行，SDK 只旁路观测。`startTrace`、`startSpan`、`addBreadcrumb`、任意自定义 attributes/payload 不作为当前公开业务 API；未来只有出现明确业务场景时才重新设计高级诊断入口。
 

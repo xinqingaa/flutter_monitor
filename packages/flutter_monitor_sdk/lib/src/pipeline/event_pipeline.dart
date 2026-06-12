@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/delivery/sdk_health_monitor.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_control.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/track_summary_aggregator.dart';
 import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
 import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
@@ -30,27 +32,31 @@ class EventPipeline {
     SchemaValidator? schemaValidator,
     PrivacyFilter? privacyFilter,
     PipelineControl? control,
+    SdkHealthMonitor? healthMonitor,
   }) : _contextManager = contextManager,
        _sessionManager = sessionManager,
        _traceManager = traceManager,
        _breadcrumbStore = breadcrumbStore,
        _outputs = outputs,
-       _mode = mode,
        _envelopeBuilder = envelopeBuilder ?? EnvelopeBuilder(),
        _schemaValidator = schemaValidator ?? SchemaValidator(),
        _privacyFilter = privacyFilter ?? PrivacyFilter(),
-       _control = control ?? PipelineControl(mode: mode);
+       _control = control ?? PipelineControl(mode: mode),
+       _healthMonitor = healthMonitor;
 
   final ContextManager _contextManager;
   final SessionManager _sessionManager;
   final TraceManager _traceManager;
   final BreadcrumbStore _breadcrumbStore;
   final List<MonitorOutput> _outputs;
-  final MonitorMode _mode;
   final EnvelopeBuilder _envelopeBuilder;
   final SchemaValidator _schemaValidator;
   final PrivacyFilter _privacyFilter;
   final PipelineControl _control;
+  final SdkHealthMonitor? _healthMonitor;
+  late final TrackSummaryAggregator _trackAggregator = TrackSummaryAggregator(
+    emit: capture,
+  );
 
   /// 使用当前 session 捕获一个信号。
   ///
@@ -125,7 +131,17 @@ class EventPipeline {
       final filtered = _privacyFilter.filterEnvelope(built);
       final decision = _control.evaluate(filtered);
       if (!decision.keep) {
-        _emitDropSelfMonitoring(filtered, decision);
+        if (decision.aggregate) {
+          // 超限 track 聚合进 business.action.summary，不算丢弃。
+          _trackAggregator.fold(filtered);
+          return PipelineResult.dropped(filtered, decision.reason);
+        }
+        // 采样/限流丢弃不再逐条发自监控事件，只累计进 health 计数器，
+        // 由 SdkHealthMonitor 周期聚合为 sdk.health.report。
+        _healthMonitor?.recordDroppedEnvelope(
+          decision.reason ?? SdkDropReasons.sampledOut,
+          filtered,
+        );
         return PipelineResult.dropped(filtered, decision.reason);
       }
       _recordBreadcrumb(filtered);
@@ -149,42 +165,6 @@ class EventPipeline {
         ),
       ]);
     }
-  }
-
-  void _emitDropSelfMonitoring(
-    EventEnvelope dropped,
-    PipelineDecision decision,
-  ) {
-    _emitSelfMonitoring(
-      name: EventNames.sdkQueueDrop,
-      level: EventLevel.warning,
-      status: EventStatus.ok,
-      priority: EventPriority.normal,
-      attributes: <String, Object?>{
-        FieldPaths.sdkOutputMode: _mode.name,
-        FieldPaths.sdkDropReason: decision.reason,
-        FieldPaths.sdkDropCount: 1,
-      },
-      payload: <String, Object?>{
-        PayloadKeys.signalName: dropped.name,
-        PayloadKeys.source: dropped.signalType.toJson(),
-        PayloadKeys.droppedSummary: <Object?>[
-          <String, Object?>{
-            'name': dropped.name,
-            'signalType': dropped.signalType.toJson(),
-            'priority': dropped.priority.toJson(),
-            if (dropped.context.route?.name != null)
-              'route': dropped.context.route!.name,
-            if (dropped.context.module?.name != null)
-              'module': dropped.context.module!.name,
-            if (dropped.context.module?.scene != null)
-              'scene': dropped.context.module!.scene,
-            'count': 1,
-          },
-        ],
-        if (decision.sampleRate != null) 'sample.rate': decision.sampleRate,
-      },
-    );
   }
 
   /// 将已经过滤后的 envelope 分发给所有 output。
@@ -215,6 +195,7 @@ class EventPipeline {
   ///
   /// 进入后台、退出前或业务主动调用 flush 时会走这里。
   Future<void> flush({bool isAppExiting = false}) async {
+    _trackAggregator.flush();
     for (final output in _outputs) {
       try {
         await output.flush(isAppExiting: isAppExiting);

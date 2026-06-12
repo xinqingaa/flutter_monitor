@@ -131,12 +131,20 @@ class MonitorProductionPolicy {
   final Duration maxEventAge;
 
   /// 默认采样率，作用于未被更具体规则覆盖的普通事件。
+  ///
+  /// 采样只作用于非 hard 证据。hard 证据（错误、http.client、track、
+  /// interaction.measure、启动 end、jank sequence、memory pressure 等，
+  /// 见 core `RetentionRegistry`）永不被采样丢弃。
   final double defaultSampleRate;
 
   /// 低优先级事件采样率，用于控制噪声和网络成本。
   final double lowPrioritySampleRate;
 
-  /// 成功 HTTP 事件采样率，失败 HTTP 不受该字段影响。
+  /// 成功 HTTP 事件采样率。
+  ///
+  /// `http.client` 自 retention 模型引入后属于 hard 证据，默认全量保留，
+  /// 该字段不再参与 pipeline 采样，仅保留为 Phase 6 remote config 的
+  /// 降级开关位（远端可在极端流量下临时下调）。
   final double successfulHttpSampleRate;
 
   /// memory sample 采样率，growth、pressure 等关键内存事件不按普通 sample 处理。
@@ -174,7 +182,7 @@ class MonitorProductionPolicy {
     this.maxEventAge = const Duration(days: 3),
     this.defaultSampleRate = 1.0,
     this.lowPrioritySampleRate = 0.2,
-    this.successfulHttpSampleRate = 0.2,
+    this.successfulHttpSampleRate = 1.0,
     this.memorySampleRate = 0.1,
     this.maxTrackEventsPerMinute = 120,
     this.flushOnBackground = true,
@@ -208,10 +216,69 @@ class MonitorProductionPolicy {
       flushInterval: Duration(seconds: 30),
       quickFlushDelay: Duration(seconds: 3),
       lowPrioritySampleRate: 0.1,
-      successfulHttpSampleRate: 0.1,
       memorySampleRate: 0.05,
       maxTrackEventsPerMinute: 60,
     );
+  }
+}
+
+/// HTTP 详情层 redactor。
+///
+/// 输入是即将进入 payload 的详情 section（包含 `http.query` 和
+/// `http.detail`），返回脱敏后的版本。返回 null 表示丢弃整个详情层。
+/// 默认不配置（保真采集）。
+typedef MonitorHttpDetailRedactor =
+    Map<String, Object?>? Function(Map<String, Object?> detail);
+
+/// HTTP 详情采集配置。
+///
+/// 控制 `http.client` 详情层（`payload.http.query`、`payload.http.detail`）
+/// 的采集开关、body 截断上限和可选脱敏。事实层（attributes 与去 query 的
+/// `payload.url`）不受这里控制，始终采集。
+///
+/// 默认口径：query、headers、request/response body 全部保真采集、不脱敏，
+/// 企业内部监控定位优先；需要脱敏时配置 [redactor]。
+class MonitorHttpConfig {
+  /// 是否采集结构化 query 参数到 `payload.http.query`。
+  final bool captureQuery;
+
+  /// 是否采集请求/响应 headers 到 `payload.http.detail.*.headers`。
+  final bool captureHeaders;
+
+  /// 是否采集请求 body。
+  final bool captureRequestBody;
+
+  /// 是否采集响应 body（成功与失败响应统一采集）。
+  final bool captureResponseBody;
+
+  /// body 截断上限（字节）。不配置时按输出模式取默认：
+  /// localLive/consoleOnly 64KB，production 16KB。
+  /// 截断时保留 `body_original_length` 与 `body_sha256`。
+  final int? maxBodyBytes;
+
+  /// 可选脱敏回调，默认 null（保真采集）。
+  final MonitorHttpDetailRedactor? redactor;
+
+  /// 创建 HTTP 详情采集配置。
+  const MonitorHttpConfig({
+    this.captureQuery = true,
+    this.captureHeaders = true,
+    this.captureRequestBody = true,
+    this.captureResponseBody = true,
+    this.maxBodyBytes,
+    this.redactor,
+  });
+
+  /// 默认配置：全量保真采集。
+  static const MonitorHttpConfig defaultConfig = MonitorHttpConfig();
+
+  /// 按输出模式解析实际 body 截断上限。
+  int effectiveMaxBodyBytes(String modeName) {
+    final configured = maxBodyBytes;
+    if (configured != null) return configured;
+    return modeName == SdkOutputModes.production
+        ? productionMaxHttpBodyBytes
+        : localLiveMaxHttpBodyBytes;
   }
 }
 
@@ -450,6 +517,9 @@ class MonitorConfig {
   /// 性能采集配置。
   final MonitorPerformanceConfig? performance;
 
+  /// HTTP 详情采集配置。
+  final MonitorHttpConfig? http;
+
   /// 可选 native bridge。未提供时 SDK 只保留 Flutter/Dart 层能力。
   final MonitorNativeBridge? nativeBridge;
 
@@ -469,6 +539,7 @@ class MonitorConfig {
   /// - [session]：session 边界配置；不传时后台 30 分钟切新 session。
   /// - [performance]：卡顿、页面 frame stats 和交互性能配置。
   /// - [memory]：memory sample、growth 和 suspect leak 线索配置。
+  /// - [http]：HTTP 详情采集配置；不传时全量保真采集，body 截断按模式。
   /// - [nativeBridge]：可选 native 增强信号入口；不传时保留 Flutter-only 能力。
   const MonitorConfig({
     required this.appInfo,
@@ -476,6 +547,7 @@ class MonitorConfig {
     this.session,
     this.memory,
     this.performance,
+    this.http,
     this.nativeBridge,
   });
 
@@ -492,5 +564,10 @@ class MonitorConfig {
   /// 获取实际使用的性能采集配置。
   MonitorPerformanceConfig get effectivePerformanceConfig {
     return performance ?? MonitorPerformanceConfig.defaultConfig;
+  }
+
+  /// 获取实际使用的 HTTP 详情采集配置。
+  MonitorHttpConfig get effectiveHttpConfig {
+    return http ?? MonitorHttpConfig.defaultConfig;
   }
 }

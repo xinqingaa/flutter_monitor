@@ -39,7 +39,8 @@ MonitorMode buildMonitorMode() {
   //   endpoint: Uri.parse(monitorServerUrl),
   // );
 
-  // 3. 生产默认策略：队列 5000/8MB、flush 15s、成功 HTTP 20%、memory sample 10%。
+  // 3. 生产默认策略：队列 5000/8MB、flush 15s、HTTP 全量保留（hard 证据）、
+  //    memory sample 10%。
   final monitorMode = MonitorMode.production(
     endpoint: Uri.parse(productionMonitorUrl),
   );
@@ -85,6 +86,16 @@ Future<void> main() async {
     appInfo: appInfo,
     mode: buildMonitorMode(),
     performance: MonitorPerformanceConfig.lenient(),
+    // HTTP 详情采集默认全开（query/headers/body 保真采集，body 截断
+    // localLive 64KB / production 16KB）。需要脱敏或关闭时显式配置：
+    // http: MonitorHttpConfig(
+    //   captureResponseBody: false,            // 关闭响应体采集
+    //   maxBodyBytes: 8 * 1024,                // 覆盖截断上限
+    //   redactor: (detail) {
+    //     // 自定义脱敏：返回修改后的详情层，返回 null 丢弃整个详情层。
+    //     return detail;
+    //   },
+    // ),
     // nativeBridge: FlutterMonitorNativeBridge(),
   );
 

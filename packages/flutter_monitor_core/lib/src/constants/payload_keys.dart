@@ -6,6 +6,22 @@ abstract final class PayloadKeys {
 
   static const httpSource = 'http.source';
   static const url = 'url';
+
+  // HTTP 详情层（payload.http.detail）结构键。
+  static const httpQuery = 'http.query';
+  static const httpDetail = 'http.detail';
+  static const httpDetailDropped = 'http.detail_dropped';
+  static const request = 'request';
+  static const response = 'response';
+  static const headers = 'headers';
+  static const body = 'body';
+  static const bodyTruncated = 'body_truncated';
+  static const bodyOriginalLength = 'body_original_length';
+  static const bodySha256 = 'body_sha256';
+
+  // 聚合 summary 事件 payload 键。
+  static const exemplarEventIds = 'exemplar.event_ids';
+  static const summaryDurationsMs = 'summary.durations_ms';
   static const error = 'error';
   static const errorTruncated = 'error.truncated';
   static const errorOriginalLength = 'error.original_length';
@@ -17,6 +33,8 @@ abstract final class PayloadKeys {
   static const spanId = 'spanId';
   static const signalName = 'signal.name';
   static const droppedSummary = 'dropped.summary';
+  static const dropsByReason = 'drops.by_reason';
+  static const reason = 'reason';
   static const isAppExiting = 'isAppExiting';
 
   static const type = 'type';

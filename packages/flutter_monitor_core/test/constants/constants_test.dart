@@ -6,6 +6,8 @@ void main() {
     expect(flutterMonitorCorePackageName, 'flutter_monitor_core');
     expect(flutterMonitorSchemaVersion, '1.0');
     expect(defaultBreadcrumbLimit, 50);
+    expect(localLiveMaxHttpBodyBytes, 64 * 1024);
+    expect(productionMaxHttpBodyBytes, 16 * 1024);
   });
 
   test('exposes canonical field paths', () {
@@ -18,6 +20,19 @@ void main() {
     expect(FieldPaths.sdkOutputMode, 'sdk.output.mode');
     expect(FieldPaths.sdkDropReason, 'sdk.drop.reason');
     expect(FieldPaths.sdkRetryDelayMs, 'sdk.retry.delay_ms');
+    expect(FieldPaths.sdkHealthWindowMs, 'sdk.health.window_ms');
+    expect(FieldPaths.sdkHealthEnqueuedCount, 'sdk.health.enqueued_count');
+    expect(FieldPaths.sdkHealthSentCount, 'sdk.health.sent_count');
+    expect(FieldPaths.sdkHealthDroppedCount, 'sdk.health.dropped_count');
+    expect(FieldPaths.sdkHealthRetryCount, 'sdk.health.retry_count');
+    expect(
+      FieldPaths.sdkHealthFlushSuccessCount,
+      'sdk.health.flush_success_count',
+    );
+    expect(
+      FieldPaths.sdkHealthFlushFailureCount,
+      'sdk.health.flush_failure_count',
+    );
   });
 
   test('exposes canonical event names for memory lifecycle and native', () {
@@ -38,6 +53,7 @@ void main() {
     expect(EventNames.sdkQueueDrop, 'sdk.queue.drop');
     expect(EventNames.sdkRetrySchedule, 'sdk.retry.schedule');
     expect(EventNames.sdkConfigApplied, 'sdk.config.applied');
+    expect(EventNames.sdkHealthReport, 'sdk.health.report');
     expect(
       EventNames.sdkPipelineValidationFailed,
       'sdk.pipeline.validation_failed',
@@ -51,6 +67,18 @@ void main() {
     expect(PayloadKeys.errorOriginalLength, 'error.original_length');
     expect(PayloadKeys.startupPhase, 'startup.phase');
     expect(PayloadKeys.unregisteredAttributes, 'unregistered.attributes');
+    expect(FieldPaths.httpRequestId, 'http.request_id');
+    expect(EventNames.httpClientSummary, 'http.client.summary');
+    expect(EventNames.businessActionSummary, 'business.action.summary');
+    expect(FieldPaths.summaryCount, 'summary.count');
+    expect(FieldPaths.summaryBytesTotal, 'summary.bytes_total');
+    expect(PayloadKeys.exemplarEventIds, 'exemplar.event_ids');
+    expect(PayloadKeys.httpQuery, 'http.query');
+    expect(PayloadKeys.httpDetail, 'http.detail');
+    expect(PayloadKeys.httpDetailDropped, 'http.detail_dropped');
+    expect(PayloadKeys.bodyTruncated, 'body_truncated');
+    expect(PayloadKeys.bodyOriginalLength, 'body_original_length');
+    expect(PayloadKeys.bodySha256, 'body_sha256');
     expect(FieldPaths.appStartEndReason, 'app.start.end_reason');
     expect(FieldPaths.interactionMode, 'interaction.mode');
 
@@ -79,6 +107,10 @@ void main() {
     expect(SdkOutputModes.production, 'production');
     expect(SdkFlushReasons.criticalEvent, 'critical_event');
     expect(SdkDropReasons.queueFull, 'queue_full');
+    expect(SdkDropReasons.retryExhausted, 'retry_exhausted');
+    expect(SdkQueueStateReasons.queueSaturated, 'queue_saturated');
+    expect(SdkQueueStateReasons.storeFallbackMemory, 'store_fallback_memory');
+    expect(PayloadKeys.dropsByReason, 'drops.by_reason');
     expect(SdkRetryReasons.rateLimited, 'rate_limited');
     expect(SdkConfigSources.cachedRemote, 'cached_remote');
   });

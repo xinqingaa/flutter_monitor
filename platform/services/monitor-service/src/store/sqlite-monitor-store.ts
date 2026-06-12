@@ -835,7 +835,8 @@ function isHttpEvent(event: MonitorEvent): boolean {
 function isSdkReliabilityEvent(event: MonitorEvent): boolean {
   if (signalTypeOf(event) !== 'sdk') return false;
   const name = nameOf(event);
-  return name === 'sdk.lifecycle.flush' ||
+  return name === 'sdk.health.report' ||
+    name === 'sdk.lifecycle.flush' ||
     name === 'sdk.output.flush' ||
     name === 'sdk.output.dispatch_failed' ||
     name === 'sdk.output.flush_failed' ||
@@ -1012,6 +1013,9 @@ function summarizeErrors(events: MonitorEvent[], limit: number): ErrorPerformanc
 
 function summarizeSdkReliability(events: MonitorEvent[], limit: number): SdkReliabilitySummary {
   const base = summarizeMetric(events, limit);
+  // sdk.health.report 是 SDK 可靠性的主要事实来源（窗口计数器 + drops.by_reason 聚合）。
+  // 逐条 sdk.queue.drop / 成功 sdk.output.flush 是历史兼容事件，仍按旧口径合并。
+  const healthReports = events.filter((event) => nameOf(event) === 'sdk.health.report');
   const flushEvents = events.filter((event) => (
     nameOf(event) === 'sdk.lifecycle.flush' ||
     nameOf(event) === 'sdk.output.flush' ||
@@ -1028,22 +1032,34 @@ function summarizeSdkReliability(events: MonitorEvent[], limit: number): SdkReli
       numericAttribute(event, 'sdk.queue.bytes') !== undefined
     ));
 
+  const healthFlushSuccess = sumValues(healthReports.map((event) => numericAttribute(event, 'sdk.health.flush_success_count')));
+  const healthFlushFailure = sumValues(healthReports.map((event) => numericAttribute(event, 'sdk.health.flush_failure_count')));
+  const healthRetry = sumValues(healthReports.map((event) => numericAttribute(event, 'sdk.health.retry_count')));
+  const healthDropped = sumValues(healthReports.map((event) => numericAttribute(event, 'sdk.health.dropped_count')));
+  const healthReportsWithDrops = healthReports.filter((event) => (
+    (numericAttribute(event, 'sdk.health.dropped_count') ?? 0) > 0
+  ));
+
   return {
     ...base,
-    flushCount: flushEvents.length,
-    flushFailureCount: flushEvents.filter((event) => statusOf(event) !== 'ok').length,
-    retryCount: retryEvents.length,
-    dropCount: dropEvents.length,
-    droppedEventCount: sumValues(dropEvents.map((event) => numericAttribute(event, 'sdk.drop.count'))),
+    flushCount: flushEvents.length + healthFlushSuccess + healthFlushFailure,
+    flushFailureCount: flushEvents.filter((event) => statusOf(event) !== 'ok').length + healthFlushFailure,
+    // sdk.retry.schedule 只是边沿事件且已计入 health retry_count，优先以摘要计数为准。
+    retryCount: healthRetry > 0 ? healthRetry : retryEvents.length,
+    dropCount: dropEvents.length + healthReportsWithDrops.length,
+    droppedEventCount: sumValues(dropEvents.map((event) => numericAttribute(event, 'sdk.drop.count'))) + healthDropped,
     queueStateCount: queueStateEvents.length,
     configAppliedCount: configAppliedEvents.length,
     latestQueueLength: latestQueueState ? numericAttribute(latestQueueState, 'sdk.queue.length') : undefined,
     latestQueueBytes: latestQueueState ? numericAttribute(latestQueueState, 'sdk.queue.bytes') : undefined,
-    dropReasonSummaries: groupMetric(
-      dropEvents,
-      (event) => stringAttribute(event, 'sdk.drop.reason') ?? '未知原因',
-      (event) => numericAttribute(event, 'sdk.drop.count'),
-      '未知原因',
+    dropReasonSummaries: mergeGroupSummaries(
+      groupMetric(
+        dropEvents,
+        (event) => stringAttribute(event, 'sdk.drop.reason') ?? '未知原因',
+        (event) => numericAttribute(event, 'sdk.drop.count'),
+        '未知原因',
+      ),
+      healthReportDropReasonSummaries(healthReports),
     ),
     retryReasonSummaries: groupMetric(
       retryEvents,
@@ -1064,6 +1080,53 @@ function summarizeSdkReliability(events: MonitorEvent[], limit: number): SdkReli
       '未知模式',
     ),
   };
+}
+
+/** 从 sdk.health.report 的 payload["drops.by_reason"] 还原各 drop reason 的丢弃事件数。 */
+function healthReportDropReasonSummaries(reports: MonitorEvent[]): MetricGroupSummary[] {
+  const groups = new Map<string, { count: number; latest?: MonitorEvent }>();
+  for (const report of [...reports].sort((a, b) => eventTimeValue(a) - eventTimeValue(b))) {
+    const drops = report.payload?.['drops.by_reason'];
+    if (!drops || typeof drops !== 'object') continue;
+    for (const [reason, bucket] of Object.entries(drops as Record<string, unknown>)) {
+      const bucketCount = bucket && typeof bucket === 'object'
+        ? (bucket as Record<string, unknown>).count
+        : undefined;
+      const count = typeof bucketCount === 'number' && Number.isFinite(bucketCount) ? bucketCount : 0;
+      if (count <= 0) continue;
+      const group = groups.get(reason) ?? { count: 0 };
+      group.count += count;
+      group.latest = report;
+      groups.set(reason, group);
+    }
+  }
+  return [...groups.entries()]
+    .map(([key, group]) => ({
+      key,
+      count: group.count,
+      eventId: group.latest?.eventId,
+      sessionId: group.latest?.sessionId,
+      traceId: group.latest?.traceId,
+      route: group.latest ? routeOf(group.latest) : undefined,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** 按 key 合并两组 MetricGroupSummary，count 求和，其余字段保留先出现的一组。 */
+function mergeGroupSummaries(
+  primary: MetricGroupSummary[],
+  secondary: MetricGroupSummary[],
+): MetricGroupSummary[] {
+  const merged = new Map<string, MetricGroupSummary>();
+  for (const group of [...primary, ...secondary]) {
+    const existing = merged.get(group.key);
+    if (!existing) {
+      merged.set(group.key, { ...group });
+      continue;
+    }
+    existing.count += group.count;
+  }
+  return [...merged.values()].sort((a, b) => b.count - a.count);
 }
 
 function summarizeMetric(events: MonitorEvent[], limit: number): PerformanceMetricSummary {

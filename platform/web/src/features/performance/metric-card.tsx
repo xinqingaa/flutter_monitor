@@ -47,12 +47,12 @@ export function MetricCard({
   const issueField = kind === 'errors'
     ? 'signalType=error / attributes["error.*"]'
     : kind === 'sdk'
-      ? 'sdk.queue.drop / sdk.retry.schedule / failed sdk.* flush'
+      ? 'sdk.health.report 计数器 / 兼容 sdk.queue.drop · sdk.retry.schedule · failed sdk.* flush'
       : 'problem_type';
   const issueHint = kind === 'errors'
     ? '来源：稳定性错误 envelope；不包含 completed HTTP 失败，也不包含 business.result=failed 的业务失败。'
     : kind === 'sdk'
-      ? '来源：SDK self-monitoring envelope，统计队列丢弃、重试计划和失败 flush。'
+      ? '来源：sdk.health.report 周期摘要的 dropped/retry/flush 失败计数，并兼容历史逐条自监控事件。'
       : '来源：Workbench query summary 的问题分类计数。';
   const primaryIssueCount = kind === 'sdk' ? sdkIssueCount(summary as SdkReliabilitySummary | undefined) : errorCount;
   const body = (
@@ -206,20 +206,20 @@ function SdkSummary({ summary }: { summary?: SdkReliabilitySummary }) {
       <MetricPlainWithHint
         label="丢弃事件"
         value={compactNumber(summary?.droppedEventCount ?? 0)}
-        field={'attributes["sdk.drop.count"]'}
-        hint="对 sdk.queue.drop envelope 的 sdk.drop.count 求和；用于判断采样、限流、队列满或不可重试拒绝造成的丢弃。"
+        field={'attributes["sdk.health.dropped_count"] + 兼容 sdk.drop.count'}
+        hint="对 sdk.health.report 的 dropped_count 求和（兼容历史 sdk.queue.drop 的 sdk.drop.count）；用于判断采样、限流、队列满、重试耗尽或不可重试拒绝造成的丢弃。"
       />
       <MetricPlainWithHint
         label="重试计划"
         value={compactNumber(summary?.retryCount ?? 0)}
-        field="name=sdk.retry.schedule"
-        hint="当前范围内 SDK 因超时、限流、服务端错误或断网等原因安排下一次发送的次数。"
+        field={'attributes["sdk.health.retry_count"] + name=sdk.retry.schedule'}
+        hint="当前范围内 SDK 因超时、限流、服务端错误或断网等原因安排下一次发送的次数；sdk.retry.schedule 只在进入重试状态的边沿产生一条。"
       />
       <MetricPlainWithHint
         label="Flush 失败"
         value={compactNumber(summary?.flushFailureCount ?? 0)}
-        field="name=sdk.output.flush / sdk.lifecycle.flush · status != ok"
-        hint="当前范围内 SDK output flush 或退出前 flush 未成功的次数。"
+        field={'attributes["sdk.health.flush_failure_count"] + failed sdk.output.flush / sdk.lifecycle.flush'}
+        hint="当前范围内 SDK output flush 或退出前 flush 未成功的次数；成功 flush 只进入 sdk.health.report 计数，不再逐条发事件。"
       />
       <MetricPlainWithHint
         label="队列长度"

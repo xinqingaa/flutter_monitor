@@ -262,6 +262,10 @@ class MonitorDioInterceptor extends Interceptor {
           : HttpErrorTypes.httpStatus,
       requestSizeBytes: _dioRequestSize(response.requestOptions),
       responseSizeBytes: _dioResponseSize(response),
+      requestHeaders: _stringHeaders(response.requestOptions.headers),
+      requestBody: response.requestOptions.data,
+      responseHeaders: _dioResponseHeaders(response.headers),
+      responseBody: response.data,
       source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
@@ -291,6 +295,12 @@ class MonitorDioInterceptor extends Interceptor {
       responseSizeBytes: err.response == null
           ? null
           : _dioResponseSize(err.response!),
+      requestHeaders: _stringHeaders(err.requestOptions.headers),
+      requestBody: err.requestOptions.data,
+      responseHeaders: err.response == null
+          ? null
+          : _dioResponseHeaders(err.response!.headers),
+      responseBody: err.response?.data,
       source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
@@ -332,6 +342,16 @@ class MonitorDioInterceptor extends Interceptor {
     if (data is List<int>) return data.length;
     if (data is Map || data is Iterable) return data.toString().length;
     return null;
+  }
+
+  Map<String, String>? _stringHeaders(Map<String, dynamic> headers) {
+    if (headers.isEmpty) return null;
+    return headers.map((key, value) => MapEntry(key, '$value'));
+  }
+
+  Map<String, String>? _dioResponseHeaders(Headers headers) {
+    if (headers.map.isEmpty) return null;
+    return headers.map.map((key, values) => MapEntry(key, values.join(', ')));
   }
 }
 

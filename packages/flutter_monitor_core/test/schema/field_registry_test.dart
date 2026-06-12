@@ -55,6 +55,30 @@ void main() {
       PrivacyLevel.forbidden,
     );
     expect(
+      registry.lookup(FieldPaths.httpRequestId)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpQuery)?.privacyLevel,
+      PrivacyLevel.sensitive,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpDetail)?.privacyLevel,
+      PrivacyLevel.sensitive,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpDetailDropped)?.valueType,
+      FieldValueType.boolean,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpRequestBody)?.privacyLevel,
+      PrivacyLevel.sensitive,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpResponseBody)?.privacyLevel,
+      PrivacyLevel.sensitive,
+    );
+    expect(
       registry.lookup(FieldPaths.memoryRssMb)?.valueType,
       FieldValueType.number,
     );
@@ -137,6 +161,11 @@ void main() {
       FieldValueType.string,
     );
     expect(registry.lookup(FieldPaths.sdkDropReason)?.indexed, isTrue);
+    expect(
+      registry.lookup(FieldPaths.sdkHealthDroppedCount)?.valueType,
+      FieldValueType.number,
+    );
+    expect(registry.lookup(FieldPaths.sdkHealthSentCount)?.indexed, isTrue);
     expect(
       registry.lookup(FieldPaths.sdkConfigAppliedAt)?.valueType,
       FieldValueType.timestamp,
@@ -341,6 +370,13 @@ void main() {
       FieldPaths.sdkRetryReason,
       FieldPaths.sdkDropCount,
       FieldPaths.sdkDropReason,
+      FieldPaths.sdkHealthWindowMs,
+      FieldPaths.sdkHealthEnqueuedCount,
+      FieldPaths.sdkHealthSentCount,
+      FieldPaths.sdkHealthDroppedCount,
+      FieldPaths.sdkHealthRetryCount,
+      FieldPaths.sdkHealthFlushSuccessCount,
+      FieldPaths.sdkHealthFlushFailureCount,
       FieldPaths.sdkConfigVersion,
       FieldPaths.sdkConfigSource,
       FieldPaths.sdkConfigAppliedAt,
@@ -363,6 +399,12 @@ void main() {
       FieldPaths.httpErrorType,
       FieldPaths.httpRetryCount,
       FieldPaths.httpCacheStatus,
+      FieldPaths.httpRequestId,
+      FieldPaths.summaryCount,
+      FieldPaths.summaryDurationP50Ms,
+      FieldPaths.summaryDurationP95Ms,
+      FieldPaths.summaryDurationMaxMs,
+      FieldPaths.summaryBytesTotal,
       FieldPaths.requestSizeBytes,
       FieldPaths.responseSizeBytes,
       FieldPaths.uiTarget,
@@ -424,6 +466,9 @@ void main() {
       FieldPaths.payloadTrace,
       FieldPaths.payloadNative,
       FieldPaths.payloadProperties,
+      FieldPaths.httpQuery,
+      FieldPaths.httpDetail,
+      FieldPaths.httpDetailDropped,
       FieldPaths.httpUrlQuery,
       FieldPaths.httpRequestBody,
       FieldPaths.httpResponseBody,

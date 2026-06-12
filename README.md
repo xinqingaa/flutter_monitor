@@ -87,6 +87,14 @@ bash scripts/run_example.sh --no-workbench
 bash scripts/run_example.sh --server-url http://host:3700/api/monitor/v1/events
 ```
 
+## SDK 接入概要
+
+SDK 对业务暴露三种输出模式：`consoleOnly`（本地日志）、`localLive`（本地 Workbench 调试）、`production`（生产可靠上报）。三种模式采集规则完全一致；采样和限流只在 production 生效，且错误、HTTP、业务埋点、交互性能等 hard 证据永不被采样，压力下只压缩不静默丢弃。
+
+- 证据保留三级（hard / compressible / sampleable）完整映射表：见 [事件模型](docs/event_model.md) 的"证据保留等级"章节。
+- 模式行为规则与全部配置项（`MonitorProductionPolicy`、`MonitorHttpConfig` 等）：见 [信号采集设计](docs/signal_collection.md) 的"输出模式行为与接入配置"章节。
+- 接口聚合查询与 userId/sessionId 链路排查：见 [Platform 文档索引](platform/docs/README.md) 的"常用查询路径"章节。
+
 ## Common Commands
 
 ```sh

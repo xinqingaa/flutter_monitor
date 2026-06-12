@@ -23,6 +23,7 @@ abstract final class EventNames {
   static const sdkQueueState = 'sdk.queue.state';
   static const sdkRetrySchedule = 'sdk.retry.schedule';
   static const sdkConfigApplied = 'sdk.config.applied';
+  static const sdkHealthReport = 'sdk.health.report';
 
   static const pageVisit = 'page.visit';
   static const pageView = 'page.view';
@@ -33,6 +34,12 @@ abstract final class EventNames {
   static const routePop = 'route.pop';
 
   static const httpClient = 'http.client';
+
+  /// 压力降级时由队列聚合产生的 HTTP 摘要事件。
+  static const httpClientSummary = 'http.client.summary';
+
+  /// track 超限或队列降级时聚合产生的业务动作摘要事件。
+  static const businessActionSummary = 'business.action.summary';
 
   static const uiClick = 'ui.click';
   static const uiJankSequence = 'ui.jank.sequence';

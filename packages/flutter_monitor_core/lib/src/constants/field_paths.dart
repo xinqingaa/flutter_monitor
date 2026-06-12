@@ -101,6 +101,13 @@ abstract final class FieldPaths {
   static const sdkRetryReason = 'sdk.retry.reason';
   static const sdkDropCount = 'sdk.drop.count';
   static const sdkDropReason = 'sdk.drop.reason';
+  static const sdkHealthWindowMs = 'sdk.health.window_ms';
+  static const sdkHealthEnqueuedCount = 'sdk.health.enqueued_count';
+  static const sdkHealthSentCount = 'sdk.health.sent_count';
+  static const sdkHealthDroppedCount = 'sdk.health.dropped_count';
+  static const sdkHealthRetryCount = 'sdk.health.retry_count';
+  static const sdkHealthFlushSuccessCount = 'sdk.health.flush_success_count';
+  static const sdkHealthFlushFailureCount = 'sdk.health.flush_failure_count';
   static const sdkConfigVersion = 'sdk.config.version';
   static const sdkConfigSource = 'sdk.config.source';
   static const sdkConfigAppliedAt = 'sdk.config.applied_at';
@@ -125,8 +132,16 @@ abstract final class FieldPaths {
   static const httpErrorType = 'http.error_type';
   static const httpRetryCount = 'http.retry_count';
   static const httpCacheStatus = 'http.cache_status';
+  static const httpRequestId = 'http.request_id';
   static const requestSizeBytes = 'request.size_bytes';
   static const responseSizeBytes = 'response.size_bytes';
+
+  // 聚合 summary 事件（http.client.summary / business.action.summary）字段。
+  static const summaryCount = 'summary.count';
+  static const summaryDurationP50Ms = 'summary.duration_p50_ms';
+  static const summaryDurationP95Ms = 'summary.duration_p95_ms';
+  static const summaryDurationMaxMs = 'summary.duration_max_ms';
+  static const summaryBytesTotal = 'summary.bytes_total';
 
   static const uiTarget = 'ui.target';
   static const uiAction = 'ui.action';
@@ -195,6 +210,12 @@ abstract final class FieldPaths {
   static const payloadNative = 'payload.native';
   static const payloadProperties = 'payload.properties';
 
+  // HTTP 详情层 payload 字段（内部保真采集、可选 redactor）。
+  static const httpQuery = 'http.query';
+  static const httpDetail = 'http.detail';
+  static const httpDetailDropped = 'http.detail_dropped';
+
+  // 历史 HTTP 隐私路径，保留注册仅为兼容，新采集统一走 http.detail。
   static const httpUrlQuery = 'http.url.query';
   static const httpRequestBody = 'http.request.body';
   static const httpResponseBody = 'http.response.body';

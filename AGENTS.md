@@ -137,7 +137,7 @@ DevTools 侧目标：
 - `SKILL.md`：具体变更工作流，包括 docs -> core -> sdk/native -> platform 的执行顺序、端口复用和验证规则。
 - `docs/background.md`：项目背景、迁移原因和现有能力归位。
 - `docs/event_model.md`：统一 event schema、字段状态、signal mapping、resource、context、attributes、payload、privacy 和完整示例。
-- `docs/signal_collection.md`：各类信号的采集来源、触发时机、链路关联、字段映射、限制和降级策略。
+- `docs/signal_collection.md`：各类信号的采集来源、触发时机、链路关联、字段映射、限制和降级策略，以及接入方视角的输出模式行为规则与自定义配置。
 - `docs/server_protocol.md`：服务端上报协议、schema version、鉴权、错误处理、重试、批量、remote config 和兼容策略。
 - `docs/devtools_integration.md`：Flutter Timeline、DevTools bridge、本地 session 导出/导入和本地/服务端边界。
 - `docs/architecture.md`：workspace 目标架构、包职责、代码目录、模块边界和运行时数据流。

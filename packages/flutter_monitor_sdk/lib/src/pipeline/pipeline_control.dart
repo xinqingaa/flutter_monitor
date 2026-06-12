@@ -8,13 +8,16 @@ class PipelineControl {
     required MonitorMode mode,
     Random? random,
     DateTime Function()? now,
+    RetentionRegistry retentionRegistry = RetentionRegistry.instance,
   }) : _mode = mode,
        _random = random ?? Random(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _retention = retentionRegistry;
 
   final MonitorMode _mode;
   final Random _random;
   final DateTime Function() _now;
+  final RetentionRegistry _retention;
   final Map<String, List<DateTime>> _rateWindows = <String, List<DateTime>>{};
 
   PipelineDecision evaluate(EventEnvelope envelope) {
@@ -24,12 +27,15 @@ class PipelineControl {
     if (_mode.name != SdkOutputModes.production) {
       return const PipelineDecision.keep();
     }
+
+    // track 是 hard 证据，但速率不是结构性有界的，所以限流先于 hard 豁免，
+    // 保证业务循环不会把队列冲爆。
+    final rateLimited = _rateLimitDecision(envelope);
+    if (rateLimited != null) return rateLimited;
+
     if (_mustKeep(envelope)) {
       return const PipelineDecision.keep();
     }
-
-    final rateLimited = _rateLimitDecision(envelope);
-    if (rateLimited != null) return rateLimited;
 
     final sampleRate = _sampleRate(envelope);
     if (sampleRate >= 1.0) return const PipelineDecision.keep();
@@ -53,21 +59,8 @@ class PipelineControl {
         envelope.priority == EventPriority.high) {
       return true;
     }
-    if (envelope.signalType == SignalType.error) return true;
-    if (envelope.name == EventNames.httpClient &&
-        envelope.status == EventStatus.error) {
-      return true;
-    }
-    if (envelope.name == EventNames.uiJankSequence) return true;
-    if (envelope.name == EventNames.memoryPressure ||
-        envelope.name == EventNames.nativeMemoryPressure) {
-      return true;
-    }
-    if (envelope.name == EventNames.appColdStart ||
-        envelope.name == EventNames.appHotStart) {
-      return envelope.attributes[FieldPaths.eventPhase] == EventPhases.end;
-    }
-    return false;
+    // hard 证据永不采样，名单由 core RetentionRegistry 统一定义。
+    return _retention.resolveEnvelope(envelope) == EventRetention.hard;
   }
 
   PipelineDecision? _rateLimitDecision(EventEnvelope envelope) {
@@ -86,7 +79,10 @@ class PipelineControl {
     final timestamps = _rateWindows.putIfAbsent(key, () => <DateTime>[]);
     timestamps.removeWhere((timestamp) => timestamp.isBefore(windowStart));
     if (timestamps.length >= limit) {
-      return const PipelineDecision.drop(reason: SdkDropReasons.rateLimited);
+      // track 是 hard 证据：超限部分聚合进 business.action.summary，不静默丢弃。
+      return const PipelineDecision.aggregate(
+        reason: SdkDropReasons.rateLimited,
+      );
     }
     timestamps.add(now);
     return null;
@@ -97,10 +93,8 @@ class PipelineControl {
     if (envelope.name == EventNames.memorySample) {
       return policy.memorySampleRate;
     }
-    if (envelope.name == EventNames.httpClient &&
-        envelope.status == EventStatus.ok) {
-      return policy.successfulHttpSampleRate;
-    }
+    // http.client 是 hard 证据，在 _mustKeep 阶段已被豁免，
+    // successfulHttpSampleRate 仅保留为 Phase 6 remote config 的降级开关。
     if (envelope.priority == EventPriority.low) {
       return policy.lowPrioritySampleRate;
     }
@@ -109,12 +103,24 @@ class PipelineControl {
 }
 
 class PipelineDecision {
-  const PipelineDecision.keep() : keep = true, reason = null, sampleRate = null;
+  const PipelineDecision.keep()
+    : keep = true,
+      aggregate = false,
+      reason = null,
+      sampleRate = null;
 
   const PipelineDecision.drop({required this.reason, this.sampleRate})
-    : keep = false;
+    : keep = false,
+      aggregate = false;
+
+  /// 事件不单独保留，但必须聚合进 summary 事件而不是丢弃。
+  const PipelineDecision.aggregate({required this.reason})
+    : keep = false,
+      aggregate = true,
+      sampleRate = null;
 
   final bool keep;
+  final bool aggregate;
   final String? reason;
   final double? sampleRate;
 }

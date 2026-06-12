@@ -2,6 +2,7 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 
 import 'offline_event_queue.dart';
+import 'queue_degradation.dart';
 import 'queued_monitor_event.dart';
 
 class MemoryOfflineEventQueue implements OfflineEventQueue {
@@ -10,6 +11,9 @@ class MemoryOfflineEventQueue implements OfflineEventQueue {
 
   final MonitorProductionPolicy _policy;
   final List<QueuedMonitorEvent> _events = <QueuedMonitorEvent>[];
+
+  @override
+  void Function(Object error)? onStoreFallback;
 
   @override
   Future<void> init() async {}
@@ -84,14 +88,19 @@ class MemoryOfflineEventQueue implements OfflineEventQueue {
 
   @override
   Future<List<QueuedMonitorEvent>> trimToLimits() async {
-    final dropped = <QueuedMonitorEvent>[];
-    while (_events.length > _policy.maxQueueEvents ||
-        _totalBytes > _policy.maxQueueBytes) {
-      final index = _dropCandidateIndex();
-      if (index < 0) break;
-      dropped.add(_events.removeAt(index));
+    if (_events.length <= _policy.maxQueueEvents &&
+        _totalBytes <= _policy.maxQueueBytes) {
+      return const <QueuedMonitorEvent>[];
     }
-    return dropped;
+    final result = degradeToLimits(
+      events: _events,
+      maxEvents: _policy.maxQueueEvents,
+      maxBytes: _policy.maxQueueBytes,
+    );
+    _events
+      ..clear()
+      ..addAll(result.kept);
+    return result.dropped;
   }
 
   @override
@@ -115,25 +124,6 @@ class MemoryOfflineEventQueue implements OfflineEventQueue {
 
   int get _totalBytes =>
       _events.fold<int>(0, (sum, event) => sum + event.bytes);
-
-  int _dropCandidateIndex() {
-    if (_events.isEmpty) return -1;
-    var candidateIndex = 0;
-    for (var i = 1; i < _events.length; i++) {
-      if (_dropCompare(_events[i], _events[candidateIndex]) < 0) {
-        candidateIndex = i;
-      }
-    }
-    return candidateIndex;
-  }
-
-  int _dropCompare(QueuedMonitorEvent a, QueuedMonitorEvent b) {
-    final priority = _priorityRank(
-      a.priority,
-    ).compareTo(_priorityRank(b.priority));
-    if (priority != 0) return priority;
-    return a.createdAt.compareTo(b.createdAt);
-  }
 
   int _deliveryCompare(QueuedMonitorEvent a, QueuedMonitorEvent b) {
     final priority = _priorityRank(

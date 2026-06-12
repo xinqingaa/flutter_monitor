@@ -63,9 +63,15 @@ abstract final class SdkDropReasons {
   static const queueFull = 'queue_full';
   static const payloadTooLarge = 'payload_too_large';
   static const nonRetryableRejected = 'non_retryable_rejected';
+  static const retryExhausted = 'retry_exhausted';
   static const storeCorrupted = 'store_corrupted';
   static const expired = 'expired';
   static const killSwitch = 'kill_switch';
+}
+
+abstract final class SdkQueueStateReasons {
+  static const queueSaturated = 'queue_saturated';
+  static const storeFallbackMemory = 'store_fallback_memory';
 }
 
 abstract final class SdkFlushReasons {

@@ -12,8 +12,11 @@ class QueuedMonitorEvent {
     DateTime? nextAttemptAt,
     this.attemptCount = 0,
     int? bytes,
+    EventRetention? retention,
   }) : nextAttemptAt = nextAttemptAt ?? createdAt,
-       bytes = bytes ?? utf8.encode(jsonEncode(envelope)).length;
+       bytes = bytes ?? utf8.encode(jsonEncode(envelope)).length,
+       retention =
+           retention ?? RetentionRegistry.instance.resolveJson(envelope);
 
   final String eventId;
   final Map<String, dynamic> envelope;
@@ -22,6 +25,10 @@ class QueuedMonitorEvent {
   final DateTime nextAttemptAt;
   final int attemptCount;
   final int bytes;
+
+  /// 本地降级语义（hard/compressible/sampleable），不进入 wire envelope，
+  /// 只用于队列驱逐顺序和压缩动作。
+  final EventRetention retention;
 
   String get sessionId => _stringValue('sessionId') ?? '';
   String get traceId => _stringValue('traceId') ?? '';
@@ -46,6 +53,7 @@ class QueuedMonitorEvent {
     DateTime? nextAttemptAt,
     int? attemptCount,
     int? bytes,
+    EventRetention? retention,
   }) {
     return QueuedMonitorEvent(
       eventId: eventId,
@@ -55,6 +63,7 @@ class QueuedMonitorEvent {
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
       attemptCount: attemptCount ?? this.attemptCount,
       bytes: bytes ?? this.bytes,
+      retention: retention ?? this.retention,
     );
   }
 
@@ -70,6 +79,7 @@ class QueuedMonitorEvent {
       'nextAttemptAt': nextAttemptAt.millisecondsSinceEpoch,
       'attemptCount': attemptCount,
       'bytes': bytes,
+      'retention': retention.toJson(),
       'envelope': jsonEncode(envelope),
     };
   }
@@ -89,6 +99,9 @@ class QueuedMonitorEvent {
       ),
       attemptCount: record['attemptCount'] as int? ?? 0,
       bytes: record['bytes'] as int? ?? utf8.encode(envelopeText).length,
+      retention: record['retention'] is String
+          ? EventRetention.fromJson(record['retention'])
+          : RetentionRegistry.instance.resolveJson(decoded),
     );
   }
 

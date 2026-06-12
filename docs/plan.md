@@ -1003,6 +1003,32 @@ Workbench 是横跨本地调试、QA 复现和灰度验证的消费侧能力，�
 
 本节合并历史待办中的有效内容，只保留仍需跟踪的增强项和待验证问题。所有条目都必须回到统一 envelope、core 字段契约、SDK pipeline 和 Workbench 消费边界，不允许形成第二套协议。
 
+### Backlog：SSE 与 WebSocket 长链接建模
+
+现状：
+
+- 网络采集只覆盖请求-响应式 HTTP（Dio interceptor 与 `http.Client` wrapper），事件形态是 completed single-span `http.client`。
+- Dio stream 响应的耗时语义为“到响应头”，响应体在流式消费中持续到达，当前 duration 不覆盖流消费阶段。
+- WebSocket 完全无覆盖；SSE 只会以一次长 HTTP 请求的形态出现，无法表达逐条消息。
+
+待设计（不在本轮）：
+
+- 长链接的 trace/span 建模：连接建立、消息收发计数、断连/重连、生命周期与 session 关联。
+- 消息体采集与 `payload.http.detail` 的关系，复用 retention/截断/hash 口径。
+- 事件速率约束：逐条消息不能直接进事件流，需要窗口聚合。
+
+### Backlog：remote config 接管采样/限流/HTTP 采集开关
+
+现状：
+
+- `successfulHttpSampleRate` 自 retention 模型引入后默认 1.0 且不参与 pipeline 采样（`http.client` 是 hard 证据），字段保留为降级开关位。
+- 采样率、`maxTrackEventsPerMinute`、`MonitorHttpConfig`（query/headers/body 开关与 body 截断上限）目前都是本地初始化配置。
+
+归入 Phase 6：
+
+- remote config 最小集接管上述开关，支持极端流量下远端临时下调 HTTP 采集深度或恢复采样。
+- 配置变更必须产生 `sdk.config.applied` 事件，保持证据链可追溯。
+
 ### 后续增强：长停留页面性能切片
 
 目标：

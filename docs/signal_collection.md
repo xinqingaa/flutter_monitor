@@ -332,7 +332,7 @@ route 实例:
 
 ### 字段映射
 
-推荐字段：
+事实层（attributes，retention hard）：
 
 - `http.method`
 - `http.url.normalized`
@@ -341,18 +341,29 @@ route 实例:
 - `http.error_type`
 - `http.retry_count`
 - `http.cache_status`
+- `http.request_id`（取自 `x-request-id` 等响应头）
 - `request.size_bytes`
 - `response.size_bytes`
+
+详情层（payload，retention compressible，可剥离）：
+
+- `payload.url`：不含 query 的完整 URL。
+- `payload.http.query`：结构化 query 参数。
+- `payload.http.detail.request.*` / `payload.http.detail.response.*`：headers、body、`body_truncated`、`body_original_length`、`body_sha256`。
+
+完整字段契约见 `docs/event_model.md` 的“HTTP 详情分层”。
 
 ### 限制与降级
 
 - `http.error_type` 必须由 SDK 归一为 `http_status`、`connection_error`、`timeout`、`cancelled`、`bad_certificate`、`unknown_network` 等 canonical 值，不得透传具体网络库 enum。
-- 原始 URL、query、body 默认禁止上报。
+- query、headers、body 默认保真采集（由 `MonitorHttpConfig` 控制开关与可选 redactor）；body 截断上限按模式 localLive 64KB / production 16KB，截断保留原始长度与 SHA-256。
+- 队列压力下详情层可被剥离（`payload.http.detail_dropped = true`），事实层与 hash 永不剥离。
 - 失败请求的原始错误文本必须有界裁剪；payload 可保留短摘要、`error.truncated` 和 `error.original_length`，不能把 Dio/http 的长异常文本完整写入 raw JSON。
 - normalized URL 可能需要业务配置 route template。
-- streaming body 大小可能不可得。
+- `http.Client` 的响应体通过 tee 包装 `StreamedResponse` 流采集（只缓冲前 N 字节），不破坏业务消费；streaming body 大小可能不可得。
 - retry/cache 信息依赖具体网络库能力。
 - 网络采集不应修改业务请求语义。
+- SSE/WebSocket 长链接暂不建模（见 `docs/plan.md` backlog）；Dio stream 响应的耗时语义为“到响应头”。
 - 当前基础 SDK 不生成 HTTP start/end 双事件，不展示 in-flight 请求；Workbench 和服务端统计只消费 `name = http.client` 且 `event.phase = instant` 的 completed single-span envelope。
 
 ## 错误采集
@@ -894,7 +905,7 @@ FlutterMonitorSDK.clearContext(
 
 - 不主动读取 forbidden 字段。
 - 高频信号先聚合再进入 pipeline。
-- 默认关闭原始 URL、request body、response body。
+- HTTP query/headers/body 按“内部保真采集、可选 redactor”口径进入详情层，截断与 hash 规则见网络采集章节。
 - 行为采集不推断用户输入文本。
 - 内存、帧、breadcrumb 采集需要限流。
 - SDK 自身队列和缓存需要 self-monitoring。
@@ -905,9 +916,11 @@ FlutterMonitorSDK.clearContext(
 
 SDK 的 public 接入面收敛为三种模式：`consoleOnly`、`localLive` 和 `production`。普通业务只需要选择模式；queue、batch、flush、retry、sampling、rate limit 和 drop policy 使用 SDK 默认策略。高级使用者可通过单一 production policy 覆盖默认值，但不需要手动组合多个 output。
 
-`production` 默认使用 SDK 自带 SQLite 离线队列。队列只保存已经完成 schema validation 和 privacy filtering 的 `EventEnvelope` JSON，不保存 raw signal，不引入第二套本地缓存协议。队列表至少应能支持按 `eventId` 幂等、按 priority 驱逐、按 `createdAt` / `nextAttemptAt` 取 batch、ack 删除、retry 计划更新、TTL 清理和大小统计。
+`production` 默认使用 SDK 自带 SQLite 离线队列。队列只保存已经完成 schema validation 和 privacy filtering 的 `EventEnvelope` JSON，不保存 raw signal，不引入第二套本地缓存协议。队列表至少应能支持按 `eventId` 幂等、按 retention 等级驱逐（sampleable → compressible → hard，同级按 `createdAt`）、按 priority 与 `createdAt` / `nextAttemptAt` 取 batch、ack 删除、retry 计划更新、TTL 清理和大小统计。
 
 所有 production / local live 上报默认 batch。flush 触发包括 batch size、flush interval、background、app exit、critical/high 事件短延迟快速 flush 和业务手动 `FlutterMonitorSDK.flush(...)`。`isAppExiting = true` 时采用短超时尽力发送，不得阻塞 UI 或明显拖慢退出。
+
+SDK self-monitoring 采用“计数器 + 周期摘要 + 边沿触发”模型：可靠性计数（enqueued、sent、dropped by reason、retry、flush 成败、队列水位）在内存中累计，默认每 60s 聚合为一条 `sdk.health.report`；进入后台或退出前强制补发当前窗口；窗口内无活动时不产生。只有状态跳变才立即发事件：队列首次饱和或 store 降级用 `sdk.queue.state`，首次进入重试状态用 `sdk.retry.schedule`，flush 失败用 `sdk.output.flush`。SDK 不再为每次丢弃、每次成功 flush、每次重试逐条产生事件。
 
 SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 
@@ -917,9 +930,9 @@ SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 - drop count、drop reason；
 - config version、config source、applied/expires time。
 
-采样、限流、队列满、payload 过大、服务端不可重试拒绝、重试超过上限、事件超过队列保留时间、SQLite store 损坏或不可用，都必须留下可回查的 SDK self-monitoring 证据。Workbench 和服务端只能消费这些 envelope，不得补写 SDK 字段或另建可靠性协议。
+采样、限流、队列满、payload 过大、服务端不可重试拒绝、重试超过上限（`retry_exhausted`）、事件超过队列保留时间、SQLite store 损坏或不可用，都必须留下可回查的 SDK self-monitoring 证据；证据默认以 `sdk.health.report` 的计数和 `payload["drops.by_reason"]` 聚合摘要表达。Workbench 和服务端只能消费这些 envelope，不得补写 SDK 字段或另建可靠性协议。
 
-默认保留 critical/high、error、失败 HTTP、严重卡顿、memory pressure 和启动 trace end。memory sample、成功 HTTP 和 low priority event 可按采样率丢弃；高频 `track` 按配置限流。被采样或限流的事件不进入 breadcrumb store 或 output，并通过 `sdk.queue.drop` self-monitoring envelope 留下可回查证据。drop envelope 的 payload 应使用 `dropped.summary` 按事件名、signal type、priority、source、route、module 和 scene 聚合被丢弃事件，不保存完整 envelope。remote config 只修改这些 policy 输入，不改变 pipeline 事件模型。
+被采样或限流的事件不进入 breadcrumb store 或 output，并通过 `sdk.health.report` 的 `payload["drops.by_reason"]` 留下可回查证据：按事件名、signal type、priority、source、route、module 和 scene 聚合被丢弃事件，不保存完整 envelope。remote config 只修改这些 policy 输入，不改变 pipeline 事件模型。
 
 ## 限制与降级策略
 
@@ -942,3 +955,172 @@ SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 - `resource`
 - `context.missingReason`
 - 关键 attributes
+
+## 输出模式行为与接入配置
+
+本章是接入方视角的行为规则与配置详解。retention 三级映射表以 `docs/event_model.md` 的"证据保留等级"章节为唯一事实源，本章只描述各模式如何消费这些等级，不重复名单。
+
+### 三种模式的采集与处置规则
+
+模式由 `MonitorConfig.mode` 决定，wire 值进入 `attributes["sdk.output.mode"]`：
+
+| 模式 | 工厂 | 适用场景 | 事件去向 |
+|---|---|---|---|
+| `consoleOnly` | `MonitorMode.consoleOnly()` | 本地开发，只看日志 | console log（compact/pretty） |
+| `localLive` | `MonitorMode.localLive()` | QA / 本地 Workbench 调试 | 本机 Monitor Service（默认 `http://localhost:3700/api/monitor/v1/events`） |
+| `production` | `MonitorMode.production(endpoint: ...)` | 灰度 / 线上 | 生产监控服务端 |
+
+采集层不区分模式：错误、启动、页面、网络、行为（track）、交互性能（measure）、卡顿、内存、生命周期在三种模式下按同一套规则采集，生成同一种 `EventEnvelope`。模式只影响采集之后的处置与上送。唯一与模式相关的采集差异是 HTTP body 截断默认值（localLive/consoleOnly 64KB，production 16KB）。
+
+pipeline 的采样与限流**只在 `production` 模式生效**；`consoleOnly` 和 `localLive` 下所有事件原样保留。production 下按以下顺序处置：
+
+1. `sdk.*` 自监控事件直接保留（自身已是有界摘要）。
+2. track 限流：单 action 超过 `maxTrackEventsPerMinute`（默认 120/分钟）的部分聚合进 `business.action.summary`，不丢弃。限流先于 hard 豁免，防止业务死循环打爆队列。
+3. hard 证据豁免：retention 为 `hard` 或 priority 为 critical/high 的事件永不参与采样。
+4. 采样（只剩非 hard 事件）：`memory.sample` 按 `memorySampleRate`（默认 0.1）；low priority 按 `lowPrioritySampleRate`（默认 0.2）；其余按 `defaultSampleRate`（默认 1.0，即不丢）。
+
+被采样丢弃的事件全部进入 `sdk.health.report` 的 `payload["drops.by_reason"]` 审计计数，不会无声消失。
+
+### 上送路径与策略预设
+
+`consoleOnly` 没有上送。`localLive` 与 `production` 共用同一条可靠投递链路（批量 + SQLite 离线队列 + 指数退避重试，协议语义见 `docs/server_protocol.md`），区别只是 `MonitorProductionPolicy` 预设参数。队列压力下的降级阶梯（剥离 HTTP 详情 → 聚合 summary → 审计丢弃）见 `docs/event_model.md` 的"压力降级与聚合 summary 事件"章节。
+
+### 接入配置详解
+
+总入口是 `MonitorConfig`：
+
+```dart
+final config = MonitorConfig(
+  appInfo: await AppInfo.fromPackageInfo(
+    appKey: 'my_app',
+    environment: 'production',
+    channel: 'appstore',
+  ),
+  mode: MonitorMode.production(endpoint: Uri.parse(serverUrl)),
+  // 以下全部可选，不传走默认值：
+  session: MonitorSessionConfig(...),
+  performance: MonitorPerformanceConfig.lenient(),
+  memory: MonitorMemoryConfig(...),
+  http: MonitorHttpConfig(...),
+  nativeBridge: FlutterMonitorNativeBridge(), // 可选 native 增强
+);
+
+await FlutterMonitorSDK.init(config: config, appStartTime: appStartTime);
+```
+
+#### 模式与可靠性策略：`MonitorMode` + `MonitorProductionPolicy`
+
+```dart
+// 本地开发
+MonitorMode.consoleOnly(logMode: LogMonitorOutputMode.pretty);
+
+// QA / Workbench（endpoint 默认本机 3700）
+MonitorMode.localLive(endpoint: Uri.parse('http://localhost:3700/api/monitor/v1/events'));
+
+// 生产（endpoint 必填，authToken 可选）
+MonitorMode.production(
+  endpoint: Uri.parse('https://monitor.example.com/api/monitor/v1/events'),
+  authToken: () async => await fetchToken(), // 每次发送前调用，注入 Authorization
+  policy: MonitorProductionPolicy.conservative(), // 不传用 defaultPolicy
+);
+```
+
+`MonitorProductionPolicy` 全部字段及三种预设取值：
+
+| 字段 | 含义 | defaultPolicy | localLive | conservative() |
+|---|---|---|---|---|
+| `maxQueueEvents` | 离线队列条数上限 | 5000 | 1000 | 2000 |
+| `maxQueueBytes` | 离线队列字节上限 | 8MB | 2MB | 4MB |
+| `maxEventBytes` | 单 envelope 上限 | 128KB | 128KB | 128KB |
+| `maxBatchEvents` | 单批条数 | 50 | 20 | 30 |
+| `maxBatchBytes` | 单批字节 | 512KB | 256KB | 256KB |
+| `flushInterval` | 常规 flush 间隔 | 15s | 3s | 30s |
+| `quickFlushDelay` | 新事件快速 flush | 2s | 500ms | 3s |
+| `requestTimeout` | 单次上报超时 | 8s | 5s | 8s |
+| `maxRetryAttempts` | 单事件最大重试 | 8 | 8 | 8 |
+| `retryBaseDelay` / `retryMaxDelay` | 退避区间 | 2s / 5min | 同左 | 同左 |
+| `maxEventAge` | 队列最长保留 | 3 天 | 12 小时 | 3 天 |
+| `defaultSampleRate` | 普通事件采样率 | 1.0 | 1.0 | 1.0 |
+| `lowPrioritySampleRate` | 低优先级采样率 | 0.2 | 1.0 | 0.1 |
+| `memorySampleRate` | memory.sample 采样率 | 0.1 | 1.0 | 0.05 |
+| `successfulHttpSampleRate` | 预留降级开关位，当前不参与采样（HTTP 是 hard） | 1.0 | 1.0 | 1.0 |
+| `maxTrackEventsPerMinute` | 单 action 每分钟 track 上限，超限聚合 | 120 | 120 | 60 |
+| `flushOnBackground` | 进后台/退出触发 flush | true | true | true |
+
+自定义示例（压测/内部 dogfood，全量采集 + 更激进上送）：
+
+```dart
+MonitorMode.production(
+  endpoint: endpoint,
+  policy: const MonitorProductionPolicy(
+    maxQueueEvents: 12000,
+    maxQueueBytes: 16 * 1024 * 1024,
+    flushInterval: Duration(seconds: 5),
+    lowPrioritySampleRate: 1,
+    memorySampleRate: 1,
+    maxTrackEventsPerMinute: 600,
+  ),
+);
+```
+
+#### HTTP 详情采集：`MonitorHttpConfig`
+
+事实层（去 query 的 `payload.url`、method、状态码、耗时、字节数等 attributes）始终采集，不受此配置控制。此配置只管详情层（`payload.http.query`、`payload.http.detail`）：
+
+| 字段 | 默认 | 含义 |
+|---|---|---|
+| `captureQuery` | `true` | 结构化 query 参数进 `payload.http.query` |
+| `captureHeaders` | `true` | 双向 headers 进 `payload.http.detail.*.headers` |
+| `captureRequestBody` | `true` | 请求 body |
+| `captureResponseBody` | `true` | 响应 body（成功与失败统一采集） |
+| `maxBodyBytes` | null（按模式：localLive/consoleOnly 64KB，production 16KB） | body 截断上限；截断时保留 `body_original_length` 与全文 `body_sha256` |
+| `redactor` | null（保真采集，不脱敏） | 可选脱敏回调 |
+
+```dart
+MonitorConfig(
+  // ...
+  http: MonitorHttpConfig(
+    captureResponseBody: false,   // 例：关闭响应体
+    maxBodyBytes: 8 * 1024,       // 例：收紧截断上限
+    redactor: (detail) {
+      // 输入是即将写入 payload 的详情 section（http.query + http.detail），
+      // 返回修改后的版本；返回 null 表示丢弃整个详情层。
+      final headers = (detail['http.detail'] as Map?)?['request']?['headers'] as Map?;
+      headers?.remove('authorization');
+      return detail;
+    },
+  ),
+);
+```
+
+采集入口两种，按 App 使用的网络库选择（可同时用）：
+
+```dart
+dio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
+final client = FlutterMonitorSDK.createHttpClient(); // 包装 package:http
+```
+
+#### 性能 / 内存 / Session 配置
+
+- `MonitorPerformanceConfig`：卡顿阈值（`jankFrameTimeMultiplier` 默认 2.5、`consecutiveJankThreshold` 默认 4）、页面 frame 摘要开关、`measure(...)` 交互窗口参数。预设 `strict()`（更敏感）与 `lenient()`（低端机/噪声环境）。
+- `MonitorMemoryConfig`：`sampleInterval` 默认 30s、`growthThresholdMb` 默认 16、`suspectLeakThresholdMb` 默认 64。
+- `MonitorSessionConfig`：`backgroundSessionTimeout` 默认 30 分钟——后台超过该时长再回前台切新 session，短暂切后台仍归属同一 session。
+
+#### 运行时上下文：userId 从哪里来
+
+`userId` 不在初始化配置里，而是登录后通过运行时上下文写入，之后所有事件的 `context.user.userId` 自动携带：
+
+```dart
+// 登录成功后
+FlutterMonitorSDK.setContext(
+  userId: '333',
+  userType: 'vip',
+  userTags: ['beta'],
+  cohort: 'experiment_a',
+);
+
+// 登出时
+FlutterMonitorSDK.clearContext(scopes: {MonitorContextScope.user});
+```
+
+这是服务端按 `userId` 检索用户会话链路的前提：不调用 `setContext(userId: ...)`，服务端只能按 sessionId/设备维度查询（查询路径见 `platform/docs/README.md`）。

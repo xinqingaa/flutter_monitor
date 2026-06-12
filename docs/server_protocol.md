@@ -281,6 +281,8 @@ SDK 应支持：
 - 重试队列达到上限时，应优先保留高优先级事件，并记录丢弃计数。
 - App 退出前 flush 是尽力语义，不保证所有低优先级事件都成功上报。
 
+客户端侧的具体默认参数（队列上限、批量大小、flush 间隔、退避区间、采样率等）由 `MonitorProductionPolicy` 定义，三种预设（default / localLive / conservative）的完整取值表见 `docs/signal_collection.md` 的"输出模式行为与接入配置"章节，本文不重复维护。
+
 `priority` 来自统一 event envelope，服务端和 SDK 队列都不应使用另一套优先级协议。采集器可以提供 priority suggestion，但最终值应由 pipeline 写入 envelope。
 
 优先级建议：
@@ -383,10 +385,10 @@ Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运�
 - 413：先拆分 batch 或裁剪单事件 payload，仍失败则按 priority/drop policy 丢弃；
 - 429：按 `retryAfterMs` 或 `Retry-After` 计划重试；
 - 5xx、超时、断网：指数退避加 jitter，保留队列。
-- 超过 `maxRetryAttempts`：ack 队列中的 batch，并按 `non_retryable_rejected` 记录 drop；
+- 超过 `maxRetryAttempts`：按事件各自的累计重试次数判定，ack 后按 `retry_exhausted` 记录 drop；同一 batch 中重试次数未超限的事件应重新入队，不得被旧事件连坐；
 - 超过 `maxEventAge`：从队列移除，并按 `expired` 记录 drop。
 
-SDK self-monitoring 使用统一 `sdk.*` envelope 上报，字段包括 `sdk.output.mode`、`sdk.queue.*`、`sdk.batch.*`、`sdk.flush.*`、`sdk.retry.*`、`sdk.drop.*` 和 `sdk.config.*`。服务端和 Workbench 不应根据 HTTP 响应或 UI 状态重新发明另一套 drop/retry/queue 协议。
+SDK self-monitoring 使用统一 `sdk.*` envelope 上报，字段包括 `sdk.output.mode`、`sdk.queue.*`、`sdk.batch.*`、`sdk.flush.*`、`sdk.retry.*`、`sdk.drop.*`、`sdk.health.*` 和 `sdk.config.*`。drop/retry/flush 默认以 `sdk.health.report` 周期摘要 + 边沿事件表达，见 `docs/event_model.md`。服务端和 Workbench 不应根据 HTTP 响应或 UI 状态重新发明另一套 drop/retry/queue 协议。
 
 ## 服务端聚合维度
 

@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import 'offline_event_queue.dart';
 import 'queued_monitor_event.dart';
+import 'sdk_health_monitor.dart';
 
 class ReliableHttpOutput extends MonitorOutput {
   ReliableHttpOutput({
@@ -19,8 +20,10 @@ class ReliableHttpOutput extends MonitorOutput {
     required OfflineEventQueue queue,
     this.authTokenProvider,
     http.Client? client,
+    SdkHealthMonitor? healthMonitor,
   }) : _queue = queue,
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _health = healthMonitor;
 
   final Uri endpoint;
   final String mode;
@@ -28,6 +31,7 @@ class ReliableHttpOutput extends MonitorOutput {
   final OfflineEventQueue _queue;
   final Future<String?> Function()? authTokenProvider;
   final http.Client _client;
+  final SdkHealthMonitor? _health;
 
   Future<void>? _initFuture;
   Future<void>? _activeFlush;
@@ -35,12 +39,10 @@ class ReliableHttpOutput extends MonitorOutput {
   Timer? _quickFlushTimer;
   int? _temporaryMaxBatchEvents;
   var _disposed = false;
-  final Map<String, _PendingDropSummary> _pendingDropSummaries =
-      <String, _PendingDropSummary>{};
-  Timer? _dropSummaryTimer;
 
   @override
   void init() {
+    _queue.onStoreFallback = (error) => _health?.recordStoreFallback(error);
     _initFuture = _queue.init();
     _intervalTimer = Timer.periodic(policy.flushInterval, (_) {
       unawaited(flush(reason: SdkFlushReasons.interval));
@@ -56,13 +58,16 @@ class ReliableHttpOutput extends MonitorOutput {
   Future<void> _enqueue(Map<String, dynamic> event) async {
     await _ensureInitialized();
     final queued = QueuedMonitorEvent.fromEnvelope(event);
-    final isOutputHealthEvent = _isOutputHealthEvent(queued.name);
     final result = await _queue.enqueue(queued);
-    if (!isOutputHealthEvent &&
-        (!result.accepted || result.dropped.isNotEmpty)) {
-      _emitDrop(result.reason ?? SdkDropReasons.queueFull, result.dropped);
+    _health?.recordEnqueued();
+    if (!result.accepted || result.dropped.isNotEmpty) {
+      _health?.recordDroppedQueuedEvents(
+        result.reason ?? SdkDropReasons.queueFull,
+        result.dropped,
+      );
     }
     final stats = await _queue.stats();
+    _health?.updateQueueStats(length: stats.length, bytes: stats.bytes);
     if (stats.length >= policy.maxBatchEvents) {
       unawaited(flush(reason: SdkFlushReasons.batchSize));
       return;
@@ -96,7 +101,7 @@ class ReliableHttpOutput extends MonitorOutput {
     final expired = await _queue.deleteExpired(
       now.subtract(policy.maxEventAge),
     );
-    _emitDrop(SdkDropReasons.expired, expired);
+    _health?.recordDroppedQueuedEvents(SdkDropReasons.expired, expired);
     final maxEvents = _temporaryMaxBatchEvents ?? policy.maxBatchEvents;
     _temporaryMaxBatchEvents = null;
     final batch = await _queue.nextBatch(
@@ -113,18 +118,13 @@ class ReliableHttpOutput extends MonitorOutput {
             ? minDuration(policy.requestTimeout, const Duration(seconds: 2))
             : policy.requestTimeout,
       );
-      await _handleResponse(
-        batch,
-        response,
-        startedAt: startedAt,
-        reason: reason,
-      );
+      await _handleResponse(batch, response);
     } catch (error) {
+      _health?.recordFlushFailure();
       if (isAppExiting) {
         debugPrint('Flutter Monitor exit flush failed: $error');
-        _emitFlush(
+        _emitFlushFailure(
           batch,
-          status: EventStatus.error,
           reason: reason,
           startedAt: startedAt,
           payload: <String, Object?>{PayloadKeys.error: error.toString()},
@@ -152,23 +152,16 @@ class ReliableHttpOutput extends MonitorOutput {
 
   Future<void> _handleResponse(
     List<QueuedMonitorEvent> batch,
-    http.Response response, {
-    required DateTime startedAt,
-    required String reason,
-  }) async {
+    http.Response response,
+  ) async {
     final status = response.statusCode;
     if (status >= 200 && status < 300) {
       await _queue.ack(_ids(batch));
-      if (!_containsOutputFlushEvent(batch)) {
-        _emitFlush(
-          batch,
-          status: EventStatus.ok,
-          reason: reason,
-          startedAt: startedAt,
-        );
-      }
+      _health?.recordFlushSuccess();
+      _health?.recordSent(batch.length);
       return;
     }
+    _health?.recordFlushFailure();
     if (status == 429) {
       await _scheduleRetry(
         batch,
@@ -187,13 +180,19 @@ class ReliableHttpOutput extends MonitorOutput {
         );
       } else {
         await _queue.ack(_ids(batch));
-        _emitDrop(SdkDropReasons.payloadTooLarge, batch);
+        _health?.recordDroppedQueuedEvents(
+          SdkDropReasons.payloadTooLarge,
+          batch,
+        );
       }
       return;
     }
     if (status == 400 || status == 401 || status == 403) {
       await _queue.ack(_ids(batch));
-      _emitDrop(SdkDropReasons.nonRetryableRejected, batch);
+      _health?.recordDroppedQueuedEvents(
+        SdkDropReasons.nonRetryableRejected,
+        batch,
+      );
       return;
     }
     if (status >= 500) {
@@ -201,37 +200,45 @@ class ReliableHttpOutput extends MonitorOutput {
       return;
     }
     await _queue.ack(_ids(batch));
-    _emitDrop(SdkDropReasons.nonRetryableRejected, batch);
+    _health?.recordDroppedQueuedEvents(
+      SdkDropReasons.nonRetryableRejected,
+      batch,
+    );
   }
 
+  /// 重试计划按事件各自的累计重试次数判定。
+  ///
+  /// 重试超限的事件按 `retry_exhausted` 丢弃；同一 batch 中未超限的事件
+  /// 重新入队，不会被旧事件连坐。
   Future<void> _scheduleRetry(
     List<QueuedMonitorEvent> batch,
     String reason, {
     Duration? retryAfter,
   }) async {
-    if (_maxAttemptCount(batch) >= policy.maxRetryAttempts) {
-      await _queue.ack(_ids(batch));
-      _emitDrop(SdkDropReasons.nonRetryableRejected, batch);
-      return;
+    final exhausted = batch
+        .where((event) => event.attemptCount >= policy.maxRetryAttempts)
+        .toList(growable: false);
+    if (exhausted.isNotEmpty) {
+      await _queue.ack(_ids(exhausted));
+      _health?.recordDroppedQueuedEvents(
+        SdkDropReasons.retryExhausted,
+        exhausted,
+      );
     }
-    final delay = retryAfter ?? _retryDelay(batch);
+    final retryable = batch
+        .where((event) => event.attemptCount < policy.maxRetryAttempts)
+        .toList(growable: false);
+    if (retryable.isEmpty) return;
+    final delay = retryAfter ?? _retryDelay(retryable);
     await _queue.scheduleRetry(
-      _ids(batch),
+      _ids(retryable),
       nextAttemptAt: DateTime.now().add(delay),
     );
-    onHealthEvent?.call(
-      OutputHealthEvent(
-        name: EventNames.sdkRetrySchedule,
-        level: EventLevel.warning,
-        status: EventStatus.ok,
-        attributes: <String, Object?>{
-          FieldPaths.sdkOutputMode: mode,
-          FieldPaths.sdkRetryCount: _maxAttemptCount(batch) + 1,
-          FieldPaths.sdkRetryDelayMs: delay.inMilliseconds,
-          FieldPaths.sdkRetryReason: reason,
-          FieldPaths.sdkBatchSize: batch.length,
-        },
-      ),
+    _health?.recordRetryScheduled(
+      retryCount: _maxAttemptCount(retryable) + 1,
+      delay: delay,
+      reason: reason,
+      batchSize: retryable.length,
     );
   }
 
@@ -276,55 +283,9 @@ class ReliableHttpOutput extends MonitorOutput {
     return batch.map((event) => event.eventId).toList(growable: false);
   }
 
-  void _emitDrop(String reason, List<QueuedMonitorEvent> events) {
-    if (events.isEmpty) return;
-    final key = '$mode:$reason';
-    final summary = _pendingDropSummaries.putIfAbsent(
-      key,
-      () => _PendingDropSummary(mode: mode, reason: reason),
-    );
-    summary.add(events);
-    _scheduleDropSummary();
-  }
-
-  void _scheduleDropSummary() {
-    _dropSummaryTimer ??= Timer(policy.quickFlushDelay, _emitDropSummaries);
-  }
-
-  void _emitDropSummaries() {
-    _dropSummaryTimer = null;
-    if (_pendingDropSummaries.isEmpty) return;
-    final summaries = List<_PendingDropSummary>.from(
-      _pendingDropSummaries.values,
-    );
-    _pendingDropSummaries.clear();
-    for (final summary in summaries) {
-      _emitDropSummary(summary);
-    }
-  }
-
-  void _emitDropSummary(_PendingDropSummary summary) {
-    onHealthEvent?.call(
-      OutputHealthEvent(
-        name: EventNames.sdkQueueDrop,
-        level: EventLevel.warning,
-        status: EventStatus.error,
-        priority: EventPriority.high,
-        attributes: <String, Object?>{
-          FieldPaths.sdkOutputMode: summary.mode,
-          FieldPaths.sdkDropReason: summary.reason,
-          FieldPaths.sdkDropCount: summary.count,
-        },
-        payload: <String, Object?>{
-          PayloadKeys.droppedSummary: summary.droppedSummaryJson(),
-        },
-      ),
-    );
-  }
-
-  void _emitFlush(
+  /// flush 失败的边沿事件；成功 flush 只累计进 health 计数器，不发事件。
+  void _emitFlushFailure(
     List<QueuedMonitorEvent> batch, {
-    required EventStatus status,
     required String reason,
     required DateTime startedAt,
     Map<String, Object?> payload = const <String, Object?>{},
@@ -332,11 +293,9 @@ class ReliableHttpOutput extends MonitorOutput {
     onHealthEvent?.call(
       OutputHealthEvent(
         name: EventNames.sdkOutputFlush,
-        level: status == EventStatus.ok ? EventLevel.info : EventLevel.warning,
-        status: status,
-        priority: status == EventStatus.ok
-            ? EventPriority.normal
-            : EventPriority.high,
+        level: EventLevel.warning,
+        status: EventStatus.error,
+        priority: EventPriority.high,
         attributes: <String, Object?>{
           FieldPaths.sdkOutputMode: mode,
           FieldPaths.sdkFlushReason: reason,
@@ -361,16 +320,6 @@ class ReliableHttpOutput extends MonitorOutput {
     );
   }
 
-  bool _containsOutputFlushEvent(List<QueuedMonitorEvent> batch) {
-    return batch.any((event) => event.name == EventNames.sdkOutputFlush);
-  }
-
-  bool _isOutputHealthEvent(String name) {
-    return name == EventNames.sdkOutputFlush ||
-        name == EventNames.sdkQueueDrop ||
-        name == EventNames.sdkRetrySchedule;
-  }
-
   Future<void> _ensureInitialized() async {
     final init = _initFuture;
     if (init != null) await init;
@@ -380,87 +329,10 @@ class ReliableHttpOutput extends MonitorOutput {
   void dispose() {
     _intervalTimer?.cancel();
     _quickFlushTimer?.cancel();
-    _dropSummaryTimer?.cancel();
-    _emitDropSummaries();
     _disposed = true;
     unawaited(flush(isAppExiting: true, reason: SdkFlushReasons.appExit));
     unawaited(_queue.dispose());
     _client.close();
-  }
-}
-
-class _PendingDropSummary {
-  _PendingDropSummary({required this.mode, required this.reason});
-
-  final String mode;
-  final String reason;
-  final Map<String, _DroppedEventSummary> _events =
-      <String, _DroppedEventSummary>{};
-  var count = 0;
-
-  void add(List<QueuedMonitorEvent> events) {
-    count += events.length;
-    for (final event in events) {
-      final key =
-          '${event.name}\n${event.signalType}\n${event.priority.toJson()}\n${event.source}\n${event.routeName}\n${event.moduleName}\n${event.moduleScene}';
-      final summary = _events.putIfAbsent(
-        key,
-        () => _DroppedEventSummary(
-          name: event.name,
-          signalType: event.signalType,
-          priority: event.priority.toJson(),
-          source: event.source,
-          routeName: event.routeName,
-          moduleName: event.moduleName,
-          moduleScene: event.moduleScene,
-        ),
-      );
-      summary.count += 1;
-    }
-  }
-
-  List<Map<String, Object?>> droppedSummaryJson() {
-    final summaries = _events.values.toList(growable: false)
-      ..sort((a, b) {
-        final count = b.count.compareTo(a.count);
-        if (count != 0) return count;
-        return a.name.compareTo(b.name);
-      });
-    return summaries.map((summary) => summary.toJson()).toList(growable: false);
-  }
-}
-
-class _DroppedEventSummary {
-  _DroppedEventSummary({
-    required this.name,
-    required this.signalType,
-    required this.priority,
-    required this.source,
-    required this.routeName,
-    required this.moduleName,
-    required this.moduleScene,
-  });
-
-  final String name;
-  final String signalType;
-  final String priority;
-  final String source;
-  final String routeName;
-  final String moduleName;
-  final String moduleScene;
-  var count = 0;
-
-  Map<String, Object?> toJson() {
-    return <String, Object?>{
-      'name': name,
-      'signalType': signalType,
-      'priority': priority,
-      if (source.isNotEmpty) 'source': source,
-      if (routeName.isNotEmpty) 'route': routeName,
-      if (moduleName.isNotEmpty) 'module': moduleName,
-      if (moduleScene.isNotEmpty) 'scene': moduleScene,
-      'count': count,
-    };
   }
 }
 

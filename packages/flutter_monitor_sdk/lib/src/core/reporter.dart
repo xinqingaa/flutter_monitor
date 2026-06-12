@@ -6,6 +6,7 @@ import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_manager.dart';
 import 'package:flutter_monitor_sdk/src/context/monitor_context_scope.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/delivery/sdk_health_monitor.dart';
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/monitor_native_bridge.dart';
@@ -15,6 +16,7 @@ import 'package:flutter_monitor_sdk/src/outputs/monitor_output_resolver.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
+import 'package:flutter_monitor_sdk/src/utils/http_detail_builder.dart';
 import 'package:flutter_monitor_sdk/src/tracing/breadcrumb_store.dart';
 import 'package:flutter_monitor_sdk/src/tracing/session_manager.dart';
 import 'package:flutter_monitor_sdk/src/tracing/trace_manager.dart';
@@ -40,6 +42,8 @@ class Reporter {
   late final BreadcrumbStore _breadcrumbStore;
   late final EventPipeline _pipeline;
   late final List<MonitorOutput> _outputs;
+  late final SdkHealthMonitor _healthMonitor;
+  late final HttpDetailBuilder _httpDetailBuilder;
   final NativeSignalMapper _nativeSignalMapper = const NativeSignalMapper();
 
   /// 缓存的设备信息，避免每次上报都重新获取。
@@ -61,6 +65,13 @@ class Reporter {
   /// recent breadcrumb store 容量。
   int get maxQueueSize => MonitorConfig.defaultBreadcrumbCapacity;
 
+  /// HTTP 详情采集配置（含模式默认值解析前的原始配置）。
+  MonitorHttpConfig get httpConfig => _config.effectiveHttpConfig;
+
+  /// 当前模式下 HTTP body 的截断上限（字节）。
+  int get httpMaxBodyBytes =>
+      _config.effectiveHttpConfig.effectiveMaxBodyBytes(_config.mode.name);
+
   void _init() {
     _contextManager = ContextManager(_config);
     _sessionManager = SessionManager();
@@ -68,7 +79,13 @@ class Reporter {
     _breadcrumbStore = BreadcrumbStore(
       capacity: MonitorConfig.defaultBreadcrumbCapacity,
     );
-    _outputs = resolveMonitorOutputs(_config);
+    _healthMonitor = SdkHealthMonitor(mode: _config.mode.name);
+    _healthMonitor.onEvent = _handleOutputHealthEvent;
+    _httpDetailBuilder = HttpDetailBuilder(
+      config: _config.effectiveHttpConfig,
+      mode: _config.mode.name,
+    );
+    _outputs = resolveMonitorOutputs(_config, healthMonitor: _healthMonitor);
     _pipeline = EventPipeline(
       contextManager: _contextManager,
       sessionManager: _sessionManager,
@@ -76,12 +93,16 @@ class Reporter {
       breadcrumbStore: _breadcrumbStore,
       outputs: _outputs,
       mode: _config.mode,
+      healthMonitor: _healthMonitor,
     );
 
     // 初始化所有在配置中提供的输出器
     for (final output in _outputs) {
       output.onHealthEvent = _handleOutputHealthEvent;
       output.init();
+    }
+    if (_config.mode.name != SdkOutputModes.consoleOnly) {
+      _healthMonitor.start();
     }
   }
 
@@ -696,6 +717,11 @@ class Reporter {
     num? responseSizeBytes,
     num? retryCount,
     String? cacheStatus,
+    Map<String, String>? requestHeaders,
+    Object? requestBody,
+    Map<String, String>? responseHeaders,
+    Object? responseBody,
+    String? requestId,
     String source = SignalSources.sdkHttp,
     DateTime? startTime,
     DateTime? endTime,
@@ -713,6 +739,8 @@ class Reporter {
             statusCode: statusCode,
             error: errorText is String ? errorText : null,
           );
+    final effectiveRequestId =
+        requestId ?? _requestIdFromHeaders(responseHeaders);
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -722,6 +750,8 @@ class Reporter {
         FieldPaths.httpErrorType: effectiveErrorType,
       if (retryCount != null) FieldPaths.httpRetryCount: retryCount,
       if (cacheStatus != null) FieldPaths.httpCacheStatus: cacheStatus,
+      if (effectiveRequestId != null)
+        FieldPaths.httpRequestId: effectiveRequestId,
       if (requestSizeBytes != null)
         FieldPaths.requestSizeBytes: requestSizeBytes,
       if (responseSizeBytes != null)
@@ -731,8 +761,19 @@ class Reporter {
       errorText is String ? errorText : null,
       maxLength: _httpErrorPayloadMaxLength,
     );
-    final httpPayload = <String, Object?>{...payload, PayloadKeys.url: url}
-      ..remove(PayloadKeys.error);
+    final detailSection = _httpDetailBuilder.build(
+      uri: Uri.tryParse(url),
+      requestHeaders: requestHeaders,
+      requestBody: requestBody,
+      responseHeaders: responseHeaders,
+      responseBody: responseBody,
+    );
+    final httpPayload = <String, Object?>{
+      ...payload,
+      // 事实层 URL 不含 query；query 进入详情层 http.query。
+      PayloadKeys.url: urlWithoutQuery(url),
+      ...detailSection,
+    }..remove(PayloadKeys.error);
     final span = _traceManager.startSpan(
       name: EventNames.httpClient,
       startTime: startedAt,
@@ -1286,6 +1327,12 @@ class Reporter {
         isBackgroundState &&
         !_backgroundFlushPending) {
       _backgroundFlushPending = true;
+      // 进入后台/退出前强制补发当前 health 窗口，确保摘要随本次 flush 上送。
+      _healthMonitor.report(
+        trigger: state == LifecycleStates.detached
+            ? SdkFlushReasons.appExit
+            : SdkFlushReasons.background,
+      );
       try {
         await flush(isAppExiting: state == LifecycleStates.detached);
         reportSdkEvent(
@@ -1516,6 +1563,8 @@ class Reporter {
   /// 会先闭合活跃页面 trace，再 flush，最后调用所有 output 的 dispose。
   Future<void> dispose() async {
     finishActivePageTraces(endReason: PageEndReasons.appDispose);
+    _healthMonitor.report(trigger: SdkFlushReasons.appExit);
+    _healthMonitor.dispose();
     await flush(isAppExiting: true);
     // 调用所有输出器的 dispose 方法，让它们清理自己的资源。
     for (final output in _outputs) {
@@ -1817,6 +1866,18 @@ class Reporter {
   }) {
     if (_currentPageActivity?.pageInstanceId != pageInstanceId) return;
     _closeCurrentPageWindow(phase, timestamp: timestamp);
+  }
+
+  String? _requestIdFromHeaders(Map<String, String>? headers) {
+    if (headers == null || headers.isEmpty) return null;
+    for (final entry in headers.entries) {
+      final key = entry.key.toLowerCase();
+      if (key == 'x-request-id' || key == 'x-trace-id' || key == 'request-id') {
+        final value = entry.value.trim();
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return null;
   }
 
   String _normalizedUrl(String rawUrl) {

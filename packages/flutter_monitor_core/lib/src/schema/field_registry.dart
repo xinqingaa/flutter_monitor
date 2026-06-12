@@ -541,6 +541,46 @@ const defaultFieldDefinitions = <FieldDefinition>[
     indexed: true,
   ),
   FieldDefinition(
+    path: FieldPaths.sdkHealthWindowMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.sdkHealthEnqueuedCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.sdkHealthSentCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.sdkHealthDroppedCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.sdkHealthRetryCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.sdkHealthFlushSuccessCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.sdkHealthFlushFailureCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+  ),
+  FieldDefinition(
     path: FieldPaths.sdkConfigVersion,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.safe,
@@ -669,6 +709,40 @@ const defaultFieldDefinitions = <FieldDefinition>[
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.safe,
     indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.summaryCount,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+    description: 'Number of events folded into this summary.',
+  ),
+  FieldDefinition(
+    path: FieldPaths.summaryDurationP50Ms,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.summaryDurationP95Ms,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.summaryDurationMaxMs,
+    valueType: FieldValueType.durationMs,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.summaryBytesTotal,
+    valueType: FieldValueType.number,
+    privacyLevel: PrivacyLevel.safe,
+  ),
+  FieldDefinition(
+    path: FieldPaths.httpRequestId,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    description:
+        'Server-side request correlation id from response headers '
+        'such as x-request-id.',
   ),
   FieldDefinition(
     path: FieldPaths.requestSizeBytes,
@@ -1019,28 +1093,56 @@ const defaultFieldDefinitions = <FieldDefinition>[
     privacyLevel: PrivacyLevel.mixed,
   ),
   FieldDefinition(
+    path: FieldPaths.httpQuery,
+    valueType: FieldValueType.object,
+    privacyLevel: PrivacyLevel.sensitive,
+    description:
+        'Structured URL query in payload detail layer; '
+        'faithful capture with optional redactor.',
+  ),
+  FieldDefinition(
+    path: FieldPaths.httpDetail,
+    valueType: FieldValueType.object,
+    privacyLevel: PrivacyLevel.sensitive,
+    description:
+        'HTTP request/response headers and bodies in payload detail layer; '
+        'faithful capture with optional redactor, strippable under pressure.',
+  ),
+  FieldDefinition(
+    path: FieldPaths.httpDetailDropped,
+    valueType: FieldValueType.boolean,
+    privacyLevel: PrivacyLevel.safe,
+    description: 'True when the detail layer was stripped under pressure.',
+  ),
+  FieldDefinition(
     path: FieldPaths.httpUrlQuery,
     valueType: FieldValueType.string,
-    privacyLevel: PrivacyLevel.forbidden,
-    description: 'Raw URL query is forbidden by default.',
+    privacyLevel: PrivacyLevel.sensitive,
+    description:
+        'Legacy raw query path; new capture uses http.query. '
+        'Faithful capture with optional redactor.',
   ),
   FieldDefinition(
     path: FieldPaths.httpRequestBody,
     valueType: FieldValueType.object,
-    privacyLevel: PrivacyLevel.forbidden,
-    description: 'Request body is forbidden by default.',
+    privacyLevel: PrivacyLevel.sensitive,
+    description:
+        'Legacy request body path; new capture uses http.detail.request.',
   ),
   FieldDefinition(
     path: FieldPaths.httpResponseBody,
     valueType: FieldValueType.object,
-    privacyLevel: PrivacyLevel.forbidden,
-    description: 'Response body is forbidden by default.',
+    privacyLevel: PrivacyLevel.sensitive,
+    description:
+        'Legacy response body path; new capture uses http.detail.response.',
   ),
   FieldDefinition(
     path: FieldPaths.httpRequestHeadersCookie,
     valueType: FieldValueType.string,
-    privacyLevel: PrivacyLevel.forbidden,
-    description: 'Cookies are forbidden by default.',
+    privacyLevel: PrivacyLevel.sensitive,
+    description:
+        'Legacy cookie path; new capture keeps cookies inside '
+        'http.detail headers, optional redactor applies.',
   ),
   FieldDefinition(
     path: FieldPaths.authToken,

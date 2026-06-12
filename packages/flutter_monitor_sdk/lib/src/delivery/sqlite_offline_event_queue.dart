@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'memory_offline_event_queue.dart';
 import 'offline_event_queue.dart';
+import 'queue_degradation.dart';
 import 'queued_monitor_event.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 
@@ -20,6 +21,9 @@ class SqliteOfflineEventQueue implements OfflineEventQueue {
   MemoryOfflineEventQueue? _fallback;
 
   @override
+  void Function(Object error)? onStoreFallback;
+
+  @override
   Future<void> init() async {
     try {
       final path =
@@ -27,7 +31,7 @@ class SqliteOfflineEventQueue implements OfflineEventQueue {
           p.join(await getDatabasesPath(), 'flutter_monitor_queue.db');
       _database = await openDatabase(
         path,
-        version: 1,
+        version: 2,
         onCreate: (db, version) async {
           await db.execute('''
 CREATE TABLE $_table (
@@ -41,6 +45,7 @@ CREATE TABLE $_table (
   nextAttemptAt INTEGER NOT NULL,
   attemptCount INTEGER NOT NULL,
   bytes INTEGER NOT NULL,
+  retention TEXT NOT NULL DEFAULT 'compressible',
   envelope TEXT NOT NULL
 )
 ''');
@@ -48,10 +53,18 @@ CREATE TABLE $_table (
             'CREATE INDEX idx_${_table}_next ON $_table(nextAttemptAt, priority, createdAt)',
           );
         },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute(
+              "ALTER TABLE $_table ADD COLUMN retention TEXT NOT NULL DEFAULT 'compressible'",
+            );
+          }
+        },
       );
-    } catch (_) {
+    } catch (error) {
       _fallback = MemoryOfflineEventQueue(policy: _policy);
       await _fallback!.init();
+      onStoreFallback?.call(error);
     }
   }
 
@@ -150,24 +163,39 @@ CREATE TABLE $_table (
   Future<List<QueuedMonitorEvent>> trimToLimits() async {
     final fallback = _fallback;
     if (fallback != null) return fallback.trimToLimits();
-    final dropped = <QueuedMonitorEvent>[];
-    while (true) {
-      final current = await stats();
-      if (current.length <= _policy.maxQueueEvents &&
-          current.bytes <= _policy.maxQueueBytes) {
-        return dropped;
-      }
-      final records = await _requireDatabase().query(
-        _table,
-        orderBy:
-            "CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 ELSE 0 END ASC, createdAt ASC",
-        limit: 1,
-      );
-      if (records.isEmpty) return dropped;
-      final event = QueuedMonitorEvent.fromRecord(records.single);
-      dropped.add(event);
-      await ack(<String>[event.eventId]);
+    final current = await stats();
+    if (current.length <= _policy.maxQueueEvents &&
+        current.bytes <= _policy.maxQueueBytes) {
+      return const <QueuedMonitorEvent>[];
     }
+    // 超限是低频事件：一次性加载后执行降级阶梯
+    // （丢 sampleable → 剥离 http detail → 丢 compressible → 聚合 summary →
+    // 审计丢 hard），再以单事务写回。
+    final db = _requireDatabase();
+    final records = await db.query(_table);
+    final events = records
+        .map(QueuedMonitorEvent.fromRecord)
+        .toList(growable: false);
+    final result = degradeToLimits(
+      events: events,
+      maxEvents: _policy.maxQueueEvents,
+      maxBytes: _policy.maxQueueBytes,
+    );
+    await db.transaction((txn) async {
+      for (final id in result.removedIds) {
+        await txn.delete(_table, where: 'eventId = ?', whereArgs: <Object?>[
+          id,
+        ]);
+      }
+      for (final event in result.upserts.values) {
+        await txn.insert(
+          _table,
+          event.toRecord(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+    return result.dropped;
   }
 
   @override

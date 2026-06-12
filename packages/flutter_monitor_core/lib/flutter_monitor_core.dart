@@ -31,6 +31,8 @@ export 'src/core_package.dart';
 export 'src/privacy/privacy_filter.dart';
 export 'src/privacy/privacy_level.dart';
 export 'src/privacy/privacy_rule.dart';
+export 'src/retention/event_retention.dart';
+export 'src/retention/retention_registry.dart';
 export 'src/schema/field_definition.dart';
 export 'src/schema/field_registry.dart';
 export 'src/schema/field_requirement.dart';

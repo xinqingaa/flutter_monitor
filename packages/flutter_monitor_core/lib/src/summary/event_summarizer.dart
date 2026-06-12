@@ -175,6 +175,12 @@ class EventSummarizer {
 
   Map<String, Object?> _sdkFields(EventEnvelope envelope) {
     return _withoutNulls(<String, Object?>{
+      if (envelope.name == EventNames.sdkHealthReport) ...<String, Object?>{
+        'enqueued': envelope.attributes[FieldPaths.sdkHealthEnqueuedCount],
+        'sent': envelope.attributes[FieldPaths.sdkHealthSentCount],
+        'dropped': envelope.attributes[FieldPaths.sdkHealthDroppedCount],
+        'retries': envelope.attributes[FieldPaths.sdkHealthRetryCount],
+      },
       if (_routeDisplay(envelope) != null) 'route': _routeDisplay(envelope),
     });
   }

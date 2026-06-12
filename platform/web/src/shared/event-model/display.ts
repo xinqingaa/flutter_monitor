@@ -336,6 +336,29 @@ export function timelineDisplay(event: MonitorEvent): TimelineDisplayModel {
     return { ...base, title: success === false ? '退出前发送回执失败' : '退出前发送回执', summaryItems: compactItems(statusLabel(status ?? '')) };
   }
 
+  if (name === 'sdk.health.report') {
+    const dropped = readCanonicalPath(event, 'attributes.sdk.health.dropped_count');
+    const sent = readCanonicalPath(event, 'attributes.sdk.health.sent_count');
+    const enqueued = readCanonicalPath(event, 'attributes.sdk.health.enqueued_count');
+    const retries = readCanonicalPath(event, 'attributes.sdk.health.retry_count');
+    const flushFailures = readCanonicalPath(event, 'attributes.sdk.health.flush_failure_count');
+    const hasProblem = (typeof dropped === 'number' && dropped > 0) ||
+      (typeof flushFailures === 'number' && flushFailures > 0);
+    return {
+      ...base,
+      kindLabel: 'SDK',
+      title: 'SDK 健康摘要',
+      summaryItems: compactItems(
+        typeof enqueued === 'number' ? `入队 ${Math.round(enqueued)}` : undefined,
+        typeof sent === 'number' ? `发送 ${Math.round(sent)}` : undefined,
+        typeof dropped === 'number' && dropped > 0 ? `丢弃 ${Math.round(dropped)}` : undefined,
+        typeof retries === 'number' && retries > 0 ? `重试 ${Math.round(retries)}` : undefined,
+        typeof flushFailures === 'number' && flushFailures > 0 ? `Flush 失败 ${Math.round(flushFailures)}` : undefined,
+      ),
+      tone: hasProblem ? 'warn' : 'info',
+    };
+  }
+
   if (name === 'sdk.queue.drop') {
     const reason = readStringPath(event, 'attributes.sdk.drop.reason');
     const count = readCanonicalPath(event, 'attributes.sdk.drop.count');

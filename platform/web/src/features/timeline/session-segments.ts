@@ -264,10 +264,16 @@ function segmentSummaryItems(kind: SegmentKind, events: MonitorEvent[]): string[
     .filter((event) => event.name === 'app.background_duration' && typeof event.durationMs === 'number')
     .map((event) => event.durationMs as number);
   const memorySamples = events.filter((event) => event.name === 'memory.sample').length;
+  const healthReports = events.filter((event) => event.name === 'sdk.health.report');
   const sdkDrops = events
     .filter((event) => event.name === 'sdk.queue.drop')
-    .reduce((sum, event) => sum + (numberAttribute(event, 'sdk.drop.count') ?? 1), 0);
-  const sdkRetries = events.filter((event) => event.name === 'sdk.retry.schedule').length;
+    .reduce((sum, event) => sum + (numberAttribute(event, 'sdk.drop.count') ?? 1), 0)
+    + healthReports.reduce((sum, event) => sum + (numberAttribute(event, 'sdk.health.dropped_count') ?? 0), 0);
+  // sdk.retry.schedule 只是进入重试状态的边沿事件，重试次数以 health report 计数为准。
+  const healthRetryCount = healthReports.reduce((sum, event) => sum + (numberAttribute(event, 'sdk.health.retry_count') ?? 0), 0);
+  const sdkRetries = healthRetryCount > 0
+    ? healthRetryCount
+    : events.filter((event) => event.name === 'sdk.retry.schedule').length;
   const sdkFlushes = events.filter((event) => event.name === 'sdk.output.flush' || event.name === 'sdk.lifecycle.flush').length;
   const nativeLifecycle = events.filter(isNativeLifecycleEvent).length;
   const nativeMemory = events.filter(isNativeMemoryEvent).length;
