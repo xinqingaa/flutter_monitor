@@ -261,7 +261,7 @@ service 接收 SDK 批量写入的统一 envelope。当前本地 API 清单、�
 - 写入接口接收完整 SDK `EventEnvelope`，缺少 `eventId` 的事件不得被 service 补写成 SDK 字段。
 - raw envelope 查询接口返回入库 envelope 本身，例如 recent、event detail、session detail、trace detail 和 search。
 - session list、performance overview、groups 和 health 可以返回 Workbench query summary，但这些摘要不是 SDK schema 字段。
-- `GET /api/monitor/v1/sessions/:sessionId/console` 返回 Session Detail 专用的只读 console view model，用于快速定位、Session map 和日志流。它只包含 envelope 派生摘要、计数、分段和 eventId 回查指针，不返回 HTTP request/response body；完整头、体和 raw envelope 继续通过 `GET /api/monitor/v1/events/:eventId` 查询。
+- `GET /api/monitor/v1/sessions/:sessionId/console` 返回 Session Detail 专用的只读 console view model，用于 Session Navigator、快速定位和日志流。它只包含 envelope 派生摘要、节点 metrics、分段 summary、计数和 eventId 回查指针，不返回 HTTP request/response body；完整头、体和 raw envelope 继续通过 `GET /api/monitor/v1/events/:eventId` 查询。
 - service 提供 SSE 实时流：`GET /api/monitor/v1/stream`。
 
 service 内部模块：

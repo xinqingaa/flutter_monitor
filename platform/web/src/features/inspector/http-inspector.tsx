@@ -1,7 +1,9 @@
 import { Braces, Clipboard, FileText, GitBranch, Info, MessageSquare, Send } from 'lucide-react';
+import { useState } from 'react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
@@ -284,12 +286,37 @@ function JsonBlock({ title, value, empty }: { title: string; value: unknown; emp
 }
 
 function BodyBlock({ value, empty }: { value: unknown; empty: string }) {
+  const [mode, setMode] = useState<'formatted' | 'raw'>('formatted');
   if (!hasContent(value)) return <EmptyLine text={empty} />;
-  const formatted = formatBody(value);
+  const body = parseBody(value);
+  const canFormat = body.jsonValue !== undefined || body.formattedText !== undefined;
+  const showFormatted = canFormat && mode === 'formatted';
   return (
-    <pre className="max-h-[360px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100">
-      {formatted}
-    </pre>
+    <div className="grid gap-2">
+      {canFormat ? (
+        <div className="flex justify-end gap-1">
+          <Button type="button" size="sm" variant={mode === 'formatted' ? 'default' : 'secondary'} className="h-7 px-2" onClick={() => setMode('formatted')}>
+            格式化
+          </Button>
+          <Button type="button" size="sm" variant={mode === 'raw' ? 'default' : 'secondary'} className="h-7 px-2" onClick={() => setMode('raw')}>
+            原文
+          </Button>
+        </div>
+      ) : null}
+      {showFormatted && body.jsonValue !== undefined ? (
+        <div className="h-[360px] min-h-0">
+          <JsonViewer value={body.jsonValue} />
+        </div>
+      ) : showFormatted ? (
+        <pre className="max-h-[360px] whitespace-pre-wrap break-words overflow-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100">
+          {body.formattedText}
+        </pre>
+      ) : (
+        <pre className="max-h-[360px] whitespace-pre-wrap break-words overflow-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100">
+          {body.raw}
+        </pre>
+      )}
+    </div>
   );
 }
 
@@ -385,17 +412,71 @@ function formatValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function formatBody(value: unknown): string {
-  if (typeof value !== 'string') return JSON.stringify(value, null, 2);
+function parseBody(value: unknown): { raw: string; jsonValue?: unknown; formattedText?: string } {
+  if (typeof value !== 'string') {
+    return { raw: JSON.stringify(value, null, 2), jsonValue: value };
+  }
   const trimmed = value.trim();
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
-      return JSON.stringify(JSON.parse(trimmed), null, 2);
+      return { raw: value, jsonValue: JSON.parse(trimmed) };
     } catch {
-      return value;
+      return { raw: value, formattedText: formatLooseJson(trimmed) };
     }
   }
-  return value;
+  return { raw: value };
+}
+
+function formatLooseJson(value: string): string {
+  let output = '';
+  let indent = 0;
+  let inString = false;
+  let escaping = false;
+
+  for (const char of value) {
+    if (inString) {
+      output += char;
+      if (escaping) {
+        escaping = false;
+      } else if (char === '\\') {
+        escaping = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      output += char;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      output += `${char}\n${'  '.repeat(++indent)}`;
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      indent = Math.max(0, indent - 1);
+      output += `\n${'  '.repeat(indent)}${char}`;
+      continue;
+    }
+
+    if (char === ',') {
+      output += `,\n${'  '.repeat(indent)}`;
+      continue;
+    }
+
+    if (char === ':') {
+      output += ': ';
+      continue;
+    }
+
+    output += char;
+  }
+
+  return output;
 }
 
 function byteLabel(value: number): string {

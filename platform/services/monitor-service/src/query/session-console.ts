@@ -1,5 +1,6 @@
 import type {
   MonitorEvent,
+  SessionConsoleMetric,
   SessionConsoleResult,
   SessionConsoleRow,
   SessionConsoleSegment,
@@ -76,6 +77,7 @@ function toConsoleRow(event: MonitorEvent): SessionConsoleRow {
   const title = rowTitle(event, http);
   const subtitle = rowSubtitle(event, http, route);
   const badges = rowBadges(event, http);
+  const metrics = rowMetrics(event, http, group);
 
   return {
     eventId: event.eventId,
@@ -100,6 +102,7 @@ function toConsoleRow(event: MonitorEvent): SessionConsoleRow {
     subtitle,
     badges,
     issueLabels,
+    metrics,
     ...http,
   };
 }
@@ -110,7 +113,7 @@ function rowGroup(event: MonitorEvent, issueLabels: string[]): SessionConsoleRow
   if (event.signalType === 'sdk' || name.startsWith('sdk.')) return 'sdk';
   if (isMemoryEvent(event)) return 'memory';
   if (name.includes('lifecycle') || name === 'app.background_duration' || name === 'app.hot_start') return 'lifecycle';
-  if (name === 'interaction.measure' || readPath(event, ['attributes', 'interaction.mode']) !== undefined) return 'business';
+  if (name === 'interaction.measure' || readPath(event, ['attributes', 'interaction.mode']) !== undefined) return 'interaction';
   if (readPath(event, ['attributes', 'business.action']) !== undefined || name.startsWith('business.')) return 'business';
   if (name === 'app.cold_start' || name === 'sdk.init') return 'startup';
   if (name.startsWith('page.') || name === 'route.push' || name === 'route.pop') return 'page';
@@ -118,6 +121,136 @@ function rowGroup(event: MonitorEvent, issueLabels: string[]): SessionConsoleRow
   if (issueLabels.length > 0 || isErrorEvent(event)) return 'problem';
   if (event.signalType === 'metric' || typeof event.durationMs === 'number') return 'performance';
   return 'event';
+}
+
+function rowMetrics(
+  event: MonitorEvent,
+  http: Partial<SessionConsoleRow>,
+  group: SessionConsoleRow['group'],
+): SessionConsoleMetric[] {
+  if (group === 'http') return httpMetrics(event, http);
+  if (group === 'startup') return startupMetrics(event);
+  if (group === 'page') return pageMetrics(event);
+  if (group === 'interaction') return interactionMetrics(event);
+  if (group === 'business') return businessMetrics(event);
+  if (group === 'memory') return memoryMetrics(event);
+  if (group === 'lifecycle') return lifecycleMetrics(event);
+  if (group === 'sdk') return sdkMetrics(event);
+  if (group === 'problem') return problemMetrics(event);
+  return commonMetrics(event);
+}
+
+function httpMetrics(event: MonitorEvent, http: Partial<SessionConsoleRow>): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '状态', typeof http.statusCode === 'number' ? String(http.statusCode) : http.errorType, http.success === false ? 'danger' : 'good');
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs), event.durationMs !== undefined && event.durationMs >= SLOW_HTTP_MS ? 'warn' : 'neutral');
+  pushMetric(metrics, '响应', byteLabel(http.responseSizeBytes));
+  pushMetric(metrics, '请求', byteLabel(http.requestSizeBytes));
+  pushMetric(metrics, '来源', stringPath(event, ['attributes', 'http.source']) ?? stringPath(event, ['payload', 'http.source']) ?? stringPath(event, ['payload', 'source']));
+  const evidence = [
+    http.hasRequestHeaders ? 'Req headers' : undefined,
+    http.hasRequestBody ? 'Req body' : undefined,
+    http.hasResponseHeaders ? 'Res headers' : undefined,
+    http.hasResponseBody ? 'Res body' : undefined,
+    http.hasHttpQuery ? 'Query' : undefined,
+    http.bodyTruncated ? 'body truncated' : undefined,
+    http.detailDropped ? 'detail dropped' : undefined,
+  ].filter(Boolean).join(' / ');
+  pushMetric(metrics, '证据', evidence, http.detailDropped ? 'warn' : 'info');
+  return metrics;
+}
+
+function startupMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs));
+  pushMetric(metrics, '首帧', durationLabel(numberPath(event, ['attributes', 'app.first_frame_ms']) ?? numberPath(event, ['attributes', 'page.first_frame_ms'])));
+  pushMetric(metrics, '可交互', durationLabel(numberPath(event, ['attributes', 'app.interactive_ms']) ?? numberPath(event, ['attributes', 'app.time_to_interactive_ms'])));
+  pushMetric(metrics, 'SDK 初始化', event.name === 'sdk.init' ? durationLabel(event.durationMs) : durationLabel(numberPath(event, ['attributes', 'sdk.init.duration_ms'])));
+  pushMetric(metrics, '启动类型', stringPath(event, ['attributes', 'app.start.type']));
+  pushMetric(metrics, '结束口径', stringPath(event, ['attributes', 'app.start.end_reason']));
+  pushMetric(metrics, 'RSS', memoryDeltaLabel(event));
+  return metrics;
+}
+
+function pageMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '阶段', stringPath(event, ['attributes', 'event.phase']));
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs));
+  pushMetric(metrics, '加载', durationLabel(numberPath(event, ['attributes', 'page.load_ms'])));
+  pushMetric(metrics, '首帧', durationLabel(numberPath(event, ['attributes', 'page.first_frame_ms'])));
+  pushMetric(metrics, '停留', event.name === 'page.stay' ? durationLabel(event.durationMs) : undefined);
+  pushMetric(metrics, '帧', frameLabel(event), frameTone(event));
+  pushMetric(metrics, 'RSS', memoryDeltaLabel(event));
+  pushMetric(metrics, '去向', stringPath(event, ['attributes', 'page.to']) ?? stringPath(event, ['payload', 'page.to']));
+  return metrics;
+}
+
+function interactionMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '动作', stringPath(event, ['attributes', 'business.action']));
+  pushMetric(metrics, '模式', stringPath(event, ['attributes', 'interaction.mode']));
+  pushMetric(metrics, '活跃', durationLabel(numberPath(event, ['attributes', 'interaction.active_ms'])));
+  pushMetric(metrics, '稳定', durationLabel(numberPath(event, ['attributes', 'interaction.settle_ms'])));
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs));
+  pushMetric(metrics, '帧', frameLabel(event), frameTone(event));
+  return metrics;
+}
+
+function businessMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '动作', stringPath(event, ['attributes', 'business.action']));
+  pushMetric(metrics, '状态', event.status, event.status === 'error' ? 'danger' : 'neutral');
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs));
+  pushMetric(metrics, '结果', stringPath(event, ['attributes', 'business.result']) ?? stringPath(event, ['payload', 'result']));
+  return metrics;
+}
+
+function memoryMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, 'RSS', mbLabel(numberPath(event, ['attributes', 'memory.rss_mb']) ?? numberPath(event, ['attributes', 'memory.current_rss_mb'])));
+  pushMetric(metrics, '增长', mbDeltaLabel(numberPath(event, ['attributes', 'memory.growth_mb'])), 'warn');
+  pushMetric(metrics, '压力', stringPath(event, ['attributes', 'memory.pressure_level']) ?? stringPath(event, ['attributes', 'native.memory.pressure_level']), isMemoryProblem(event) ? 'warn' : 'neutral');
+  pushMetric(metrics, 'native used', mbLabel(numberPath(event, ['attributes', 'native.memory.used_mb']) ?? numberPath(event, ['attributes', 'memory.native_used_mb'])));
+  pushMetric(metrics, '来源', stringPath(event, ['attributes', 'memory.sample_source']) ?? stringPath(event, ['payload', 'source']));
+  return metrics;
+}
+
+function lifecycleMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '状态', stringPath(event, ['attributes', 'context.lifecycle.state']) ?? stringPath(event, ['context', 'lifecycle', 'state']));
+  pushMetric(metrics, '前一状态', stringPath(event, ['attributes', 'context.lifecycle.previousState']) ?? stringPath(event, ['context', 'lifecycle', 'previousState']));
+  pushMetric(metrics, '后台', durationLabel(numberPath(event, ['attributes', 'app.background_duration.duration_ms']) ?? event.durationMs));
+  pushMetric(metrics, '前台', booleanPath(event, ['attributes', 'context.lifecycle.isForeground']) === undefined ? undefined : String(booleanPath(event, ['attributes', 'context.lifecycle.isForeground'])));
+  return metrics;
+}
+
+function sdkMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '模式', stringPath(event, ['attributes', 'sdk.output.mode']) ?? stringPath(event, ['payload', 'output_mode']));
+  pushMetric(metrics, '队列', queueLabel(event));
+  pushMetric(metrics, '重试', retryLabel(event), event.name === 'sdk.retry.schedule' ? 'warn' : 'neutral');
+  pushMetric(metrics, '丢弃', dropLabel(event), event.name === 'sdk.queue.drop' ? 'danger' : 'neutral');
+  pushMetric(metrics, 'flush', flushLabel(event), isSdkFlushFailure(event) ? 'danger' : 'neutral');
+  pushMetric(metrics, 'batch', numberLabel(numberPath(event, ['attributes', 'sdk.batch.size'])));
+  return metrics;
+}
+
+function problemMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '状态', event.status, event.status === 'error' ? 'danger' : 'warn');
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs));
+  pushMetric(metrics, '错误类型', stringPath(event, ['attributes', 'error.type']) ?? stringPath(event, ['payload', 'error_type']));
+  pushMetric(metrics, '机制', stringPath(event, ['attributes', 'error.mechanism']) ?? stringPath(event, ['payload', 'mechanism']));
+  pushMetric(metrics, '帧', frameLabel(event), frameTone(event));
+  return metrics;
+}
+
+function commonMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '阶段', stringPath(event, ['attributes', 'event.phase']));
+  pushMetric(metrics, '状态', event.status);
+  pushMetric(metrics, '耗时', durationLabel(event.durationMs));
+  return metrics;
 }
 
 function rowTitle(event: MonitorEvent, http: Partial<SessionConsoleRow>): string {
@@ -303,7 +436,10 @@ function buildConsoleSummary(
     latestQueueBytes: sdkHealth.latestQueueBytes,
     detailDroppedCount: sdkHealth.detailDroppedCount,
     httpCount: rows.filter((row) => row.group === 'http').length,
+    interactionEventCount: rows.filter((row) => row.group === 'interaction').length,
     businessEventCount: rows.filter((row) => row.group === 'business').length,
+    memoryEventCount: rows.filter((row) => row.group === 'memory').length,
+    lifecycleEventCount: rows.filter((row) => row.group === 'lifecycle').length,
     pageCount: rows.filter((row) => row.group === 'page').length,
     routeCount: uniqueRoutes.length,
     firstRoute: routes[0],
@@ -387,6 +523,7 @@ function finalizeSegment(segment: MutableSegment, index: number, next: MutableSe
   const explicitDuration = maxNumber(segment.rows.map((row) => row.name === 'page.stay' || row.name === 'app.cold_start' || row.name === 'app.hot_start' ? row.durationMs : undefined));
   const durationMs = explicitDuration ?? (next?.startValue !== undefined && next.startValue >= segment.startValue ? next.startValue - segment.startValue : timestampDiff(first?.timestamp ?? first?.startTime, last?.timestamp ?? last?.endTime));
   const issueCount = segment.rows.filter((row) => row.issueLabels.length > 0).length;
+  const groupCounts = buildGroupCounts(segment.rows);
   return {
     id: `${index}-${first?.eventId ?? 'segment'}`,
     kind: segment.kind,
@@ -397,6 +534,8 @@ function finalizeSegment(segment: MutableSegment, index: number, next: MutableSe
     durationMs,
     eventCount: segment.rows.length,
     issueCount,
+    summaryItems: segmentSummaryItems(segment.rows, durationMs, issueCount, groupCounts),
+    groupCounts,
     rows: segment.rows.map((row) => row.eventId).filter((eventId): eventId is string => Boolean(eventId)),
   };
 }
@@ -410,6 +549,150 @@ function segmentTitle(segment: MutableSegment, issueCount: number): string {
     return [segment.route ? `页面 ${segment.route}` : '页面活动', suffix].filter(Boolean).join(' · ');
   }
   return issueCount > 0 ? '会话活动 · 有问题' : '会话活动';
+}
+
+function buildGroupCounts(rows: SessionConsoleRow[]): Partial<Record<SessionConsoleRow['group'], number>> {
+  const counts: Partial<Record<SessionConsoleRow['group'], number>> = {};
+  for (const row of rows) {
+    counts[row.group] = (counts[row.group] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function segmentSummaryItems(
+  rows: SessionConsoleRow[],
+  durationMs: number | undefined,
+  issueCount: number,
+  groupCounts: Partial<Record<SessionConsoleRow['group'], number>>,
+): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '耗时', durationLabel(durationMs));
+  pushMetric(metrics, '事件', String(rows.length));
+  pushMetric(metrics, '问题', issueCount > 0 ? String(issueCount) : undefined, issueCount > 0 ? 'warn' : 'neutral');
+  pushMetric(metrics, 'HTTP', countLabel(groupCounts.http));
+  pushMetric(metrics, '交互', countLabel(groupCounts.interaction));
+  pushMetric(metrics, '埋点', countLabel(groupCounts.business));
+  pushMetric(metrics, '内存', countLabel(groupCounts.memory));
+  pushMetric(metrics, 'SDK', countLabel(groupCounts.sdk));
+  return metrics;
+}
+
+function pushMetric(
+  metrics: SessionConsoleMetric[],
+  label: string,
+  value: string | undefined,
+  tone: SessionConsoleMetric['tone'] = 'neutral',
+): void {
+  if (value === undefined || value === '' || value === '-') return;
+  metrics.push({ label, value, tone });
+}
+
+function countLabel(value: number | undefined): string | undefined {
+  return value && value > 0 ? String(value) : undefined;
+}
+
+function numberLabel(value: number | undefined): string | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
+}
+
+function durationLabel(value: number | undefined): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)}s`;
+  return `${Math.round(value)}ms`;
+}
+
+function byteLabel(value: number | undefined): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)}MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)}KB`;
+  return `${Math.round(value)}B`;
+}
+
+function mbLabel(value: number | undefined): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return `${value.toFixed(Math.abs(value) >= 10 ? 1 : 2)}MB`;
+}
+
+function mbDeltaLabel(value: number | undefined): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${value.toFixed(Math.abs(value) >= 10 ? 1 : 2)}MB`;
+}
+
+function memoryDeltaLabel(event: MonitorEvent): string | undefined {
+  const delta = numberPath(event, ['attributes', 'memory.delta_rss_mb']) ??
+    numberPath(event, ['attributes', 'memory.delta_mb']) ??
+    numberPath(event, ['attributes', 'memory.growth_mb']);
+  if (delta !== undefined) return mbDeltaLabel(delta);
+
+  const start = numberPath(event, ['attributes', 'memory.start_rss_mb']) ??
+    numberPath(event, ['attributes', 'memory.enter_rss_mb']);
+  const end = numberPath(event, ['attributes', 'memory.end_rss_mb']) ??
+    numberPath(event, ['attributes', 'memory.exit_rss_mb']);
+  if (start !== undefined && end !== undefined) return `${mbLabel(start)} -> ${mbLabel(end)}`;
+  return mbLabel(end ?? start);
+}
+
+function frameLabel(event: MonitorEvent): string | undefined {
+  const slow = numberPath(event, ['attributes', 'frame.slow_count']);
+  const sample = numberPath(event, ['attributes', 'frame.sample_count']);
+  const max = numberPath(event, ['attributes', 'frame.max_ms']);
+  const fps = numberPath(event, ['attributes', 'frame.fps']);
+  const parts = [
+    slow !== undefined ? `slow ${slow}${sample !== undefined ? `/${sample}` : ''}` : undefined,
+    max !== undefined ? `max ${Math.round(max)}ms` : undefined,
+    fps !== undefined ? `${Math.round(fps)}fps` : undefined,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' / ') : undefined;
+}
+
+function frameTone(event: MonitorEvent): SessionConsoleMetric['tone'] {
+  const slow = numberPath(event, ['attributes', 'frame.slow_count']);
+  return slow !== undefined && slow > 0 ? 'warn' : 'neutral';
+}
+
+function queueLabel(event: MonitorEvent): string | undefined {
+  const length = numberPath(event, ['attributes', 'sdk.queue.length']);
+  const bytes = numberPath(event, ['attributes', 'sdk.queue.bytes']);
+  if (length === undefined && bytes === undefined) return undefined;
+  return [length !== undefined ? `${length} events` : undefined, byteLabel(bytes)].filter(Boolean).join(' / ');
+}
+
+function retryLabel(event: MonitorEvent): string | undefined {
+  const count = numberPath(event, ['attributes', 'sdk.retry.count']) ??
+    numberPath(event, ['attributes', 'sdk.health.retry_count']);
+  const delay = numberPath(event, ['attributes', 'sdk.retry.delay_ms']);
+  const reason = stringPath(event, ['attributes', 'sdk.retry.reason']);
+  const parts = [
+    count !== undefined ? `${count} 次` : undefined,
+    durationLabel(delay),
+    reason,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' / ') : undefined;
+}
+
+function dropLabel(event: MonitorEvent): string | undefined {
+  const count = numberPath(event, ['attributes', 'sdk.drop.count']) ??
+    numberPath(event, ['attributes', 'sdk.health.dropped_count']);
+  const reason = stringPath(event, ['attributes', 'sdk.drop.reason']) ?? stringPath(event, ['payload', 'reason']);
+  const parts = [
+    count !== undefined ? `${count} 条` : undefined,
+    reason,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' / ') : undefined;
+}
+
+function flushLabel(event: MonitorEvent): string | undefined {
+  const result = stringPath(event, ['attributes', 'sdk.flush.result']);
+  const reason = stringPath(event, ['attributes', 'sdk.flush.reason']);
+  const sent = numberPath(event, ['attributes', 'sdk.flush.sent_count']) ??
+    numberPath(event, ['attributes', 'sdk.health.sent_count']);
+  const parts = [
+    result ?? (event.name?.includes('flush') ? event.status : undefined),
+    sent !== undefined ? `${sent} sent` : undefined,
+    reason,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' / ') : undefined;
 }
 
 function buildSdkHealth(events: MonitorEvent[]): SessionSdkHealthSummary {

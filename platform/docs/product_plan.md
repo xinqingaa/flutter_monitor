@@ -274,14 +274,13 @@ Session Detail 的第一阶段目标从“区段展开列表”升级为 **Sessi
   Session 列表或返回入口
 
 中间
-  快速定位入口
-  Session map（页面 / HTTP / 问题 / SDK lane）
-  日志流（按页面区段组织，支持信号筛选）
+  Session Navigator（问题入口 + 分段导航）
+  日志流（按页面区段组织，支持信号筛选与自动滚动定位）
 
 右侧
   Inspector
   HTTP 专用 Request / Response 详情
-  非 HTTP 诊断摘要、关联链路、字段说明
+  启动、页面、交互性能、业务埋点、错误、内存、SDK 等 typed Inspector
   Raw JSON
 ```
 
@@ -351,7 +350,44 @@ Timeline 应从事件表格逐步升级为可视化链路：
 - 分两批落地：先上竖向时间轴，瀑布作为第二批。二者天然可分离（瀑布是挂在时间轴行上的展开），先做时间轴不会让瀑布返工。
 - 数据可行性：envelope 已含 `startTime/endTime/durationMs/parentSpanId` 与 `page.visit/route.push/page.stay`，页面分段和瀑布都能在前端 view model 内算出，几乎不需后端改动。
 
-近期实现中，中间主视图先落地 Session map + 日志流。Session map 使用简洁 lane：Page、HTTP、Problem、SDK；日志流默认展示全部事件，可切换 All / HTTP / Problems / Pages / Business / Performance / SDK。长会话默认不展开 raw JSON，不把 `sdk.health.report`、flush 回执等自监控事件压在业务 HTTP 前面；SDK 事件仍完整保留，出现 drop/retry/flush failure 时进入快速定位入口。
+近期实现中，中间主视图采用 Session Navigator + 日志流，不再使用按时间散点的 lane map。散点在长会话中容易重叠，且不适合作为主要点击目标。
+
+Session Navigator 固定在日志流左侧：
+
+- 顶部展示问题入口，例如错误、业务失败、失败 HTTP、慢 HTTP、慢页面、卡顿、内存和 SDK 丢弃。
+- 下方展示区段导航，例如启动链路、页面区段、SDK 活动和会话活动。
+- 每个导航项展示区段名、耗时、事件数、问题数和核心信号数量。
+- 点击问题入口或区段时，日志流必须自动滚动到对应节点或区段，同时右侧 Inspector 同步选中对应事件。
+- Header 展开时不能压缩到只剩一行排查空间；快速定位不再放在 Header 下方横向占高。
+
+日志流默认展示全部事件，可切换：全部 / 问题 / 页面 / HTTP / 启动 / 交互性能 / 业务埋点 / 内存 / 生命周期 / SDK。分类规则：
+
+- `interaction.measure` 或带 `attributes["interaction.mode"]` 的事件归入交互性能。
+- `business.*` 或带 `attributes["business.action"]` 的非交互性能事件归入业务埋点。
+- `page.*` 和 `route.*` 归入页面。
+- `memory.*` 和 `native.memory.*` 归入内存。
+- `sdk.*` 或 `signalType=sdk` 归入 SDK。
+
+每个日志节点必须有一眼摘要，不只展示事件名：
+
+```text
+10:33:40  冷启动
+612ms · sdk.init 24ms · firstFrame 488ms · interactive 611ms · memory 182MB
+
+10:33:46  GET /api/monitor/v1/recent
+200 · 126ms · response 82.4KB · route /app · Res headers · Res body
+
+10:33:51  页面加载 /app
+load 236ms · firstFrame 42ms · stay 1m12s · RSS +8MB
+
+10:34:01  交互性能 refresh_feed
+active 420ms · settle 180ms · slow frames 3 · action refresh_feed
+
+10:34:05  SDK 健康
+queue 33 events / 55KB · retry 2 · dropped 1 · mode production
+```
+
+这些摘要是 Workbench view model，只从 envelope 派生，不写回 SDK envelope；HTTP body、headers 等完整证据仍通过单事件 Inspector 回查。
 
 ### HTTP Inspector
 
@@ -374,6 +410,29 @@ Tabs 使用现有 Radix Tabs 组件，定义如下：
 | 原始数据 | 完整 EventEnvelope JSON |
 
 空状态必须解释原因：GET 请求无 body、本次没有 request headers、连接失败无 response、旧数据无详情，或 `payload["http.detail_dropped"] = true` 表示压力下降级剥离。注意 HTTP 详情层在 JSON 中使用扁平 key：`payload["http.query"]`、`payload["http.detail"]`，前端不能按 `payload.http.detail` 读取。
+
+HTTP body 展示规则：
+
+- 如果 body 是 JSON 字符串，默认解析后使用 JSON viewer 展示，避免一整行长字符串不可读。
+- 如果 body 不是 JSON，按文本展示并开启自动换行。
+- 提供“格式化 / 原文”切换；原文用于确认后端真实返回内容，格式化用于日常阅读。
+- 大 body 不撑开页面，限定高度并保留复制完整 raw envelope 的入口。
+
+### Typed Inspector 规则
+
+右侧 Inspector 按事件类型分派组件：
+
+| 事件类型 | Inspector |
+|---|---|
+| `http.client` | HTTP Inspector：摘要、请求、响应、上下文、原始数据 |
+| `app.cold_start` / `app.hot_start` / `sdk.init` | 启动 Inspector：启动耗时、首帧、可交互、SDK 初始化、启动期内存 |
+| `page.*` / `route.*` | 页面 Inspector：路由、加载、首帧、停留、返回/离开、页面帧与内存证据 |
+| `interaction.measure` | 交互性能 Inspector：action、mode、active/settle、frame、相关 HTTP |
+| `business.*` / `business.action` | 业务埋点 Inspector：业务 action、状态、耗时、业务 payload |
+| error / jank | 问题 Inspector：错误类型、mechanism、stack、卡顿帧证据和上下文足迹 |
+| `memory.*` / `native.memory.*` | 内存 Inspector：sample/growth/pressure/suspect leak 证据，不把 suspect 当成确定泄漏 |
+| `sdk.*` | SDK Inspector：队列、flush、retry、drop、output mode、health report |
+| 其他 | 通用 Inspector：一眼看懂、关联链路、上下文、原始数据 |
 
 ### Timeline 区段命名规则
 

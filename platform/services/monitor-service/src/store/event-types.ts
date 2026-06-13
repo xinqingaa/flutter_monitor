@@ -90,7 +90,10 @@ export interface SessionConsoleSummary extends SessionSummary {
   latestQueueBytes?: number;
   detailDroppedCount: number;
   httpCount: number;
+  interactionEventCount: number;
   businessEventCount: number;
+  memoryEventCount: number;
+  lifecycleEventCount: number;
   pageCount: number;
   routeCount: number;
   firstRoute?: string;
@@ -101,6 +104,12 @@ export interface SessionConsoleSummary extends SessionSummary {
     eventId?: string;
   };
   outputModes: string[];
+}
+
+export interface SessionConsoleMetric {
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'good' | 'warn' | 'danger' | 'info';
 }
 
 export interface SessionProblemChip {
@@ -121,6 +130,8 @@ export interface SessionConsoleSegment {
   durationMs?: number;
   eventCount: number;
   issueCount: number;
+  summaryItems: SessionConsoleMetric[];
+  groupCounts: Partial<Record<SessionConsoleRow['group'], number>>;
   rows: string[];
 }
 
@@ -142,11 +153,12 @@ export interface SessionConsoleRow {
   route?: string;
   module?: string;
   scene?: string;
-  group: 'startup' | 'page' | 'http' | 'business' | 'problem' | 'performance' | 'lifecycle' | 'memory' | 'sdk' | 'event';
+  group: 'startup' | 'page' | 'http' | 'interaction' | 'business' | 'problem' | 'performance' | 'lifecycle' | 'memory' | 'sdk' | 'event';
   title: string;
   subtitle?: string;
   badges: string[];
   issueLabels: string[];
+  metrics: SessionConsoleMetric[];
   method?: string;
   url?: string;
   statusCode?: number;
