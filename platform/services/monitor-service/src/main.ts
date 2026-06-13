@@ -46,7 +46,12 @@ async function bootstrap(): Promise<void> {
   console.log('GET  /api/monitor/v1/traces/:traceId');
 
   const shutdown = async () => {
-    await app.close();
+    try {
+      await app.close();
+    } catch (error) {
+      console.error('Flutter Monitor service shutdown failed.', error);
+      process.exit(1);
+    }
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

@@ -264,6 +264,8 @@ Session 列表建议展示：
 
 Session Detail 是 Workbench 的主排查场景。大多数页面点击最终都应回到这里。
 
+Session Detail 的第一阶段目标从“区段展开列表”升级为 **Session Console**：它既是开发联调时的日志台，也是 QA/debug/production 数据的会话排查容器。Workbench 不关心数据来自 localLive、debug 包还是 production，只消费同一套 `EventEnvelope` 并按会话聚合展示。
+
 推荐布局：
 
 ```text
@@ -272,17 +274,55 @@ Session Detail 是 Workbench 的主排查场景。大多数页面点击最终都
   Session 列表或返回入口
 
 中间
-  可视化 timeline
-  页面区段
-  启动、HTTP、行为、错误、卡顿、内存、生命周期节点
+  快速定位入口
+  Session map（页面 / HTTP / 问题 / SDK lane）
+  日志流（按页面区段组织，支持信号筛选）
 
 右侧
   Inspector
-  诊断摘要
-  关联链路
-  字段说明
+  HTTP 专用 Request / Response 详情
+  非 HTTP 诊断摘要、关联链路、字段说明
   Raw JSON
 ```
+
+### Session Console 层级
+
+Session Console 最多展示 5 层，不做无限展开树：
+
+| 层级 | 名称 | 说明 |
+|---|---|---|
+| L0 | Session | 当前会话容器，展示用户、版本、设备、时间、问题入口和导出能力 |
+| L1 | Segment | Workbench view model：启动链路、页面区段、后台/前台恢复、SDK 活动 |
+| L2 | Signal Group | 页面性能、HTTP 请求、业务操作/交互性能、错误/卡顿/内存、生命周期、SDK 健康 |
+| L3 | Event Node | 单条 `EventEnvelope`，例如 `http.client`、`page.load`、`interaction.measure`、`sdk.health.report` |
+| L4 | Inspector Detail | 右侧完整诊断详情；HTTP 展示 Request/Response，所有事件保留 raw JSON |
+
+HTTP 不是替代页面成为全局根节点，而是在 L2 成为和页面性能、业务操作、错误同级的核心信号组；每条 `http.client` 在 L3 是一条 hard evidence 事件，仍保留所属页面、trace、span 和原始 envelope 回查。
+
+### Session Header 规则
+
+Session Header 使用“收起态看问题，展开态看背景”的规则。
+
+收起态只展示一行核心定位信息：
+
+```text
+[状态] [Native on/off] sessionId
+时间范围 · 持续时长 · 事件数
+错误 N · 业务失败 N · 失败 HTTP N · 慢 HTTP N · 慢页面 N · SDK 丢弃 N
+```
+
+收起态不展示设备、版本、资源长信息，目标是让开发者打开会话后立即知道这条 session 是否值得排查。
+
+展开态展示四组背景信息：
+
+| 分组 | 字段 |
+|---|---|
+| 对象 | userId、appVersion、environment、buildNumber、packageName |
+| 设备 | platform、model、osVersion、deviceTier、refreshRate |
+| 会话路径 | 首个页面、最后页面、页面数、页面停留最长项 |
+| 采集健康 | output mode、sent、enqueued、retry、dropped、queue length、detail dropped |
+
+这些都是 Workbench 根据 envelope 派生的展示摘要，不写回 SDK envelope。
 
 Timeline 应从事件表格逐步升级为可视化链路：
 
@@ -310,6 +350,30 @@ Timeline 应从事件表格逐步升级为可视化链路：
 - 分工：**时间轴回答“量级与顺序”（发生了什么、错在哪、谁慢），瀑布回答“时间关系”（为什么慢——重叠/串行/空档）**。前者覆盖自调试与 QA，后者主要服务性能回归。
 - 分两批落地：先上竖向时间轴，瀑布作为第二批。二者天然可分离（瀑布是挂在时间轴行上的展开），先做时间轴不会让瀑布返工。
 - 数据可行性：envelope 已含 `startTime/endTime/durationMs/parentSpanId` 与 `page.visit/route.push/page.stay`，页面分段和瀑布都能在前端 view model 内算出，几乎不需后端改动。
+
+近期实现中，中间主视图先落地 Session map + 日志流。Session map 使用简洁 lane：Page、HTTP、Problem、SDK；日志流默认展示全部事件，可切换 All / HTTP / Problems / Pages / Business / Performance / SDK。长会话默认不展开 raw JSON，不把 `sdk.health.report`、flush 回执等自监控事件压在业务 HTTP 前面；SDK 事件仍完整保留，出现 drop/retry/flush failure 时进入快速定位入口。
+
+### HTTP Inspector
+
+HTTP 事件右侧必须使用专用 Inspector，不再只走通用字段摘要。顶部固定摘要：
+
+```text
+GET /api/monitor/v1/recent
+200 OK · 21ms · response 100.5KB · source dio · route /app
+[详情完整] [body truncated] [requestId xxx]
+```
+
+Tabs 使用现有 Radix Tabs 组件，定义如下：
+
+| Tab | 内容 |
+|---|---|
+| 摘要 | method、url、status、duration、request/response size、success/error type、详情完整/截断/剥离状态 |
+| 请求 | `payload.url`、`payload["http.query"]`、`payload["http.detail"].request.headers/body` |
+| 响应 | `attributes["http.status_code"]`、`payload["http.detail"].response.headers/body`、body 截断长度和 SHA-256 |
+| 上下文 | session/trace/span、route/module/scene、user/device/app/release |
+| 原始数据 | 完整 EventEnvelope JSON |
+
+空状态必须解释原因：GET 请求无 body、本次没有 request headers、连接失败无 response、旧数据无详情，或 `payload["http.detail_dropped"] = true` 表示压力下降级剥离。注意 HTTP 详情层在 JSON 中使用扁平 key：`payload["http.query"]`、`payload["http.detail"]`，前端不能按 `payload.http.detail` 读取。
 
 ### Timeline 区段命名规则
 

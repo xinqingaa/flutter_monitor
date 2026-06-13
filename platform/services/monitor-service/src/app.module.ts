@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { EventsController } from './events/events.controller';
 import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
@@ -12,7 +11,6 @@ import { QueryService } from './query/query.service';
 import { resolvePublicDir, resolveWebDistDir, StoreModule } from './store/store.module';
 import { StreamController } from './stream/stream.controller';
 import { TestController } from './test/test.controller';
-import { FallbackController } from './web/fallback.controller';
 
 const webDistDir = resolveWebDistDir();
 const publicDir = resolvePublicDir();
@@ -24,6 +22,7 @@ const staticRoot = existsSync(webDistDir) ? webDistDir : publicDir;
     ServeStaticModule.forRoot({
       rootPath: staticRoot,
       exclude: ['/api/(.*)', '/docs', '/docs-json'],
+      renderPath: '*',
     }),
   ],
   controllers: [
@@ -33,7 +32,6 @@ const staticRoot = existsSync(webDistDir) ? webDistDir : publicDir;
     QueryController,
     EventsController,
     TestController,
-    ...(existsSync(join(staticRoot, 'index.html')) ? [FallbackController] : []),
   ],
   providers: [IngestService, HealthService, QueryService],
 })

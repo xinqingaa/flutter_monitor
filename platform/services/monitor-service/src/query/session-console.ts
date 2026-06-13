@@ -1,0 +1,562 @@
+import type {
+  MonitorEvent,
+  SessionConsoleResult,
+  SessionConsoleRow,
+  SessionConsoleSegment,
+  SessionConsoleSummary,
+  SessionProblemChip,
+  SessionSdkHealthSummary,
+} from '../store/event-types';
+import {
+  appKeyOf,
+  appNameOf,
+  appVersionOf,
+  buildNumberOf,
+  channelOf,
+  deviceManufacturerOf,
+  deviceModelOf,
+  devicePlatformOf,
+  deviceTierOf,
+  environmentOf,
+  flavorOf,
+  isBusinessFailureEvent,
+  isCompletedHttpEvent,
+  isErrorEvent,
+  isFailedHttpEvent,
+  isJankEvent,
+  nativeAvailableOf,
+  nativePlatformOf,
+  nativeVersionOf,
+  osVersionOf,
+  packageNameOf,
+  routeOf,
+  statusOf,
+  userIdOf,
+} from '../store/event-accessors';
+
+type RecordValue = Record<string, unknown>;
+
+interface MutableSegment {
+  kind: SessionConsoleSegment['kind'];
+  route?: string;
+  rows: SessionConsoleRow[];
+  startValue: number;
+}
+
+const SLOW_HTTP_MS = 1000;
+const SLOW_PAGE_MS = 1000;
+
+export function buildSessionConsole(sessionId: string, inputEvents: MonitorEvent[]): SessionConsoleResult {
+  const events = sortEvents(inputEvents);
+  const rows = events.map(toConsoleRow);
+  const sdkHealth = buildSdkHealth(events);
+  const summary = buildConsoleSummary(sessionId, events, rows, sdkHealth);
+  const segments = buildSegments(rows);
+
+  return {
+    sessionId,
+    count: rows.length,
+    summary,
+    problemChips: buildProblemChips(rows, sdkHealth),
+    segments,
+    rows,
+    httpRows: rows.filter((row) => row.group === 'http'),
+    sdkHealth,
+  };
+}
+
+function toConsoleRow(event: MonitorEvent): SessionConsoleRow {
+  const http = httpInfo(event);
+  const route = routeOf(event);
+  const module = stringPath(event, ['context', 'module', 'name']);
+  const scene = stringPath(event, ['context', 'scene', 'name']);
+  const phase = stringPath(event, ['attributes', 'event.phase']);
+  const issueLabels = rowIssueLabels(event, http);
+  const group = rowGroup(event, issueLabels);
+  const title = rowTitle(event, http);
+  const subtitle = rowSubtitle(event, http, route);
+  const badges = rowBadges(event, http);
+
+  return {
+    eventId: event.eventId,
+    timestamp: event.timestamp,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    durationMs: event.durationMs,
+    signalType: event.signalType,
+    name: event.name,
+    phase,
+    status: event.status,
+    level: event.level,
+    priority: event.priority,
+    traceId: event.traceId,
+    spanId: event.spanId,
+    parentSpanId: event.parentSpanId,
+    route,
+    module,
+    scene,
+    group,
+    title,
+    subtitle,
+    badges,
+    issueLabels,
+    ...http,
+  };
+}
+
+function rowGroup(event: MonitorEvent, issueLabels: string[]): SessionConsoleRow['group'] {
+  const name = event.name ?? '';
+  if (name === 'http.client') return 'http';
+  if (event.signalType === 'sdk' || name.startsWith('sdk.')) return 'sdk';
+  if (isMemoryEvent(event)) return 'memory';
+  if (name.includes('lifecycle') || name === 'app.background_duration' || name === 'app.hot_start') return 'lifecycle';
+  if (name === 'interaction.measure' || readPath(event, ['attributes', 'interaction.mode']) !== undefined) return 'business';
+  if (readPath(event, ['attributes', 'business.action']) !== undefined || name.startsWith('business.')) return 'business';
+  if (name === 'app.cold_start' || name === 'sdk.init') return 'startup';
+  if (name.startsWith('page.') || name === 'route.push' || name === 'route.pop') return 'page';
+  if (isJankEvent(event)) return 'problem';
+  if (issueLabels.length > 0 || isErrorEvent(event)) return 'problem';
+  if (event.signalType === 'metric' || typeof event.durationMs === 'number') return 'performance';
+  return 'event';
+}
+
+function rowTitle(event: MonitorEvent, http: Partial<SessionConsoleRow>): string {
+  const name = event.name ?? 'event';
+  if (name === 'http.client') {
+    return [http.method, http.url].filter(Boolean).join(' ') || 'HTTP 请求';
+  }
+  if (name === 'app.cold_start') return '冷启动';
+  if (name === 'app.hot_start') return '热重启';
+  if (name === 'sdk.init') return 'SDK 初始化';
+  if (name === 'page.visit') {
+    const phase = stringPath(event, ['attributes', 'event.phase']);
+    const route = routeOf(event);
+    return phase === 'end' ? `离开页面 ${route ?? ''}`.trim() : `进入页面 ${route ?? ''}`.trim();
+  }
+  if (name === 'page.view') return `页面访问 ${routeOf(event) ?? ''}`.trim();
+  if (name === 'page.load') return `页面加载 ${routeOf(event) ?? ''}`.trim();
+  if (name === 'page.stay') return `页面停留 ${routeOf(event) ?? ''}`.trim();
+  if (name === 'route.push') return '路由进入';
+  if (name === 'route.pop') return '路由返回';
+  if (name === 'interaction.measure') {
+    const action = stringPath(event, ['attributes', 'business.action']);
+    return action ? `交互性能 ${action}` : '交互性能';
+  }
+  const businessAction = stringPath(event, ['attributes', 'business.action']);
+  if (businessAction) return `业务操作 ${businessAction}`;
+  if (name === 'ui.jank.sequence') return '连续卡顿';
+  if (name === 'memory.pressure' || name === 'native.memory.pressure') return '内存压力';
+  if (name === 'memory.growth') return '内存增长';
+  if (name === 'memory.leak.suspect') return '疑似泄漏线索';
+  return name;
+}
+
+function rowSubtitle(event: MonitorEvent, http: Partial<SessionConsoleRow>, route?: string): string | undefined {
+  if (event.name === 'http.client') {
+    const parts = [
+      typeof http.statusCode === 'number' ? `HTTP ${http.statusCode}` : undefined,
+      typeof event.durationMs === 'number' ? `${Math.round(event.durationMs)}ms` : undefined,
+      route ? `页面 ${route}` : undefined,
+      http.errorType,
+    ];
+    return parts.filter(Boolean).join(' · ') || undefined;
+  }
+
+  const parts = [
+    stringPath(event, ['attributes', 'event.phase']),
+    event.status,
+    typeof event.durationMs === 'number' ? `${Math.round(event.durationMs)}ms` : undefined,
+    route ? `页面 ${route}` : undefined,
+  ];
+  return parts.filter(Boolean).join(' · ') || undefined;
+}
+
+function rowBadges(event: MonitorEvent, http: Partial<SessionConsoleRow>): string[] {
+  const badges = new Set<string>();
+  if (event.signalType) badges.add(event.signalType);
+  if (event.status) badges.add(event.status);
+  if (event.priority) badges.add(event.priority);
+  if (event.name === 'http.client') {
+    if (http.method) badges.add(http.method);
+    if (typeof http.statusCode === 'number') badges.add(String(http.statusCode));
+    if (http.detailDropped) badges.add('detail dropped');
+    if (http.bodyTruncated) badges.add('body truncated');
+  }
+  return [...badges].slice(0, 5);
+}
+
+function rowIssueLabels(event: MonitorEvent, http: Partial<SessionConsoleRow>): string[] {
+  const labels: string[] = [];
+  if (isFailedHttpEvent(event)) labels.push('请求失败');
+  if (event.name === 'http.client' && typeof event.durationMs === 'number' && event.durationMs >= SLOW_HTTP_MS) labels.push('慢请求');
+  if (isBusinessFailureEvent(event)) labels.push('业务失败');
+  if (isNonHttpStabilityError(event)) labels.push('错误');
+  if (isJankEvent(event)) labels.push('卡顿');
+  if (isSlowPage(event)) labels.push('页面慢');
+  if (isMemoryProblem(event)) labels.push(memoryLabel(event));
+  if (event.name === 'sdk.queue.drop') labels.push('SDK 丢弃');
+  if (event.name === 'sdk.retry.schedule') labels.push('SDK 重试');
+  if (isSdkFlushFailure(event)) labels.push('SDK 发送失败');
+  if (http.detailDropped) labels.push('HTTP 详情剥离');
+  return [...new Set(labels)];
+}
+
+function httpInfo(event: MonitorEvent): Partial<SessionConsoleRow> {
+  if (!isCompletedHttpEvent(event) && event.name !== 'http.client') return {};
+
+  const detail = recordValue(readPath(event, ['payload', 'http.detail']));
+  const request = recordValue(detail?.request);
+  const response = recordValue(detail?.response);
+  const requestHeaders = recordValue(request?.headers);
+  const responseHeaders = recordValue(response?.headers);
+  const requestBody = request?.body;
+  const responseBody = response?.body;
+  const query = readPath(event, ['payload', 'http.query']);
+  const method = stringPath(event, ['attributes', 'http.method']);
+  const url = stringPath(event, ['attributes', 'http.url.normalized']) ?? stringPath(event, ['payload', 'url']);
+  const statusCode = numberPath(event, ['attributes', 'http.status_code']);
+
+  return {
+    method,
+    url,
+    statusCode,
+    success: booleanPath(event, ['attributes', 'http.success']),
+    errorType: stringPath(event, ['attributes', 'http.error_type']) ?? stringPath(event, ['payload', 'error_type']),
+    requestSizeBytes: numberPath(event, ['attributes', 'http.request_content_length']) ?? numberPath(event, ['attributes', 'http.request.size_bytes']),
+    responseSizeBytes: numberPath(event, ['attributes', 'http.response_content_length']) ?? numberPath(event, ['attributes', 'http.response.size_bytes']),
+    hasHttpQuery: isNonEmptyValue(query),
+    hasRequestHeaders: requestHeaders !== undefined && Object.keys(requestHeaders).length > 0,
+    hasRequestBody: isNonEmptyValue(requestBody),
+    hasResponseHeaders: responseHeaders !== undefined && Object.keys(responseHeaders).length > 0,
+    hasResponseBody: isNonEmptyValue(responseBody),
+    bodyTruncated: booleanPath(event, ['payload', 'body_truncated']) ?? booleanPath(event, ['payload', 'http.body_truncated']),
+    bodyOriginalLength: numberPath(event, ['payload', 'body_original_length']) ?? numberPath(event, ['payload', 'http.body_original_length']),
+    detailDropped: booleanPath(event, ['payload', 'http.detail_dropped']),
+  };
+}
+
+function buildConsoleSummary(
+  sessionId: string,
+  events: MonitorEvent[],
+  rows: SessionConsoleRow[],
+  sdkHealth: SessionSdkHealthSummary,
+): SessionConsoleSummary | undefined {
+  if (events.length === 0) return undefined;
+  const first = events[0];
+  const last = events[events.length - 1];
+  const routes = rows.map((row) => row.route).filter((route): route is string => Boolean(route));
+  const uniqueRoutes = [...new Set(routes)];
+  const firstWithUser = events.find((event) => Boolean(userIdOf(event)));
+  const firstWithApp = events.find((event) => Boolean(appKeyOf(event) || appNameOf(event) || appVersionOf(event) || environmentOf(event)));
+  const firstWithDevice = events.find((event) => Boolean(devicePlatformOf(event) || deviceModelOf(event) || deviceTierOf(event) || osVersionOf(event)));
+  const firstNativeAvailable = events.find((event) => nativeAvailableOf(event) === true);
+  const firstNativeVersion = events.find((event) => Boolean(nativeVersionOf(event)));
+  const firstNativePlatform = events.find((event) => Boolean(nativePlatformOf(event)));
+  const status = events.some(isNonHttpStabilityError)
+    ? 'error'
+    : rows.some((row) => row.issueLabels.length > 0)
+      ? 'warning'
+      : [...events].reverse().map(statusOf).find(Boolean);
+  const durationMs = timestampDiff(first?.timestamp ?? first?.startTime, last?.timestamp ?? last?.endTime);
+  const pageStays = events
+    .filter((event) => event.name === 'page.stay' && typeof event.durationMs === 'number')
+    .map((event) => ({ route: routeOf(event), durationMs: event.durationMs as number, eventId: event.eventId }))
+    .sort((a, b) => b.durationMs - a.durationMs);
+
+  return {
+    sessionId,
+    count: events.length,
+    firstTimestamp: first?.timestamp,
+    lastTimestamp: last?.timestamp,
+    firstEventId: first?.eventId,
+    lastEventId: last?.eventId,
+    appKey: firstWithApp ? appKeyOf(firstWithApp) : undefined,
+    appName: firstWithApp ? appNameOf(firstWithApp) : undefined,
+    packageName: firstWithApp ? packageNameOf(firstWithApp) : undefined,
+    buildNumber: firstWithApp ? buildNumberOf(firstWithApp) : undefined,
+    channel: firstWithApp ? channelOf(firstWithApp) : undefined,
+    flavor: firstWithApp ? flavorOf(firstWithApp) : undefined,
+    userId: firstWithUser ? userIdOf(firstWithUser) : undefined,
+    appVersion: firstWithApp ? appVersionOf(firstWithApp) : undefined,
+    environment: firstWithApp ? environmentOf(firstWithApp) : undefined,
+    devicePlatform: firstWithDevice ? devicePlatformOf(firstWithDevice) : undefined,
+    deviceModel: firstWithDevice ? deviceModelOf(firstWithDevice) : undefined,
+    deviceManufacturer: firstWithDevice ? deviceManufacturerOf(firstWithDevice) : undefined,
+    deviceTier: firstWithDevice ? deviceTierOf(firstWithDevice) : undefined,
+    osVersion: firstWithDevice ? osVersionOf(firstWithDevice) : undefined,
+    route: routes.at(-1),
+    status,
+    nativeAvailable: firstNativeAvailable ? true : undefined,
+    nativeVersion: firstNativeVersion ? nativeVersionOf(firstNativeVersion) : undefined,
+    nativePlatform: firstNativePlatform ? nativePlatformOf(firstNativePlatform) : undefined,
+    errorCount: events.filter(isNonHttpStabilityError).length,
+    jankCount: events.filter(isJankEvent).length,
+    failedHttpCount: events.filter(isFailedHttpEvent).length,
+    businessFailureCount: events.filter(isBusinessFailureEvent).length,
+    durationMs,
+    slowHttpCount: rows.filter((row) => row.group === 'http' && typeof row.durationMs === 'number' && row.durationMs >= SLOW_HTTP_MS).length,
+    slowPageCount: events.filter(isSlowPage).length,
+    sdkDroppedCount: sdkHealth.droppedEventCount,
+    sdkRetryCount: sdkHealth.retryCount,
+    sdkFlushFailureCount: sdkHealth.flushFailureCount,
+    latestQueueLength: sdkHealth.latestQueueLength,
+    latestQueueBytes: sdkHealth.latestQueueBytes,
+    detailDroppedCount: sdkHealth.detailDroppedCount,
+    httpCount: rows.filter((row) => row.group === 'http').length,
+    businessEventCount: rows.filter((row) => row.group === 'business').length,
+    pageCount: rows.filter((row) => row.group === 'page').length,
+    routeCount: uniqueRoutes.length,
+    firstRoute: routes[0],
+    lastRoute: routes.at(-1),
+    longestPageStay: pageStays[0],
+    outputModes: sdkHealth.outputModes,
+  };
+}
+
+function buildProblemChips(rows: SessionConsoleRow[], sdkHealth: SessionSdkHealthSummary): SessionProblemChip[] {
+  const chips: SessionProblemChip[] = [];
+  pushChip(chips, rows, 'error', '错误', 'danger', (row) => row.issueLabels.includes('错误'));
+  pushChip(chips, rows, 'business_failure', '业务失败', 'warn', (row) => row.issueLabels.includes('业务失败'));
+  pushChip(chips, rows, 'failed_http', '失败 HTTP', 'danger', (row) => row.issueLabels.includes('请求失败'));
+  pushChip(chips, rows, 'slow_http', '慢 HTTP', 'warn', (row) => row.issueLabels.includes('慢请求'));
+  pushChip(chips, rows, 'slow_page', '慢页面', 'warn', (row) => row.issueLabels.includes('页面慢'));
+  pushChip(chips, rows, 'jank', '卡顿', 'warn', (row) => row.issueLabels.includes('卡顿'));
+  pushChip(chips, rows, 'memory', '内存', 'warn', (row) => row.group === 'memory' && row.issueLabels.length > 0);
+  if (sdkHealth.droppedEventCount > 0) chips.push({ kind: 'sdk_drop', label: 'SDK 丢弃', count: sdkHealth.droppedEventCount, eventId: rows.find((row) => row.issueLabels.includes('SDK 丢弃'))?.eventId, tone: 'danger' });
+  if (sdkHealth.retryCount > 0) chips.push({ kind: 'sdk_retry', label: 'SDK 重试', count: sdkHealth.retryCount, eventId: rows.find((row) => row.issueLabels.includes('SDK 重试'))?.eventId, tone: 'warn' });
+  if (sdkHealth.flushFailureCount > 0) chips.push({ kind: 'sdk_flush_failure', label: 'SDK 发送失败', count: sdkHealth.flushFailureCount, eventId: rows.find((row) => row.issueLabels.includes('SDK 发送失败'))?.eventId, tone: 'danger' });
+  if (sdkHealth.detailDroppedCount > 0) chips.push({ kind: 'detail_dropped', label: 'HTTP 详情剥离', count: sdkHealth.detailDroppedCount, eventId: rows.find((row) => row.detailDropped)?.eventId, tone: 'warn' });
+  return chips;
+}
+
+function pushChip(
+  chips: SessionProblemChip[],
+  rows: SessionConsoleRow[],
+  kind: SessionProblemChip['kind'],
+  label: string,
+  tone: SessionProblemChip['tone'],
+  predicate: (row: SessionConsoleRow) => boolean,
+): void {
+  const matches = rows.filter(predicate);
+  if (matches.length > 0) chips.push({ kind, label, count: matches.length, eventId: matches[0]?.eventId, tone });
+}
+
+function buildSegments(rows: SessionConsoleRow[]): SessionConsoleSegment[] {
+  const mutable: MutableSegment[] = [];
+  let current: MutableSegment | undefined;
+
+  for (const row of rows) {
+    const route = row.route;
+    const rowStartsPage = isPageEntryRow(row);
+    const desiredKind = segmentKindForRow(row, current);
+    const shouldStart = !current ||
+      rowStartsPage ||
+      desiredKind !== current.kind ||
+      (desiredKind === 'page' && route !== undefined && current.route !== undefined && route !== current.route) ||
+      (desiredKind === 'activity' && route !== undefined && current.route !== undefined && route !== current.route);
+
+    if (shouldStart) {
+      current = {
+        kind: desiredKind,
+        route,
+        rows: [],
+        startValue: timeValue(row.startTime ?? row.timestamp),
+      };
+      mutable.push(current);
+    }
+    const active = current;
+    if (!active) continue;
+    active.rows.push(row);
+    if (!active.route && route) active.route = route;
+  }
+
+  return mutable.map((segment, index) => finalizeSegment(segment, index, mutable[index + 1]));
+}
+
+function segmentKindForRow(row: SessionConsoleRow, current: MutableSegment | undefined): SessionConsoleSegment['kind'] {
+  if (row.group === 'startup') return 'startup';
+  if (row.group === 'sdk') return 'sdk';
+  if (row.group === 'page' && (isPageEntryRow(row) || current?.kind === 'page')) return 'page';
+  if (row.route) return 'page';
+  return 'activity';
+}
+
+function finalizeSegment(segment: MutableSegment, index: number, next: MutableSegment | undefined): SessionConsoleSegment {
+  const first = segment.rows[0];
+  const last = segment.rows.at(-1);
+  const explicitDuration = maxNumber(segment.rows.map((row) => row.name === 'page.stay' || row.name === 'app.cold_start' || row.name === 'app.hot_start' ? row.durationMs : undefined));
+  const durationMs = explicitDuration ?? (next?.startValue !== undefined && next.startValue >= segment.startValue ? next.startValue - segment.startValue : timestampDiff(first?.timestamp ?? first?.startTime, last?.timestamp ?? last?.endTime));
+  const issueCount = segment.rows.filter((row) => row.issueLabels.length > 0).length;
+  return {
+    id: `${index}-${first?.eventId ?? 'segment'}`,
+    kind: segment.kind,
+    title: segmentTitle(segment, issueCount),
+    route: segment.route,
+    startTime: first?.startTime ?? first?.timestamp,
+    endTime: last?.endTime ?? last?.timestamp,
+    durationMs,
+    eventCount: segment.rows.length,
+    issueCount,
+    rows: segment.rows.map((row) => row.eventId).filter((eventId): eventId is string => Boolean(eventId)),
+  };
+}
+
+function segmentTitle(segment: MutableSegment, issueCount: number): string {
+  if (segment.kind === 'startup') return '启动链路';
+  if (segment.kind === 'sdk') return segment.route ? `SDK 活动 · ${segment.route}` : 'SDK 活动';
+  if (segment.kind === 'page') {
+    const labels = segment.rows.flatMap((row) => row.issueLabels).filter((label) => label !== '页面慢');
+    const suffix = [...new Set(labels)].slice(0, 2).join(' · ');
+    return [segment.route ? `页面 ${segment.route}` : '页面活动', suffix].filter(Boolean).join(' · ');
+  }
+  return issueCount > 0 ? '会话活动 · 有问题' : '会话活动';
+}
+
+function buildSdkHealth(events: MonitorEvent[]): SessionSdkHealthSummary {
+  const healthReports = events.filter((event) => event.name === 'sdk.health.report');
+  const outputModes = new Set<string>();
+  for (const event of events) {
+    const mode = stringPath(event, ['attributes', 'sdk.output.mode']) ?? stringPath(event, ['payload', 'output_mode']);
+    if (mode) outputModes.add(mode);
+  }
+  const latestQueue = [...events].reverse().find((event) => numberPath(event, ['attributes', 'sdk.queue.length']) !== undefined || numberPath(event, ['attributes', 'sdk.queue.bytes']) !== undefined);
+
+  const explicitDropCount = events
+    .filter((event) => event.name === 'sdk.queue.drop')
+    .reduce((sum, event) => sum + (numberPath(event, ['attributes', 'sdk.drop.count']) ?? 1), 0);
+  const healthDropped = latestNumber(healthReports, ['attributes', 'sdk.health.dropped_count']) ?? 0;
+  const healthRetries = latestNumber(healthReports, ['attributes', 'sdk.health.retry_count']) ?? 0;
+
+  return {
+    flushCount: events.filter((event) => event.name === 'sdk.output.flush' || event.name === 'sdk.lifecycle.flush').length,
+    flushFailureCount: events.filter(isSdkFlushFailure).length,
+    retryCount: healthRetries > 0 ? healthRetries : events.filter((event) => event.name === 'sdk.retry.schedule').length,
+    dropCount: events.filter((event) => event.name === 'sdk.queue.drop').length,
+    droppedEventCount: Math.max(explicitDropCount, healthDropped),
+    queueStateCount: events.filter((event) => event.name === 'sdk.queue.state').length,
+    configAppliedCount: events.filter((event) => event.name === 'sdk.config.applied').length,
+    latestQueueLength: latestQueue ? numberPath(latestQueue, ['attributes', 'sdk.queue.length']) : undefined,
+    latestQueueBytes: latestQueue ? numberPath(latestQueue, ['attributes', 'sdk.queue.bytes']) : undefined,
+    outputModes: [...outputModes],
+    detailDroppedCount: events.filter((event) => booleanPath(event, ['payload', 'http.detail_dropped']) === true).length,
+  };
+}
+
+function isPageEntryRow(row: SessionConsoleRow): boolean {
+  if (row.name === 'route.push') return true;
+  if (row.name !== 'page.visit') return false;
+  if (row.phase === 'start') return true;
+  if (row.phase === 'end') return false;
+  return (row.status !== 'ok' && row.status !== 'success') || !row.endTime;
+}
+
+function isSlowPage(event: MonitorEvent): boolean {
+  if (event.name !== 'page.load') return false;
+  const loadMs = numberPath(event, ['attributes', 'page.load_ms']);
+  const firstFrameMs = numberPath(event, ['attributes', 'page.first_frame_ms']);
+  const duration = loadMs ?? firstFrameMs ?? event.durationMs;
+  return typeof duration === 'number' && duration >= SLOW_PAGE_MS;
+}
+
+function isNonHttpStabilityError(event: MonitorEvent): boolean {
+  return !isCompletedHttpEvent(event) && !isBusinessFailureEvent(event) && isErrorEvent(event);
+}
+
+function isMemoryEvent(event: MonitorEvent): boolean {
+  const name = event.name ?? '';
+  return name.startsWith('memory.') || name.startsWith('native.memory.');
+}
+
+function isMemoryProblem(event: MonitorEvent): boolean {
+  if (event.name === 'memory.pressure' || event.name === 'native.memory.pressure') {
+    const level = stringPath(event, ['attributes', 'memory.pressure_level']);
+    return level === undefined || (level !== '' && level !== 'none');
+  }
+  if (event.name === 'memory.leak.suspect') return true;
+  if (event.name === 'memory.growth') {
+    const level = String(event.level ?? event.status ?? '');
+    const growth = numberPath(event, ['attributes', 'memory.growth_mb']);
+    return level.includes('warn') || (typeof growth === 'number' && growth > 0);
+  }
+  return false;
+}
+
+function memoryLabel(event: MonitorEvent): string {
+  if (event.name === 'memory.leak.suspect') return '疑似泄漏';
+  if (event.name === 'memory.growth') return '内存增长';
+  return '内存压力';
+}
+
+function isSdkFlushFailure(event: MonitorEvent): boolean {
+  if (event.name !== 'sdk.output.flush' && event.name !== 'sdk.lifecycle.flush') return false;
+  return event.status === 'error' || stringPath(event, ['attributes', 'sdk.flush.result']) === 'failed';
+}
+
+function sortEvents(events: MonitorEvent[]): MonitorEvent[] {
+  return [...events].sort((a, b) => timeValue(a.timestamp ?? a.startTime) - timeValue(b.timestamp ?? b.startTime));
+}
+
+function readPath(value: unknown, path: string[]): unknown {
+  let current = value;
+  for (const segment of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function stringPath(value: unknown, path: string[]): string | undefined {
+  const result = readPath(value, path);
+  return typeof result === 'string' && result.length > 0 ? result : undefined;
+}
+
+function numberPath(value: unknown, path: string[]): number | undefined {
+  const result = readPath(value, path);
+  return typeof result === 'number' && Number.isFinite(result) ? result : undefined;
+}
+
+function booleanPath(value: unknown, path: string[]): boolean | undefined {
+  const result = readPath(value, path);
+  return typeof result === 'boolean' ? result : undefined;
+}
+
+function recordValue(value: unknown): RecordValue | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function isRecord(value: unknown): value is RecordValue {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isRecord(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+function timeValue(timestamp?: string): number {
+  const value = Date.parse(timestamp ?? '');
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function timestampDiff(start?: string, end?: string): number | undefined {
+  const startValue = timeValue(start);
+  const endValue = timeValue(end);
+  if (startValue === 0 || endValue === 0 || endValue < startValue) return undefined;
+  return endValue - startValue;
+}
+
+function maxNumber(values: Array<number | undefined>): number | undefined {
+  const numbers = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  return numbers.length > 0 ? Math.max(...numbers) : undefined;
+}
+
+function latestNumber(events: MonitorEvent[], path: string[]): number | undefined {
+  for (const event of [...events].reverse()) {
+    const value = numberPath(event, path);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}

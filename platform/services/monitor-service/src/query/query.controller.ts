@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { QueryService } from './query.service';
 
@@ -25,6 +25,12 @@ export class QueryController {
   @ApiOperation({ summary: 'Session 列表摘要' })
   sessions(@Query() query: Record<string, string | string[] | undefined>) {
     return this.queryService.sessions(query);
+  }
+
+  @Get('sessions/:sessionId/console')
+  @ApiOperation({ summary: 'Session Console 展示摘要' })
+  sessionConsole(@Param('sessionId') sessionId: string) {
+    return this.queryService.sessionConsole(sessionId);
   }
 
   @Get('search')

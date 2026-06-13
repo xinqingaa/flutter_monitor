@@ -6,12 +6,12 @@ import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '.
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { EventInspector } from '../../features/inspector/event-inspector';
+import { SessionConsoleView } from '../../features/session-console/session-console-view';
 import { SessionHeader } from '../../features/session/session-header';
 import { SessionList } from '../../features/session/session-list';
 import { hasActiveScope, pickScopeSearch, scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
-import { SessionTimeline } from '../../features/timeline/session-timeline';
 import { firstTimelineEvent, prepareSessionEvents } from '../../features/timeline/session-segments';
-import { useSessionQuery, useSessionsQuery, useTraceQuery } from '../../shared/datasource/queries';
+import { useEventQuery, useSessionConsoleQuery, useSessionQuery, useSessionsQuery, useTraceQuery } from '../../shared/datasource/queries';
 import { sortEvents } from '../../shared/event-model/accessors';
 import { downloadJson } from '../../shared/formatting/download';
 
@@ -25,24 +25,32 @@ export function SessionDetailRoute() {
   const sessionQuery = useSessionQuery(sessionId);
   const scopedSessionQuery = useSessionsQuery({ ...scopeQueryFilters, sessionId, limit: 1 });
   const sessionsQuery = useSessionsQuery({ ...scopeQueryFilters, sessionId: sideSessionId || undefined, limit: 50 });
+  const sessionConsoleQuery = useSessionConsoleQuery(sessionId);
   const events = useMemo(() => sortEvents(sessionQuery.data ?? []), [sessionQuery.data]);
   const currentSessionInScope = !scopeActive || Boolean(scopedSessionQuery.data?.sessions.some((session) => session.sessionId === sessionId));
   const visibleEvents = currentSessionInScope ? events : [];
   const timelineEvents = useMemo(() => prepareSessionEvents(events), [events]);
   const [selectedEventId, setSelectedEventId] = useState<string>();
-  const defaultEvent = firstTimelineEvent(events);
+  const consoleRows = sessionConsoleQuery.data?.rows ?? [];
+  const defaultEventId = consoleRows[0]?.eventId ?? firstTimelineEvent(events)?.eventId;
+  const searchSelectedRow = consoleRows.find((row) => (
+    search.eventId ? row.eventId === search.eventId : search.traceId ? row.traceId === search.traceId : false
+  ));
   const searchSelectedEvent = timelineEvents.find((event) => (
     search.eventId ? event.eventId === search.eventId : search.traceId ? event.traceId === search.traceId : false
   ));
-  const selectedEvent = timelineEvents.find((event) => event.eventId === selectedEventId) ?? searchSelectedEvent ?? defaultEvent;
+  const effectiveSelectedEventId = selectedEventId ?? searchSelectedRow?.eventId ?? searchSelectedEvent?.eventId ?? defaultEventId;
+  const fallbackSelectedEvent = timelineEvents.find((event) => event.eventId === effectiveSelectedEventId) ?? searchSelectedEvent ?? firstTimelineEvent(events);
+  const eventQuery = useEventQuery(currentSessionInScope ? effectiveSelectedEventId : undefined);
+  const selectedEvent = eventQuery.data ?? fallbackSelectedEvent;
   const traceQuery = useTraceQuery(currentSessionInScope ? selectedEvent?.traceId : undefined);
   const summary = sessionsQuery.data?.sessions.find((session) => session.sessionId === sessionId);
   const leftPanel = useCollapsiblePanel('workbench.sessionDetail.left');
   const rightPanel = useCollapsiblePanel('workbench.sessionDetail.right');
 
   useEffect(() => {
-    setSelectedEventId(search.eventId ?? searchSelectedEvent?.eventId);
-  }, [sessionId, search.eventId, search.traceId]);
+    setSelectedEventId(search.eventId ?? searchSelectedRow?.eventId ?? searchSelectedEvent?.eventId);
+  }, [sessionId, search.eventId, search.traceId, searchSelectedRow?.eventId, searchSelectedEvent?.eventId]);
 
   return (
     <div
@@ -94,7 +102,8 @@ export function SessionDetailRoute() {
             <SessionHeader
               sessionId={sessionId}
               events={visibleEvents}
-              summary={summary}
+              summary={sessionConsoleQuery.data?.summary ?? summary}
+              consoleData={sessionConsoleQuery.data}
               onExport={() => downloadJson(`flutter-monitor-session-${sessionId}.json`, {
                 sessionId,
                 exportedAt: new Date().toISOString(),
@@ -102,11 +111,10 @@ export function SessionDetailRoute() {
                 events: visibleEvents,
               })}
             />
-            <SessionTimeline
-              events={visibleEvents}
-              selectedEventId={selectedEvent?.eventId}
-              autoExpandSelected={Boolean(search.eventId || search.traceId || selectedEventId)}
-              onSelectEvent={(event) => setSelectedEventId(event.eventId)}
+            <SessionConsoleView
+              consoleData={sessionConsoleQuery.data}
+              selectedEventId={effectiveSelectedEventId}
+              onSelectEvent={setSelectedEventId}
             />
           </>
         ) : (

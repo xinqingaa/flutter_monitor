@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { AlertTriangle, BadgeAlert, ChevronDown, ChevronRight, Clock, Cpu, Download, Gauge, Globe2, Info, ListTree, Package, Smartphone, User } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, Cpu, Download, HardDrive, Info, ListTree, Package, Route, Send, Smartphone, User } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent } from '../../components/ui/card';
 import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
 import { Dialog } from '../../components/ui/dialog';
-import type { JsonObject, MonitorEvent, SessionSummary } from '../../shared/datasource/types';
+import type { JsonObject, MonitorEvent, SessionConsoleResult, SessionSummary } from '../../shared/datasource/types';
 import { appVersionOf, environmentOf, readPath, routeOf, stringPath, userIdOf } from '../../shared/event-model/accessors';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
 import { statusLabel } from '../../shared/event-model/status';
@@ -15,12 +15,14 @@ export function SessionHeader({
   sessionId,
   events,
   summary,
+  consoleData,
   scopeNotice,
   onExport,
 }: {
   sessionId: string;
   events: MonitorEvent[];
   summary?: SessionSummary;
+  consoleData?: SessionConsoleResult;
   scopeNotice?: string;
   onExport?: () => void;
 }) {
@@ -32,6 +34,7 @@ export function SessionHeader({
   const contextEvent = events.find((event) => userIdOf(event) !== '-' || routeOf(event) !== '-') ?? first;
   const resource = events.find((event) => event.resource)?.resource;
   const native = summarizeNativeSession(events);
+  const consoleSummary = consoleData?.summary;
   const [expanded, setExpanded] = useState(false);
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
 
@@ -65,15 +68,19 @@ export function SessionHeader({
           <span className="text-zinc-300">·</span>
           <span>持续 {formatDuration(duration)}</span>
           <span className="text-zinc-300">·</span>
-          <span>事件 {events.length}</span>
+          <span>事件 {consoleData?.count ?? events.length}</span>
           <span className="text-zinc-300">·</span>
           <span>错误 {summary?.errorCount ?? 0}</span>
           <span className="text-zinc-300">·</span>
           <span>业务失败 {summary?.businessFailureCount ?? 0}</span>
           <span className="text-zinc-300">·</span>
-          <span>卡顿 {summary?.jankCount ?? 0}</span>
-          <span className="text-zinc-300">·</span>
           <span>失败请求 {summary?.failedHttpCount ?? 0}</span>
+          <span className="text-zinc-300">·</span>
+          <span>慢 HTTP {consoleSummary?.slowHttpCount ?? 0}</span>
+          <span className="text-zinc-300">·</span>
+          <span>慢页面 {consoleSummary?.slowPageCount ?? 0}</span>
+          <span className="text-zinc-300">·</span>
+          <span>SDK 丢弃 {consoleSummary?.sdkDroppedCount ?? 0}</span>
         </div>
         {scopeNotice ? (
           <div className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
@@ -83,18 +90,13 @@ export function SessionHeader({
         {expanded ? (
           <div className="grid gap-3 border-t border-zinc-100 pt-2">
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
-              <HeaderMetric icon={Clock} label="持续时间" value={formatDuration(duration)} />
-              <HeaderMetric icon={User} label="用户" value={summary?.userId ?? userIdOf(contextEvent)} />
-              <HeaderMetric icon={Globe2} label="页面" value={summary?.route ?? routeOf(contextEvent)} />
-              <HeaderMetric icon={AlertTriangle} label="错误数" value={String(summary?.errorCount ?? 0)} />
-              <HeaderMetric icon={BadgeAlert} label="业务失败" value={String(summary?.businessFailureCount ?? 0)} />
-              <HeaderMetric icon={Gauge} label="卡顿 / 失败请求" value={`${summary?.jankCount ?? 0} / ${summary?.failedHttpCount ?? 0}`} />
-              <HeaderMetric icon={Cpu} label="Native" value={native.available ? `${native.platform ?? 'native'} ${native.version ? `v${native.version}` : 'on'}` : 'off'} />
+              <HeaderMetric icon={User} label="对象" value={summary?.userId ?? userIdOf(contextEvent)} detail={`${summary?.appVersion ?? appVersionOf(contextEvent)} · ${summary?.environment ?? environmentOf(contextEvent)}`} />
+              <HeaderMetric icon={Smartphone} label="设备" value={[summary?.devicePlatform, summary?.deviceModel].filter(Boolean).join(' · ') || '-'} detail={summary?.osVersion ?? '-'} />
+              <HeaderMetric icon={Route} label="路径" value={`${consoleSummary?.routeCount ?? 0} 个页面`} detail={[consoleSummary?.firstRoute, consoleSummary?.lastRoute].filter(Boolean).join(' -> ') || (summary?.route ?? routeOf(contextEvent))} />
+              <HeaderMetric icon={Send} label="采集健康" value={`发送失败 ${consoleSummary?.sdkFlushFailureCount ?? 0}`} detail={`重试 ${consoleSummary?.sdkRetryCount ?? 0} · 丢弃 ${consoleSummary?.sdkDroppedCount ?? 0}`} />
+              <HeaderMetric icon={Cpu} label="Native" value={native.available ? `${native.platform ?? 'native'} ${native.version ? `v${native.version}` : 'on'}` : 'off'} detail={native.available ? `lifecycle ${native.lifecycleCount} · memory ${native.memoryCount}` : undefined} />
             </div>
-            <div className="text-xs text-zinc-500">
-              App {summary?.appVersion ?? appVersionOf(contextEvent)} · 环境 {summary?.environment ?? environmentOf(contextEvent)} · 事件 {events.length}
-              {native.available ? ` · Native lifecycle ${native.lifecycleCount} · Native memory ${native.memoryCount}` : ''}
-            </div>
+            <ExpandedFacts summary={summary} consoleData={consoleData} contextEvent={contextEvent} duration={duration} />
             {resource ? <ResourceSummary resource={resource} /> : null}
           </div>
         ) : null}
@@ -117,7 +119,7 @@ function statusTone(status?: string): 'neutral' | 'danger' | 'warn' {
   return 'neutral';
 }
 
-function HeaderMetric({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
+function HeaderMetric({ icon: Icon, label, value, detail }: { icon: typeof Clock; label: string; value: string; detail?: string }) {
   return (
     <div className="min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5">
       <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -125,7 +127,86 @@ function HeaderMetric({ icon: Icon, label, value }: { icon: typeof Clock; label:
         {label}
       </div>
       <div className="mt-0.5 truncate text-sm font-medium text-zinc-950">{value}</div>
+      {detail ? <div className="mt-0.5 truncate text-[11px] text-zinc-500">{detail}</div> : null}
     </div>
+  );
+}
+
+function ExpandedFacts({
+  summary,
+  consoleData,
+  contextEvent,
+  duration,
+}: {
+  summary?: SessionSummary;
+  consoleData?: SessionConsoleResult;
+  contextEvent?: MonitorEvent;
+  duration?: number;
+}) {
+  const consoleSummary = consoleData?.summary;
+  const appFacts: Array<[string, string | undefined]> = [
+    ['userId', summary?.userId ?? userIdOf(contextEvent)],
+    ['appVersion', summary?.appVersion ?? appVersionOf(contextEvent)],
+    ['environment', summary?.environment ?? environmentOf(contextEvent)],
+    ['buildNumber', summary?.buildNumber],
+    ['packageName', summary?.packageName],
+  ];
+  const deviceFacts: Array<[string, string | undefined]> = [
+    ['platform', summary?.devicePlatform],
+    ['model', summary?.deviceModel],
+    ['osVersion', summary?.osVersion],
+    ['deviceTier', summary?.deviceTier],
+  ];
+  const pathFacts: Array<[string, string | undefined]> = [
+    ['持续时间', formatDuration(consoleSummary?.durationMs ?? duration)],
+    ['首个页面', consoleSummary?.firstRoute],
+    ['最后页面', consoleSummary?.lastRoute ?? summary?.route],
+    ['页面数', consoleSummary?.routeCount !== undefined ? String(consoleSummary.routeCount) : undefined],
+    ['最长停留', consoleSummary?.longestPageStay ? `${consoleSummary.longestPageStay.route ?? '-'} · ${formatDuration(consoleSummary.longestPageStay.durationMs)}` : undefined],
+  ];
+  const healthFacts: Array<[string, string | undefined]> = [
+    ['output mode', consoleSummary?.outputModes.join(', ')],
+    ['flush', consoleData ? `${consoleData.sdkHealth.flushCount} 次，失败 ${consoleData.sdkHealth.flushFailureCount}` : undefined],
+    ['retry', consoleSummary?.sdkRetryCount !== undefined ? String(consoleSummary.sdkRetryCount) : undefined],
+    ['dropped', consoleSummary?.sdkDroppedCount !== undefined ? String(consoleSummary.sdkDroppedCount) : undefined],
+    ['queue', consoleSummary?.latestQueueLength !== undefined ? `${consoleSummary.latestQueueLength} events / ${consoleSummary.latestQueueBytes ?? 0} bytes` : undefined],
+    ['detail dropped', consoleSummary?.detailDroppedCount !== undefined ? String(consoleSummary.detailDroppedCount) : undefined],
+  ];
+
+  return (
+    <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
+      <FactGroup icon={User} title="对象" facts={appFacts} />
+      <FactGroup icon={Smartphone} title="设备" facts={deviceFacts} />
+      <FactGroup icon={Route} title="会话路径" facts={pathFacts} />
+      <FactGroup icon={HardDrive} title="采集健康" facts={healthFacts} />
+    </div>
+  );
+}
+
+function FactGroup({
+  icon: Icon,
+  title,
+  facts,
+}: {
+  icon: typeof User;
+  title: string;
+  facts: Array<[string, string | undefined]>;
+}) {
+  return (
+    <section className="min-w-0 rounded-md border border-zinc-200 bg-white p-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
+        <Icon className="size-3.5" />
+        {title}
+      </div>
+      <div className="mt-1.5 grid gap-1">
+        {facts.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[72px_minmax(0,1fr)] gap-1 text-xs">
+            <span className="text-zinc-500">{label}</span>
+            <span className="min-w-0 truncate text-zinc-900">{value && value !== '-' ? value : '-'}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

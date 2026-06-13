@@ -30,7 +30,8 @@ import { JsonViewer } from './json-viewer';
 import { copyJson } from '../../shared/formatting/download';
 import { statusLabel } from '../../shared/event-model/status';
 import { cn } from '../../shared/formatting/cn';
-import { eventDisplay, formatCompactField, formatDisplayField } from '../../shared/event-model/display';
+import { eventDisplay, formatCompactField } from '../../shared/event-model/display';
+import { HttpInspector } from './http-inspector';
 
 export function EventInspector({
   event,
@@ -43,6 +44,8 @@ export function EventInspector({
   onSelectEvent?: (event: MonitorEvent) => void;
   panelAction?: React.ReactNode;
 }) {
+  const { showToast } = useToast();
+
   if (!event) {
     return (
       <Card className="h-full min-h-0">
@@ -53,10 +56,13 @@ export function EventInspector({
     );
   }
 
+  if (event.name === 'http.client') {
+    return <HttpInspector event={event} panelAction={panelAction} />;
+  }
+
   const breadcrumbs = breadcrumbsOf(event);
   const labels = issueLabels(event);
   const display = eventDisplay(event);
-  const { showToast } = useToast();
 
   async function copyEventJson() {
     try {

@@ -3,6 +3,7 @@ import type {
   EventListResult,
   MonitorEvent,
   PerformanceOverview,
+  SessionConsoleResult,
   SessionFilters,
   SessionListResult,
   WorkbenchDatasource,
@@ -56,6 +57,10 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
       offset: typeof data.offset === 'number' ? data.offset : (filters.offset ?? 0),
       hasMore: Boolean(data.hasMore),
     };
+  }
+
+  async getSessionConsole(sessionId: string): Promise<SessionConsoleResult> {
+    return this.getJson(`/api/monitor/v1/sessions/${encodeURIComponent(sessionId)}/console`) as Promise<SessionConsoleResult>;
   }
 
   async getSession(sessionId: string): Promise<MonitorEvent[]> {

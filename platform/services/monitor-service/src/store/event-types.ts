@@ -79,6 +79,116 @@ export interface SessionSummary {
   businessFailureCount: number;
 }
 
+export interface SessionConsoleSummary extends SessionSummary {
+  durationMs?: number;
+  slowHttpCount: number;
+  slowPageCount: number;
+  sdkDroppedCount: number;
+  sdkRetryCount: number;
+  sdkFlushFailureCount: number;
+  latestQueueLength?: number;
+  latestQueueBytes?: number;
+  detailDroppedCount: number;
+  httpCount: number;
+  businessEventCount: number;
+  pageCount: number;
+  routeCount: number;
+  firstRoute?: string;
+  lastRoute?: string;
+  longestPageStay?: {
+    route?: string;
+    durationMs: number;
+    eventId?: string;
+  };
+  outputModes: string[];
+}
+
+export interface SessionProblemChip {
+  kind: 'error' | 'business_failure' | 'failed_http' | 'slow_http' | 'slow_page' | 'jank' | 'memory' | 'sdk_drop' | 'sdk_retry' | 'sdk_flush_failure' | 'detail_dropped';
+  label: string;
+  count: number;
+  eventId?: string;
+  tone: 'danger' | 'warn' | 'info' | 'neutral';
+}
+
+export interface SessionConsoleSegment {
+  id: string;
+  kind: 'startup' | 'page' | 'activity' | 'sdk';
+  title: string;
+  route?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMs?: number;
+  eventCount: number;
+  issueCount: number;
+  rows: string[];
+}
+
+export interface SessionConsoleRow {
+  eventId?: string;
+  timestamp?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMs?: number;
+  signalType?: string;
+  name?: string;
+  phase?: string;
+  status?: string;
+  level?: string;
+  priority?: string;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  route?: string;
+  module?: string;
+  scene?: string;
+  group: 'startup' | 'page' | 'http' | 'business' | 'problem' | 'performance' | 'lifecycle' | 'memory' | 'sdk' | 'event';
+  title: string;
+  subtitle?: string;
+  badges: string[];
+  issueLabels: string[];
+  method?: string;
+  url?: string;
+  statusCode?: number;
+  success?: boolean;
+  errorType?: string;
+  requestSizeBytes?: number;
+  responseSizeBytes?: number;
+  hasHttpQuery?: boolean;
+  hasRequestHeaders?: boolean;
+  hasRequestBody?: boolean;
+  hasResponseHeaders?: boolean;
+  hasResponseBody?: boolean;
+  bodyTruncated?: boolean;
+  bodyOriginalLength?: number;
+  detailDropped?: boolean;
+}
+
+export interface SessionSdkHealthSummary {
+  flushCount: number;
+  flushFailureCount: number;
+  retryCount: number;
+  dropCount: number;
+  droppedEventCount: number;
+  queueStateCount: number;
+  configAppliedCount: number;
+  latestQueueLength?: number;
+  latestQueueBytes?: number;
+  outputModes: string[];
+  detailDroppedCount: number;
+}
+
+export interface SessionConsoleResult {
+  sessionId: string;
+  count: number;
+  summary?: SessionConsoleSummary;
+  problemChips: SessionProblemChip[];
+  segments: SessionConsoleSegment[];
+  rows: SessionConsoleRow[];
+  httpRows: SessionConsoleRow[];
+  sdkHealth: SessionSdkHealthSummary;
+}
+
 export interface PerformanceMetricSummary {
   count: number;
   errorCount: number;

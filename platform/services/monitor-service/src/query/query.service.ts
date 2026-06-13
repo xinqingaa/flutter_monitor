@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { clampLimit, clampNumber, filtersFromQuery } from '../query/request-filters';
 import type { MonitorStore } from '../store/monitor-store';
 import { MONITOR_STORE } from '../store/store.tokens';
+import { buildSessionConsole } from './session-console';
 
 type QueryRecord = Record<string, string | string[] | undefined>;
 
@@ -39,6 +40,10 @@ export class QueryService {
       userIdQueryAvailable: filters.userId ? result.userIdAvailable : undefined,
       sessions: result.sessions,
     };
+  }
+
+  sessionConsole(sessionId: string) {
+    return buildSessionConsole(sessionId, this.store.getSessionEvents(sessionId));
   }
 
   search(query: QueryRecord) {

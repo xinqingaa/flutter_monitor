@@ -11,6 +11,7 @@ export const queryKeys = {
   recent: (limit: number, offset = 0, filters: SessionFilters = {}) => ['recent', limit, offset, filters] as const,
   sessions: (filters: SessionFilters) => ['sessions', filters] as const,
   session: (sessionId: string | undefined) => ['session', sessionId] as const,
+  sessionConsole: (sessionId: string | undefined) => ['sessionConsole', sessionId] as const,
   trace: (traceId: string | undefined) => ['trace', traceId] as const,
   event: (eventId: string | undefined) => ['event', eventId] as const,
   performance: (filters: SessionFilters) => ['performance', filters] as const,
@@ -49,6 +50,14 @@ export function useSessionQuery(sessionId: string | undefined) {
   return useQuery({
     queryKey: queryKeys.session(sessionId),
     queryFn: () => (sessionId ? datasource.getSession(sessionId) : Promise.resolve([])),
+    enabled: Boolean(sessionId),
+  });
+}
+
+export function useSessionConsoleQuery(sessionId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.sessionConsole(sessionId),
+    queryFn: () => (sessionId ? datasource.getSessionConsole(sessionId) : Promise.resolve(undefined)),
     enabled: Boolean(sessionId),
   });
 }
@@ -95,6 +104,7 @@ export function useLiveInvalidation(enabled: boolean) {
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
       void queryClient.invalidateQueries({ queryKey: ['performance'] });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) });
+      if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.sessionConsole(event.sessionId) });
       if (event.traceId) void queryClient.invalidateQueries({ queryKey: queryKeys.trace(event.traceId) });
       if (event.eventId) queryClient.setQueryData(queryKeys.event(event.eventId), event);
     });
