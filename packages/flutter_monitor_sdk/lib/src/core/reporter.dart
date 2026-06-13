@@ -1569,7 +1569,7 @@ class Reporter {
     // 调用所有输出器的 dispose 方法，让它们清理自己的资源。
     for (final output in _outputs) {
       try {
-        output.dispose();
+        await output.dispose();
       } catch (error) {
         reportSdkEvent(
           EventNames.sdkOutputDisposeFailed,

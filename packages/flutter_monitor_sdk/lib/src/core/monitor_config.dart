@@ -94,13 +94,19 @@ class MonitorMode {
 /// 被缓存、批量发送、重试、采样和限流，不控制端上采集阈值。普通业务一般使用
 /// SDK 默认值；需要控制网络、磁盘或灰度成本时再覆盖。
 class MonitorProductionPolicy {
-  /// 离线队列最多保留的事件数，超过后按优先级和时间淘汰。
+  /// 离线队列最多保留的事件数，超过后按 retention、优先级和时间降级。
   final int maxQueueEvents;
 
-  /// 离线队列最多占用的字节数，避免监控数据无限增长。
+  /// 离线队列最多占用的字节数。
+  ///
+  /// 默认值偏向证据保全：真实 App 可以晚一点上报 hard 证据，但应尽量
+  /// 避免仅因短期离线、弱网或服务端暂不可用就丢失复现线索。
   final int maxQueueBytes;
 
-  /// 单个 envelope 的最大字节数，超限事件会被丢弃并产生 SDK 自监控事件。
+  /// 单个 envelope 的最大字节数。
+  ///
+  /// HTTP envelope 超限时会先尝试剥离 `payload.http.detail` / query 详情层，
+  /// 剥离后仍超限才会被丢弃并进入 SDK 自监控审计。
   final int maxEventBytes;
 
   /// 单次 flush 最多发送的事件数。
@@ -168,11 +174,11 @@ class MonitorProductionPolicy {
   ///   [successfulHttpSampleRate]、[memorySampleRate]、
   ///   [maxTrackEventsPerMinute]。
   const MonitorProductionPolicy({
-    this.maxQueueEvents = 5000,
-    this.maxQueueBytes = 8 * 1024 * 1024,
-    this.maxEventBytes = 128 * 1024,
+    this.maxQueueEvents = 20000,
+    this.maxQueueBytes = 64 * 1024 * 1024,
+    this.maxEventBytes = 256 * 1024,
     this.maxBatchEvents = 50,
-    this.maxBatchBytes = 512 * 1024,
+    this.maxBatchBytes = 1024 * 1024,
     this.flushInterval = const Duration(seconds: 15),
     this.quickFlushDelay = const Duration(seconds: 2),
     this.requestTimeout = const Duration(seconds: 8),
@@ -193,10 +199,11 @@ class MonitorProductionPolicy {
 
   /// QA/Workbench 策略：更短 flush 间隔，更小 batch，便于近实时查看。
   static const localLive = MonitorProductionPolicy(
-    maxQueueEvents: 1000,
-    maxQueueBytes: 2 * 1024 * 1024,
+    maxQueueEvents: 10000,
+    maxQueueBytes: 64 * 1024 * 1024,
+    maxEventBytes: 512 * 1024,
     maxBatchEvents: 20,
-    maxBatchBytes: 256 * 1024,
+    maxBatchBytes: 1024 * 1024,
     flushInterval: Duration(seconds: 3),
     quickFlushDelay: Duration(milliseconds: 500),
     requestTimeout: Duration(seconds: 5),
@@ -209,10 +216,11 @@ class MonitorProductionPolicy {
   /// 更保守策略：适合首轮灰度或弱网风险较高的 App。
   factory MonitorProductionPolicy.conservative() {
     return const MonitorProductionPolicy(
-      maxQueueEvents: 2000,
-      maxQueueBytes: 4 * 1024 * 1024,
+      maxQueueEvents: 10000,
+      maxQueueBytes: 32 * 1024 * 1024,
+      maxEventBytes: 256 * 1024,
       maxBatchEvents: 30,
-      maxBatchBytes: 256 * 1024,
+      maxBatchBytes: 512 * 1024,
       flushInterval: Duration(seconds: 30),
       quickFlushDelay: Duration(seconds: 3),
       lowPrioritySampleRate: 0.1,

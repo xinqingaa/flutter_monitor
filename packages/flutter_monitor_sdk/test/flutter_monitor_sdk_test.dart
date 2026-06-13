@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
@@ -196,153 +199,8 @@ void main() {
     },
   );
 
-  test(
-    'reliable output aggregates queue drops into health report with one '
-    'saturation edge event',
-    () async {
-      final healthEvents = <OutputHealthEvent>[];
-      final health = SdkHealthMonitor(mode: SdkOutputModes.production);
-      health.onEvent = healthEvents.add;
-      final output = ReliableHttpOutput(
-        endpoint: Uri.parse('https://monitor.example.com/events'),
-        mode: SdkOutputModes.production,
-        policy: const MonitorProductionPolicy(
-          maxQueueEvents: 1,
-          maxQueueBytes: 1024 * 1024,
-          quickFlushDelay: Duration(milliseconds: 1),
-        ),
-        queue: MemoryOfflineEventQueue(
-          policy: const MonitorProductionPolicy(
-            maxQueueEvents: 1,
-            maxQueueBytes: 1024 * 1024,
-          ),
-        ),
-        healthMonitor: health,
-      );
-      output.init();
-
-      output.add(_testEnvelope('evt_1', 'business.one'));
-      output.add(_testEnvelope('evt_2', 'business.two'));
-      output.add(_testEnvelope('evt_3', 'business.three'));
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-
-      // 不再逐条产生 sdk.queue.drop；队列首次饱和只产生一条边沿事件。
-      expect(
-        healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
-        isEmpty,
-      );
-      final queueStates = healthEvents
-          .where((event) => event.name == EventNames.sdkQueueState)
-          .toList();
-      expect(queueStates, hasLength(1));
-      expect(
-        queueStates.single.payload[PayloadKeys.reason],
-        SdkQueueStateReasons.queueSaturated,
-      );
-
-      health.report(trigger: SdkFlushReasons.manual);
-      final report = healthEvents.singleWhere(
-        (event) => event.name == EventNames.sdkHealthReport,
-      );
-      expect(report.attributes[FieldPaths.sdkHealthEnqueuedCount], 3);
-      expect(report.attributes[FieldPaths.sdkHealthDroppedCount], 2);
-      final drops = report.payload[PayloadKeys.dropsByReason] as Map;
-      final queueFull = drops[SdkDropReasons.queueFull] as Map;
-      expect(queueFull['count'], 2);
-      expect(
-        queueFull['events'],
-        contains(
-          allOf(<Matcher>[
-            containsPair('name', 'business.one'),
-            containsPair('signalType', SignalType.breadcrumb.toJson()),
-            containsPair('priority', EventPriority.normal.toJson()),
-            containsPair('source', 'test'),
-            containsPair('route', '/test'),
-            containsPair('module', 'test_module'),
-            containsPair('scene', 'test_scene'),
-            containsPair('count', 1),
-          ]),
-        ),
-      );
-
-      // 窗口上报后计数复位，无活动时不再产生新摘要。
-      health.report(trigger: SdkFlushReasons.manual);
-      expect(
-        healthEvents.where(
-          (event) => event.name == EventNames.sdkHealthReport,
-        ),
-        hasLength(1),
-      );
-      output.dispose();
-      health.dispose();
-    },
-  );
-
-  test(
-    'reliable output emits one retry edge then drops exhausted events as '
-    'retry_exhausted',
-    () async {
-      final healthEvents = <OutputHealthEvent>[];
-      final health = SdkHealthMonitor(mode: SdkOutputModes.production);
-      health.onEvent = healthEvents.add;
-      final output = ReliableHttpOutput(
-        endpoint: Uri.parse('https://monitor.example.com/events'),
-        mode: SdkOutputModes.production,
-        policy: const MonitorProductionPolicy(
-          maxRetryAttempts: 2,
-          retryBaseDelay: Duration.zero,
-          retryMaxDelay: Duration.zero,
-          quickFlushDelay: Duration(milliseconds: 1),
-        ),
-        queue: MemoryOfflineEventQueue(
-          policy: const MonitorProductionPolicy(maxRetryAttempts: 2),
-        ),
-        client: MockClient((_) async => http.Response('server error', 500)),
-        healthMonitor: health,
-      );
-      output.init();
-
-      output.add(_testEnvelope('evt_retry', 'business.retry'));
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      await output.flush();
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      await output.flush();
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      await output.flush();
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-
-      // 重试只在进入重试状态的边沿产生一条事件。
-      expect(
-        healthEvents.where(
-          (event) => event.name == EventNames.sdkRetrySchedule,
-        ),
-        hasLength(1),
-      );
-      expect(
-        healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
-        isEmpty,
-      );
-
-      health.report(trigger: SdkFlushReasons.manual);
-      final report = healthEvents.singleWhere(
-        (event) => event.name == EventNames.sdkHealthReport,
-      );
-      expect(report.attributes[FieldPaths.sdkHealthRetryCount], 2);
-      expect(report.attributes[FieldPaths.sdkHealthFlushFailureCount], 3);
-      final drops = report.payload[PayloadKeys.dropsByReason] as Map;
-      final exhausted = drops[SdkDropReasons.retryExhausted] as Map;
-      expect(exhausted['count'], 1);
-      expect(
-        exhausted['events'],
-        contains(containsPair('name', 'business.retry')),
-      );
-
-      output.dispose();
-      health.dispose();
-    },
-  );
-
-  test('reliable output records expired queue drops in health report', () async {
+  test('reliable output aggregates queue drops into health report with one '
+      'saturation edge event', () async {
     final healthEvents = <OutputHealthEvent>[];
     final health = SdkHealthMonitor(mode: SdkOutputModes.production);
     health.onEvent = healthEvents.add;
@@ -350,40 +208,225 @@ void main() {
       endpoint: Uri.parse('https://monitor.example.com/events'),
       mode: SdkOutputModes.production,
       policy: const MonitorProductionPolicy(
-        maxEventAge: Duration.zero,
+        maxQueueEvents: 1,
+        maxQueueBytes: 1024 * 1024,
         quickFlushDelay: Duration(milliseconds: 1),
       ),
       queue: MemoryOfflineEventQueue(
-        policy: const MonitorProductionPolicy(maxEventAge: Duration.zero),
+        policy: const MonitorProductionPolicy(
+          maxQueueEvents: 1,
+          maxQueueBytes: 1024 * 1024,
+        ),
       ),
       healthMonitor: health,
     );
     output.init();
 
-    output.add(_testEnvelope('evt_expired', 'business.expired'));
-    await Future<void>.delayed(const Duration(milliseconds: 5));
-    await output.flush();
-    await Future<void>.delayed(const Duration(milliseconds: 5));
+    output.add(_testEnvelope('evt_1', 'business.one'));
+    output.add(_testEnvelope('evt_2', 'business.two'));
+    output.add(_testEnvelope('evt_3', 'business.three'));
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
+    // 不再逐条产生 sdk.queue.drop；队列首次饱和只产生一条边沿事件。
     expect(
       healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
       isEmpty,
     );
+    final queueStates = healthEvents
+        .where((event) => event.name == EventNames.sdkQueueState)
+        .toList();
+    expect(queueStates, hasLength(1));
+    expect(
+      queueStates.single.payload[PayloadKeys.reason],
+      SdkQueueStateReasons.queueSaturated,
+    );
+
     health.report(trigger: SdkFlushReasons.manual);
     final report = healthEvents.singleWhere(
       (event) => event.name == EventNames.sdkHealthReport,
     );
-    expect(report.attributes[FieldPaths.sdkHealthDroppedCount], 1);
+    expect(report.attributes[FieldPaths.sdkHealthEnqueuedCount], 3);
+    expect(report.attributes[FieldPaths.sdkHealthDroppedCount], 2);
     final drops = report.payload[PayloadKeys.dropsByReason] as Map;
-    final expired = drops[SdkDropReasons.expired] as Map;
+    final queueFull = drops[SdkDropReasons.queueFull] as Map;
+    expect(queueFull['count'], 2);
     expect(
-      expired['events'],
-      contains(containsPair('name', 'business.expired')),
+      queueFull['events'],
+      contains(
+        allOf(<Matcher>[
+          containsPair('name', 'business.one'),
+          containsPair('signalType', SignalType.breadcrumb.toJson()),
+          containsPair('priority', EventPriority.normal.toJson()),
+          containsPair('source', 'test'),
+          containsPair('route', '/test'),
+          containsPair('module', 'test_module'),
+          containsPair('scene', 'test_scene'),
+          containsPair('count', 1),
+        ]),
+      ),
     );
 
-    output.dispose();
+    // 窗口上报后计数复位，无活动时不再产生新摘要。
+    health.report(trigger: SdkFlushReasons.manual);
+    expect(
+      healthEvents.where((event) => event.name == EventNames.sdkHealthReport),
+      hasLength(1),
+    );
+    await output.dispose();
     health.dispose();
   });
+
+  test('reliable output emits one retry edge then drops exhausted events as '
+      'retry_exhausted', () async {
+    final healthEvents = <OutputHealthEvent>[];
+    final health = SdkHealthMonitor(mode: SdkOutputModes.production);
+    health.onEvent = healthEvents.add;
+    final output = ReliableHttpOutput(
+      endpoint: Uri.parse('https://monitor.example.com/events'),
+      mode: SdkOutputModes.production,
+      policy: const MonitorProductionPolicy(
+        maxRetryAttempts: 2,
+        retryBaseDelay: Duration.zero,
+        retryMaxDelay: Duration.zero,
+        quickFlushDelay: Duration(milliseconds: 1),
+      ),
+      queue: MemoryOfflineEventQueue(
+        policy: const MonitorProductionPolicy(maxRetryAttempts: 2),
+      ),
+      client: MockClient((_) async => http.Response('server error', 500)),
+      healthMonitor: health,
+    );
+    output.init();
+
+    output.add(_testEnvelope('evt_retry', 'business.retry'));
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await output.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await output.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await output.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+
+    // 重试只在进入重试状态的边沿产生一条事件。
+    expect(
+      healthEvents.where((event) => event.name == EventNames.sdkRetrySchedule),
+      hasLength(1),
+    );
+    expect(
+      healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
+      isEmpty,
+    );
+
+    health.report(trigger: SdkFlushReasons.manual);
+    final report = healthEvents.singleWhere(
+      (event) => event.name == EventNames.sdkHealthReport,
+    );
+    expect(report.attributes[FieldPaths.sdkHealthRetryCount], 2);
+    expect(report.attributes[FieldPaths.sdkHealthFlushFailureCount], 3);
+    final drops = report.payload[PayloadKeys.dropsByReason] as Map;
+    final exhausted = drops[SdkDropReasons.retryExhausted] as Map;
+    expect(exhausted['count'], 1);
+    expect(
+      exhausted['events'],
+      contains(containsPair('name', 'business.retry')),
+    );
+
+    await output.dispose();
+    health.dispose();
+  });
+
+  test(
+    'reliable output records expired queue drops in health report',
+    () async {
+      final healthEvents = <OutputHealthEvent>[];
+      final health = SdkHealthMonitor(mode: SdkOutputModes.production);
+      health.onEvent = healthEvents.add;
+      final output = ReliableHttpOutput(
+        endpoint: Uri.parse('https://monitor.example.com/events'),
+        mode: SdkOutputModes.production,
+        policy: const MonitorProductionPolicy(
+          maxEventAge: Duration.zero,
+          quickFlushDelay: Duration(milliseconds: 1),
+        ),
+        queue: MemoryOfflineEventQueue(
+          policy: const MonitorProductionPolicy(maxEventAge: Duration.zero),
+        ),
+        healthMonitor: health,
+      );
+      output.init();
+
+      output.add(_testEnvelope('evt_expired', 'business.expired'));
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await output.flush();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(
+        healthEvents.where((event) => event.name == EventNames.sdkQueueDrop),
+        isEmpty,
+      );
+      health.report(trigger: SdkFlushReasons.manual);
+      final report = healthEvents.singleWhere(
+        (event) => event.name == EventNames.sdkHealthReport,
+      );
+      expect(report.attributes[FieldPaths.sdkHealthDroppedCount], 1);
+      final drops = report.payload[PayloadKeys.dropsByReason] as Map;
+      final expired = drops[SdkDropReasons.expired] as Map;
+      expect(
+        expired['events'],
+        contains(containsPair('name', 'business.expired')),
+      );
+
+      await output.dispose();
+      health.dispose();
+    },
+  );
+
+  test(
+    'reliable output dispose flushes events enqueued during active flush',
+    () async {
+      final firstPost = Completer<http.Response>();
+      final postedBatches = <List<String>>[];
+      final client = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        final events = body['events'] as List<dynamic>;
+        postedBatches.add(
+          events
+              .whereType<Map<String, dynamic>>()
+              .map((event) => event['eventId'] as String)
+              .toList(growable: false),
+        );
+        if (postedBatches.length == 1) {
+          return firstPost.future;
+        }
+        return http.Response('{}', 200);
+      });
+      final output = ReliableHttpOutput(
+        endpoint: Uri.parse('https://monitor.example.com/events'),
+        mode: SdkOutputModes.production,
+        policy: const MonitorProductionPolicy(
+          flushInterval: Duration(minutes: 5),
+        ),
+        queue: MemoryOfflineEventQueue(policy: const MonitorProductionPolicy()),
+        client: client,
+      );
+      output.init();
+
+      output.add(_testEnvelope('evt_during_flush_1', 'business.flush.one'));
+      final flushFuture = output.flush();
+      await _waitFor(() => postedBatches.length == 1);
+
+      output.add(_testEnvelope('evt_during_flush_2', 'business.flush.two'));
+      final disposeFuture = output.dispose();
+      firstPost.complete(http.Response('{}', 200));
+
+      await flushFuture;
+      await disposeFuture;
+      expect(postedBatches, <List<String>>[
+        <String>['evt_during_flush_1'],
+        <String>['evt_during_flush_2'],
+      ]);
+    },
+  );
 
   test('frame window collector emits page frame evidence', () {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -543,6 +586,27 @@ void main() {
     expect(limited.reason, SdkDropReasons.rateLimited);
   });
 
+  test('production policy defaults favor evidence retention', () {
+    expect(MonitorProductionPolicy.defaultPolicy.maxQueueEvents, 20000);
+    expect(
+      MonitorProductionPolicy.defaultPolicy.maxQueueBytes,
+      64 * 1024 * 1024,
+    );
+    expect(MonitorProductionPolicy.defaultPolicy.maxEventBytes, 256 * 1024);
+    expect(MonitorProductionPolicy.defaultPolicy.maxBatchBytes, 1024 * 1024);
+
+    expect(MonitorProductionPolicy.localLive.maxQueueEvents, 10000);
+    expect(MonitorProductionPolicy.localLive.maxQueueBytes, 64 * 1024 * 1024);
+    expect(MonitorProductionPolicy.localLive.maxEventBytes, 512 * 1024);
+    expect(MonitorProductionPolicy.localLive.maxBatchBytes, 1024 * 1024);
+
+    final conservative = MonitorProductionPolicy.conservative();
+    expect(conservative.maxQueueEvents, 10000);
+    expect(conservative.maxQueueBytes, 32 * 1024 * 1024);
+    expect(conservative.maxEventBytes, 256 * 1024);
+    expect(conservative.maxBatchBytes, 512 * 1024);
+  });
+
   test('http detail builder captures query, headers and hashed body', () {
     final builder = HttpDetailBuilder(
       config: const MonitorHttpConfig(maxBodyBytes: 8),
@@ -551,7 +615,9 @@ void main() {
 
     final section = builder.build(
       uri: Uri.parse('https://api.example.com/product?id=1&tab=hot'),
-      requestHeaders: const <String, String>{'content-type': 'application/json'},
+      requestHeaders: const <String, String>{
+        'content-type': 'application/json',
+      },
       requestBody: '{"id":1}',
       responseHeaders: const <String, String>{'x-request-id': 'req-1'},
       responseBody: 'a long response body over limit',
@@ -560,9 +626,7 @@ void main() {
     expect(section[PayloadKeys.httpQuery], {'id': '1', 'tab': 'hot'});
     final detail = section[PayloadKeys.httpDetail] as Map<String, Object?>;
     final request = detail[PayloadKeys.request] as Map<String, Object?>;
-    expect(request[PayloadKeys.headers], {
-      'content-type': 'application/json',
-    });
+    expect(request[PayloadKeys.headers], {'content-type': 'application/json'});
     expect(request[PayloadKeys.body], '{"id":1}');
     expect(request[PayloadKeys.bodyTruncated], isFalse);
     expect(request[PayloadKeys.bodyOriginalLength], 8);
@@ -666,102 +730,159 @@ void main() {
     await queue.dispose();
   });
 
-  test('queue strips http detail before dropping events on byte pressure', () async {
-    final bigBody = 'x' * 4000;
-    QueuedMonitorEvent httpEvent(String id) {
-      final envelope = _testEnvelope(id, EventNames.httpClient);
-      envelope['signalType'] = 'span';
-      envelope['payload'] = <String, Object?>{
-        PayloadKeys.source: 'test',
-        PayloadKeys.url: 'https://api.example.com/big',
-        PayloadKeys.httpQuery: <String, Object?>{'id': '1'},
-        PayloadKeys.httpDetail: <String, Object?>{
-          PayloadKeys.response: <String, Object?>{
-            PayloadKeys.body: bigBody,
-            PayloadKeys.bodySha256: 'hash-$id',
-            PayloadKeys.bodyOriginalLength: bigBody.length,
+  test(
+    'queue strips http detail before dropping events on byte pressure',
+    () async {
+      final bigBody = 'x' * 4000;
+      QueuedMonitorEvent httpEvent(String id) {
+        final envelope = _testEnvelope(id, EventNames.httpClient);
+        envelope['signalType'] = 'span';
+        envelope['payload'] = <String, Object?>{
+          PayloadKeys.source: 'test',
+          PayloadKeys.url: 'https://api.example.com/big',
+          PayloadKeys.httpQuery: <String, Object?>{'id': '1'},
+          PayloadKeys.httpDetail: <String, Object?>{
+            PayloadKeys.response: <String, Object?>{
+              PayloadKeys.body: bigBody,
+              PayloadKeys.bodySha256: 'hash-$id',
+              PayloadKeys.bodyOriginalLength: bigBody.length,
+            },
           },
-        },
-      };
-      return QueuedMonitorEvent.fromEnvelope(envelope);
-    }
+        };
+        return QueuedMonitorEvent.fromEnvelope(envelope);
+      }
 
+      final queue = MemoryOfflineEventQueue(
+        policy: const MonitorProductionPolicy(
+          maxQueueEvents: 10,
+          maxQueueBytes: 6000,
+          maxEventBytes: 64 * 1024,
+        ),
+      );
+      await queue.init();
+      await queue.enqueue(httpEvent('evt_http_1'));
+      final result = await queue.enqueue(httpEvent('evt_http_2'));
+
+      // 字节超限通过剥离详情解决，事件本身不丢。
+      expect(result.dropped, isEmpty);
+      final stats = await queue.stats();
+      expect(stats.length, 2);
+      expect(stats.bytes, lessThanOrEqualTo(6000));
+
+      final batch = await queue.nextBatch(
+        maxEvents: 10,
+        maxBytes: 64 * 1024,
+        now: DateTime.now(),
+      );
+      final stripped = batch.firstWhere(
+        (event) => event.eventId == 'evt_http_1',
+      );
+      final payload = stripped.envelope['payload'] as Map;
+      expect(payload[PayloadKeys.httpDetailDropped], isTrue);
+      expect(payload.containsKey(PayloadKeys.httpQuery), isFalse);
+      final detail = payload[PayloadKeys.httpDetail] as Map;
+      final response = detail[PayloadKeys.response] as Map;
+      expect(response[PayloadKeys.bodySha256], 'hash-evt_http_1');
+      expect(response.containsKey(PayloadKeys.body), isFalse);
+      await queue.dispose();
+    },
+  );
+
+  test('queue strips oversized single http event before rejecting', () async {
+    final envelope = _testEnvelope('evt_http_big', EventNames.httpClient);
+    envelope['signalType'] = 'span';
+    envelope['payload'] = <String, Object?>{
+      PayloadKeys.source: 'test',
+      PayloadKeys.url: 'https://api.example.com/big',
+      PayloadKeys.httpQuery: <String, Object?>{'id': '1'},
+      PayloadKeys.httpDetail: <String, Object?>{
+        PayloadKeys.response: <String, Object?>{
+          PayloadKeys.body: 'x' * 5000,
+          PayloadKeys.bodySha256: 'hash-big',
+          PayloadKeys.bodyOriginalLength: 5000,
+        },
+      },
+    };
     final queue = MemoryOfflineEventQueue(
       policy: const MonitorProductionPolicy(
         maxQueueEvents: 10,
-        maxQueueBytes: 6000,
-        maxEventBytes: 64 * 1024,
+        maxQueueBytes: 64 * 1024,
+        maxEventBytes: 4096,
       ),
     );
     await queue.init();
-    await queue.enqueue(httpEvent('evt_http_1'));
-    final result = await queue.enqueue(httpEvent('evt_http_2'));
 
-    // 字节超限通过剥离详情解决，事件本身不丢。
+    final result = await queue.enqueue(
+      QueuedMonitorEvent.fromEnvelope(envelope),
+    );
+
+    expect(result.accepted, isTrue);
     expect(result.dropped, isEmpty);
-    final stats = await queue.stats();
-    expect(stats.length, 2);
-    expect(stats.bytes, lessThanOrEqualTo(6000));
-
     final batch = await queue.nextBatch(
       maxEvents: 10,
       maxBytes: 64 * 1024,
       now: DateTime.now(),
     );
-    final stripped = batch.firstWhere((event) => event.eventId == 'evt_http_1');
-    final payload = stripped.envelope['payload'] as Map;
+    final stored = batch.single;
+    expect(stored.bytes, lessThanOrEqualTo(4096));
+    final payload = stored.envelope['payload'] as Map;
     expect(payload[PayloadKeys.httpDetailDropped], isTrue);
     expect(payload.containsKey(PayloadKeys.httpQuery), isFalse);
     final detail = payload[PayloadKeys.httpDetail] as Map;
     final response = detail[PayloadKeys.response] as Map;
-    expect(response[PayloadKeys.bodySha256], 'hash-evt_http_1');
+    expect(response[PayloadKeys.bodySha256], 'hash-big');
     expect(response.containsKey(PayloadKeys.body), isFalse);
     await queue.dispose();
   });
 
-  test('queue folds hard http events into summary instead of dropping', () async {
-    QueuedMonitorEvent httpEvent(String id, DateTime createdAt) {
-      final envelope = _testEnvelope(id, EventNames.httpClient);
-      envelope['signalType'] = 'span';
-      envelope['durationMs'] = 120;
-      envelope['attributes'] = <String, Object?>{
-        FieldPaths.httpUrlNormalized: '/api/product/{id}',
-        FieldPaths.httpSuccess: true,
-      };
-      return QueuedMonitorEvent.fromEnvelope(envelope, now: createdAt);
-    }
+  test(
+    'queue folds hard http events into summary instead of dropping',
+    () async {
+      QueuedMonitorEvent httpEvent(String id, DateTime createdAt) {
+        final envelope = _testEnvelope(id, EventNames.httpClient);
+        envelope['signalType'] = 'span';
+        envelope['durationMs'] = 120;
+        envelope['attributes'] = <String, Object?>{
+          FieldPaths.httpUrlNormalized: '/api/product/{id}',
+          FieldPaths.httpSuccess: true,
+        };
+        return QueuedMonitorEvent.fromEnvelope(envelope, now: createdAt);
+      }
 
-    final queue = MemoryOfflineEventQueue(
-      policy: const MonitorProductionPolicy(maxQueueEvents: 2),
-    );
-    await queue.init();
-    final base = DateTime.parse('2026-05-25T12:00:00.000+08:00');
-    await queue.enqueue(httpEvent('evt_h1', base));
-    await queue.enqueue(httpEvent('evt_h2', base.add(const Duration(seconds: 1))));
-    final result = await queue.enqueue(
-      httpEvent('evt_h3', base.add(const Duration(seconds: 2))),
-    );
+      final queue = MemoryOfflineEventQueue(
+        policy: const MonitorProductionPolicy(maxQueueEvents: 2),
+      );
+      await queue.init();
+      final base = DateTime.parse('2026-05-25T12:00:00.000+08:00');
+      await queue.enqueue(httpEvent('evt_h1', base));
+      await queue.enqueue(
+        httpEvent('evt_h2', base.add(const Duration(seconds: 1))),
+      );
+      final result = await queue.enqueue(
+        httpEvent('evt_h3', base.add(const Duration(seconds: 2))),
+      );
 
-    expect(result.dropped, isEmpty, reason: 'hard 证据被聚合而不是丢弃');
-    final batch = await queue.nextBatch(
-      maxEvents: 10,
-      maxBytes: 64 * 1024,
-      now: DateTime.now(),
-    );
-    final summary = batch.singleWhere(
-      (event) => event.name == EventNames.httpClientSummary,
-    );
-    final attrs = summary.envelope['attributes'] as Map;
-    expect(attrs[FieldPaths.summaryCount], 2);
-    expect(attrs[FieldPaths.httpUrlNormalized], '/api/product/{id}');
-    expect(attrs[FieldPaths.summaryDurationMaxMs], 120);
-    final payload = summary.envelope['payload'] as Map;
-    expect(payload[PayloadKeys.exemplarEventIds], ['evt_h1', 'evt_h2']);
-    expect(summary.retention, EventRetention.hard);
-    // 最新的 http 事件仍单独保留。
-    expect(batch.any((event) => event.eventId == 'evt_h3'), isTrue);
-    await queue.dispose();
-  });
+      expect(result.dropped, isEmpty, reason: 'hard 证据被聚合而不是丢弃');
+      final batch = await queue.nextBatch(
+        maxEvents: 10,
+        maxBytes: 64 * 1024,
+        now: DateTime.now(),
+      );
+      final summary = batch.singleWhere(
+        (event) => event.name == EventNames.httpClientSummary,
+      );
+      final attrs = summary.envelope['attributes'] as Map;
+      expect(attrs[FieldPaths.summaryCount], 2);
+      expect(attrs[FieldPaths.httpUrlNormalized], '/api/product/{id}');
+      expect(attrs[FieldPaths.summaryDurationMaxMs], 120);
+      final payload = summary.envelope['payload'] as Map;
+      expect(payload[PayloadKeys.exemplarEventIds], ['evt_h1', 'evt_h2']);
+      expect(summary.retention, EventRetention.hard);
+      // 最新的 http 事件仍单独保留。
+      expect(batch.any((event) => event.eventId == 'evt_h3'), isTrue);
+      await queue.dispose();
+    },
+  );
 
   test('track summary aggregator folds over-limit tracks into summary', () {
     final emitted = <RawSignal>[];
@@ -826,4 +947,14 @@ Map<String, dynamic> _testEnvelope(String eventId, String name) {
     'attributes': const <String, Object?>{},
     'payload': const <String, Object?>{PayloadKeys.source: 'test'},
   };
+}
+
+Future<void> _waitFor(bool Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 1));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw StateError('Timed out waiting for test condition.');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
 }

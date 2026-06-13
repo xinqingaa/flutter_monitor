@@ -10,9 +10,9 @@ import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 enum _TabSwitchSource { tap, swipe }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.dio});
+  const AppShell({super.key, required this.workbenchDio});
 
-  final Dio dio;
+  final Dio workbenchDio;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -27,7 +27,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
-    _workbenchApi = WorkbenchApi(dio: widget.dio);
+    _workbenchApi = WorkbenchApi(dio: widget.workbenchDio);
     _pageController = PageController();
   }
 
@@ -81,7 +81,8 @@ class _AppShellState extends State<AppShell> {
         body: PageView(
           controller: _pageController,
           physics: const BouncingScrollPhysics(),
-          onPageChanged: (index) => _selectTab(index, source: _TabSwitchSource.swipe),
+          onPageChanged: (index) =>
+              _selectTab(index, source: _TabSwitchSource.swipe),
           children: [
             HomeTab(api: _workbenchApi),
             const ProfileTab(),

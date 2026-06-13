@@ -97,9 +97,7 @@ class DemoApi {
   }
 
   Future<void> fetchLocalSlowWithDio() async {
-    final uri = Uri.parse(
-      '$testApiBaseUrl/api/test/slow?delayMs=1500&bytes=256',
-    );
+    final uri = _localSlowUri(delayMs: 1500, bytes: 256);
     final response = await _dio.getUri<Object>(uri);
     if ((response.statusCode ?? 0) >= 400) {
       throw StateError('HTTP ${response.statusCode}');
@@ -107,15 +105,54 @@ class DemoApi {
   }
 
   Future<void> fetchLocalSlowWithHttp() async {
-    final uri = Uri.parse(
-      '$testApiBaseUrl/api/test/slow?delayMs=1500&bytes=256',
-    );
+    final uri = _localSlowUri(delayMs: 1500, bytes: 256);
     final response = await _httpClient.get(uri);
+    _throwForStatus(response.statusCode);
+  }
+
+  Future<void> fetchLocalFastWithDio() async {
+    final uri = _localSlowUri(delayMs: 120, bytes: 512);
+    final response = await _dio.getUri<Object>(uri);
+    if ((response.statusCode ?? 0) >= 400) {
+      throw StateError('HTTP ${response.statusCode}');
+    }
+  }
+
+  Future<void> fetchLocalPayloadWithDio() async {
+    final uri = _localSlowUri(delayMs: 300, bytes: 32 * 1024);
+    final response = await _dio.getUri<Object>(uri);
+    if ((response.statusCode ?? 0) >= 400) {
+      throw StateError('HTTP ${response.statusCode}');
+    }
+  }
+
+  Future<void> fetchLocalStatusWithDio(int statusCode) async {
+    final response = await _dio.getUri<Object>(_localStatusUri(statusCode));
+    if ((response.statusCode ?? 0) >= 400) {
+      throw StateError('HTTP ${response.statusCode}');
+    }
+  }
+
+  Future<void> fetchLocalStatusWithHttp(int statusCode) async {
+    final response = await _httpClient.get(_localStatusUri(statusCode));
     _throwForStatus(response.statusCode);
   }
 
   void close() {
     _httpClient.close();
+  }
+
+  Uri _localSlowUri({required int delayMs, required int bytes}) {
+    return Uri.parse('$testApiBaseUrl/api/test/slow').replace(
+      queryParameters: <String, String>{
+        'delayMs': '$delayMs',
+        'bytes': '$bytes',
+      },
+    );
+  }
+
+  Uri _localStatusUri(int statusCode) {
+    return Uri.parse('$testApiBaseUrl/api/test/status/$statusCode');
   }
 
   void _throwForStatus(int statusCode) {

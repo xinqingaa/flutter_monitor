@@ -204,7 +204,7 @@ retention 是 SDK 端的本地降级策略概念，回答“资源紧张时这�
 
 track 事件速率不是结构性有界，因此 hard 身份以限流聚合为前提：超过 `maxTrackEventsPerMinute` 的部分聚合进 `business.action.summary` 而不是静默丢弃。
 
-诚实边界：hard 不等于“绝不丢失”。当离线队列达到物理极限且没有可驱逐的低等级事件时，SDK 仍会按最旧丢弃 hard 事件，但必须把丢弃计入 `sdk.health.report` 的 `drops.by_reason` 审计计数，让使用方知道证据缺口的存在和规模。
+诚实边界：hard 不等于“绝不丢失”。当离线队列达到物理极限且没有可驱逐的低等级事件时，SDK 仍会按最旧丢弃 hard 事件，但必须把丢弃计入 `sdk.health.report` 的 `drops.by_reason` 审计计数，让使用方知道证据缺口的存在和规模。单个 `http.client` envelope 超过 `maxEventBytes` 时也必须先剥离 `payload.http.query` / `payload.http.detail`，只有剥离后仍超过上限才按 `payload_too_large` 审计丢弃。
 
 retention 与 `priority` 的分工：`priority` 是 wire 字段，影响发送顺序和服务端处理；retention 是本地降级语义，影响采样豁免、队列驱逐顺序和压缩动作。两者由 core 统一定义，不允许各包自行发散。
 
@@ -1206,6 +1206,8 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 2. 剥离 `payload.http.detail` 详情层（置 `payload.http.detail_dropped = true`，保留 body hash 与原始长度）。
 3. 丢弃普通 compressible 事件（计入审计）；可聚合的 hard 事件先聚合为 summary 再让位。
 4. 物理极限时按最旧丢弃 hard 事件，必须计入审计计数。
+
+单 envelope 大小检查复用同一套 HTTP 详情剥离规则：`http.client` 超过 `maxEventBytes` 时先降级详情层并重算大小，剥离后可落入上限则继续入队；剥离后仍超过上限才产生 `payload_too_large` 审计计数。SDK 不做“丢弃后稍后补传完整 envelope”的影子队列，避免和原始 session/trace 链路断裂。
 
 聚合 summary 事件注册：
 

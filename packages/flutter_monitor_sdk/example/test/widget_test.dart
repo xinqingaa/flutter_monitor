@@ -31,7 +31,10 @@ void main() {
   });
 
   test('app router keeps route module metadata beside builders', () {
-    final routes = AppRouter.routeDefinitions(dio: dio);
+    final routes = AppRouter.routeDefinitions(
+      monitoredDio: monitoredDio,
+      workbenchDio: workbenchDio,
+    );
     final byName = <String, AppRoute>{
       for (final route in routes) route.name: route,
     };
@@ -106,7 +109,10 @@ void main() {
   testWidgets('login page accepts userId and enters home', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        routes: AppRouter.routes(dio: dio),
+        routes: AppRouter.routes(
+          monitoredDio: monitoredDio,
+          workbenchDio: workbenchDio,
+        ),
         initialRoute: AppRoutes.login,
       ),
     );
@@ -120,6 +126,7 @@ void main() {
 
     expect(find.text('监控事件'), findsOneWidget);
     expect(AppSession.userId, '42');
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('video page supports page view and comment sheet', (

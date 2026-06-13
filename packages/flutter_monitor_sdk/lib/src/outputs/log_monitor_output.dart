@@ -80,7 +80,7 @@ class LogMonitorOutput extends MonitorOutput {
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
     // No-op
   }
 }

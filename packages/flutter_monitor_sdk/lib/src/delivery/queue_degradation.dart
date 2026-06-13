@@ -143,6 +143,16 @@ bool _hasHttpDetail(QueuedMonitorEvent event) {
       payload.containsKey(PayloadKeys.httpQuery);
 }
 
+/// Returns a copy with HTTP detail/query stripped when possible.
+///
+/// This is used both by queue pressure degradation and by single-envelope
+/// max-size handling. If the event has no detail layer, the original instance
+/// is returned unchanged.
+QueuedMonitorEvent stripHttpDetailForQueue(QueuedMonitorEvent event) {
+  if (!_hasHttpDetail(event)) return event;
+  return _stripHttpDetail(event);
+}
+
 /// 剥离详情层：移除 query 与 headers/body 原文，保留每侧的 hash 与原始长度。
 QueuedMonitorEvent _stripHttpDetail(QueuedMonitorEvent event) {
   final envelope = Map<String, dynamic>.from(event.envelope);
@@ -272,8 +282,7 @@ QueuedMonitorEvent _foldIntoSummary({
         'sessionId': eventEnvelope['sessionId'],
       if (eventEnvelope['resource'] != null)
         'resource': eventEnvelope['resource'],
-      if (eventEnvelope['context'] != null)
-        'context': eventEnvelope['context'],
+      if (eventEnvelope['context'] != null) 'context': eventEnvelope['context'],
       'attributes': <String, Object?>{
         FieldPaths.eventPhase: EventPhases.instant,
         if (isHttp) ...<String, Object?>{

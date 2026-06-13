@@ -1,3 +1,5 @@
+import 'package:flutter_monitor_core/flutter_monitor_core.dart';
+import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -5,7 +7,6 @@ import 'memory_offline_event_queue.dart';
 import 'offline_event_queue.dart';
 import 'queue_degradation.dart';
 import 'queued_monitor_event.dart';
-import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 
 class SqliteOfflineEventQueue implements OfflineEventQueue {
   SqliteOfflineEventQueue({
@@ -72,17 +73,21 @@ CREATE TABLE $_table (
   Future<OfflineQueueEnqueueResult> enqueue(QueuedMonitorEvent event) async {
     final fallback = _fallback;
     if (fallback != null) return fallback.enqueue(event);
-    if (event.bytes > _policy.maxEventBytes) {
+    var candidate = event;
+    if (candidate.bytes > _policy.maxEventBytes) {
+      candidate = stripHttpDetailForQueue(candidate);
+    }
+    if (candidate.bytes > _policy.maxEventBytes) {
       return OfflineQueueEnqueueResult(
         accepted: false,
-        reason: 'payload_too_large',
-        dropped: <QueuedMonitorEvent>[event],
+        reason: SdkDropReasons.payloadTooLarge,
+        dropped: <QueuedMonitorEvent>[candidate],
       );
     }
     final db = _requireDatabase();
     await db.insert(
       _table,
-      event.toRecord(),
+      candidate.toRecord(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     final dropped = await trimToLimits();
@@ -183,9 +188,11 @@ CREATE TABLE $_table (
     );
     await db.transaction((txn) async {
       for (final id in result.removedIds) {
-        await txn.delete(_table, where: 'eventId = ?', whereArgs: <Object?>[
-          id,
-        ]);
+        await txn.delete(
+          _table,
+          where: 'eventId = ?',
+          whereArgs: <Object?>[id],
+        );
       }
       for (final event in result.upserts.values) {
         await txn.insert(

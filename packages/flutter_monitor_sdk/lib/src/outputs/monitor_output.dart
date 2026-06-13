@@ -32,7 +32,7 @@ abstract class MonitorOutput {
   Future<void> flush({bool isAppExiting = false});
 
   /// 销毁并清理资源，例如取消定时器、关闭 client 或文件句柄。
-  void dispose() {}
+  Future<void> dispose() async {}
 }
 
 class OutputHealthEvent {

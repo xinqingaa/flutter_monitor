@@ -37,6 +37,7 @@ class ReliableHttpOutput extends MonitorOutput {
   Future<void>? _activeFlush;
   Timer? _intervalTimer;
   Timer? _quickFlushTimer;
+  final Set<Future<void>> _pendingEnqueues = <Future<void>>{};
   int? _temporaryMaxBatchEvents;
   var _disposed = false;
 
@@ -52,7 +53,16 @@ class ReliableHttpOutput extends MonitorOutput {
   @override
   void add(Map<String, dynamic> event) {
     if (_disposed) return;
-    unawaited(_enqueue(event));
+    late final Future<void> pending;
+    pending = _enqueue(event)
+        .catchError((Object error, StackTrace stackTrace) {
+          _emitEnqueueFailure(error);
+        })
+        .whenComplete(() {
+          _pendingEnqueues.remove(pending);
+        });
+    _pendingEnqueues.add(pending);
+    unawaited(pending);
   }
 
   Future<void> _enqueue(Map<String, dynamic> event) async {
@@ -68,6 +78,7 @@ class ReliableHttpOutput extends MonitorOutput {
     }
     final stats = await _queue.stats();
     _health?.updateQueueStats(length: stats.length, bytes: stats.bytes);
+    if (_disposed) return;
     if (stats.length >= policy.maxBatchEvents) {
       unawaited(flush(reason: SdkFlushReasons.batchSize));
       return;
@@ -97,6 +108,9 @@ class ReliableHttpOutput extends MonitorOutput {
     required String reason,
   }) async {
     await _ensureInitialized();
+    await _drainPendingEnqueues(
+      timeout: isAppExiting ? const Duration(seconds: 2) : null,
+    );
     final now = DateTime.now();
     final expired = await _queue.deleteExpired(
       now.subtract(policy.maxEventAge),
@@ -272,7 +286,26 @@ class ReliableHttpOutput extends MonitorOutput {
     return priority == EventPriority.high || priority == EventPriority.critical;
   }
 
+  Future<void> _drainPendingEnqueues({Duration? timeout}) async {
+    while (_pendingEnqueues.isNotEmpty) {
+      final pending = Future.wait<void>(
+        _pendingEnqueues.toList(growable: false),
+      );
+      if (timeout == null) {
+        await pending;
+        continue;
+      }
+      try {
+        await pending.timeout(timeout);
+      } on TimeoutException {
+        debugPrint('Flutter Monitor exit flush skipped pending enqueue drain.');
+        return;
+      }
+    }
+  }
+
   void _scheduleQuickFlush() {
+    if (_disposed) return;
     _quickFlushTimer ??= Timer(policy.quickFlushDelay, () {
       _quickFlushTimer = null;
       unawaited(flush(reason: SdkFlushReasons.criticalEvent));
@@ -313,6 +346,23 @@ class ReliableHttpOutput extends MonitorOutput {
     );
   }
 
+  void _emitEnqueueFailure(Object error) {
+    debugPrint('Flutter Monitor enqueue failed: $error');
+    onHealthEvent?.call(
+      OutputHealthEvent(
+        name: EventNames.sdkOutputDispatchFailed,
+        level: EventLevel.warning,
+        status: EventStatus.error,
+        priority: EventPriority.high,
+        attributes: <String, Object?>{FieldPaths.sdkOutputMode: mode},
+        payload: <String, Object?>{
+          PayloadKeys.output: runtimeType.toString(),
+          PayloadKeys.error: error.toString(),
+        },
+      ),
+    );
+  }
+
   int _maxAttemptCount(List<QueuedMonitorEvent> batch) {
     return batch.fold<int>(
       0,
@@ -326,12 +376,13 @@ class ReliableHttpOutput extends MonitorOutput {
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
     _intervalTimer?.cancel();
     _quickFlushTimer?.cancel();
     _disposed = true;
-    unawaited(flush(isAppExiting: true, reason: SdkFlushReasons.appExit));
-    unawaited(_queue.dispose());
+    await _activeFlush;
+    await flush(isAppExiting: true, reason: SdkFlushReasons.appExit);
+    await _queue.dispose();
     _client.close();
   }
 }

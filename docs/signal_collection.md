@@ -918,7 +918,7 @@ SDK 的 public 接入面收敛为三种模式：`consoleOnly`、`localLive` 和 
 
 `production` 默认使用 SDK 自带 SQLite 离线队列。队列只保存已经完成 schema validation 和 privacy filtering 的 `EventEnvelope` JSON，不保存 raw signal，不引入第二套本地缓存协议。队列表至少应能支持按 `eventId` 幂等、按 retention 等级驱逐（sampleable → compressible → hard，同级按 `createdAt`）、按 priority 与 `createdAt` / `nextAttemptAt` 取 batch、ack 删除、retry 计划更新、TTL 清理和大小统计。
 
-所有 production / local live 上报默认 batch。flush 触发包括 batch size、flush interval、background、app exit、critical/high 事件短延迟快速 flush 和业务手动 `FlutterMonitorSDK.flush(...)`。`isAppExiting = true` 时采用短超时尽力发送，不得阻塞 UI 或明显拖慢退出。
+所有 production / local live 上报默认 batch。flush 触发包括 batch size、flush interval、background、app exit、critical/high 事件短延迟快速 flush 和业务手动 `FlutterMonitorSDK.flush(...)`。flush 读取队列前必须先等待已经进入 output 的异步入队任务完成；退出时如果已有普通 flush 正在进行，先等待该 flush 完成，再补一次 app exit flush 覆盖期间新入队事件。`isAppExiting = true` 时采用短超时尽力发送，不得阻塞 UI 或明显拖慢退出。
 
 SDK self-monitoring 采用“计数器 + 周期摘要 + 边沿触发”模型：可靠性计数（enqueued、sent、dropped by reason、retry、flush 成败、队列水位）在内存中累计，默认每 60s 聚合为一条 `sdk.health.report`；进入后台或退出前强制补发当前窗口；窗口内无活动时不产生。只有状态跳变才立即发事件：队列首次饱和或 store 降级用 `sdk.queue.state`，首次进入重试状态用 `sdk.retry.schedule`，flush 失败用 `sdk.output.flush`。SDK 不再为每次丢弃、每次成功 flush、每次重试逐条产生事件。
 
@@ -1025,15 +1025,25 @@ MonitorMode.production(
 );
 ```
 
+默认策略遵循三条规则：
+
+- 证据优先：`hard` 证据默认不采样，短期离线、弱网或服务端暂不可用时优先保留在 SQLite 队列；队列上限显式有界，接入方可完全自定义。
+- 磁盘有界：默认队列容量按现代移动设备可接受的端侧缓存设计；物理极限触发前按 retention 降级，避免普通高频事件挤掉 HTTP、错误、关键交互等复现证据。
+- 网络批量有界：batch 默认控制在 1MB 以内，避免一次 flush 对前台体验造成明显影响；单 envelope 超限时先剥离 HTTP 详情层，仍超限才审计为 `payload_too_large`。
+
 `MonitorProductionPolicy` 全部字段及三种预设取值：
+
+- maxQueueBytes 解决“晚点上报但别丢”。
+- maxBatchBytes 解决“单次请求不要太大”。
+- maxEventBytes 解决过大时“怎么截断”。
 
 | 字段 | 含义 | defaultPolicy | localLive | conservative() |
 |---|---|---|---|---|
-| `maxQueueEvents` | 离线队列条数上限 | 5000 | 1000 | 2000 |
-| `maxQueueBytes` | 离线队列字节上限 | 8MB | 2MB | 4MB |
-| `maxEventBytes` | 单 envelope 上限 | 128KB | 128KB | 128KB |
+| `maxQueueEvents` | 离线队列条数上限 | 20000 | 10000 | 10000 |
+| `maxQueueBytes` | 离线队列字节上限 | 64MB | 64MB | 32MB |
+| `maxEventBytes` | 单 envelope 上限 | 256KB | 512KB | 256KB |
 | `maxBatchEvents` | 单批条数 | 50 | 20 | 30 |
-| `maxBatchBytes` | 单批字节 | 512KB | 256KB | 256KB |
+| `maxBatchBytes` | 单批字节 | 1MB | 1MB | 512KB |
 | `flushInterval` | 常规 flush 间隔 | 15s | 3s | 30s |
 | `quickFlushDelay` | 新事件快速 flush | 2s | 500ms | 3s |
 | `requestTimeout` | 单次上报超时 | 8s | 5s | 8s |
@@ -1053,9 +1063,11 @@ MonitorMode.production(
 MonitorMode.production(
   endpoint: endpoint,
   policy: const MonitorProductionPolicy(
-    maxQueueEvents: 12000,
-    maxQueueBytes: 16 * 1024 * 1024,
+    maxQueueEvents: 30000,
+    maxQueueBytes: 96 * 1024 * 1024,
+    maxEventBytes: 512 * 1024,
     flushInterval: Duration(seconds: 5),
+    maxBatchBytes: 1024 * 1024,
     lowPrioritySampleRate: 1,
     memorySampleRate: 1,
     maxTrackEventsPerMinute: 600,

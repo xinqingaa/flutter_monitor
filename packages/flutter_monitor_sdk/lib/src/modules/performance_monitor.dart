@@ -233,6 +233,7 @@ class _RouteDescriptor {
 /// 状态码、错误类型、请求/响应大小，并交给 Reporter 生成 `http.client` span。
 class MonitorDioInterceptor extends Interceptor {
   final Reporter _reporter;
+  static const _startTimeKey = '__flutter_monitor_sdk_start_time';
 
   /// 创建 Dio 请求监控拦截器。
   MonitorDioInterceptor(this._reporter);
@@ -240,15 +241,15 @@ class MonitorDioInterceptor extends Interceptor {
   /// 记录请求开始时间，并继续交给业务 Dio 链路处理。
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    options.extra['startTime'] = DateTime.now();
+    options.extra[_startTimeKey] = DateTime.now();
     super.onRequest(options, handler);
   }
 
   /// 请求成功或收到 HTTP 响应时，上报一次 `http.client` span。
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    final startTime = response.requestOptions.extra['startTime'] as DateTime;
     final endTime = DateTime.now();
+    final startTime = _requestStartTime(response.requestOptions) ?? endTime;
     final duration = endTime.difference(startTime);
 
     _reporter.recordHttpClient(
@@ -279,8 +280,8 @@ class MonitorDioInterceptor extends Interceptor {
   /// 请求异常时，上报失败的 `http.client` span，并保留异常继续向业务层传递。
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    final startTime = err.requestOptions.extra['startTime'] as DateTime;
     final endTime = DateTime.now();
+    final startTime = _requestStartTime(err.requestOptions) ?? endTime;
     final duration = endTime.difference(startTime);
 
     _reporter.recordHttpClient(
@@ -314,6 +315,11 @@ class MonitorDioInterceptor extends Interceptor {
   bool _isSuccessfulStatusCode(int? statusCode) {
     if (statusCode == null) return false;
     return statusCode >= 200 && statusCode < 400;
+  }
+
+  DateTime? _requestStartTime(RequestOptions options) {
+    final value = options.extra[_startTimeKey];
+    return value is DateTime ? value : null;
   }
 
   num? _dioRequestSize(RequestOptions options) {

@@ -20,21 +20,25 @@ class MemoryOfflineEventQueue implements OfflineEventQueue {
 
   @override
   Future<OfflineQueueEnqueueResult> enqueue(QueuedMonitorEvent event) async {
-    if (event.bytes > _policy.maxEventBytes) {
+    var candidate = event;
+    if (candidate.bytes > _policy.maxEventBytes) {
+      candidate = stripHttpDetailForQueue(candidate);
+    }
+    if (candidate.bytes > _policy.maxEventBytes) {
       return OfflineQueueEnqueueResult(
         accepted: false,
         reason: SdkDropReasons.payloadTooLarge,
-        dropped: <QueuedMonitorEvent>[event],
+        dropped: <QueuedMonitorEvent>[candidate],
       );
     }
 
     final existingIndex = _events.indexWhere(
-      (queued) => queued.eventId == event.eventId,
+      (queued) => queued.eventId == candidate.eventId,
     );
     if (existingIndex >= 0) {
-      _events[existingIndex] = event;
+      _events[existingIndex] = candidate;
     } else {
-      _events.add(event);
+      _events.add(candidate);
     }
     final dropped = await trimToLimits();
     return OfflineQueueEnqueueResult(accepted: true, dropped: dropped);

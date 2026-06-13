@@ -1022,6 +1022,7 @@ Workbench 是横跨本地调试、QA 复现和灰度验证的消费侧能力，�
 现状：
 
 - `successfulHttpSampleRate` 自 retention 模型引入后默认 1.0 且不参与 pipeline 采样（`http.client` 是 hard 证据），字段保留为降级开关位。
+- Phase 5 收尾把默认可靠性策略调整为证据优先：默认队列 20000 条 / 64MB，单 envelope 256KB，batch 1MB；localLive 保留更高单 envelope 上限用于 QA raw JSON 回查；单个 HTTP envelope 超限时先剥离详情层，仍超限才按 `payload_too_large` 审计。
 - 采样率、`maxTrackEventsPerMinute`、`MonitorHttpConfig`（query/headers/body 开关与 body 截断上限）目前都是本地初始化配置。
 
 归入 Phase 6：

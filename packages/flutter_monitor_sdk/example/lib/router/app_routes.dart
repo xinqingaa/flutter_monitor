@@ -29,13 +29,23 @@ class AppRoutes {
 class AppRouter {
   const AppRouter._();
 
-  static Map<String, WidgetBuilder> routes({required Dio dio}) {
+  static Map<String, WidgetBuilder> routes({
+    required Dio monitoredDio,
+    required Dio workbenchDio,
+  }) {
     return <String, WidgetBuilder>{
-      for (final route in routeDefinitions(dio: dio)) route.name: route.build,
+      for (final route in routeDefinitions(
+        monitoredDio: monitoredDio,
+        workbenchDio: workbenchDio,
+      ))
+        route.name: route.build,
     };
   }
 
-  static List<AppRoute> routeDefinitions({required Dio dio}) {
+  static List<AppRoute> routeDefinitions({
+    required Dio monitoredDio,
+    required Dio workbenchDio,
+  }) {
     return <AppRoute>[
       const AppRoute(
         name: AppRoutes.splash,
@@ -47,7 +57,7 @@ class AppRouter {
         name: AppRoutes.app,
         moduleName: 'home',
         moduleScene: 'feed',
-        builder: (_) => AppShell(dio: dio),
+        builder: (_) => AppShell(workbenchDio: workbenchDio),
       ),
       const AppRoute(
         name: AppRoutes.eventDetail,
@@ -59,7 +69,7 @@ class AppRouter {
         name: AppRoutes.apiLab,
         moduleName: 'ops',
         moduleScene: 'api_lab',
-        builder: (_) => ApiLabPage(dio: dio),
+        builder: (_) => ApiLabPage(dio: monitoredDio),
       ),
       const AppRoute(
         name: AppRoutes.checkout,

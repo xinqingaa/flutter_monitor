@@ -109,7 +109,43 @@ class _ApiLabPageState extends State<ApiLabPage> {
           padding: const EdgeInsets.all(16),
           children: [
             AppSection(
-              title: '真实公开接口',
+              title: '服务层接口',
+              subtitle: '本地 service 的成功、慢响应、大响应和状态码场景。',
+              children: [
+                _button(
+                  'dio_service_fast',
+                  'Dio · service fast',
+                  _api.fetchLocalFastWithDio,
+                ),
+                _button(
+                  'dio_service_payload',
+                  'Dio · service 32KB',
+                  _api.fetchLocalPayloadWithDio,
+                ),
+                _button(
+                  'dio_local_slow',
+                  'Dio · service slow',
+                  _api.fetchLocalSlowWithDio,
+                ),
+                _button(
+                  'http_local_slow',
+                  'http · service slow',
+                  _api.fetchLocalSlowWithHttp,
+                ),
+                _button(
+                  'dio_service_503',
+                  'Dio · service 503',
+                  () => _api.fetchLocalStatusWithDio(503),
+                ),
+                _button(
+                  'http_service_429',
+                  'http · service 429',
+                  () => _api.fetchLocalStatusWithHttp(429),
+                ),
+              ],
+            ),
+            AppSection(
+              title: '公开接口',
               subtitle: 'Dio 和 package:http 都会进入 SDK HTTP span。',
               children: [
                 _button('dio_github_profile', 'Dio · GitHub profile', () async {
@@ -144,16 +180,6 @@ class _ApiLabPageState extends State<ApiLabPage> {
                   'http_timeout',
                   'http · timeout',
                   _api.fetchHttpTimeout,
-                ),
-                _button(
-                  'dio_local_slow',
-                  'Dio · local slow endpoint',
-                  _api.fetchLocalSlowWithDio,
-                ),
-                _button(
-                  'http_local_slow',
-                  'http · local slow endpoint',
-                  _api.fetchLocalSlowWithHttp,
                 ),
               ],
             ),

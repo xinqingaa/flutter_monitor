@@ -21,12 +21,17 @@ Future<String?> monitorAuthToken() async {
   return const String.fromEnvironment('FM_AUTH_TOKEN', defaultValue: '');
 }
 
-final dio = Dio(
-  BaseOptions(
-    connectTimeout: const Duration(seconds: 5),
-    receiveTimeout: const Duration(seconds: 5),
-  ),
-);
+Dio createExampleDio() {
+  return Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 5),
+      receiveTimeout: const Duration(seconds: 5),
+    ),
+  );
+}
+
+final monitoredDio = createExampleDio();
+final workbenchDio = createExampleDio();
 
 MonitorMode buildMonitorMode() {
   // 每次只保留一个 final monitorMode。切换后重新运行 App 即可。
@@ -39,8 +44,8 @@ MonitorMode buildMonitorMode() {
   //   endpoint: Uri.parse(monitorServerUrl),
   // );
 
-  // 3. 生产默认策略：队列 5000/8MB、flush 15s、HTTP 全量保留（hard 证据）、
-  //    memory sample 10%。
+  // 3. 生产默认策略：队列 20000/64MB、batch 1MB、flush 15s、
+  //    HTTP 全量保留（hard 证据）、memory sample 10%。
   final monitorMode = MonitorMode.production(
     endpoint: Uri.parse(productionMonitorUrl),
   );
@@ -61,10 +66,11 @@ MonitorMode buildMonitorMode() {
   // final monitorMode = MonitorMode.production(
   //   endpoint: Uri.parse(productionMonitorUrl),
   //   policy: const MonitorProductionPolicy(
-  //     maxQueueEvents: 12000,
-  //     maxQueueBytes: 16 * 1024 * 1024,
+  //     maxQueueEvents: 30000,
+  //     maxQueueBytes: 96 * 1024 * 1024,
+  //     maxEventBytes: 512 * 1024,
   //     maxBatchEvents: 80,
-  //     maxBatchBytes: 768 * 1024,
+  //     maxBatchBytes: 1024 * 1024,
   //     flushInterval: Duration(seconds: 5),
   //     quickFlushDelay: Duration(milliseconds: 800),
   //     successfulHttpSampleRate: 1,
@@ -113,7 +119,7 @@ Future<void> main() async {
     ),
   );
 
-  dio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
+  monitoredDio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
   runApp(const MyApp());
 }
 
@@ -127,7 +133,10 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       navigatorObservers: [FlutterMonitorSDK.routeObserver],
-      routes: AppRouter.routes(dio: dio),
+      routes: AppRouter.routes(
+        monitoredDio: monitoredDio,
+        workbenchDio: workbenchDio,
+      ),
       initialRoute: AppRoutes.splash,
     );
   }
