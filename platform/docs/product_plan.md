@@ -354,11 +354,16 @@ Timeline 应从事件表格逐步升级为可视化链路：
 
 Session Navigator 固定在日志流左侧：
 
-- 顶部展示问题入口，例如错误、业务失败、失败 HTTP、慢 HTTP、慢页面、卡顿、内存和 SDK 丢弃。
-- 下方展示区段导航，例如启动链路、页面区段、SDK 活动和会话活动。
-- 每个导航项展示区段名、耗时、事件数、问题数和核心信号数量。
-- 点击问题入口或区段时，日志流必须自动滚动到对应节点或区段，同时右侧 Inspector 同步选中对应事件。
-- Header 展开时不能压缩到只剩一行排查空间；快速定位不再放在 Header 下方横向占高。
+- 仅展示会话分段导航，例如启动链路、页面区段、SDK 活动和会话活动；不再保留独立的“快速定位”区块。
+- 会话分段必须跟随当前 Tab 与子 chip 过滤：在当前视图下没有事件的分段直接隐藏，被部分过滤的分段在 meta 行中以 `tabRows / totalRows` 标注。
+- 每个导航项展示区段名、耗时、事件数（必要时含过滤计数）和问题数。
+- 点击区段时，日志流滚动到当前视图下该分段的第一个事件，并同步右侧 Inspector；不再因点击副作用切回 `全部` Tab。
+
+问题入口下沉到日志流顶部 Tab：
+
+- 每个 Tab 自带问题徽标，徽标只汇总本 Tab 关联的问题计数（错误/业务失败/慢页面/卡顿归到 “问题” Tab，失败 HTTP/慢 HTTP/HTTP 详情剥离归到 HTTP Tab，内存压力归到 内存 Tab，SDK 丢弃/重试/发送失败归到 SDK Tab）。
+- 选中 Tab 后，Tab 行下方出现一行二级 chip：仅渲染当前 session 实际出现的问题维度，可与 Tab 叠加做问题级筛选；不存在的问题 chip 不渲染。
+- 切换 Tab 自动清空二级 chip。日志流、会话分段、行选中都遵循 “Tab → 子 chip → 搜索” 这一过滤组合。
 
 日志流默认展示全部事件，可切换：全部 / 问题 / 页面 / HTTP / 启动 / 交互性能 / 业务埋点 / 内存 / 生命周期 / SDK。分类规则：
 
@@ -389,6 +394,28 @@ queue 33 events / 55KB · retry 2 · dropped 1 · mode production
 
 这些摘要是 Workbench view model，只从 envelope 派生，不写回 SDK envelope；HTTP body、headers 等完整证据仍通过单事件 Inspector 回查。
 
+日志行展示规则：
+
+- 第一行：时间 · icon · 标题 · 信号 group badge · 关键状态 badge（如 HTTP 状态码、错误类型）· 耗时 badge · issueLabels。
+- 第二行：唯一一条 metric strip；不再渲染 service 端拼接的 `subtitle` 字符串，也不在 row 内重复展示耗时。
+- `eventId` 默认不渲染，只在 row 选中态以小字 + 复制按钮的形式出现，并附带 `traceId` 复制入口。
+- `route` 仅在跨 segment 上下文（segment header 未标注 route）时才在第二行末尾追加；同一 page segment 内的 row 不再重复 route 信息。
+
+页面节点折叠规则：
+
+- 同一 `attributes['page.instance_id']` 下连续出现的 `page.visit` start、`route.push`、`page.load`、`page.view` 在前端聚合为一张 PageInstanceCard。
+- 主行选用 `page.visit (phase=start)`，承担页面进入的核心 metric（加载、首帧、帧摘要）。其余事件作为附属行默认折叠，并在主行下以浅色标签提示存在哪些子事件（如 “路由 / 加载 / 足迹”）。
+- 非进入类的 `page.stay`、`page.visit (phase=end)`、`route.pop` 不并入卡片，按原始顺序在卡片之后单独成行，作为页面闭合证据。
+- 选中折叠区里的某个附属行时，卡片自动展开并高亮该行；用户手动点开/关闭后，覆盖自动展开行为。
+- 折叠仅作用于 view 层，raw envelope 与 service 返回的 row 顺序不变。
+
+滚动行为规则：
+
+- 用户在日志流内点击 row / segment / chip：滚动策略 `block: 'nearest'`，已可见时不滚动，避免反复抖动。
+- 由 URL、外部链接或 Inspector 回跳改变 `selectedEventId`：滚动策略 `block: 'center'`，仅在目标行还未在视图内时执行。
+- SSE live 数据流入新 row：仅当用户已贴近列表底部（距底 < 80px）时自动跟随；否则保持用户当前阅读位置。
+- 任何滚动副作用都不允许覆盖用户当前 Tab 与 chip 选择；只有当目标行在当前 Tab 谓词外才回退到 “全部”。
+
 ### HTTP Inspector
 
 HTTP 事件右侧必须使用专用 Inspector，不再只走通用字段摘要。顶部固定摘要：
@@ -417,6 +444,13 @@ HTTP body 展示规则：
 - 如果 body 不是 JSON，按文本展示并开启自动换行。
 - 提供“格式化 / 原文”切换；原文用于确认后端真实返回内容，格式化用于日常阅读。
 - 大 body 不撑开页面，限定高度并保留复制完整 raw envelope 的入口。
+
+JSON Inspector 渲染规则（response body / request body / request raw / response raw / 原始数据 / 上下文 breadcrumb）：
+
+- 使用节点级可折叠的 JSON 树（基于 `@uiw/react-json-view`），支持 `▸` / `▾` 单节点折叠展开、点击节点旁的 copy 按钮复制子树或路径，并提供顶部 “全部展开 / 折叠 1 层 / 全部折叠” 的批量操作。
+- 默认折叠层级：response/request body 与 raw envelope = `collapsed=2`；headers = `collapsed=1`，确保打开 Inspector 后能立刻看到关键结构。
+- 容器统一限定 `min-h-[120px]` 与 `max-h-[320px~420px]`，保证大 body 不会挤占其它面板。
+- 数值、字符串、布尔、null 在树视图中保留类型颜色（vscode 主题），与代码编辑器折叠体验一致。
 
 ### Typed Inspector 规则
 

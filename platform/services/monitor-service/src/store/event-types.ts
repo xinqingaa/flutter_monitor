@@ -153,8 +153,12 @@ export interface SessionConsoleRow {
   route?: string;
   module?: string;
   scene?: string;
+  pageInstanceId?: string;
+  pageActivePhase?: string;
+  pageActiveTrigger?: string;
   group: 'startup' | 'page' | 'http' | 'interaction' | 'business' | 'problem' | 'performance' | 'lifecycle' | 'memory' | 'sdk' | 'event';
   title: string;
+  /** @deprecated 改由前端按 group 渲染 metrics + badges；service 已不再写入。保留字段仅为兼容旧 client。 */
   subtitle?: string;
   badges: string[];
   issueLabels: string[];

@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   BadgeAlert,
   ChartNoAxesColumn,
+  ChevronDown,
+  ChevronRight,
   Gauge,
   Globe2,
   HardDrive,
@@ -11,19 +13,32 @@ import {
   Search,
   ServerCog,
   Timer,
-  Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge, type BadgeProps } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
-import type { SessionConsoleMetric, SessionConsoleResult, SessionConsoleRow, SessionConsoleSegment } from '../../shared/datasource/types';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import type {
+  SessionConsoleMetric,
+  SessionConsoleResult,
+  SessionConsoleRow,
+  SessionConsoleSegment,
+  SessionProblemChip,
+} from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
 
 type FilterKey = 'all' | 'problems' | 'pages' | 'http' | 'startup' | 'interaction' | 'business' | 'memory' | 'lifecycle' | 'sdk';
+type ScrollReason = 'user-click' | 'external' | 'live';
+type PendingScroll = { type: 'row' | 'segment'; id: string; reason: ScrollReason };
+type ChipKind = SessionProblemChip['kind'];
+
+type StreamBlock =
+  | { kind: 'row'; row: SessionConsoleRow }
+  | { kind: 'page-card'; instanceId: string; main: SessionConsoleRow; auxiliary: SessionConsoleRow[] };
 
 const filters: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
@@ -38,6 +53,112 @@ const filters: Array<{ key: FilterKey; label: string }> = [
   { key: 'sdk', label: 'SDK' },
 ];
 
+const tabChipKinds: Record<FilterKey, ChipKind[]> = {
+  all: ['error', 'business_failure', 'failed_http', 'slow_http', 'slow_page', 'jank', 'memory', 'sdk_drop', 'sdk_retry', 'sdk_flush_failure', 'detail_dropped'],
+  problems: ['error', 'business_failure', 'slow_page', 'jank'],
+  pages: ['slow_page'],
+  http: ['failed_http', 'slow_http', 'detail_dropped'],
+  startup: [],
+  interaction: [],
+  business: ['business_failure'],
+  memory: ['memory'],
+  lifecycle: [],
+  sdk: ['sdk_drop', 'sdk_retry', 'sdk_flush_failure'],
+};
+
+function tabPredicate(filter: FilterKey, row: SessionConsoleRow): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'problems') return row.issueLabels.length > 0 || row.group === 'problem';
+  if (filter === 'pages') return row.group === 'page';
+  if (filter === 'http') return row.group === 'http';
+  if (filter === 'startup') return row.group === 'startup';
+  if (filter === 'interaction') return row.group === 'interaction';
+  if (filter === 'business') return row.group === 'business';
+  if (filter === 'memory') return row.group === 'memory';
+  if (filter === 'lifecycle') return row.group === 'lifecycle';
+  if (filter === 'sdk') return row.group === 'sdk';
+  return true;
+}
+
+function chipPredicate(kind: ChipKind): (row: SessionConsoleRow) => boolean {
+  switch (kind) {
+    case 'error':
+      return (row) => row.issueLabels.includes('错误');
+    case 'business_failure':
+      return (row) => row.issueLabels.includes('业务失败');
+    case 'failed_http':
+      return (row) => row.issueLabels.includes('请求失败');
+    case 'slow_http':
+      return (row) => row.issueLabels.includes('慢请求');
+    case 'slow_page':
+      return (row) => row.issueLabels.includes('页面慢');
+    case 'jank':
+      return (row) => row.issueLabels.includes('卡顿');
+    case 'memory':
+      return (row) => row.group === 'memory' && row.issueLabels.length > 0;
+    case 'sdk_drop':
+      return (row) => row.issueLabels.includes('SDK 丢弃');
+    case 'sdk_retry':
+      return (row) => row.issueLabels.includes('SDK 重试');
+    case 'sdk_flush_failure':
+      return (row) => row.issueLabels.includes('SDK 发送失败');
+    case 'detail_dropped':
+      return (row) => row.detailDropped === true;
+    default:
+      return () => false;
+  }
+}
+
+function isPageEntryRow(row: SessionConsoleRow): boolean {
+  if (row.group !== 'page' || !row.pageInstanceId) return false;
+  if (row.name === 'page.visit') return row.phase !== 'end';
+  if (row.name === 'page.load') return true;
+  if (row.name === 'page.view') return true;
+  if (row.name === 'route.push') return true;
+  return false;
+}
+
+function pickMainRow(rows: SessionConsoleRow[]): SessionConsoleRow {
+  return (
+    rows.find((r) => r.name === 'page.visit' && r.phase === 'start') ??
+    rows.find((r) => r.name === 'page.visit') ??
+    rows.find((r) => r.name === 'page.load') ??
+    rows[0]
+  );
+}
+
+function buildBlocks(rows: SessionConsoleRow[]): StreamBlock[] {
+  const blocks: StreamBlock[] = [];
+  let pending: { instanceId: string; rows: SessionConsoleRow[] } | undefined;
+  const flush = () => {
+    if (!pending) return;
+    if (pending.rows.length <= 1) {
+      blocks.push({ kind: 'row', row: pending.rows[0] });
+    } else {
+      const main = pickMainRow(pending.rows);
+      const auxiliary = pending.rows.filter((r) => r !== main);
+      blocks.push({ kind: 'page-card', instanceId: pending.instanceId, main, auxiliary });
+    }
+    pending = undefined;
+  };
+  for (const row of rows) {
+    if (isPageEntryRow(row)) {
+      const id = row.pageInstanceId as string;
+      if (!pending || pending.instanceId !== id) {
+        flush();
+        pending = { instanceId: id, rows: [row] };
+      } else {
+        pending.rows.push(row);
+      }
+    } else {
+      flush();
+      blocks.push({ kind: 'row', row });
+    }
+  }
+  flush();
+  return blocks;
+}
+
 export function SessionConsoleView({
   consoleData,
   selectedEventId,
@@ -49,50 +170,101 @@ export function SessionConsoleView({
 }) {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [query, setQuery] = useState('');
+  const [pageOverrides, setPageOverrides] = useState<Record<string, boolean>>({});
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const segmentRefs = useRef(new Map<string, HTMLElement>());
-  const pendingScrollRef = useRef<{ type: 'row' | 'segment'; id: string } | undefined>(undefined);
-  const rowsById = useMemo(() => new Map((consoleData?.rows ?? []).map((row) => [row.eventId, row])), [consoleData?.rows]);
+  const logContainerRef = useRef<HTMLDivElement | null>(null);
+  const pendingScrollRef = useRef<PendingScroll | undefined>(undefined);
+  const previousSelectedRef = useRef<string | undefined>(undefined);
+  const previousRowsCountRef = useRef(0);
+
+  const rowsById = useMemo(
+    () => new Map((consoleData?.rows ?? []).map((row) => [row.eventId, row])),
+    [consoleData?.rows],
+  );
+
   const rows = useMemo(
     () => filterRows(consoleData?.rows ?? [], filter, query),
     [consoleData?.rows, filter, query],
   );
 
-  const scrollRowIntoView = useCallback((eventId: string) => {
-    rowRefs.current.get(eventId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, []);
+  const visibleEventIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of rows) if (row.eventId) set.add(row.eventId);
+    return set;
+  }, [rows]);
 
-  const scrollSegmentIntoView = useCallback((segmentId: string) => {
-    segmentRefs.current.get(segmentId)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }, []);
-
-  const selectEvent = useCallback((eventId: string) => {
-    onSelectEvent(eventId);
-    setFilter('all');
-    pendingScrollRef.current = { type: 'row', id: eventId };
-  }, [onSelectEvent]);
-
-  const selectSegment = useCallback((segment: SessionConsoleSegment) => {
-    setFilter('all');
-    const firstEventId = segment.rows[0];
-    if (firstEventId) onSelectEvent(firstEventId);
-    pendingScrollRef.current = { type: 'segment', id: segment.id };
-  }, [onSelectEvent]);
+  const visibleSegments = useMemo(() => {
+    if (!consoleData) return [];
+    return consoleData.segments
+      .map((segment) => {
+        const tabRows = segment.rows.filter((eventId) => visibleEventIds.has(eventId));
+        return { segment, tabRows };
+      })
+      .filter((entry) => entry.tabRows.length > 0);
+  }, [consoleData, visibleEventIds]);
 
   useEffect(() => {
     const pending = pendingScrollRef.current;
-    if (!pending) return;
-    pendingScrollRef.current = undefined;
-    window.requestAnimationFrame(() => {
-      if (pending.type === 'row') scrollRowIntoView(pending.id);
-      if (pending.type === 'segment') scrollSegmentIntoView(pending.id);
-    });
-  }, [rows, scrollRowIntoView, scrollSegmentIntoView]);
+    if (pending) {
+      const node = pending.type === 'row'
+        ? rowRefs.current.get(pending.id)
+        : segmentRefs.current.get(pending.id);
+      if (node) {
+        pendingScrollRef.current = undefined;
+        const block: ScrollLogicalPosition = pending.reason === 'user-click' ? 'nearest' : 'center';
+        window.requestAnimationFrame(() => node.scrollIntoView({ block, behavior: 'smooth' }));
+        previousSelectedRef.current = selectedEventId;
+        previousRowsCountRef.current = rows.length;
+        return;
+      }
+    }
+    if (selectedEventId && selectedEventId !== previousSelectedRef.current) {
+      const node = rowRefs.current.get(selectedEventId);
+      if (node) {
+        previousSelectedRef.current = selectedEventId;
+        previousRowsCountRef.current = rows.length;
+        window.requestAnimationFrame(() => node.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+        return;
+      }
+    }
+    const prevCount = previousRowsCountRef.current;
+    previousRowsCountRef.current = rows.length;
+    const container = logContainerRef.current;
+    if (!container || rows.length <= prevCount) return;
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distance < 80) {
+      window.requestAnimationFrame(() => {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      });
+    }
+  }, [rows, selectedEventId]);
 
-  useEffect(() => {
-    if (!selectedEventId) return;
-    scrollRowIntoView(selectedEventId);
-  }, [selectedEventId, scrollRowIntoView]);
+  const selectEvent = useCallback((eventId: string) => {
+    onSelectEvent(eventId);
+    const target = rowsById.get(eventId);
+    if (target && filter !== 'all' && !tabPredicate(filter, target)) {
+      setFilter('all');
+    }
+    pendingScrollRef.current = { type: 'row', id: eventId, reason: 'user-click' };
+  }, [filter, onSelectEvent, rowsById]);
+
+  const selectSegment = useCallback((segment: SessionConsoleSegment) => {
+    const visibleFirst = segment.rows.find((eventId) => visibleEventIds.has(eventId));
+    const targetEventId = visibleFirst ?? segment.rows[0];
+    if (targetEventId) {
+      const target = rowsById.get(targetEventId);
+      onSelectEvent(targetEventId);
+      if (target && filter !== 'all' && !tabPredicate(filter, target)) {
+        setFilter('all');
+      }
+    }
+    pendingScrollRef.current = { type: 'segment', id: segment.id, reason: 'user-click' };
+  }, [filter, onSelectEvent, rowsById, visibleEventIds]);
+
+  const togglePageInstance = useCallback((instanceId: string, expandedNow: boolean) => {
+    setPageOverrides((prev) => ({ ...prev, [instanceId]: !expandedNow }));
+  }, []);
 
   if (!consoleData) {
     return (
@@ -104,58 +276,83 @@ export function SessionConsoleView({
     );
   }
 
+  const tabChipMap = chipsByTab(consoleData.problemChips);
+
   return (
-    <Card className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 py-2.5">
-        <div className="min-w-0">
-          <CardTitle>Session Console</CardTitle>
-          <p className="mt-1 truncate text-xs text-zinc-500">用导航定位，用日志流还原顺序；完整 envelope 从右侧 Inspector 回查。</p>
-        </div>
-        <div className="flex min-w-0 items-center gap-1.5">
-          {consoleData.sdkHealth.detailDroppedCount > 0 ? <Badge tone="warn">HTTP 详情剥离 {consoleData.sdkHealth.detailDroppedCount}</Badge> : null}
-          {consoleData.sdkHealth.droppedEventCount > 0 ? <Badge tone="danger">SDK 丢弃 {consoleData.sdkHealth.droppedEventCount}</Badge> : null}
+    <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+      <CardHeader className="grid gap-2 py-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {filters.map((item) => {
+              const tabChips = tabChipMap[item.key] ?? [];
+              const count = tabChips.reduce((sum, chip) => sum + chip.count, 0);
+              const active = filter === item.key;
+              const button = (
+                <Button
+                  key={item.key}
+                  type="button"
+                  size="sm"
+                  variant={active ? 'default' : 'secondary'}
+                  className="h-7 gap-1.5 px-3"
+                  onClick={() => setFilter(item.key)}
+                >
+                  <span>{item.label}</span>
+                  {count > 0 ? (
+                    <span
+                      className={cn(
+                        'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums',
+                        active ? 'bg-white/20 text-white' : 'bg-red-500 text-white',
+                      )}
+                    >
+                      {count}
+                    </span>
+                  ) : null}
+                </Button>
+              );
+              if (count === 0) return button;
+              return (
+                <Tooltip key={item.key}>
+                  <TooltipTrigger asChild>{button}</TooltipTrigger>
+                  <TooltipContent className="space-y-0.5">
+                    <div className="text-[11px] font-semibold text-zinc-100">{item.label} · 共 {count}</div>
+                    {tabChips.map((chip) => (
+                      <div key={chip.kind} className="flex items-center gap-2 text-[11px]">
+                        <span className="text-zinc-300">{chip.label}</span>
+                        <span className="tabular-nums text-zinc-50">{chip.count}</span>
+                      </div>
+                    ))}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+          <label className="relative min-w-0 lg:w-72">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="筛选 title/url/route/eventId"
+              className="h-8 pl-7 text-xs"
+            />
+          </label>
         </div>
       </CardHeader>
 
-      <div className="flex min-w-0 flex-col gap-2 border-b border-zinc-200 px-3 pb-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {filters.map((item) => (
-            <Button
-              key={item.key}
-              type="button"
-              size="sm"
-              variant={filter === item.key ? 'default' : 'secondary'}
-              className="h-7 px-2"
-              onClick={() => setFilter(item.key)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-        <label className="relative min-w-0 lg:w-72">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="筛选 title/url/route/eventId"
-            className="h-8 pl-7 text-xs"
-          />
-        </label>
-      </div>
-
       <div className="grid min-h-0 grid-cols-1 overflow-hidden bg-zinc-50 xl:grid-cols-[250px_minmax(0,1fr)]">
         <SessionNavigator
-          consoleData={consoleData}
-          rowsById={rowsById}
+          visibleSegments={visibleSegments}
+          totalSegments={consoleData.segments.length}
           selectedEventId={selectedEventId}
-          onSelectEvent={selectEvent}
           onSelectSegment={selectSegment}
         />
         <LogStream
+          containerRef={logContainerRef}
           rows={rows}
           rowsById={rowsById}
-          segments={consoleData.segments}
+          visibleSegments={visibleSegments}
           selectedEventId={selectedEventId}
+          pageOverrides={pageOverrides}
+          onTogglePageInstance={togglePageInstance}
           onSelectEvent={selectEvent}
           setRowRef={(eventId, node) => {
             if (node) rowRefs.current.set(eventId, node);
@@ -171,121 +368,103 @@ export function SessionConsoleView({
   );
 }
 
+function chipsByTab(chips: SessionProblemChip[]): Partial<Record<FilterKey, SessionProblemChip[]>> {
+  const result: Partial<Record<FilterKey, SessionProblemChip[]>> = {};
+  for (const tab of filters) {
+    if (tab.key === 'all') continue;
+    const kinds = tabChipKinds[tab.key];
+    const matched = chips.filter((chip) => kinds.includes(chip.kind) && chip.count > 0);
+    if (matched.length > 0) result[tab.key] = matched;
+  }
+  return result;
+}
+
 function SessionNavigator({
-  consoleData,
-  rowsById,
+  visibleSegments,
+  totalSegments,
   selectedEventId,
-  onSelectEvent,
   onSelectSegment,
 }: {
-  consoleData: SessionConsoleResult;
-  rowsById: Map<string | undefined, SessionConsoleRow>;
+  visibleSegments: Array<{ segment: SessionConsoleSegment; tabRows: string[] }>;
+  totalSegments: number;
   selectedEventId?: string;
-  onSelectEvent: (eventId: string) => void;
   onSelectSegment: (segment: SessionConsoleSegment) => void;
 }) {
   return (
     <aside className="grid min-h-[220px] grid-rows-[auto_minmax(0,1fr)] border-b border-zinc-200 bg-white xl:min-h-0 xl:border-b-0 xl:border-r">
-      <div className="grid gap-2 border-b border-zinc-100 p-2">
+      <div className="border-b border-zinc-100 px-3 py-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
-          <AlertTriangle className="size-3.5" />
-          快速定位
-        </div>
-        <ProblemList consoleData={consoleData} onSelectEvent={onSelectEvent} />
-      </div>
-      <div className="min-h-0 overflow-auto p-2">
-        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
           <Layers3 className="size-3.5" />
           会话分段
         </div>
-        <div className="grid gap-1.5">
-          {consoleData.segments.map((segment) => {
-            const firstEventId = segment.rows[0];
-            const active = selectedEventId !== undefined && segment.rows.includes(selectedEventId);
-            return (
-              <button
-                key={segment.id}
-                type="button"
-                onClick={() => onSelectSegment(segment)}
-                className={cn(
-                  'grid min-w-0 gap-1 rounded-md border px-2 py-2 text-left hover:bg-zinc-50',
-                  active ? 'border-teal-300 bg-teal-50' : 'border-zinc-200 bg-white',
-                )}
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className={cn('inline-flex size-6 shrink-0 items-center justify-center rounded-md border', segmentIconClass(segment, active))}>
-                    <SegmentIcon segment={segment} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-semibold text-zinc-950">{segment.title}</span>
-                    <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
-                      {[formatDuration(segment.durationMs), `${segment.eventCount} 事件`, segment.issueCount > 0 ? `${segment.issueCount} 问题` : undefined].filter(Boolean).join(' · ')}
+        <div className="mt-0.5 text-[11px] text-zinc-400">
+          {visibleSegments.length} / {totalSegments} 段在当前视图
+        </div>
+      </div>
+      <div className="min-h-0 overflow-auto p-3">
+        {visibleSegments.length === 0 ? (
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-3 text-center text-[11px] text-zinc-500">
+            当前筛选下没有匹配的会话分段。
+          </div>
+        ) : (
+          <div className="grid gap-1.5">
+            {visibleSegments.map(({ segment, tabRows }) => {
+              const active = selectedEventId !== undefined && segment.rows.includes(selectedEventId);
+              const filtered = tabRows.length !== segment.eventCount;
+              return (
+                <button
+                  key={segment.id}
+                  type="button"
+                  onClick={() => onSelectSegment(segment)}
+                  className={cn(
+                    'grid min-w-0 gap-1 rounded-md border px-2 py-2 text-left hover:bg-zinc-50',
+                    active ? 'border-teal-300 bg-teal-50' : 'border-zinc-200 bg-white',
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className={cn('inline-flex size-6 shrink-0 items-center justify-center rounded-md border', segmentIconClass(segment, active))}>
+                      <SegmentIcon segment={segment} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold text-zinc-950">{segment.title}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
+                        {[
+                          formatDuration(segment.durationMs),
+                          filtered ? `${tabRows.length}/${segment.eventCount} 事件` : `${segment.eventCount} 事件`,
+                          segment.issueCount > 0 ? `${segment.issueCount} 问题` : undefined,
+                        ].filter(Boolean).join(' · ')}
+                      </span>
                     </span>
                   </span>
-                </span>
-                <MetricStrip metrics={segment.summaryItems.slice(2, 6)} compact />
-                {firstEventId && rowsById.get(firstEventId)?.eventId ? null : <span className="text-[11px] text-zinc-400">没有可选事件</span>}
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </aside>
   );
 }
 
-function ProblemList({
-  consoleData,
-  onSelectEvent,
-}: {
-  consoleData: SessionConsoleResult;
-  onSelectEvent: (eventId: string) => void;
-}) {
-  const chips = consoleData.problemChips;
-  if (chips.length === 0) {
-    return (
-      <div className="flex min-w-0 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-800">
-        <Zap className="size-3.5" />
-        暂无明显问题
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-2 gap-1.5 xl:grid-cols-1">
-      {chips.map((chip) => (
-        <button
-          key={chip.kind}
-          type="button"
-          disabled={!chip.eventId}
-          onClick={() => chip.eventId && onSelectEvent(chip.eventId)}
-          className={cn(
-            'grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium',
-            chipToneClass(chip.tone),
-            chip.eventId ? 'hover:brightness-95' : 'cursor-default opacity-75',
-          )}
-        >
-          <span className="truncate">{chip.label}</span>
-          <span className="tabular-nums">{chip.count}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function LogStream({
+  containerRef,
   rows,
   rowsById,
-  segments,
+  visibleSegments,
   selectedEventId,
+  pageOverrides,
+  onTogglePageInstance,
   onSelectEvent,
   setRowRef,
   setSegmentRef,
 }: {
+  containerRef: React.MutableRefObject<HTMLDivElement | null>;
   rows: SessionConsoleRow[];
   rowsById: Map<string | undefined, SessionConsoleRow>;
-  segments: SessionConsoleSegment[];
+  visibleSegments: Array<{ segment: SessionConsoleSegment; tabRows: string[] }>;
   selectedEventId?: string;
+  pageOverrides: Record<string, boolean>;
+  onTogglePageInstance: (instanceId: string, expandedNow: boolean) => void;
   onSelectEvent: (eventId: string) => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
   setSegmentRef: (segmentId: string, node: HTMLElement | null) => void;
@@ -298,17 +477,16 @@ function LogStream({
     );
   }
 
-  const visibleEventIds = new Set(rows.map((row) => row.eventId).filter(Boolean));
-
   return (
-    <div className="min-h-0 overflow-auto bg-zinc-50 p-2">
+    <div ref={containerRef} className="min-h-0 overflow-auto bg-zinc-50 p-2">
       <div className="grid gap-2">
-        {segments.map((segment) => {
-          const segmentRows = segment.rows
-            .filter((eventId) => visibleEventIds.has(eventId))
+        {visibleSegments.map(({ segment, tabRows }) => {
+          const segmentRows = tabRows
             .map((eventId) => rowsById.get(eventId))
             .filter((row): row is SessionConsoleRow => Boolean(row));
           if (segmentRows.length === 0) return null;
+          const blocks = buildBlocks(segmentRows);
+          const filtered = tabRows.length !== segment.eventCount;
           return (
             <section
               key={segment.id}
@@ -324,23 +502,44 @@ function LogStream({
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-zinc-950">{segment.title}</div>
                       <div className="mt-0.5 text-xs text-zinc-500">
-                        {[formatDuration(segment.durationMs), `${segment.eventCount} 事件`, segment.issueCount > 0 ? `${segment.issueCount} 问题` : undefined].filter(Boolean).join(' · ')}
+                        {[
+                          formatDuration(segment.durationMs),
+                          filtered ? `${tabRows.length}/${segment.eventCount} 事件` : `${segment.eventCount} 事件`,
+                          segment.issueCount > 0 ? `${segment.issueCount} 问题` : undefined,
+                        ].filter(Boolean).join(' · ')}
                       </div>
                     </div>
                   </div>
-                  <MetricStrip metrics={segment.summaryItems.slice(2, 8)} compact />
                 </div>
               </div>
               <div className="divide-y divide-zinc-100">
-                {segmentRows.map((row) => (
-                  <LogRow
-                    key={row.eventId ?? `${row.timestamp}-${row.title}`}
-                    row={row}
-                    selected={selectedEventId === row.eventId}
-                    onSelectEvent={onSelectEvent}
-                    setRowRef={setRowRef}
-                  />
-                ))}
+                {blocks.map((block, index) => {
+                  if (block.kind === 'row') {
+                    return (
+                      <LogRow
+                        key={block.row.eventId ?? `${block.row.timestamp}-${block.row.title}-${index}`}
+                        row={block.row}
+                        selected={selectedEventId === block.row.eventId}
+                        onSelectEvent={onSelectEvent}
+                        setRowRef={setRowRef}
+                      />
+                    );
+                  }
+                  const auxSelected = block.auxiliary.some((r) => r.eventId === selectedEventId);
+                  const override = pageOverrides[block.instanceId];
+                  const expanded = override ?? auxSelected;
+                  return (
+                    <PageInstanceCard
+                      key={`${block.instanceId}-${index}`}
+                      block={block}
+                      expanded={expanded}
+                      onToggle={() => onTogglePageInstance(block.instanceId, expanded)}
+                      selectedEventId={selectedEventId}
+                      onSelectEvent={onSelectEvent}
+                      setRowRef={setRowRef}
+                    />
+                  );
+                })}
               </div>
             </section>
           );
@@ -355,13 +554,22 @@ function LogRow({
   selected,
   onSelectEvent,
   setRowRef,
+  indented = false,
+  showRoute = false,
 }: {
   row: SessionConsoleRow;
   selected: boolean;
   onSelectEvent: (eventId: string) => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
+  indented?: boolean;
+  showRoute?: boolean;
 }) {
   const Icon = rowIcon(row);
+  const statusBadge = primaryStatusBadge(row);
+  const visibleMetrics = useMemo(
+    () => row.metrics.filter((metric) => metric.label !== '耗时'),
+    [row.metrics],
+  );
   return (
     <button
       ref={(node) => {
@@ -371,30 +579,176 @@ function LogRow({
       disabled={!row.eventId}
       onClick={() => row.eventId && onSelectEvent(row.eventId)}
       className={cn(
-        'grid w-full grid-cols-[76px_30px_minmax(0,1fr)] gap-2 px-3 py-2.5 text-left hover:bg-zinc-50',
+        'grid w-full grid-cols-[64px_28px_minmax(0,1fr)] gap-2 px-3 py-2 text-left hover:bg-zinc-50',
+        indented && 'pl-9',
         selected && 'bg-teal-50 hover:bg-teal-50',
       )}
     >
       <span className="pt-0.5 text-xs tabular-nums text-zinc-500">{formatTime(row.timestamp ?? row.startTime)}</span>
-      <span className={cn('mt-0.5 inline-flex size-7 items-center justify-center rounded-md border', iconClass(row))}>
+      <span className={cn('mt-0.5 inline-flex size-6 items-center justify-center rounded-md border', iconClass(row))}>
         <Icon className="size-3.5" />
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="min-w-0 truncate text-sm font-semibold text-zinc-950">{row.title}</span>
-          <Badge tone={groupTone(row.group)} className="rounded-md px-1.5 py-0">{groupLabel(row.group)}</Badge>
-          {row.durationMs !== undefined ? <Badge tone={row.durationMs >= 1000 ? 'warn' : 'neutral'} className="rounded-md px-1.5 py-0">{formatDuration(row.durationMs)}</Badge> : null}
-          {row.issueLabels.map((label) => <Badge key={label} tone={issueTone(label)} className="rounded-md px-1.5 py-0">{label}</Badge>)}
+          <Badge tone={groupTone(row.group)} className="rounded-md px-1.5 py-0 text-[11px]">{groupLabel(row.group)}</Badge>
+          {statusBadge ? (
+            <Badge tone={statusBadge.tone} className="rounded-md px-1.5 py-0 text-[11px]">
+              {statusBadge.label}
+            </Badge>
+          ) : null}
+          {row.durationMs !== undefined ? (
+            <Badge tone={row.durationMs >= 1000 ? 'warn' : 'neutral'} className="rounded-md px-1.5 py-0 text-[11px]">
+              {formatDuration(row.durationMs)}
+            </Badge>
+          ) : null}
+          {row.issueLabels.map((label) => (
+            <Badge key={label} tone={issueTone(label)} className="rounded-md px-1.5 py-0 text-[11px]">
+              {label}
+            </Badge>
+          ))}
         </span>
-        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
-          {row.subtitle ? <span className="min-w-0 truncate">{row.subtitle}</span> : null}
-          {row.route ? <span className="min-w-0 truncate">route {row.route}</span> : null}
-          {row.eventId ? <span className="font-mono">{shortId(row.eventId)}</span> : null}
-        </span>
-        <MetricStrip metrics={row.metrics} />
+        <MetricStrip metrics={visibleMetrics} />
+        {showRoute && row.route ? (
+          <span className="mt-1 block truncate text-[11px] text-zinc-400">route {row.route}</span>
+        ) : null}
       </span>
     </button>
   );
+}
+
+function PageInstanceCard({
+  block,
+  expanded,
+  onToggle,
+  selectedEventId,
+  onSelectEvent,
+  setRowRef,
+}: {
+  block: Extract<StreamBlock, { kind: 'page-card' }>;
+  expanded: boolean;
+  onToggle: () => void;
+  selectedEventId?: string;
+  onSelectEvent: (eventId: string) => void;
+  setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
+}) {
+  const { main, auxiliary } = block;
+  const Icon = rowIcon(main);
+  const auxLabels = useMemo(
+    () => buildAuxLabels(auxiliary),
+    [auxiliary],
+  );
+  const visibleMetrics = useMemo(
+    () => main.metrics.filter((metric) => metric.label !== '耗时'),
+    [main.metrics],
+  );
+
+  return (
+    <div className="bg-white">
+      <div
+        className={cn(
+          'grid w-full grid-cols-[64px_28px_minmax(0,1fr)_auto] items-start gap-2 px-3 py-2 hover:bg-zinc-50',
+          selectedEventId === main.eventId && 'bg-teal-50 hover:bg-teal-50',
+        )}
+      >
+        <button
+          ref={(node) => {
+            if (main.eventId) setRowRef(main.eventId, node);
+          }}
+          type="button"
+          disabled={!main.eventId}
+          onClick={() => main.eventId && onSelectEvent(main.eventId)}
+          className="contents text-left"
+        >
+          <span className="pt-0.5 text-xs tabular-nums text-zinc-500">{formatTime(main.timestamp ?? main.startTime)}</span>
+          <span className={cn('mt-0.5 inline-flex size-6 items-center justify-center rounded-md border', iconClass(main))}>
+            <Icon className="size-3.5" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="min-w-0 truncate text-sm font-semibold text-zinc-950">{main.title}</span>
+              <Badge tone="teal" className="rounded-md px-1.5 py-0 text-[11px]">页面</Badge>
+              {main.durationMs !== undefined ? (
+                <Badge tone="neutral" className="rounded-md px-1.5 py-0 text-[11px]">{formatDuration(main.durationMs)}</Badge>
+              ) : null}
+              {main.issueLabels.map((label) => (
+                <Badge key={label} tone={issueTone(label)} className="rounded-md px-1.5 py-0 text-[11px]">
+                  {label}
+                </Badge>
+              ))}
+            </span>
+            <MetricStrip metrics={visibleMetrics} />
+            {auxLabels.length > 0 ? (
+              <span className="mt-1 flex min-w-0 flex-wrap gap-1 text-[11px] text-zinc-500">
+                {auxLabels.map((label) => (
+                  <span key={label} className="rounded-md border border-dashed border-zinc-200 px-1.5 py-0.5">
+                    {label}
+                  </span>
+                ))}
+              </span>
+            ) : null}
+          </span>
+        </button>
+        {auxiliary.length > 0 ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+            className="mt-0.5 inline-flex size-6 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
+            title={expanded ? '折叠子事件' : `展开 ${auxiliary.length} 个子事件`}
+          >
+            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
+        ) : <span />}
+      </div>
+      {expanded && auxiliary.length > 0 ? (
+        <div className="border-t border-dashed border-zinc-100 bg-zinc-50/50">
+          {auxiliary.map((row) => (
+            <LogRow
+              key={row.eventId ?? `${row.timestamp}-${row.title}`}
+              row={row}
+              selected={selectedEventId === row.eventId}
+              onSelectEvent={onSelectEvent}
+              setRowRef={setRowRef}
+              indented
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function buildAuxLabels(rows: SessionConsoleRow[]): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    let key: string | undefined;
+    if (row.name === 'route.push') key = '路由';
+    else if (row.name === 'page.load') key = '加载';
+    else if (row.name === 'page.view') key = '足迹';
+    else key = row.name ?? row.title;
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      labels.push(key);
+    }
+  }
+  return labels;
+}
+
+function primaryStatusBadge(row: SessionConsoleRow): { label: string; tone: BadgeProps['tone'] } | undefined {
+  if (row.group === 'http') {
+    if (typeof row.statusCode === 'number') {
+      const failed = row.success === false || row.status === 'error' || row.statusCode >= 400;
+      return { label: String(row.statusCode), tone: failed ? 'danger' : 'good' };
+    }
+    if (row.errorType) {
+      return { label: row.errorType, tone: 'danger' };
+    }
+  }
+  return undefined;
 }
 
 function MetricStrip({ metrics, compact = false }: { metrics: SessionConsoleMetric[]; compact?: boolean }) {
@@ -417,22 +771,17 @@ function MetricStrip({ metrics, compact = false }: { metrics: SessionConsoleMetr
   );
 }
 
-function filterRows(rows: SessionConsoleRow[], filter: FilterKey, query: string): SessionConsoleRow[] {
+function filterRows(
+  rows: SessionConsoleRow[],
+  filter: FilterKey,
+  query: string,
+): SessionConsoleRow[] {
   const normalized = query.trim().toLowerCase();
   return rows.filter((row) => {
-    if (filter === 'http' && row.group !== 'http') return false;
-    if (filter === 'problems' && row.issueLabels.length === 0 && row.group !== 'problem' && row.group !== 'memory') return false;
-    if (filter === 'pages' && row.group !== 'page') return false;
-    if (filter === 'startup' && row.group !== 'startup') return false;
-    if (filter === 'interaction' && row.group !== 'interaction') return false;
-    if (filter === 'business' && row.group !== 'business') return false;
-    if (filter === 'memory' && row.group !== 'memory') return false;
-    if (filter === 'lifecycle' && row.group !== 'lifecycle') return false;
-    if (filter === 'sdk' && row.group !== 'sdk') return false;
+    if (!tabPredicate(filter, row)) return false;
     if (!normalized) return true;
     return [
       row.title,
-      row.subtitle,
       row.route,
       row.url,
       row.method,
@@ -516,21 +865,10 @@ function issueTone(label: string): BadgeProps['tone'] {
   return 'warn';
 }
 
-function chipToneClass(tone: SessionConsoleResult['problemChips'][number]['tone']): string {
-  if (tone === 'danger') return 'border-red-200 bg-red-50 text-red-700';
-  if (tone === 'warn') return 'border-amber-200 bg-amber-50 text-amber-800';
-  if (tone === 'info') return 'border-blue-200 bg-blue-50 text-blue-700';
-  return 'border-zinc-200 bg-zinc-50 text-zinc-700';
-}
-
 function metricToneClass(tone: SessionConsoleMetric['tone']): string {
   if (tone === 'danger') return 'border-red-200 bg-red-50 text-red-700';
   if (tone === 'warn') return 'border-amber-200 bg-amber-50 text-amber-800';
   if (tone === 'good') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
   if (tone === 'info') return 'border-blue-200 bg-blue-50 text-blue-800';
   return 'border-zinc-200 bg-zinc-50 text-zinc-700';
-}
-
-function shortId(value: string): string {
-  return value.length <= 12 ? value : `${value.slice(0, 8)}...${value.slice(-4)}`;
 }

@@ -58,7 +58,14 @@ export function EventInspector({
   }
 
   if (event.name === 'http.client') {
-    return <HttpInspector event={event} panelAction={panelAction} />;
+    return (
+      <HttpInspector
+        event={event}
+        panelAction={panelAction}
+        relatedEvents={traceEvents}
+        onSelectEvent={onSelectEvent}
+      />
+    );
   }
 
   const breadcrumbs = breadcrumbsOf(event);
@@ -577,7 +584,9 @@ function BreadcrumbCard({ breadcrumb, index }: { breadcrumb: JsonObject; index: 
       </button>
       {expanded ? (
         <div className="border-t border-zinc-100 bg-zinc-50 p-2">
-          <JsonViewer value={breadcrumb} />
+          <div className="max-h-[320px] min-h-[120px] overflow-hidden">
+            <JsonViewer value={breadcrumb} collapsed={1} />
+          </div>
         </div>
       ) : null}
     </div>

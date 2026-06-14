@@ -72,10 +72,12 @@ function toConsoleRow(event: MonitorEvent): SessionConsoleRow {
   const module = stringPath(event, ['context', 'module', 'name']);
   const scene = stringPath(event, ['context', 'scene', 'name']);
   const phase = stringPath(event, ['attributes', 'event.phase']);
+  const pageInstanceId = stringPath(event, ['attributes', 'page.instance_id']) ?? stringPath(event, ['payload', 'page.instance_id']);
+  const pageActivePhase = stringPath(event, ['attributes', 'page.active_phase']) ?? stringPath(event, ['payload', 'page.active_phase']);
+  const pageActiveTrigger = stringPath(event, ['attributes', 'page.active_trigger']) ?? stringPath(event, ['payload', 'page.active_trigger']);
   const issueLabels = rowIssueLabels(event, http);
   const group = rowGroup(event, issueLabels);
   const title = rowTitle(event, http);
-  const subtitle = rowSubtitle(event, http, route);
   const badges = rowBadges(event, http);
   const metrics = rowMetrics(event, http, group);
 
@@ -97,9 +99,11 @@ function toConsoleRow(event: MonitorEvent): SessionConsoleRow {
     route,
     module,
     scene,
+    pageInstanceId,
+    pageActivePhase,
+    pageActiveTrigger,
     group,
     title,
-    subtitle,
     badges,
     issueLabels,
     metrics,
@@ -282,26 +286,6 @@ function rowTitle(event: MonitorEvent, http: Partial<SessionConsoleRow>): string
   if (name === 'memory.growth') return '内存增长';
   if (name === 'memory.leak.suspect') return '疑似泄漏线索';
   return name;
-}
-
-function rowSubtitle(event: MonitorEvent, http: Partial<SessionConsoleRow>, route?: string): string | undefined {
-  if (event.name === 'http.client') {
-    const parts = [
-      typeof http.statusCode === 'number' ? `HTTP ${http.statusCode}` : undefined,
-      typeof event.durationMs === 'number' ? `${Math.round(event.durationMs)}ms` : undefined,
-      route ? `页面 ${route}` : undefined,
-      http.errorType,
-    ];
-    return parts.filter(Boolean).join(' · ') || undefined;
-  }
-
-  const parts = [
-    stringPath(event, ['attributes', 'event.phase']),
-    event.status,
-    typeof event.durationMs === 'number' ? `${Math.round(event.durationMs)}ms` : undefined,
-    route ? `页面 ${route}` : undefined,
-  ];
-  return parts.filter(Boolean).join(' · ') || undefined;
 }
 
 function rowBadges(event: MonitorEvent, http: Partial<SessionConsoleRow>): string[] {
