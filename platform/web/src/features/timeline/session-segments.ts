@@ -97,8 +97,10 @@ export function buildTimelineSegments(events: MonitorEvent[]): TimelineSegment[]
       const activityRouteChanged = current.kind === 'activity' && route !== undefined && route !== current.route;
 
       if (isSdk && current.kind !== 'sdk') {
-        current = makeRaw('sdk', undefined, event);
-        raw.push(current);
+        // Normal SDK self-monitoring belongs to the current user-visible flow;
+        // only orphan SDK diagnostics need a standalone segment.
+        current.events.push(event);
+        continue;
       } else if (explicitNewPage || leavesStartupViaPage) {
         current = makeRaw('page', route ?? current.route, event);
         current.pageKey = entryPageKey;
@@ -209,7 +211,7 @@ export function firstTimelineEvent(events: MonitorEvent[]): MonitorEvent | undef
 function segmentTitle(kind: SegmentKind, events: MonitorEvent[], route: string | undefined): string {
   if (kind === 'startup') return '启动';
   if (kind === 'page') return [route ?? '页面', pageResumed(events) ? '返回后继续' : undefined, ...pageDiagnosticLabels(events)].filter(isString).join(' · ');
-  if (kind === 'sdk') return [`页面 ${route}`,  'SDK 活动'].filter(isString).join(' · ');
+  if (kind === 'sdk') return [`页面 ${route}`, 'SDK 诊断'].filter(isString).join(' · ');
   return route ? `页面活动 ${route}` : '会话活动';
 }
 

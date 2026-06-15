@@ -477,7 +477,7 @@ Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view m
 - 页面区段标题可根据内容追加诊断语义，但不改变底层数据归属。优先级为：错误/业务失败、交互性能、业务操作、失败请求、卡顿、内存/生命周期。例如 `页面 /detail?id=1 · 业务失败 · 业务操作`、`页面 /detail?id=2 · 交互性能`。
 - `页面活动 ${route}`：只用于无法绑定到具体页面实例或不应开启页面区段的当前 route 非页面事件窗口，包括跨页面生命周期、热重启、前台恢复 `page.resume + lifecycle_resumed`、缺少 `page.instance_id` 的内存采样等。具体问题类型仍放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
 - `会话活动`：缺少 route 上下文的非页面事件窗口。
-- `SDK 活动`：`signalType=sdk` 的自监控窗口，例如 `sdk.queue.drop`、`sdk.retry.schedule` 和 `sdk.output.flush`。这类事件不应因为缺少 route 被展示为“未知页面”；如果区段内 SDK 事件带有 route，应展示为 `SDK 活动 · ${route}`。`sdk.queue.drop` 应展示 drop reason、drop count 和 `payload["dropped.summary"]` 中的被丢弃事件摘要。
+- `SDK 诊断`：正常 `sdk.health.report`、成功的 `sdk.lifecycle.flush` 等自监控事件默认并入当前页面或会话活动区段，作为节点和摘要指标展示，不单独打断用户操作主线。只有 `sdk.queue.state`、`sdk.retry.schedule`、`sdk.queue.drop`、失败的 `sdk.output.flush`，或带 dropped/retry/flush failure 计数的 `sdk.health.report`，才作为异常 SDK 诊断突出；若无法归入当前页面/活动区段，才兜底展示为独立 SDK 区段。这类事件不应因为缺少 route 被展示为“未知页面”；如果区段内 SDK 事件带有 route，应展示 route。`sdk.queue.drop` 应展示 drop reason、drop count 和 `payload["dropped.summary"]` 中的被丢弃事件摘要。
 
 页面离开与停留的展示按语义区分：`route.pop` 是导航返回动作，`page.visit end` 是被 pop 页面实例闭合，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时和首帧耗时读取 `page.load` 上的 `page.load_ms` / `page.first_frame_ms`；页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`。同 route 多次进入时，Workbench 内部可用 `page.instance_id + traceId` 合并事件，但主界面优先展示 `context.route.fullName`，实例 id 只在 Inspector/raw JSON 诊断中出现。
 

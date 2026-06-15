@@ -114,12 +114,12 @@ function toConsoleRow(event: MonitorEvent): SessionConsoleRow {
 function rowGroup(event: MonitorEvent, issueLabels: string[]): SessionConsoleRow['group'] {
   const name = event.name ?? '';
   if (name === 'http.client') return 'http';
+  if (name === 'app.cold_start' || name === 'sdk.init') return 'startup';
   if (event.signalType === 'sdk' || name.startsWith('sdk.')) return 'sdk';
   if (isMemoryEvent(event)) return 'memory';
   if (name.includes('lifecycle') || name === 'app.background_duration' || name === 'app.hot_start') return 'lifecycle';
   if (name === 'interaction.measure' || readPath(event, ['attributes', 'interaction.mode']) !== undefined) return 'interaction';
   if (readPath(event, ['attributes', 'business.action']) !== undefined || name.startsWith('business.')) return 'business';
-  if (name === 'app.cold_start' || name === 'sdk.init') return 'startup';
   if (name.startsWith('page.') || name === 'route.push' || name === 'route.pop') return 'page';
   if (isJankEvent(event)) return 'problem';
   if (issueLabels.length > 0 || isErrorEvent(event)) return 'problem';
@@ -138,6 +138,7 @@ function rowMetrics(
   if (group === 'interaction') return interactionMetrics(event);
   if (group === 'business') return businessMetrics(event);
   if (group === 'memory') return memoryMetrics(event);
+  if (event.name === 'app.hot_start') return hotStartMetrics(event);
   if (group === 'lifecycle') return lifecycleMetrics(event);
   if (group === 'sdk') return sdkMetrics(event);
   if (group === 'problem') return problemMetrics(event);
@@ -223,8 +224,20 @@ function lifecycleMetrics(event: MonitorEvent): SessionConsoleMetric[] {
   const metrics: SessionConsoleMetric[] = [];
   pushMetric(metrics, '状态', stringPath(event, ['attributes', 'context.lifecycle.state']) ?? stringPath(event, ['context', 'lifecycle', 'state']));
   pushMetric(metrics, '前一状态', stringPath(event, ['attributes', 'context.lifecycle.previousState']) ?? stringPath(event, ['context', 'lifecycle', 'previousState']));
-  pushMetric(metrics, '后台', durationLabel(numberPath(event, ['attributes', 'app.background_duration.duration_ms']) ?? event.durationMs));
+  const backgroundMs = numberPath(event, ['attributes', 'app.background_duration.duration_ms']) ??
+    (event.name === 'app.background_duration' ? event.durationMs : undefined);
+  pushMetric(metrics, '后台', durationLabel(backgroundMs));
   pushMetric(metrics, '前台', booleanPath(event, ['attributes', 'context.lifecycle.isForeground']) === undefined ? undefined : String(booleanPath(event, ['attributes', 'context.lifecycle.isForeground'])));
+  return metrics;
+}
+
+function hotStartMetrics(event: MonitorEvent): SessionConsoleMetric[] {
+  const metrics: SessionConsoleMetric[] = [];
+  pushMetric(metrics, '热重启', durationLabel(event.durationMs));
+  pushMetric(metrics, '首帧', durationLabel(numberPath(event, ['attributes', 'app.first_frame_ms'])));
+  pushMetric(metrics, '可交互', durationLabel(numberPath(event, ['attributes', 'app.interactive_ms']) ?? numberPath(event, ['attributes', 'app.time_to_interactive_ms'])));
+  pushMetric(metrics, '结束口径', stringPath(event, ['attributes', 'app.start.end_reason']));
+  pushMetric(metrics, 'RSS', memoryDeltaLabel(event));
   return metrics;
 }
 
@@ -314,6 +327,11 @@ function rowIssueLabels(event: MonitorEvent, http: Partial<SessionConsoleRow>): 
   if (event.name === 'sdk.queue.drop') labels.push('SDK 丢弃');
   if (event.name === 'sdk.retry.schedule') labels.push('SDK 重试');
   if (isSdkFlushFailure(event)) labels.push('SDK 发送失败');
+  if (event.name === 'sdk.health.report') {
+    if ((numberPath(event, ['attributes', 'sdk.health.dropped_count']) ?? 0) > 0) labels.push('SDK 丢弃');
+    if ((numberPath(event, ['attributes', 'sdk.health.retry_count']) ?? 0) > 0) labels.push('SDK 重试');
+    if ((numberPath(event, ['attributes', 'sdk.health.flush_failure_count']) ?? 0) > 0) labels.push('SDK 发送失败');
+  }
   if (http.detailDropped) labels.push('HTTP 详情剥离');
   return [...new Set(labels)];
 }
@@ -469,8 +487,9 @@ function buildSegments(rows: SessionConsoleRow[]): SessionConsoleSegment[] {
     const route = row.route;
     const rowStartsPage = isPageEntryRow(row);
     const desiredKind = segmentKindForRow(row, current);
+    const entryContinuesCurrentPage = rowStartsPage && continuesCurrentPageEntry(row, current);
     const shouldStart = !current ||
-      rowStartsPage ||
+      (rowStartsPage && !entryContinuesCurrentPage) ||
       desiredKind !== current.kind ||
       (desiredKind === 'page' && route !== undefined && current.route !== undefined && route !== current.route) ||
       (desiredKind === 'activity' && route !== undefined && current.route !== undefined && route !== current.route);
@@ -495,16 +514,41 @@ function buildSegments(rows: SessionConsoleRow[]): SessionConsoleSegment[] {
 
 function segmentKindForRow(row: SessionConsoleRow, current: MutableSegment | undefined): SessionConsoleSegment['kind'] {
   if (row.group === 'startup') return 'startup';
-  if (row.group === 'sdk') return 'sdk';
+  if (row.group === 'sdk') {
+    if (!isSdkDiagnosticRow(row)) {
+      return current?.kind ?? (row.route ? 'page' : 'activity');
+    }
+    if (current && (current.kind === 'page' || current.kind === 'activity') && rowBelongsToSegmentRoute(row, current)) {
+      return current.kind;
+    }
+    return 'sdk';
+  }
   if (row.group === 'page' && (isPageEntryRow(row) || current?.kind === 'page')) return 'page';
   if (row.route) return 'page';
   return 'activity';
 }
 
+function isSdkDiagnosticRow(row: SessionConsoleRow): boolean {
+  if (row.group !== 'sdk') return false;
+  if (row.issueLabels.some((label) => label.startsWith('SDK '))) return true;
+  return row.name === 'sdk.queue.state' || row.name === 'sdk.retry.schedule' || row.name === 'sdk.queue.drop' || row.name === 'sdk.output.flush';
+}
+
+function rowBelongsToSegmentRoute(row: SessionConsoleRow, segment: MutableSegment): boolean {
+  return !row.route || !segment.route || row.route === segment.route;
+}
+
+function continuesCurrentPageEntry(row: SessionConsoleRow, current: MutableSegment | undefined): boolean {
+  if (!current || current.kind !== 'page') return false;
+  if (!row.route || current.route !== row.route) return false;
+  const rowTime = timeValue(row.startTime ?? row.timestamp);
+  return Math.abs(rowTime - current.startValue) <= 100;
+}
+
 function finalizeSegment(segment: MutableSegment, index: number, next: MutableSegment | undefined): SessionConsoleSegment {
   const first = segment.rows[0];
   const last = segment.rows.at(-1);
-  const explicitDuration = maxNumber(segment.rows.map((row) => row.name === 'page.stay' || row.name === 'app.cold_start' || row.name === 'app.hot_start' ? row.durationMs : undefined));
+  const explicitDuration = maxNumber(segment.rows.map((row) => row.name === 'page.stay' || (segment.kind === 'startup' && (row.name === 'app.cold_start' || row.name === 'app.hot_start')) ? row.durationMs : undefined));
   const durationMs = explicitDuration ?? (next?.startValue !== undefined && next.startValue >= segment.startValue ? next.startValue - segment.startValue : timestampDiff(first?.timestamp ?? first?.startTime, last?.timestamp ?? last?.endTime));
   const issueCount = segment.rows.filter((row) => row.issueLabels.length > 0).length;
   const groupCounts = buildGroupCounts(segment.rows);
@@ -526,7 +570,7 @@ function finalizeSegment(segment: MutableSegment, index: number, next: MutableSe
 
 function segmentTitle(segment: MutableSegment, issueCount: number): string {
   if (segment.kind === 'startup') return '启动链路';
-  if (segment.kind === 'sdk') return segment.route ? `SDK 活动 · ${segment.route}` : 'SDK 活动';
+  if (segment.kind === 'sdk') return segment.route ? `SDK 诊断 · ${segment.route}` : 'SDK 诊断';
   if (segment.kind === 'page') {
     const labels = segment.rows.flatMap((row) => row.issueLabels).filter((label) => label !== '页面慢');
     const suffix = [...new Set(labels)].slice(0, 2).join(' · ');
@@ -691,12 +735,14 @@ function buildSdkHealth(events: MonitorEvent[]): SessionSdkHealthSummary {
   const explicitDropCount = events
     .filter((event) => event.name === 'sdk.queue.drop')
     .reduce((sum, event) => sum + (numberPath(event, ['attributes', 'sdk.drop.count']) ?? 1), 0);
-  const healthDropped = latestNumber(healthReports, ['attributes', 'sdk.health.dropped_count']) ?? 0;
-  const healthRetries = latestNumber(healthReports, ['attributes', 'sdk.health.retry_count']) ?? 0;
+  const healthDropped = sumNumber(healthReports, ['attributes', 'sdk.health.dropped_count']);
+  const healthRetries = sumNumber(healthReports, ['attributes', 'sdk.health.retry_count']);
+  const healthFlushFailures = sumNumber(healthReports, ['attributes', 'sdk.health.flush_failure_count']);
+  const explicitFlushFailures = events.filter(isSdkFlushFailure).length;
 
   return {
     flushCount: events.filter((event) => event.name === 'sdk.output.flush' || event.name === 'sdk.lifecycle.flush').length,
-    flushFailureCount: events.filter(isSdkFlushFailure).length,
+    flushFailureCount: Math.max(explicitFlushFailures, healthFlushFailures),
     retryCount: healthRetries > 0 ? healthRetries : events.filter((event) => event.name === 'sdk.retry.schedule').length,
     dropCount: events.filter((event) => event.name === 'sdk.queue.drop').length,
     droppedEventCount: Math.max(explicitDropCount, healthDropped),
@@ -820,10 +866,11 @@ function maxNumber(values: Array<number | undefined>): number | undefined {
   return numbers.length > 0 ? Math.max(...numbers) : undefined;
 }
 
-function latestNumber(events: MonitorEvent[], path: string[]): number | undefined {
-  for (const event of [...events].reverse()) {
+function sumNumber(events: MonitorEvent[], path: string[]): number {
+  let sum = 0;
+  for (const event of events) {
     const value = numberPath(event, path);
-    if (value !== undefined) return value;
+    if (value !== undefined) sum += value;
   }
-  return undefined;
+  return sum;
 }
