@@ -525,7 +525,7 @@ Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中
 | `app.background_duration` | `metric` | `instant` | `ok` | `normal` | `durationMs`、`context.lifecycle.previousState` | 一段后台停留时间，可辅助 hot start 和 session 切分 |
 | `app.hot_start` | `trace` | `end` | `ok` / `error` | `normal` | `durationMs`、`app.start.type = hot`、`app.start.end_reason` | 后台恢复到前台后的热重启链路，`durationMs` 不得表示后台停留间隔 |
 | `sdk.lifecycle.flush` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.output.mode`、`app.exit_flush.success` | 进入后台或退出前 flush 的 SDK 自监控结果；成功为 normal，失败为 high |
-| `sdk.health.report` | `sdk` | `instant` | `ok` | `normal` | `sdk.output.mode`、`sdk.health.window_ms`、`sdk.health.enqueued_count`、`sdk.health.sent_count`、`sdk.health.dropped_count`、`sdk.health.retry_count`、`sdk.health.flush_success_count`、`sdk.health.flush_failure_count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | SDK 可靠性周期摘要；默认 60s 窗口聚合一次，进入后台/退出前强制补发，窗口内无任何活动时不产生。窗口内存在丢弃或 flush 失败时 level 为 warning |
+| `sdk.health.report` | `sdk` | `instant` | `ok` | `normal` | `sdk.output.mode`、`sdk.health.window_ms`、`sdk.health.enqueued_count`、`sdk.health.sent_count`、`sdk.health.dropped_count`、`sdk.health.retry_count`、`sdk.health.flush_success_count`、`sdk.health.flush_failure_count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | SDK 可靠性周期摘要；默认 60s 窗口聚合一次，进入后台/退出前强制补发，窗口内无任何活动时不产生。窗口内存在丢弃或 flush 失败时 level 为 warning。`sdk.health.report` 自身的 delivery 生命周期不计入下一窗口活动，避免自监控摘要自循环 |
 | `sdk.output.flush` | `sdk` | `instant` | `error` / `timeout` | `high` | `sdk.output.mode`、`sdk.flush.reason`、`sdk.batch.size`、`sdk.flush.duration_ms` | 只在 flush 失败时产生（例如退出前尽力发送失败）；成功 flush 不再逐条发事件，计入 `sdk.health.report` 的 `flush_success_count`/`sent_count` |
 | `sdk.queue.drop` | `sdk` | `instant` | `ok` / `error` | `normal` / `high` | `sdk.drop.reason`、`sdk.drop.count`，条件字段 `sdk.queue.length`、`sdk.queue.bytes` | 兼容保留的历史事件名；SDK 默认不再逐条产生，丢弃证据统一进入 `sdk.health.report` 的 `payload["drops.by_reason"]` |
 | `sdk.queue.state` | `sdk` | `instant` | `ok` / `warning` / `error` | `normal` / `high` | `sdk.queue.length`、`sdk.queue.bytes`、`sdk.output.mode` | 队列健康状态的边沿事件：队列首次进入饱和（每个 health 窗口至多一次）、SQLite store 损坏/不可用降级为内存队列（`payload.reason = store_fallback_memory`）时产生 |
@@ -538,7 +538,7 @@ Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中
 
 SDK 自监控采用“计数器 + 周期摘要 + 边沿触发”模型，不再为每次丢弃、每次成功 flush、每次重试逐条产生事件：
 
-- 周期摘要：`sdk.health.report` 按窗口（默认 60s）输出 enqueued/sent/dropped/retry/flush 计数和队列水位；进入后台或退出前强制补发当前窗口；窗口内无活动时跳过。
+- 周期摘要：`sdk.health.report` 按窗口（默认 60s）输出 enqueued/sent/dropped/retry/flush 计数和队列水位；进入后台或退出前强制补发当前窗口；窗口内无活动时跳过。活动只统计真实业务、采集和 SDK 边沿事件，`sdk.health.report` 自身的入队、发送、重试、flush 成败和丢弃不滚入下一窗口。
 - 边沿触发：状态发生跳变时立即产生一次事件——队列首次饱和或 store 降级用 `sdk.queue.state`，首次进入重试状态用 `sdk.retry.schedule`，flush 失败用 `sdk.output.flush`。
 - `payload["trigger"]` 标明摘要触发来源：`interval`、`background`、`app_exit`、`manual`。
 

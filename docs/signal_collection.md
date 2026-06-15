@@ -920,7 +920,7 @@ SDK 的 public 接入面收敛为三种模式：`consoleOnly`、`localLive` 和 
 
 所有 production / local live 上报默认 batch。flush 触发包括 batch size、flush interval、background、app exit、critical/high 事件短延迟快速 flush 和业务手动 `FlutterMonitorSDK.flush(...)`。flush 读取队列前必须先等待已经进入 output 的异步入队任务完成；退出时如果已有普通 flush 正在进行，先等待该 flush 完成，再补一次 app exit flush 覆盖期间新入队事件。`isAppExiting = true` 时采用短超时尽力发送，不得阻塞 UI 或明显拖慢退出。
 
-SDK self-monitoring 采用“计数器 + 周期摘要 + 边沿触发”模型：可靠性计数（enqueued、sent、dropped by reason、retry、flush 成败、队列水位）在内存中累计，默认每 60s 聚合为一条 `sdk.health.report`；进入后台或退出前强制补发当前窗口；窗口内无活动时不产生。只有状态跳变才立即发事件：队列首次饱和或 store 降级用 `sdk.queue.state`，首次进入重试状态用 `sdk.retry.schedule`，flush 失败用 `sdk.output.flush`。SDK 不再为每次丢弃、每次成功 flush、每次重试逐条产生事件。
+SDK self-monitoring 采用“计数器 + 周期摘要 + 边沿触发”模型：可靠性计数（enqueued、sent、dropped by reason、retry、flush 成败、队列水位）在内存中累计，默认每 60s 聚合为一条 `sdk.health.report`；进入后台或退出前强制补发当前窗口；窗口内无活动时不产生。活动只统计真实业务、采集和 SDK 边沿事件，`sdk.health.report` 自身的入队、发送、重试、flush 成败和丢弃不滚入下一窗口，避免自监控摘要自循环。只有状态跳变才立即发事件：队列首次饱和或 store 降级用 `sdk.queue.state`，首次进入重试状态用 `sdk.retry.schedule`，flush 失败用 `sdk.output.flush`。SDK 不再为每次丢弃、每次成功 flush、每次重试逐条产生事件。
 
 SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 

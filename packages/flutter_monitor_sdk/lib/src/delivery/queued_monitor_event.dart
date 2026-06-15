@@ -34,6 +34,7 @@ class QueuedMonitorEvent {
   String get traceId => _stringValue('traceId') ?? '';
   String get name => _stringValue('name') ?? '';
   String get signalType => _stringValue('signalType') ?? '';
+  bool get isSdkHealthReport => name == EventNames.sdkHealthReport;
   String get routeName => _nestedString('context', 'route', 'name') ?? '';
   String get moduleName => _nestedString('context', 'module', 'name') ?? '';
   String get moduleScene => _nestedString('context', 'module', 'scene') ?? '';

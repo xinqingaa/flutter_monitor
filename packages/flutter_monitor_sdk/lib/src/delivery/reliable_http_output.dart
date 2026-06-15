@@ -69,9 +69,11 @@ class ReliableHttpOutput extends MonitorOutput {
     await _ensureInitialized();
     final queued = QueuedMonitorEvent.fromEnvelope(event);
     final result = await _queue.enqueue(queued);
-    _health?.recordEnqueued();
+    if (!queued.isSdkHealthReport) {
+      _health?.recordEnqueued();
+    }
     if (!result.accepted || result.dropped.isNotEmpty) {
-      _health?.recordDroppedQueuedEvents(
+      _recordDroppedQueuedEvents(
         result.reason ?? SdkDropReasons.queueFull,
         result.dropped,
       );
@@ -115,7 +117,7 @@ class ReliableHttpOutput extends MonitorOutput {
     final expired = await _queue.deleteExpired(
       now.subtract(policy.maxEventAge),
     );
-    _health?.recordDroppedQueuedEvents(SdkDropReasons.expired, expired);
+    _recordDroppedQueuedEvents(SdkDropReasons.expired, expired);
     final maxEvents = _temporaryMaxBatchEvents ?? policy.maxBatchEvents;
     _temporaryMaxBatchEvents = null;
     final batch = await _queue.nextBatch(
@@ -134,15 +136,20 @@ class ReliableHttpOutput extends MonitorOutput {
       );
       await _handleResponse(batch, response);
     } catch (error) {
-      _health?.recordFlushFailure();
+      final hasReportableActivity = _hasReportableDeliveryActivity(batch);
+      if (hasReportableActivity) {
+        _health?.recordFlushFailure();
+      }
       if (isAppExiting) {
         debugPrint('Flutter Monitor exit flush failed: $error');
-        _emitFlushFailure(
-          batch,
-          reason: reason,
-          startedAt: startedAt,
-          payload: <String, Object?>{PayloadKeys.error: error.toString()},
-        );
+        if (hasReportableActivity) {
+          _emitFlushFailure(
+            batch,
+            reason: reason,
+            startedAt: startedAt,
+            payload: <String, Object?>{PayloadKeys.error: error.toString()},
+          );
+        }
         return;
       }
       await _scheduleRetry(batch, SdkRetryReasons.timeout);
@@ -171,11 +178,16 @@ class ReliableHttpOutput extends MonitorOutput {
     final status = response.statusCode;
     if (status >= 200 && status < 300) {
       await _queue.ack(_ids(batch));
-      _health?.recordFlushSuccess();
-      _health?.recordSent(batch.length);
+      final reportable = _reportableEvents(batch);
+      if (reportable.isNotEmpty) {
+        _health?.recordFlushSuccess();
+        _health?.recordSent(reportable.length);
+      }
       return;
     }
-    _health?.recordFlushFailure();
+    if (_hasReportableDeliveryActivity(batch)) {
+      _health?.recordFlushFailure();
+    }
     if (status == 429) {
       await _scheduleRetry(
         batch,
@@ -194,19 +206,13 @@ class ReliableHttpOutput extends MonitorOutput {
         );
       } else {
         await _queue.ack(_ids(batch));
-        _health?.recordDroppedQueuedEvents(
-          SdkDropReasons.payloadTooLarge,
-          batch,
-        );
+        _recordDroppedQueuedEvents(SdkDropReasons.payloadTooLarge, batch);
       }
       return;
     }
     if (status == 400 || status == 401 || status == 403) {
       await _queue.ack(_ids(batch));
-      _health?.recordDroppedQueuedEvents(
-        SdkDropReasons.nonRetryableRejected,
-        batch,
-      );
+      _recordDroppedQueuedEvents(SdkDropReasons.nonRetryableRejected, batch);
       return;
     }
     if (status >= 500) {
@@ -214,10 +220,7 @@ class ReliableHttpOutput extends MonitorOutput {
       return;
     }
     await _queue.ack(_ids(batch));
-    _health?.recordDroppedQueuedEvents(
-      SdkDropReasons.nonRetryableRejected,
-      batch,
-    );
+    _recordDroppedQueuedEvents(SdkDropReasons.nonRetryableRejected, batch);
   }
 
   /// 重试计划按事件各自的累计重试次数判定。
@@ -234,26 +237,28 @@ class ReliableHttpOutput extends MonitorOutput {
         .toList(growable: false);
     if (exhausted.isNotEmpty) {
       await _queue.ack(_ids(exhausted));
-      _health?.recordDroppedQueuedEvents(
-        SdkDropReasons.retryExhausted,
-        exhausted,
-      );
+      _recordDroppedQueuedEvents(SdkDropReasons.retryExhausted, exhausted);
     }
     final retryable = batch
         .where((event) => event.attemptCount < policy.maxRetryAttempts)
         .toList(growable: false);
     if (retryable.isEmpty) return;
-    final delay = retryAfter ?? _retryDelay(retryable);
+    final reportable = _reportableEvents(retryable);
+    final delay =
+        retryAfter ??
+        _retryDelay(reportable.isNotEmpty ? reportable : retryable);
     await _queue.scheduleRetry(
       _ids(retryable),
       nextAttemptAt: DateTime.now().add(delay),
     );
-    _health?.recordRetryScheduled(
-      retryCount: _maxAttemptCount(retryable) + 1,
-      delay: delay,
-      reason: reason,
-      batchSize: retryable.length,
-    );
+    if (reportable.isNotEmpty) {
+      _health?.recordRetryScheduled(
+        retryCount: _maxAttemptCount(reportable) + 1,
+        delay: delay,
+        reason: reason,
+        batchSize: reportable.length,
+      );
+    }
   }
 
   Duration _retryDelay(List<QueuedMonitorEvent> batch) {
@@ -284,6 +289,25 @@ class ReliableHttpOutput extends MonitorOutput {
   bool _isFastFlushEvent(Map<String, dynamic> event) {
     final priority = EventPriority.fromJson(event['priority'] as String?);
     return priority == EventPriority.high || priority == EventPriority.critical;
+  }
+
+  List<QueuedMonitorEvent> _reportableEvents(List<QueuedMonitorEvent> events) {
+    return events
+        .where((event) => !event.isSdkHealthReport)
+        .toList(growable: false);
+  }
+
+  bool _hasReportableDeliveryActivity(List<QueuedMonitorEvent> events) {
+    return events.any((event) => !event.isSdkHealthReport);
+  }
+
+  void _recordDroppedQueuedEvents(
+    String reason,
+    List<QueuedMonitorEvent> events,
+  ) {
+    final reportable = _reportableEvents(events);
+    if (reportable.isEmpty) return;
+    _health?.recordDroppedQueuedEvents(reason, reportable);
   }
 
   Future<void> _drainPendingEnqueues({Duration? timeout}) async {

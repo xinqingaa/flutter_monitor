@@ -276,6 +276,106 @@ void main() {
     health.dispose();
   });
 
+  test('reliable output does not count health report delivery as next health '
+      'activity', () async {
+    final healthEvents = <OutputHealthEvent>[];
+    final postedNames = <String>[];
+    final health = SdkHealthMonitor(mode: SdkOutputModes.production);
+    health.onEvent = healthEvents.add;
+    final output = ReliableHttpOutput(
+      endpoint: Uri.parse('https://monitor.example.com/events'),
+      mode: SdkOutputModes.production,
+      policy: const MonitorProductionPolicy(
+        flushInterval: Duration(minutes: 5),
+      ),
+      queue: MemoryOfflineEventQueue(policy: const MonitorProductionPolicy()),
+      client: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        final events = body['events'] as List<dynamic>;
+        postedNames.addAll(
+          events.whereType<Map<String, dynamic>>().map(
+            (event) => event['name'] as String,
+          ),
+        );
+        return http.Response('{}', 200);
+      }),
+      healthMonitor: health,
+    );
+    output.init();
+
+    final healthEnvelope = _testEnvelope(
+      'evt_health',
+      EventNames.sdkHealthReport,
+    )..['signalType'] = 'sdk';
+    output.add(healthEnvelope);
+    await output.flush();
+
+    expect(postedNames, <String>[EventNames.sdkHealthReport]);
+    health.report(trigger: SdkFlushReasons.manual);
+    expect(
+      healthEvents.where((event) => event.name == EventNames.sdkHealthReport),
+      isEmpty,
+    );
+
+    output.add(_testEnvelope('evt_business', 'business.real'));
+    await output.flush();
+    health.report(trigger: SdkFlushReasons.manual);
+
+    final report = healthEvents.singleWhere(
+      (event) => event.name == EventNames.sdkHealthReport,
+    );
+    expect(report.attributes[FieldPaths.sdkHealthEnqueuedCount], 1);
+    expect(report.attributes[FieldPaths.sdkHealthSentCount], 1);
+    expect(report.attributes[FieldPaths.sdkHealthFlushSuccessCount], 1);
+    expect(postedNames, <String>[EventNames.sdkHealthReport, 'business.real']);
+
+    await output.dispose();
+    health.dispose();
+  });
+
+  test(
+    'reliable output does not emit flush edge for health-only exit failure',
+    () async {
+      final healthEvents = <OutputHealthEvent>[];
+      final outputHealthEvents = <OutputHealthEvent>[];
+      final health = SdkHealthMonitor(mode: SdkOutputModes.production);
+      health.onEvent = healthEvents.add;
+      final output = ReliableHttpOutput(
+        endpoint: Uri.parse('https://monitor.example.com/events'),
+        mode: SdkOutputModes.production,
+        policy: const MonitorProductionPolicy(
+          flushInterval: Duration(minutes: 5),
+        ),
+        queue: MemoryOfflineEventQueue(policy: const MonitorProductionPolicy()),
+        client: MockClient((_) async => throw StateError('offline')),
+        healthMonitor: health,
+      )..onHealthEvent = outputHealthEvents.add;
+      output.init();
+
+      final healthEnvelope = _testEnvelope(
+        'evt_health_exit',
+        EventNames.sdkHealthReport,
+      )..['signalType'] = 'sdk';
+      output.add(healthEnvelope);
+      await output.flush(isAppExiting: true, reason: SdkFlushReasons.appExit);
+      health.report(trigger: SdkFlushReasons.manual);
+
+      expect(
+        outputHealthEvents.where(
+          (event) => event.name == EventNames.sdkOutputFlush,
+        ),
+        isEmpty,
+      );
+      expect(
+        healthEvents.where((event) => event.name == EventNames.sdkHealthReport),
+        isEmpty,
+      );
+
+      await output.dispose();
+      health.dispose();
+    },
+  );
+
   test('reliable output emits one retry edge then drops exhausted events as '
       'retry_exhausted', () async {
     final healthEvents = <OutputHealthEvent>[];
