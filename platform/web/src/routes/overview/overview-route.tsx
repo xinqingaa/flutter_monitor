@@ -2,7 +2,8 @@ import { PanelRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { OverviewMetrics } from '../../features/overview/overview-metrics';
-import { SessionCard } from '../../features/session/session-summary-card';
+import { SessionList } from '../../features/session/session-list';
+import { SessionRail } from '../../features/session/session-rail';
 import { ServiceStatusStrip } from '../../features/overview/service-status-strip';
 import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
 import { useHealthQuery, usePerformanceQuery, useSessionsQuery } from '../../shared/datasource/queries';
@@ -17,13 +18,12 @@ export function OverviewRoute() {
   const live = useLiveState();
 
   const sessions = sessionsQuery.data?.sessions ?? [];
-  const recentSessions = sessions.slice(0, 3);
   const rightPanel = useCollapsiblePanel('workbench.overview.right');
 
   return (
     <div
       className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:grid-rows-[auto_minmax(0,1fr)] xl:overflow-hidden ${
-        rightPanel.collapsed ? 'xl:grid-cols-[minmax(760px,1fr)_40px]' : 'xl:grid-cols-[minmax(760px,1fr)_380px]'
+        rightPanel.collapsed ? 'xl:grid-cols-[minmax(760px,1fr)_104px]' : 'xl:grid-cols-[minmax(760px,1fr)_380px]'
       }`}
     >
       <div className="xl:col-span-2">
@@ -52,36 +52,28 @@ export function OverviewRoute() {
           side="right"
           collapsed={rightPanel.collapsed}
           onToggleCollapsed={rightPanel.toggleCollapsed}
+          collapsedContent={(
+            <SessionRail
+              sessions={sessions}
+              title="排查侧栏"
+              side="right"
+              onExpand={rightPanel.toggleCollapsed}
+            />
+          )}
         >
-          <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-            <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
-              <div>
-                <CardTitle>最近 / 实时</CardTitle>
-              </div>
+          <SessionList
+            sessions={sessions}
+            title="最近 / 实时"
+            description={live ? '本地 Workbench 正在接收实时事件。' : undefined}
+            panelAction={(
               <CollapsiblePanelAction
                 side="right"
                 title="排查侧栏"
                 collapsed={rightPanel.collapsed}
                 onToggleCollapsed={rightPanel.toggleCollapsed}
               />
-            </CardHeader>
-            <CardContent className="min-h-0 overflow-auto">
-              <div className="grid gap-2">
-                {recentSessions.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-sm text-zinc-500">
-                    暂无会话
-                  </div>
-                ) : recentSessions.map((session, index) => (
-                  <SessionCard
-                    key={session.sessionId}
-                    session={session}
-                    variant="featured"
-                    className={index > 0 ? 'mt-1' : undefined}
-                  />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+            )}
+          />
         </CollapsiblePanel>
       </aside>
     </div>

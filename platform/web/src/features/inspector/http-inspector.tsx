@@ -47,18 +47,6 @@ export function HttpInspector({
   const [maximized, setMaximized] = useState(false);
   const summary = useMemo(() => httpSummary(event), [event]);
 
-  const siblings = useMemo(() => {
-    const list = (relatedEvents ?? []).filter((item) => item.name === 'http.client');
-    return list.sort((a, b) => {
-      const aTime = a.timestamp ? Date.parse(a.timestamp) : 0;
-      const bTime = b.timestamp ? Date.parse(b.timestamp) : 0;
-      return aTime - bTime;
-    });
-  }, [relatedEvents]);
-  const siblingIndex = siblings.findIndex((item) => item.eventId === event.eventId);
-  const previous = siblingIndex > 0 ? siblings[siblingIndex - 1] : undefined;
-  const next = siblingIndex >= 0 && siblingIndex < siblings.length - 1 ? siblings[siblingIndex + 1] : undefined;
-
   async function copyEventJson() {
     try {
       await copyJson(event);
@@ -89,59 +77,114 @@ export function HttpInspector({
         </CardContent>
       </Card>
 
-      <Dialog
+      <HttpInspectorDialog
         open={maximized}
+        event={event}
+        relatedEvents={relatedEvents}
+        onSelectEvent={onSelectEvent}
         onClose={() => setMaximized(false)}
-        className="max-h-[92vh] w-full max-w-[1280px]"
-        contentClassName="p-0"
-        title={(
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-zinc-950">HTTP Inspector</h2>
-            <SummaryBadges summary={summary} />
-          </div>
-        )}
-        description={(
-          <div className="text-[11px] text-zinc-500">
+      />
+    </>
+  );
+}
+
+export function HttpInspectorDialog({
+  open,
+  event,
+  relatedEvents,
+  onSelectEvent,
+  onClose,
+}: {
+  open: boolean;
+  event?: MonitorEvent;
+  relatedEvents?: MonitorEvent[];
+  onSelectEvent?: (event: MonitorEvent) => void;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const summary = useMemo(() => event ? httpSummary(event) : undefined, [event]);
+  const siblings = useMemo(() => {
+    const list = (relatedEvents ?? []).filter((item) => item.name === 'http.client');
+    return list.sort((a, b) => {
+      const aTime = a.timestamp ? Date.parse(a.timestamp) : 0;
+      const bTime = b.timestamp ? Date.parse(b.timestamp) : 0;
+      return aTime - bTime;
+    });
+  }, [relatedEvents]);
+  const siblingIndex = event ? siblings.findIndex((item) => item.eventId === event.eventId) : -1;
+  const previous = siblingIndex > 0 ? siblings[siblingIndex - 1] : undefined;
+  const next = siblingIndex >= 0 && siblingIndex < siblings.length - 1 ? siblings[siblingIndex + 1] : undefined;
+
+  async function copyEventJson() {
+    if (!event) return;
+    try {
+      await copyJson(event);
+      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 HTTP EventEnvelope 已写入剪贴板。' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
+    }
+  }
+
+  if (!event || !summary) return null;
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      className="h-[86vh] w-full max-w-[1800px]"
+      contentClassName="p-0"
+      title={(
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 className="truncate text-base font-semibold text-zinc-950">HTTP Inspector</h2>
+          <SummaryBadges summary={summary} />
+        </div>
+      )}
+      description={(
+        <div className="grid min-w-0 gap-1">
+          <div className="min-w-0 truncate text-xs font-medium text-zinc-700">
             {[summary.method, summary.url].filter(Boolean).join(' ') || 'HTTP 请求'}
           </div>
-        )}
-        headerExtra={(
-          <div className="flex items-center gap-1">
-            <IconTooltipButton
-              type="button"
-              variant="ghost"
-              size="icon"
-              label={previous ? `上一条 ${formatTime(previous.timestamp)}` : '没有上一条'}
-              icon={ChevronLeft}
-              disabled={!previous}
-              onClick={() => previous && onSelectEvent?.(previous)}
-            />
-            <span className="px-1 text-[11px] tabular-nums text-zinc-500">
-              {siblings.length === 0 ? '—' : `${siblingIndex + 1}/${siblings.length}`}
-            </span>
-            <IconTooltipButton
-              type="button"
-              variant="ghost"
-              size="icon"
-              label={next ? `下一条 ${formatTime(next.timestamp)}` : '没有下一条'}
-              icon={ChevronRight}
-              disabled={!next}
-              onClick={() => next && onSelectEvent?.(next)}
-            />
-            <IconTooltipButton type="button" variant="ghost" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
-          </div>
-        )}
-      >
-        <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-0">
-          <div className="border-b border-zinc-200 px-4 py-3">
-            <HttpHeroBlock event={event} summary={summary} compact />
-          </div>
-          <div className="min-h-0 overflow-hidden p-4">
-            <HttpInspectorBody event={event} summary={summary} layout="vertical" />
+          <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[11px] text-zinc-500">
+            <span>{summary.statusLabel}</span>
+            <span>{formatDuration(event.durationMs)}</span>
+            {summary.responseSizeLabel ? <span>response {summary.responseSizeLabel}</span> : null}
+            {summary.requestSizeLabel ? <span>request {summary.requestSizeLabel}</span> : null}
+            {summary.route ? <span>route {summary.route}</span> : null}
+            {summary.requestId ? <span>requestId {summary.requestId}</span> : null}
           </div>
         </div>
-      </Dialog>
-    </>
+      )}
+      headerExtra={(
+        <div className="flex items-center gap-1">
+          <IconTooltipButton
+            type="button"
+            variant="ghost"
+            size="icon"
+            label={previous ? `上一条 ${formatTime(previous.timestamp)}` : '没有上一条'}
+            icon={ChevronLeft}
+            disabled={!previous}
+            onClick={() => previous && onSelectEvent?.(previous)}
+          />
+          <span className="px-1 text-[11px] tabular-nums text-zinc-500">
+            {siblings.length === 0 ? '-' : `${siblingIndex + 1}/${siblings.length}`}
+          </span>
+          <IconTooltipButton
+            type="button"
+            variant="ghost"
+            size="icon"
+            label={next ? `下一条 ${formatTime(next.timestamp)}` : '没有下一条'}
+            icon={ChevronRight}
+            disabled={!next}
+            onClick={() => next && onSelectEvent?.(next)}
+          />
+          <IconTooltipButton type="button" variant="ghost" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
+        </div>
+      )}
+    >
+      <div className="h-full min-h-0 overflow-hidden p-4">
+        <HttpInspectorBody event={event} summary={summary} layout="vertical" />
+      </div>
+    </Dialog>
   );
 }
 
@@ -212,7 +255,7 @@ function HttpInspectorBody({ event, summary, layout }: { event: MonitorEvent; su
           summary={summary}
           onCopyEvent={() => void copyEventJson()}
           contentClassName="min-h-0 overflow-auto pr-1"
-          maxBodyHeight="55vh"
+          maxBodyHeight="46vh"
         />
       </Tabs>
     );
@@ -311,7 +354,7 @@ function BodyTabsContent({
           <div className="flex justify-end">
             <IconTooltipButton type="button" variant="secondary" size="icon" label="复制完整 JSON" icon={Clipboard} onClick={onCopyEvent} />
           </div>
-          <JsonViewer value={event} collapsed={2} />
+          <JsonViewer value={event} collapsed={2} showControls={false} />
         </div>
       </TabsContent>
     </>
@@ -598,7 +641,7 @@ function BodyBlock({
       ) : null}
       {showFormatted && body.jsonValue !== undefined ? (
         <div className="overflow-hidden" style={wrapperStyle}>
-          <JsonViewer value={body.jsonValue} collapsed={2} />
+          <JsonViewer value={body.jsonValue} collapsed={2} showControls={false} />
         </div>
       ) : showFormatted ? (
         <pre
@@ -1187,4 +1230,3 @@ function byteLabel(value: number): string {
   if (value >= 1024) return `${(value / 1024).toFixed(1)}KB`;
   return `${Math.round(value)}B`;
 }
-

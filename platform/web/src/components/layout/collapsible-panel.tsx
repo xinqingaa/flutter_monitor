@@ -35,6 +35,7 @@ export function CollapsiblePanel({
   side,
   children,
   className,
+  collapsedContent,
   collapsed: controlledCollapsed,
   onToggleCollapsed,
 }: {
@@ -44,6 +45,7 @@ export function CollapsiblePanel({
   side: PanelSide;
   children: React.ReactNode;
   className?: string;
+  collapsedContent?: React.ReactNode;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
@@ -55,7 +57,7 @@ export function CollapsiblePanel({
   return (
     <div className={cn('h-full min-h-0 min-w-0', className)} data-collapsed={collapsed ? 'true' : 'false'}>
       {collapsed ? (
-        <CollapsedPanelButton icon={CollapsedIcon} label={`展开${title}`} onClick={toggleCollapsed} />
+        collapsedContent ?? <CollapsedPanelButton icon={CollapsedIcon} label={`展开${title}`} onClick={toggleCollapsed} />
       ) : (
         children
       )}
@@ -85,6 +87,37 @@ export function CollapsiblePanelAction({
       onClick={onToggleCollapsed}
       className="hidden h-7 w-7 text-zinc-500 xl:inline-flex"
     />
+  );
+}
+
+export function FloatingPanelToggle({
+  side,
+  title,
+  collapsed,
+  onToggleCollapsed,
+  className,
+}: {
+  side: PanelSide;
+  title: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  className?: string;
+}) {
+  const Icon = collapsed ? (side === 'left' ? PanelLeftOpen : PanelRightOpen) : (side === 'left' ? PanelLeftClose : PanelRightClose);
+  return (
+    <button
+      type="button"
+      onClick={onToggleCollapsed}
+      className={cn(
+        'hidden items-center gap-2 rounded-full border border-zinc-200 bg-white px-2.5 py-2 text-xs font-medium text-zinc-600 shadow-lg shadow-zinc-900/10 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 xl:inline-flex',
+        className,
+      )}
+      aria-label={`${collapsed ? '展开' : '收起'}${title}`}
+      title={`${collapsed ? '展开' : '收起'}${title}`}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="sr-only">{`${collapsed ? '展开' : '收起'}${title}`}</span>
+    </button>
   );
 }
 

@@ -1,7 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft, GitBranch } from 'lucide-react';
 import { useState } from 'react';
-import { CollapsiblePanel, CollapsiblePanelAction, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
+import { CollapsiblePanel, CollapsiblePanelAction, FloatingPanelToggle, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { EventInspector } from '../../features/inspector/event-inspector';
@@ -45,35 +45,45 @@ export function TraceDetailRoute() {
         </CardContent>
       </Card>
       <div
-        className={`grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:overflow-hidden ${
-          rightPanel.collapsed ? 'xl:grid-cols-[minmax(640px,1fr)_40px]' : 'xl:grid-cols-[minmax(640px,1fr)_560px]'
+        className={`relative grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto xl:overflow-hidden ${
+          rightPanel.collapsed ? 'xl:grid-cols-[minmax(640px,1fr)]' : 'xl:grid-cols-[minmax(640px,1fr)_560px]'
         }`}
       >
         <SessionTimeline events={events} selectedEventId={selectedEvent?.eventId} autoExpandSelected={Boolean(selectedEventId)} onSelectEvent={(event) => setSelectedEventId(event.eventId)} />
-        <aside className="min-h-[560px] overflow-hidden xl:min-h-0">
-          <CollapsiblePanel
-            storageKey="workbench.traceDetail.right"
-            title="节点诊断"
-            icon={GitBranch}
+        {rightPanel.collapsed ? (
+          <FloatingPanelToggle
             side="right"
+            title="节点诊断"
             collapsed={rightPanel.collapsed}
             onToggleCollapsed={rightPanel.toggleCollapsed}
-          >
-            <EventInspector
-              event={selectedEvent}
-              traceEvents={timelineEvents}
-              onSelectEvent={(event) => setSelectedEventId(event.eventId)}
-              panelAction={
-                <CollapsiblePanelAction
-                  side="right"
-                  title="节点诊断"
-                  collapsed={rightPanel.collapsed}
-                  onToggleCollapsed={rightPanel.toggleCollapsed}
-                />
-              }
-            />
-          </CollapsiblePanel>
-        </aside>
+            className="absolute right-3 top-1/2 z-20 -translate-y-1/2"
+          />
+        ) : (
+          <aside className="min-h-[560px] overflow-hidden xl:min-h-0">
+            <CollapsiblePanel
+              storageKey="workbench.traceDetail.right"
+              title="节点诊断"
+              icon={GitBranch}
+              side="right"
+              collapsed={rightPanel.collapsed}
+              onToggleCollapsed={rightPanel.toggleCollapsed}
+            >
+              <EventInspector
+                event={selectedEvent}
+                traceEvents={timelineEvents}
+                onSelectEvent={(event) => setSelectedEventId(event.eventId)}
+                panelAction={
+                  <CollapsiblePanelAction
+                    side="right"
+                    title="节点诊断"
+                    collapsed={rightPanel.collapsed}
+                    onToggleCollapsed={rightPanel.toggleCollapsed}
+                  />
+                }
+              />
+            </CollapsiblePanel>
+          </aside>
+        )}
       </div>
     </div>
   );

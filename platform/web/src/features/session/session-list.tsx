@@ -10,6 +10,7 @@ export function SessionList({
   title,
   description,
   headerContent,
+  headerContentPlacement = 'content',
   panelAction,
 }: {
   sessions: SessionSummary[];
@@ -18,19 +19,26 @@ export function SessionList({
   title?: string;
   description?: string;
   headerContent?: React.ReactNode;
+  headerContentPlacement?: 'header' | 'content';
   panelAction?: React.ReactNode;
 }) {
+  const headerMain = headerContentPlacement === 'header' && headerContent ? (
+    <div className="min-w-0 flex-1">{headerContent}</div>
+  ) : (
+    <div className="min-w-0">
+      <CardTitle>{title ?? '全部会话'}</CardTitle>
+      {description ? <p className="mt-1 text-xs text-zinc-500">{description}</p> : null}
+    </div>
+  );
+
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <div className="min-w-0">
-          <CardTitle>{title ?? '全部会话'}</CardTitle>
-          {description ? <p className="mt-1 text-xs text-zinc-500">{description}</p> : null}
-        </div>
+        {headerMain}
         {panelAction}
       </CardHeader>
       <CardContent className="min-h-0 overflow-auto p-0">
-        {headerContent}
+        {headerContentPlacement === 'content' ? headerContent : null}
         <SessionRows sessions={sessions} selectedSessionId={selectedSessionId} variant={dense ? 'compact' : 'compact'} />
       </CardContent>
     </Card>

@@ -9,16 +9,18 @@ import {
   Globe2,
   HardDrive,
   Layers3,
+  Maximize2,
   Radio,
   Search,
   ServerCog,
   Timer,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { EmptyState } from '../../components/common/empty-state';
 import { Badge, type BadgeProps } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
+import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
 import { Input } from '../../components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type {
@@ -163,10 +165,14 @@ export function SessionConsoleView({
   consoleData,
   selectedEventId,
   onSelectEvent,
+  inspectorCollapsed = false,
+  onOpenHttpDetail,
 }: {
   consoleData?: SessionConsoleResult;
   selectedEventId?: string;
   onSelectEvent: (eventId: string) => void;
+  inspectorCollapsed?: boolean;
+  onOpenHttpDetail?: (eventId: string) => void;
 }) {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [query, setQuery] = useState('');
@@ -301,7 +307,7 @@ export function SessionConsoleView({
                     <span
                       className={cn(
                         'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums',
-                        active ? 'bg-white/20 text-white' : 'bg-red-500 text-white',
+                        active ? 'bg-white/20 text-white' : 'bg-teal-500 text-white',
                       )}
                     >
                       {count}
@@ -354,6 +360,8 @@ export function SessionConsoleView({
           pageOverrides={pageOverrides}
           onTogglePageInstance={togglePageInstance}
           onSelectEvent={selectEvent}
+          inspectorCollapsed={inspectorCollapsed}
+          onOpenHttpDetail={onOpenHttpDetail}
           setRowRef={(eventId, node) => {
             if (node) rowRefs.current.set(eventId, node);
             else rowRefs.current.delete(eventId);
@@ -455,6 +463,8 @@ function LogStream({
   pageOverrides,
   onTogglePageInstance,
   onSelectEvent,
+  inspectorCollapsed,
+  onOpenHttpDetail,
   setRowRef,
   setSegmentRef,
 }: {
@@ -466,6 +476,8 @@ function LogStream({
   pageOverrides: Record<string, boolean>;
   onTogglePageInstance: (instanceId: string, expandedNow: boolean) => void;
   onSelectEvent: (eventId: string) => void;
+  inspectorCollapsed: boolean;
+  onOpenHttpDetail?: (eventId: string) => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
   setSegmentRef: (segmentId: string, node: HTMLElement | null) => void;
 }) {
@@ -521,6 +533,8 @@ function LogStream({
                         row={block.row}
                         selected={selectedEventId === block.row.eventId}
                         onSelectEvent={onSelectEvent}
+                        inspectorCollapsed={inspectorCollapsed}
+                        onOpenHttpDetail={onOpenHttpDetail}
                         setRowRef={setRowRef}
                       />
                     );
@@ -536,6 +550,8 @@ function LogStream({
                       onToggle={() => onTogglePageInstance(block.instanceId, expanded)}
                       selectedEventId={selectedEventId}
                       onSelectEvent={onSelectEvent}
+                      inspectorCollapsed={inspectorCollapsed}
+                      onOpenHttpDetail={onOpenHttpDetail}
                       setRowRef={setRowRef}
                     />
                   );
@@ -553,6 +569,8 @@ function LogRow({
   row,
   selected,
   onSelectEvent,
+  inspectorCollapsed = false,
+  onOpenHttpDetail,
   setRowRef,
   indented = false,
   showRoute = false,
@@ -560,6 +578,8 @@ function LogRow({
   row: SessionConsoleRow;
   selected: boolean;
   onSelectEvent: (eventId: string) => void;
+  inspectorCollapsed?: boolean;
+  onOpenHttpDetail?: (eventId: string) => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
   indented?: boolean;
   showRoute?: boolean;
@@ -570,50 +590,75 @@ function LogRow({
     () => row.metrics.filter((metric) => metric.label !== '耗时'),
     [row.metrics],
   );
+  const showHttpDetail = inspectorCollapsed && row.group === 'http' && Boolean(row.eventId && onOpenHttpDetail);
   return (
-    <button
-      ref={(node) => {
-        if (row.eventId) setRowRef(row.eventId, node);
-      }}
-      type="button"
-      disabled={!row.eventId}
-      onClick={() => row.eventId && onSelectEvent(row.eventId)}
+    <div
       className={cn(
-        'grid w-full grid-cols-[64px_28px_minmax(0,1fr)] gap-2 px-3 py-2 text-left hover:bg-zinc-50',
-        indented && 'pl-9',
-        selected && 'bg-teal-50 hover:bg-teal-50',
+        'grid w-full min-w-0',
+        showHttpDetail ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1',
+        selected && 'bg-teal-50',
       )}
     >
-      <span className="pt-0.5 text-xs tabular-nums text-zinc-500">{formatTime(row.timestamp ?? row.startTime)}</span>
-      <span className={cn('mt-0.5 inline-flex size-6 items-center justify-center rounded-md border', iconClass(row))}>
-        <Icon className="size-3.5" />
-      </span>
-      <span className="min-w-0">
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="min-w-0 truncate text-sm font-semibold text-zinc-950">{row.title}</span>
-          <Badge tone={groupTone(row.group)} className="rounded-md px-1.5 py-0 text-[11px]">{groupLabel(row.group)}</Badge>
-          {statusBadge ? (
-            <Badge tone={statusBadge.tone} className="rounded-md px-1.5 py-0 text-[11px]">
-              {statusBadge.label}
-            </Badge>
-          ) : null}
-          {row.durationMs !== undefined ? (
-            <Badge tone={row.durationMs >= 1000 ? 'warn' : 'neutral'} className="rounded-md px-1.5 py-0 text-[11px]">
-              {formatDuration(row.durationMs)}
-            </Badge>
-          ) : null}
-          {row.issueLabels.map((label) => (
-            <Badge key={label} tone={issueTone(label)} className="rounded-md px-1.5 py-0 text-[11px]">
-              {label}
-            </Badge>
-          ))}
+      <button
+        ref={(node) => {
+          if (row.eventId) setRowRef(row.eventId, node);
+        }}
+        type="button"
+        disabled={!row.eventId}
+        onClick={() => row.eventId && onSelectEvent(row.eventId)}
+        className={cn(
+          'grid w-full min-w-0 grid-cols-[64px_28px_minmax(0,1fr)] gap-2 px-3 py-2 text-left hover:bg-zinc-50',
+          indented && 'pl-9',
+          selected && 'bg-teal-50 hover:bg-teal-50',
+        )}
+      >
+        <span className="pt-0.5 text-xs tabular-nums text-zinc-500">{formatTime(row.timestamp ?? row.startTime)}</span>
+        <span className={cn('mt-0.5 inline-flex size-6 items-center justify-center rounded-md border', iconClass(row))}>
+          <Icon className="size-3.5" />
         </span>
-        <MetricStrip metrics={visibleMetrics} />
-        {showRoute && row.route ? (
-          <span className="mt-1 block truncate text-[11px] text-zinc-400">route {row.route}</span>
-        ) : null}
-      </span>
-    </button>
+        <span className="min-w-0">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="min-w-0 truncate text-sm font-semibold text-zinc-950">{row.title}</span>
+            <Badge tone={groupTone(row.group)} className="rounded-md px-1.5 py-0 text-[11px]">{groupLabel(row.group)}</Badge>
+            {statusBadge ? (
+              <Badge tone={statusBadge.tone} className="rounded-md px-1.5 py-0 text-[11px]">
+                {statusBadge.label}
+              </Badge>
+            ) : null}
+            {row.durationMs !== undefined ? (
+              <Badge tone={row.durationMs >= 1000 ? 'warn' : 'neutral'} className="rounded-md px-1.5 py-0 text-[11px]">
+                {formatDuration(row.durationMs)}
+              </Badge>
+            ) : null}
+            {row.issueLabels.map((label) => (
+              <Badge key={label} tone={issueTone(label)} className="rounded-md px-1.5 py-0 text-[11px]">
+                {label}
+              </Badge>
+            ))}
+          </span>
+          <MetricStrip metrics={visibleMetrics} />
+          {showRoute && row.route ? (
+            <span className="mt-1 block truncate text-[11px] text-zinc-400">route {row.route}</span>
+          ) : null}
+        </span>
+      </button>
+      {showHttpDetail ? (
+        <div className="flex items-center pr-3">
+          <IconTooltipButton
+            type="button"
+            variant="secondary"
+            size="icon"
+            label="打开 HTTP 详情"
+            icon={Maximize2}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.stopPropagation();
+              if (row.eventId) onOpenHttpDetail?.(row.eventId);
+            }}
+            className="h-8 w-8"
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -623,6 +668,8 @@ function PageInstanceCard({
   onToggle,
   selectedEventId,
   onSelectEvent,
+  inspectorCollapsed,
+  onOpenHttpDetail,
   setRowRef,
 }: {
   block: Extract<StreamBlock, { kind: 'page-card' }>;
@@ -630,6 +677,8 @@ function PageInstanceCard({
   onToggle: () => void;
   selectedEventId?: string;
   onSelectEvent: (eventId: string) => void;
+  inspectorCollapsed: boolean;
+  onOpenHttpDetail?: (eventId: string) => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
 }) {
   const { main, auxiliary } = block;
@@ -711,6 +760,8 @@ function PageInstanceCard({
               row={row}
               selected={selectedEventId === row.eventId}
               onSelectEvent={onSelectEvent}
+              inspectorCollapsed={inspectorCollapsed}
+              onOpenHttpDetail={onOpenHttpDetail}
               setRowRef={setRowRef}
               indented
             />
