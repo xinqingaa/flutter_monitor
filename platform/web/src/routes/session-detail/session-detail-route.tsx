@@ -1,6 +1,6 @@
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { GitBranch, ListTree, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { EmptyState } from '../../components/common/empty-state';
 import { CollapsiblePanel, CollapsiblePanelAction, FloatingPanelToggle, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Button } from '../../components/ui/button';
@@ -58,14 +58,17 @@ export function SessionDetailRoute() {
   const summary = sessionsQuery.data?.sessions.find((session) => session.sessionId === sessionId);
   const leftPanel = useCollapsiblePanel('workbench.sessionDetail.left');
   const rightPanel = useCollapsiblePanel('workbench.sessionDetail.right');
+  const leftWidth = useResizableWidth('workbench.sessionDetail.leftWidth', 340, 280, 460);
+  const rightWidth = useResizableWidth('workbench.sessionDetail.rightWidth', 470, 380, 760);
   const sideSessions = sessionsQuery.data?.sessions ?? [];
   const layoutColumns = leftPanel.collapsed && rightPanel.collapsed
-    ? 'xl:grid-cols-[104px_minmax(620px,1fr)]'
+    ? '104px minmax(620px,1fr)'
     : leftPanel.collapsed
-      ? 'xl:grid-cols-[104px_minmax(620px,1fr)_470px]'
+      ? `104px minmax(620px,1fr) ${rightWidth.width}px`
       : rightPanel.collapsed
-        ? 'xl:grid-cols-[340px_minmax(620px,1fr)]'
-        : 'xl:grid-cols-[340px_minmax(620px,1fr)_470px]';
+        ? `${leftWidth.width}px minmax(620px,1fr)`
+        : `${leftWidth.width}px minmax(620px,1fr) ${rightWidth.width}px`;
+  const layoutStyle = { '--session-detail-columns': layoutColumns } as CSSProperties;
 
   useEffect(() => {
     setSelectedEventId(search.eventId ?? searchSelectedRow?.eventId ?? searchSelectedEvent?.eventId);
@@ -106,9 +109,10 @@ export function SessionDetailRoute() {
   return (
     <>
       <div
-        className={`relative grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:overflow-hidden ${layoutColumns}`}
+        className="relative grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:overflow-hidden xl:[grid-template-columns:var(--session-detail-columns)]"
+        style={layoutStyle}
       >
-      <aside className="h-full min-h-[320px] overflow-hidden xl:min-h-0">
+      <aside className="relative h-full min-h-[320px] overflow-hidden xl:min-h-0">
         <CollapsiblePanel
           storageKey="workbench.sessionDetail.left"
           title="会话列表"
@@ -152,6 +156,18 @@ export function SessionDetailRoute() {
             }
           />
         </CollapsiblePanel>
+        {!leftPanel.collapsed ? (
+          <PanelResizeHandle
+            side="left"
+            label="调整左侧栏宽度"
+            width={leftWidth.width}
+            min={leftWidth.min}
+            max={leftWidth.max}
+            onResize={leftWidth.startResize}
+            onNudge={leftWidth.nudge}
+            onReset={leftWidth.reset}
+          />
+        ) : null}
       </aside>
       <section className="grid min-h-[620px] grid-rows-[auto_minmax(0,1fr)] gap-2 xl:min-h-0">
         {currentSessionInScope ? (
@@ -174,6 +190,7 @@ export function SessionDetailRoute() {
               onSelectEvent={setSelectedEventId}
               inspectorCollapsed={rightPanel.collapsed}
               onOpenHttpDetail={openHttpDetail}
+              onExpandInspector={() => rightPanel.setCollapsed(false)}
             />
           </>
         ) : (
@@ -204,7 +221,17 @@ export function SessionDetailRoute() {
           className="absolute right-3 top-1/2 z-20 -translate-y-1/2"
         />
       ) : (
-        <aside className="h-full min-h-[560px] overflow-hidden xl:min-h-0">
+        <aside className="relative h-full min-h-[560px] overflow-hidden xl:min-h-0">
+          <PanelResizeHandle
+            side="right"
+            label="调整右侧栏宽度"
+            width={rightWidth.width}
+            min={rightWidth.min}
+            max={rightWidth.max}
+            onResize={rightWidth.startResize}
+            onNudge={rightWidth.nudge}
+            onReset={rightWidth.reset}
+          />
           <CollapsiblePanel
             storageKey="workbench.sessionDetail.right"
             title="节点诊断"
@@ -278,4 +305,135 @@ export function SessionDetailRoute() {
       </Dialog>
     </>
   );
+}
+
+function useResizableWidth(storageKey: string, defaultWidth: number, min: number, max: number) {
+  const [width, setWidth] = useState(defaultWidth);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return;
+    const parsed = Number(stored);
+    if (Number.isFinite(parsed)) setWidth(clamp(parsed, min, max));
+  }, [max, min, storageKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, String(width));
+  }, [storageKey, width]);
+
+  const setClampedWidth = useCallback((next: number) => {
+    setWidth(clamp(next, min, max));
+  }, [max, min]);
+
+  const startResize = useCallback((side: 'left' | 'right', event: ReactPointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+
+    function handleMove(moveEvent: PointerEvent) {
+      const delta = side === 'left' ? moveEvent.clientX - startX : startX - moveEvent.clientX;
+      setClampedWidth(startWidth + delta);
+    }
+
+    function handleUp() {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    }
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+  }, [setClampedWidth, width]);
+
+  const nudge = useCallback((delta: number) => {
+    setClampedWidth(width + delta);
+  }, [setClampedWidth, width]);
+
+  const reset = useCallback(() => {
+    setWidth(defaultWidth);
+  }, [defaultWidth]);
+
+  return {
+    width,
+    min,
+    max,
+    startResize,
+    nudge,
+    reset,
+  };
+}
+
+function PanelResizeHandle({
+  side,
+  label,
+  width,
+  min,
+  max,
+  onResize,
+  onNudge,
+  onReset,
+}: {
+  side: 'left' | 'right';
+  label: string;
+  width: number;
+  min: number;
+  max: number;
+  onResize: (side: 'left' | 'right', event: ReactPointerEvent<HTMLElement>) => void;
+  onNudge: (delta: number) => void;
+  onReset: () => void;
+}) {
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      onNudge(side === 'left' ? -16 : 16);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      onNudge(side === 'left' ? 16 : -16);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      onNudge(min - width);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      onNudge(max - width);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onReset();
+    }
+  }
+
+  return (
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={Math.round(width)}
+      title={`${label}，双击恢复默认宽度`}
+      onPointerDown={(event) => onResize(side, event)}
+      onKeyDown={handleKeyDown}
+      onDoubleClick={onReset}
+      style={{ cursor: 'col-resize' }}
+      className={[
+        'group absolute top-0 z-30 hidden h-full w-3 items-center justify-center outline-none xl:flex',
+        side === 'left' ? '-right-2' : '-left-2',
+      ].join(' ')}
+    >
+      <span
+        aria-hidden="true"
+        style={{ cursor: 'col-resize' }}
+        className="h-10 w-1 rounded-full bg-zinc-200 opacity-0 transition group-hover:opacity-100 group-focus-visible:bg-teal-500 group-focus-visible:opacity-100 group-active:bg-teal-500 group-active:opacity-100"
+      />
+    </div>
+  );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

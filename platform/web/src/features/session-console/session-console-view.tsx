@@ -1,23 +1,16 @@
 import {
   Activity,
-  AlertTriangle,
-  BadgeAlert,
-  ChartNoAxesColumn,
   ChevronDown,
   ChevronRight,
-  Gauge,
-  Globe2,
-  HardDrive,
   Layers3,
   Maximize2,
-  Radio,
   Search,
   ServerCog,
   Timer,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { EmptyState } from '../../components/common/empty-state';
-import { Badge, type BadgeProps } from '../../components/ui/badge';
+import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
@@ -32,6 +25,8 @@ import type {
 } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
+import { NodePeekPopover } from './node-peek-popover';
+import { groupLabel, groupTone, iconClass, issueTone, primaryStatusBadge, rowIcon } from './row-display';
 
 type FilterKey = 'all' | 'problems' | 'pages' | 'http' | 'startup' | 'interaction' | 'business' | 'memory' | 'lifecycle' | 'sdk';
 type ScrollReason = 'user-click' | 'external' | 'live';
@@ -167,22 +162,44 @@ export function SessionConsoleView({
   onSelectEvent,
   inspectorCollapsed = false,
   onOpenHttpDetail,
+  onExpandInspector,
 }: {
   consoleData?: SessionConsoleResult;
   selectedEventId?: string;
   onSelectEvent: (eventId: string) => void;
   inspectorCollapsed?: boolean;
   onOpenHttpDetail?: (eventId: string) => void;
+  onExpandInspector?: () => void;
 }) {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [query, setQuery] = useState('');
   const [pageOverrides, setPageOverrides] = useState<Record<string, boolean>>({});
+  const [peekEventId, setPeekEventId] = useState<string>();
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const segmentRefs = useRef(new Map<string, HTMLElement>());
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollRef = useRef<PendingScroll | undefined>(undefined);
   const previousSelectedRef = useRef<string | undefined>(undefined);
   const previousRowsCountRef = useRef(0);
+
+  const closePeek = useCallback(() => setPeekEventId(undefined), []);
+
+  useEffect(() => {
+    if (!inspectorCollapsed) setPeekEventId(undefined);
+  }, [inspectorCollapsed]);
+
+  useEffect(() => {
+    setPeekEventId(undefined);
+  }, [filter, query]);
+
+  useEffect(() => {
+    if (!peekEventId) return;
+    const container = logContainerRef.current;
+    if (!container) return;
+    const handleWheel = () => setPeekEventId(undefined);
+    container.addEventListener('wheel', handleWheel, { passive: true });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [peekEventId]);
 
   const rowsById = useMemo(
     () => new Map((consoleData?.rows ?? []).map((row) => [row.eventId, row])),
@@ -249,11 +266,23 @@ export function SessionConsoleView({
   const selectEvent = useCallback((eventId: string) => {
     onSelectEvent(eventId);
     const target = rowsById.get(eventId);
+    if (inspectorCollapsed && target?.group === 'http') {
+      onOpenHttpDetail?.(eventId);
+      setPeekEventId(undefined);
+    } else if (inspectorCollapsed && target) {
+      // 非 HTTP 节点收起态：直接展开右侧 Inspector
+      onExpandInspector?.();
+      setPeekEventId(undefined);
+      // 备用方案：popover 形态预留，需要时取消下行注释、并注释上面的 onExpandInspector 调用
+      // setPeekEventId((current) => (current === eventId ? undefined : eventId));
+    } else {
+      setPeekEventId(undefined);
+    }
     if (target && filter !== 'all' && !tabPredicate(filter, target)) {
       setFilter('all');
     }
     pendingScrollRef.current = { type: 'row', id: eventId, reason: 'user-click' };
-  }, [filter, onSelectEvent, rowsById]);
+  }, [filter, inspectorCollapsed, onExpandInspector, onOpenHttpDetail, onSelectEvent, rowsById]);
 
   const selectSegment = useCallback((segment: SessionConsoleSegment) => {
     const visibleFirst = segment.rows.find((eventId) => visibleEventIds.has(eventId));
@@ -265,6 +294,7 @@ export function SessionConsoleView({
         setFilter('all');
       }
     }
+    setPeekEventId(undefined);
     pendingScrollRef.current = { type: 'segment', id: segment.id, reason: 'user-click' };
   }, [filter, onSelectEvent, rowsById, visibleEventIds]);
 
@@ -283,6 +313,8 @@ export function SessionConsoleView({
   }
 
   const tabChipMap = chipsByTab(consoleData.problemChips);
+  const peekRow = peekEventId ? rowsById.get(peekEventId) : undefined;
+  const peekAnchor = peekEventId ? rowRefs.current.get(peekEventId) ?? null : null;
 
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
@@ -362,6 +394,7 @@ export function SessionConsoleView({
           onSelectEvent={selectEvent}
           inspectorCollapsed={inspectorCollapsed}
           onOpenHttpDetail={onOpenHttpDetail}
+          onExpandInspector={onExpandInspector}
           setRowRef={(eventId, node) => {
             if (node) rowRefs.current.set(eventId, node);
             else rowRefs.current.delete(eventId);
@@ -372,6 +405,13 @@ export function SessionConsoleView({
           }}
         />
       </div>
+      <NodePeekPopover
+        row={peekRow}
+        anchorEl={peekAnchor}
+        open={Boolean(peekRow && peekAnchor)}
+        onClose={closePeek}
+        onExpandInspector={onExpandInspector}
+      />
     </Card>
   );
 }
@@ -465,6 +505,7 @@ function LogStream({
   onSelectEvent,
   inspectorCollapsed,
   onOpenHttpDetail,
+  onExpandInspector,
   setRowRef,
   setSegmentRef,
 }: {
@@ -478,6 +519,7 @@ function LogStream({
   onSelectEvent: (eventId: string) => void;
   inspectorCollapsed: boolean;
   onOpenHttpDetail?: (eventId: string) => void;
+  onExpandInspector?: () => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
   setSegmentRef: (segmentId: string, node: HTMLElement | null) => void;
 }) {
@@ -535,6 +577,7 @@ function LogStream({
                         onSelectEvent={onSelectEvent}
                         inspectorCollapsed={inspectorCollapsed}
                         onOpenHttpDetail={onOpenHttpDetail}
+                        onExpandInspector={onExpandInspector}
                         setRowRef={setRowRef}
                       />
                     );
@@ -552,6 +595,7 @@ function LogStream({
                       onSelectEvent={onSelectEvent}
                       inspectorCollapsed={inspectorCollapsed}
                       onOpenHttpDetail={onOpenHttpDetail}
+                      onExpandInspector={onExpandInspector}
                       setRowRef={setRowRef}
                     />
                   );
@@ -571,6 +615,7 @@ function LogRow({
   onSelectEvent,
   inspectorCollapsed = false,
   onOpenHttpDetail,
+  onExpandInspector,
   setRowRef,
   indented = false,
   showRoute = false,
@@ -580,6 +625,7 @@ function LogRow({
   onSelectEvent: (eventId: string) => void;
   inspectorCollapsed?: boolean;
   onOpenHttpDetail?: (eventId: string) => void;
+  onExpandInspector?: () => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
   indented?: boolean;
   showRoute?: boolean;
@@ -590,12 +636,12 @@ function LogRow({
     () => row.metrics.filter((metric) => metric.label !== '耗时'),
     [row.metrics],
   );
-  const showHttpDetail = inspectorCollapsed && row.group === 'http' && Boolean(row.eventId && onOpenHttpDetail);
+  const rowAction = pickRowAction(row, inspectorCollapsed, onOpenHttpDetail);
   return (
     <div
       className={cn(
         'grid w-full min-w-0',
-        showHttpDetail ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1',
+        rowAction ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1',
         selected && 'bg-teal-50',
       )}
     >
@@ -642,17 +688,17 @@ function LogRow({
           ) : null}
         </span>
       </button>
-      {showHttpDetail ? (
+      {rowAction ? (
         <div className="flex items-center pr-3">
           <IconTooltipButton
             type="button"
             variant="secondary"
             size="icon"
-            label="打开 HTTP 详情"
-            icon={Maximize2}
+            label={rowAction.label}
+            icon={rowAction.icon}
             onClick={(event: MouseEvent<HTMLButtonElement>) => {
               event.stopPropagation();
-              if (row.eventId) onOpenHttpDetail?.(row.eventId);
+              rowAction.onClick();
             }}
             className="h-8 w-8"
           />
@@ -670,6 +716,7 @@ function PageInstanceCard({
   onSelectEvent,
   inspectorCollapsed,
   onOpenHttpDetail,
+  onExpandInspector,
   setRowRef,
 }: {
   block: Extract<StreamBlock, { kind: 'page-card' }>;
@@ -679,6 +726,7 @@ function PageInstanceCard({
   onSelectEvent: (eventId: string) => void;
   inspectorCollapsed: boolean;
   onOpenHttpDetail?: (eventId: string) => void;
+  onExpandInspector?: () => void;
   setRowRef: (eventId: string, node: HTMLButtonElement | null) => void;
 }) {
   const { main, auxiliary } = block;
@@ -691,12 +739,16 @@ function PageInstanceCard({
     () => main.metrics.filter((metric) => metric.label !== '耗时'),
     [main.metrics],
   );
+  const mainAction = pickRowAction(main, inspectorCollapsed, onOpenHttpDetail);
 
   return (
     <div className="bg-white">
       <div
         className={cn(
-          'grid w-full grid-cols-[64px_28px_minmax(0,1fr)_auto] items-start gap-2 px-3 py-2 hover:bg-zinc-50',
+          'grid w-full items-start gap-2 px-3 py-2 hover:bg-zinc-50',
+          mainAction
+            ? 'grid-cols-[64px_28px_minmax(0,1fr)_auto_auto]'
+            : 'grid-cols-[64px_28px_minmax(0,1fr)_auto]',
           selectedEventId === main.eventId && 'bg-teal-50 hover:bg-teal-50',
         )}
       >
@@ -738,6 +790,20 @@ function PageInstanceCard({
             ) : null}
           </span>
         </button>
+        {mainAction ? (
+          <IconTooltipButton
+            type="button"
+            variant="secondary"
+            size="icon"
+            label={mainAction.label}
+            icon={mainAction.icon}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.stopPropagation();
+              mainAction.onClick();
+            }}
+            className="mt-0.5 h-8 w-8"
+          />
+        ) : null}
         {auxiliary.length > 0 ? (
           <button
             type="button"
@@ -762,6 +828,7 @@ function PageInstanceCard({
               onSelectEvent={onSelectEvent}
               inspectorCollapsed={inspectorCollapsed}
               onOpenHttpDetail={onOpenHttpDetail}
+              onExpandInspector={onExpandInspector}
               setRowRef={setRowRef}
               indented
             />
@@ -770,6 +837,28 @@ function PageInstanceCard({
       ) : null}
     </div>
   );
+}
+
+type RowAction = {
+  label: string;
+  icon: typeof Maximize2;
+  onClick: () => void;
+};
+
+function pickRowAction(
+  row: SessionConsoleRow,
+  inspectorCollapsed: boolean,
+  onOpenHttpDetail?: (eventId: string) => void,
+): RowAction | undefined {
+  if (!inspectorCollapsed || !row.eventId) return undefined;
+  if (row.group === 'http' && onOpenHttpDetail) {
+    return {
+      label: '打开 HTTP 详情',
+      icon: Maximize2,
+      onClick: () => onOpenHttpDetail(row.eventId as string),
+    };
+  }
+  return undefined;
 }
 
 function buildAuxLabels(rows: SessionConsoleRow[]): string[] {
@@ -787,19 +876,6 @@ function buildAuxLabels(rows: SessionConsoleRow[]): string[] {
     }
   }
   return labels;
-}
-
-function primaryStatusBadge(row: SessionConsoleRow): { label: string; tone: BadgeProps['tone'] } | undefined {
-  if (row.group === 'http') {
-    if (typeof row.statusCode === 'number') {
-      const failed = row.success === false || row.status === 'error' || row.statusCode >= 400;
-      return { label: String(row.statusCode), tone: failed ? 'danger' : 'good' };
-    }
-    if (row.errorType) {
-      return { label: row.errorType, tone: 'danger' };
-    }
-  }
-  return undefined;
 }
 
 function MetricStrip({ metrics, compact = false }: { metrics: SessionConsoleMetric[]; compact?: boolean }) {
@@ -852,68 +928,11 @@ function SegmentIcon({ segment }: { segment: SessionConsoleSegment }) {
   return <Activity className="size-3.5" />;
 }
 
-function rowIcon(row: SessionConsoleRow) {
-  if (row.group === 'http') return Globe2;
-  if (row.group === 'sdk') return ServerCog;
-  if (row.group === 'business') return BadgeAlert;
-  if (row.group === 'interaction') return ChartNoAxesColumn;
-  if (row.group === 'startup') return Timer;
-  if (row.group === 'page') return Layers3;
-  if (row.group === 'memory') return HardDrive;
-  if (row.group === 'lifecycle') return Radio;
-  if (row.issueLabels.length > 0 || row.group === 'problem') return AlertTriangle;
-  if (row.group === 'performance') return Gauge;
-  return Activity;
-}
-
-function iconClass(row: SessionConsoleRow): string {
-  if (row.issueLabels.some((label) => label.includes('失败') || label === '错误' || label.includes('丢弃'))) return 'border-red-200 bg-red-50 text-red-700';
-  if (row.issueLabels.length > 0) return 'border-amber-200 bg-amber-50 text-amber-800';
-  if (row.group === 'http') return 'border-blue-200 bg-blue-50 text-blue-700';
-  if (row.group === 'sdk') return 'border-zinc-200 bg-zinc-50 text-zinc-600';
-  if (row.group === 'business') return 'border-violet-200 bg-violet-50 text-violet-700';
-  if (row.group === 'interaction') return 'border-cyan-200 bg-cyan-50 text-cyan-700';
-  if (row.group === 'memory') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  return 'border-teal-200 bg-teal-50 text-teal-700';
-}
-
 function segmentIconClass(segment: SessionConsoleSegment, active: boolean): string {
   if (active) return 'border-teal-300 bg-white text-teal-700';
   if (segment.issueCount > 0) return 'border-amber-200 bg-amber-50 text-amber-800';
   if (segment.kind === 'sdk') return 'border-zinc-200 bg-zinc-50 text-zinc-600';
   return 'border-zinc-200 bg-zinc-50 text-zinc-600';
-}
-
-function groupLabel(group: SessionConsoleRow['group']): string {
-  const labels: Record<SessionConsoleRow['group'], string> = {
-    startup: '启动',
-    page: '页面',
-    http: 'HTTP',
-    interaction: '交互',
-    business: '埋点',
-    problem: '问题',
-    performance: '性能',
-    lifecycle: '生命周期',
-    memory: '内存',
-    sdk: 'SDK',
-    event: '事件',
-  };
-  return labels[group];
-}
-
-function groupTone(group: SessionConsoleRow['group']): BadgeProps['tone'] {
-  if (group === 'http') return 'info';
-  if (group === 'interaction') return 'teal';
-  if (group === 'business') return 'neutral';
-  if (group === 'memory') return 'good';
-  if (group === 'problem') return 'warn';
-  if (group === 'sdk') return 'neutral';
-  return 'neutral';
-}
-
-function issueTone(label: string): BadgeProps['tone'] {
-  if (label.includes('失败') || label === '错误' || label.includes('丢弃')) return 'danger';
-  return 'warn';
 }
 
 function metricToneClass(tone: SessionConsoleMetric['tone']): string {

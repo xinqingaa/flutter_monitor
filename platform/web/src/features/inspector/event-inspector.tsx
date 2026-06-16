@@ -85,16 +85,15 @@ export function EventInspector({
   return (
     <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <div>
-          <CardTitle>{profile.title}</CardTitle>
-          <div className="mt-1 flex items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <CardTitle className="truncate" title={profile.title}>{profile.title}</CardTitle>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
             <EventKindBadge event={event} />
             {display.status ? <Badge tone={display.status.value === 'error' ? 'danger' : 'neutral'}>{formatCompactField(display.status)}</Badge> : null}
             {labels.map((label) => <Badge key={label} tone="warn">{label}</Badge>)}
           </div>
         </div>
-        <div className="flex min-w-0 items-center gap-2 pr-1">
-          <IconTooltipButton type="button" variant="secondary" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
+        <div className="flex shrink-0 items-center gap-2 pr-1">
           <CopyableId value={event.eventId} />
           {panelAction}
         </div>

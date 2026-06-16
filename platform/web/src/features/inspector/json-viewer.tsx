@@ -1,7 +1,7 @@
 import JsonView from '@uiw/react-json-view';
 import { lightTheme } from '@uiw/react-json-view/light';
 import { vscodeTheme } from '@uiw/react-json-view/vscode';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../shared/formatting/cn';
 
@@ -113,7 +113,7 @@ export function JsonViewer({
         {isObject ? (
           <JsonView
             value={safeValue as object}
-            style={themeStyle}
+            style={themeStyle as CSSProperties}
             collapsed={collapsed}
             displayObjectSize={displayObjectSize}
             displayDataTypes={displayDataTypes}

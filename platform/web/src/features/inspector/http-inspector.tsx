@@ -43,30 +43,19 @@ export function HttpInspector({
   relatedEvents?: MonitorEvent[];
   onSelectEvent?: (event: MonitorEvent) => void;
 }) {
-  const { showToast } = useToast();
   const [maximized, setMaximized] = useState(false);
   const summary = useMemo(() => httpSummary(event), [event]);
-
-  async function copyEventJson() {
-    try {
-      await copyJson(event);
-      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 HTTP EventEnvelope 已写入剪贴板。' });
-    } catch {
-      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
-    }
-  }
 
   return (
     <>
       <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <div className="min-w-0">
-            <CardTitle>HTTP Inspector</CardTitle>
+          <div className="min-w-0 flex-1">
+            <CardTitle className="truncate">HTTP Inspector</CardTitle>
             <SummaryBadges summary={summary} />
           </div>
-          <div className="flex min-w-0 items-center gap-2 pr-1">
+          <div className="flex shrink-0 items-center gap-2 pr-1">
             <IconTooltipButton type="button" variant="secondary" size="icon" label="放大查看" icon={Maximize2} onClick={() => setMaximized(true)} />
-            <IconTooltipButton type="button" variant="secondary" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
             <CopyableId value={event.eventId} />
             {panelAction}
           </div>

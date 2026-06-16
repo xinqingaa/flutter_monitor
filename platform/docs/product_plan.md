@@ -284,6 +284,8 @@ Session Detail 的第一阶段目标从“区段展开列表”升级为 **Sessi
   Raw JSON
 ```
 
+左右侧栏应支持桌面端拖拽调整宽度，并把宽度保存在浏览器本地状态中。左侧用于会话列表和检索，右侧用于 Inspector 和 raw JSON；拖拽只改变 Workbench 布局，不改变 datasource、service API 或 envelope。侧栏收起态仍保持固定窄栏，移动端使用单列布局，不提供拖拽。
+
 ### Session Console 层级
 
 Session Console 最多展示 5 层，不做无限展开树：
@@ -358,6 +360,7 @@ Session Navigator 固定在日志流左侧：
 - 会话分段必须跟随当前 Tab 与子 chip 过滤：在当前视图下没有事件的分段直接隐藏，被部分过滤的分段在 meta 行中以 `tabRows / totalRows` 标注。
 - 每个导航项展示区段名、耗时、事件数（必要时含过滤计数）和问题数。
 - 点击区段时，日志流滚动到当前视图下该分段的第一个事件，并同步右侧 Inspector；不再因点击副作用切回 `全部` Tab。
+- 当右侧 Inspector 收起时，点击日志节点必须给出可见反馈：HTTP 节点可打开专用 HTTP 详情，其他节点在当前行下方展开轻量 Quick Peek，展示一句话摘要、关键证据、上下文和“展开右侧 Inspector / 复制 ID / 打开原始事件”等操作。Quick Peek 是 Workbench view model，不新增协议字段。
 
 问题入口下沉到日志流顶部 Tab：
 
