@@ -114,18 +114,21 @@ class InteractionMeasureSnapshot {
 }
 
 /// 业务交互性能观测开始时冻结的页面归属。
+///
+/// 自动绑定时四个字段均来自当前 page trace。业务通过 `routeName` 显式覆盖路由
+/// 但目标页尚未入栈时，[traceId] 和 [pageInstanceId] 可为空，仅冻结路由名。
 class InteractionPageBinding {
   const InteractionPageBinding({
     required this.routeName,
     required this.routeFullName,
-    required this.traceId,
-    required this.pageInstanceId,
+    this.traceId,
+    this.pageInstanceId,
   });
 
   final String routeName;
   final String routeFullName;
-  final String traceId;
-  final String pageInstanceId;
+  final String? traceId;
+  final String? pageInstanceId;
 }
 
 /// 业务交互性能观测 handle。

@@ -275,6 +275,8 @@ class MonitorBinding {
     MonitorMeasureMode mode = MonitorMeasureMode.common,
     String? target,
     Map<String, Object?> properties = const <String, Object?>{},
+    String? routeName,
+    String? routeFullName,
     Duration? observeFor,
     Duration? timeout,
   }) {
@@ -282,12 +284,18 @@ class MonitorBinding {
     if (collector == null) {
       return MonitorMeasureHandle.disabled(action: action, mode: mode);
     }
+    final pageBinding = routeName == null
+        ? reporter.currentInteractionPageBinding()
+        : reporter.interactionPageBindingForRoute(
+            routeName,
+            routeFullName: routeFullName,
+          );
     return collector.measure(
       action: action,
       mode: mode,
       target: target,
       properties: properties,
-      pageBinding: reporter.currentInteractionPageBinding(),
+      pageBinding: pageBinding,
       observeFor: observeFor,
       timeout: timeout,
     );

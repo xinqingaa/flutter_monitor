@@ -10,7 +10,7 @@ import 'package:flutter_monitor_sdk/src/delivery/reliable_http_output.dart';
 import 'package:flutter_monitor_sdk/src/delivery/sdk_health_monitor.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/core/reporter.dart'
-    show PageActivitySnapshot;
+    show PageActivitySnapshot, Reporter;
 import 'package:flutter_monitor_sdk/src/modules/frame_window_collector.dart';
 import 'package:flutter_monitor_sdk/src/modules/interaction_measure_collector.dart';
 import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
@@ -175,6 +175,35 @@ void main() {
       expect(snapshots.last.mode, MonitorMeasureMode.stage);
       expect(snapshots.last.endReason, InteractionEndReasons.finish);
       expect(snapshots.last.finishProperties, containsPair('source', 'test'));
+    },
+  );
+
+  test(
+    'measure route override freezes explicit route and reuses page trace',
+    () {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final reporter = Reporter(
+        const MonitorConfig(appInfo: AppInfo(appKey: 'test')),
+      );
+
+      // 目标页尚未入栈：仅冻结显式路由，trace 与页面实例缺省，走兜底链路。
+      final pending = reporter.interactionPageBindingForRoute('/stock-detail');
+      expect(pending, isNotNull);
+      expect(pending!.routeName, '/stock-detail');
+      expect(pending.routeFullName, '/stock-detail');
+      expect(pending.traceId, isNull);
+      expect(pending.pageInstanceId, isNull);
+
+      // 目标页已入栈：复用其 trace 与页面实例。
+      final pageInstanceId = reporter.startPageLoad(
+        '/stock-detail',
+        routeFullName: '/stock-detail?symbol=NVDA.US',
+      );
+      final bound = reporter.interactionPageBindingForRoute('/stock-detail');
+      expect(bound!.routeName, '/stock-detail');
+      expect(bound.routeFullName, '/stock-detail?symbol=NVDA.US');
+      expect(bound.traceId, isNotNull);
+      expect(bound.pageInstanceId, pageInstanceId);
     },
   );
 

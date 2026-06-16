@@ -230,12 +230,17 @@ class FlutterMonitorSDK {
   /// - [mode]：common 自动闭合，stage 由业务显式 finish/cancel。
   /// - [target]：可选 UI 目标。
   /// - [properties]：交互详情。
+  /// - [routeName] / [routeFullName]：可选，显式覆盖归属路由。默认 SDK 自动取
+  ///   调用时刻的栈顶页面路由；当自动路由不准时（例如导航前预取、目标页尚未
+  ///   入栈就开始观测）显式传入。取值必须是稳定低基数路由，不能含动态业务 ID。
   /// - [observeFor] / [timeout]：覆盖默认观测窗口和超时。
   static MonitorMeasureHandle measure({
     required String action,
     MonitorMeasureMode mode = MonitorMeasureMode.common,
     String? target,
     Map<String, Object?> properties = const <String, Object?>{},
+    String? routeName,
+    String? routeFullName,
     Duration? observeFor,
     Duration? timeout,
   }) {
@@ -247,6 +252,8 @@ class FlutterMonitorSDK {
       mode: mode,
       target: target,
       properties: properties,
+      routeName: routeName,
+      routeFullName: routeFullName,
       observeFor: observeFor,
       timeout: timeout,
     );

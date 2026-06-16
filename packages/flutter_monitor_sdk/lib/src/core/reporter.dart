@@ -1125,7 +1125,8 @@ class Reporter {
       FieldPaths.interactionSettleMs: snapshot.settleDuration.inMilliseconds,
       if (snapshot.target != null && snapshot.target!.isNotEmpty)
         FieldPaths.uiTarget: snapshot.target,
-      if (page != null) FieldPaths.pageInstanceId: page.pageInstanceId,
+      if (page?.pageInstanceId != null)
+        FieldPaths.pageInstanceId: page!.pageInstanceId,
       ...snapshot.frameAttributes(
         minSampleCount:
             _config.effectivePerformanceConfig.interactionMinSampleCount,
@@ -1548,6 +1549,26 @@ class Reporter {
       routeFullName: page.routeFullName,
       traceId: page.traceId,
       pageInstanceId: page.pageInstanceId,
+    );
+  }
+
+  /// 为显式指定的路由构造交互页面归属。
+  ///
+  /// 业务在自动栈顶路由不准时（例如导航前预取）显式传入路由。若该路由已有活跃
+  /// page trace 则复用其 trace 和页面实例；否则仅冻结路由名，trace 和页面实例
+  /// 留空，由 [recordInteractionMeasure] 走兜底链路。
+  InteractionPageBinding? interactionPageBindingForRoute(
+    String routeName, {
+    String? routeFullName,
+  }) {
+    if (routeName.isEmpty) return currentInteractionPageBinding();
+    final page = _activePageTraceForRoute(routeName);
+    return InteractionPageBinding(
+      routeName: routeName,
+      routeFullName: page?.routeFullName ??
+          _effectiveRouteFullName(routeName, routeFullName),
+      traceId: page?.traceId,
+      pageInstanceId: page?.pageInstanceId,
     );
   }
 
