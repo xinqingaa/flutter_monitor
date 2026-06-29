@@ -1148,7 +1148,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 |---|---|---|
 | 启动 | `trace app.cold_start`、`trace app.hot_start`、`span sdk.init`、预留 `span app.interactive` | `event.phase`、`app.start.type`、`app.start.end_reason`、`app.first_frame_ms`、预留 `app.interactive_ms`、`sdk.init.duration_ms`、`durationMs`、`memory.start_rss_mb`、`memory.end_rss_mb`、`memory.delta_rss_mb` |
 | 页面 | `trace page.visit`、`span route.push`、`span page.load`、`metric page.stay`、`breadcrumb page.view` | `context.route.*`、`page.instance_id`、`page.from`、`page.from_full_name`、`page.to`、`page.to_full_name`、`page.load_ms`、`page.first_frame_ms`、`durationMs`、`frame.*` 摘要、`memory.enter_rss_mb`、`memory.exit_rss_mb`、`memory.delta_rss_mb` |
-| 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`http.request_id`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs`；详情见 `payload.url`、`payload.http.query`、`payload.http.detail.*` |
+| 网络 | `span http.client`（completed single-span，`event.phase = instant`） | `context.route.*` 和 `traceId` 绑定请求发起时页面；`http.method`、`http.url.normalized`、`http.status_code`、`http.success`、`http.error_type`、`http.request_id`、`request.size_bytes`、`response.size_bytes`、`startTime`、`endTime`、`durationMs`；跨页面完成时追加 `http.route_changed`、`http.completion.route.*`；详情见 `payload.url`、`payload.http.query`、`payload.http.detail.*` |
 | 业务动作 | `breadcrumb <track.action>` | `business.action`、`business.result`、`ui.target`、`payload.properties` |
 | 业务交互性能 | `span interaction.measure` | `business.action`、`business.result`、`ui.target`、`interaction.mode`、`interaction.end_reason`、`interaction.active_ms`、`interaction.settle_ms`、`interaction.observe_ms`、`interaction.timeout_ms`、`page.instance_id`、`durationMs`、`frame.*` |
 | 卡顿 | `metric ui.jank.sequence`；页面帧摘要写入 `page.visit` trace end | `jank.count`、`frame.max_ms`、`frame.avg_ms`、`frame.budget_ms`、`frame.fps`、`frame.stability`、`frame.p50_ms`、`frame.p90_ms`、`frame.p99_ms` |
@@ -1177,10 +1177,16 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 - 事实层（retention hard，永不剥离）：attributes 中的 `http.*`、`request.size_bytes`、`response.size_bytes`，加上 `payload.url`（**不含 query**）和错误短摘要。回答“哪个接口、什么结果、多慢”。
 - 详情层（retention compressible，压力下可剥离）：`payload.http.query` 与 `payload.http.detail`。回答“具体发了什么、收到了什么”。
 
+HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start 冻结 owner route、owner trace 和可用的 `page.instance_id`，并把它们写入 `context.route.*`、`traceId` 和 attributes。若请求在另一个页面完成，不能把主归属改到完成页；应仅追加 completion 诊断字段，供 Workbench 在行内小字或详情中说明“响应于另一个页面”，避免 session timeline 因异步响应出现伪造的 A -> B -> A -> B 穿插。
+
 字段结构：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
+| `http.route_changed` | boolean | 请求完成时活跃 route 是否不同于发起 route |
+| `http.completion.route.name` | string | 请求完成时活跃 route name；仅用于诊断，不覆盖 `context.route.name` |
+| `http.completion.route.full_name` | string | 请求完成时活跃完整 route；仅用于诊断，不覆盖 `context.route.fullName` |
+| `http.completion.page_instance_id` | string | 请求完成时活跃页面实例；仅用于诊断 |
 | `payload.url` | string | 不含 query 的完整 URL |
 | `payload.http.query` | object | 结构化 query 参数 |
 | `payload.http.detail.request.headers` | object | 请求 headers |

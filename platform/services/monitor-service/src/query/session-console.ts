@@ -151,7 +151,14 @@ function httpMetrics(event: MonitorEvent, http: Partial<SessionConsoleRow>): Ses
   pushMetric(metrics, '耗时', durationLabel(event.durationMs), event.durationMs !== undefined && event.durationMs >= SLOW_HTTP_MS ? 'warn' : 'neutral');
   pushMetric(metrics, '响应', byteLabel(http.responseSizeBytes));
   pushMetric(metrics, '请求', byteLabel(http.requestSizeBytes));
-  pushMetric(metrics, '来源', stringPath(event, ['attributes', 'http.source']) ?? stringPath(event, ['payload', 'http.source']) ?? stringPath(event, ['payload', 'source']));
+  pushMetric(
+    metrics,
+    '来源',
+    stringPath(event, ['attributes', 'http.source']) ??
+      stringPath(event, ['payload', 'http.source']) ??
+      stringPath(event, ['payload', 'source']),
+  );
+  pushMetric(metrics, '响应页', http.routeChanged ? http.completionRoute : undefined, 'info');
   const evidence = [
     http.hasRequestHeaders ? 'Req headers' : undefined,
     http.hasRequestBody ? 'Req body' : undefined,
@@ -350,6 +357,10 @@ function httpInfo(event: MonitorEvent): Partial<SessionConsoleRow> {
   const method = stringPath(event, ['attributes', 'http.method']);
   const url = stringPath(event, ['attributes', 'http.url.normalized']) ?? stringPath(event, ['payload', 'url']);
   const statusCode = numberPath(event, ['attributes', 'http.status_code']);
+  const routeChanged = booleanPath(event, ['attributes', 'http.route_changed']);
+  const completionRoute =
+    stringPath(event, ['attributes', 'http.completion.route.full_name']) ??
+    stringPath(event, ['attributes', 'http.completion.route.name']);
 
   return {
     method,
@@ -359,6 +370,12 @@ function httpInfo(event: MonitorEvent): Partial<SessionConsoleRow> {
     errorType: stringPath(event, ['attributes', 'http.error_type']) ?? stringPath(event, ['payload', 'error_type']),
     requestSizeBytes: numberPath(event, ['attributes', 'http.request_content_length']) ?? numberPath(event, ['attributes', 'http.request.size_bytes']),
     responseSizeBytes: numberPath(event, ['attributes', 'http.response_content_length']) ?? numberPath(event, ['attributes', 'http.response.size_bytes']),
+    routeChanged,
+    completionRoute,
+    completionPageInstanceId: stringPath(event, [
+      'attributes',
+      'http.completion.page_instance_id',
+    ]),
     hasHttpQuery: isNonEmptyValue(query),
     hasRequestHeaders: requestHeaders !== undefined && Object.keys(requestHeaders).length > 0,
     hasRequestBody: isNonEmptyValue(requestBody),

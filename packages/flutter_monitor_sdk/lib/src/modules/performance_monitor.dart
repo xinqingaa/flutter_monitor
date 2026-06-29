@@ -234,6 +234,8 @@ class _RouteDescriptor {
 class MonitorDioInterceptor extends Interceptor {
   final Reporter _reporter;
   static const _startTimeKey = '__flutter_monitor_sdk_start_time';
+  static const _requestBindingKey =
+      '__flutter_monitor_sdk_http_request_binding';
 
   /// 创建 Dio 请求监控拦截器。
   MonitorDioInterceptor(this._reporter);
@@ -242,6 +244,7 @@ class MonitorDioInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra[_startTimeKey] = DateTime.now();
+    options.extra[_requestBindingKey] = _reporter.currentHttpRequestBinding();
     super.onRequest(options, handler);
   }
 
@@ -270,6 +273,8 @@ class MonitorDioInterceptor extends Interceptor {
       source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
+      requestBinding: _requestBinding(response.requestOptions),
+      completionBinding: _reporter.currentHttpCompletionBinding(),
       payload: <String, Object?>{
         PayloadKeys.httpSource: HttpPayloadSources.dio,
       },
@@ -305,6 +310,8 @@ class MonitorDioInterceptor extends Interceptor {
       source: SignalSources.sdkDio,
       startTime: startTime,
       endTime: endTime,
+      requestBinding: _requestBinding(err.requestOptions),
+      completionBinding: _reporter.currentHttpCompletionBinding(),
       payload: <String, Object?>{
         PayloadKeys.httpSource: HttpPayloadSources.dio,
       },
@@ -320,6 +327,11 @@ class MonitorDioInterceptor extends Interceptor {
   DateTime? _requestStartTime(RequestOptions options) {
     final value = options.extra[_startTimeKey];
     return value is DateTime ? value : null;
+  }
+
+  HttpRequestBinding? _requestBinding(RequestOptions options) {
+    final value = options.extra[_requestBindingKey];
+    return value is HttpRequestBinding ? value : null;
   }
 
   num? _dioRequestSize(RequestOptions options) {

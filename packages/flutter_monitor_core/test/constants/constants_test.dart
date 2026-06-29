@@ -33,6 +33,16 @@ void main() {
       FieldPaths.sdkHealthFlushFailureCount,
       'sdk.health.flush_failure_count',
     );
+    expect(FieldPaths.httpRouteChanged, 'http.route_changed');
+    expect(FieldPaths.httpCompletionRouteName, 'http.completion.route.name');
+    expect(
+      FieldPaths.httpCompletionRouteFullName,
+      'http.completion.route.full_name',
+    );
+    expect(
+      FieldPaths.httpCompletionPageInstanceId,
+      'http.completion.page_instance_id',
+    );
   });
 
   test('exposes canonical event names for memory lifecycle and native', () {

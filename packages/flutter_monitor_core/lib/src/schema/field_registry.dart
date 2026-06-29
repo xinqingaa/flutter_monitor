@@ -745,6 +745,36 @@ const defaultFieldDefinitions = <FieldDefinition>[
         'such as x-request-id.',
   ),
   FieldDefinition(
+    path: FieldPaths.httpRouteChanged,
+    valueType: FieldValueType.boolean,
+    privacyLevel: PrivacyLevel.safe,
+    indexed: true,
+    description:
+        'Whether the HTTP request completed while a different route was active.',
+  ),
+  FieldDefinition(
+    path: FieldPaths.httpCompletionRouteName,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+    description:
+        'Route name that was active when the HTTP request completed. '
+        'The envelope context route remains the request owner route.',
+  ),
+  FieldDefinition(
+    path: FieldPaths.httpCompletionRouteFullName,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    description: 'Full route that was active when the HTTP request completed.',
+  ),
+  FieldDefinition(
+    path: FieldPaths.httpCompletionPageInstanceId,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    description:
+        'Page instance that was active when the HTTP request completed.',
+  ),
+  FieldDefinition(
     path: FieldPaths.requestSizeBytes,
     valueType: FieldValueType.number,
     privacyLevel: PrivacyLevel.safe,

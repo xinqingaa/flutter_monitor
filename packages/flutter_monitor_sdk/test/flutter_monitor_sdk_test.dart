@@ -207,6 +207,62 @@ void main() {
     },
   );
 
+  test('http client keeps request route and records completion route', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final reporter = Reporter(
+      const MonitorConfig(appInfo: AppInfo(appKey: 'test')),
+    );
+
+    final pageA = reporter.startPageLoad(
+      '/detail',
+      routeFullName: '/detail?symbol=NVDA.US',
+    );
+    reporter.addBreadcrumb('ui.tap.buy');
+    reporter.addBreadcrumb('ui.tap.confirm');
+    reporter.addBreadcrumb('business.order.preview');
+    final requestBinding = reporter.currentHttpRequestBinding();
+    reporter.startPageLoad('/main');
+    reporter.addBreadcrumb('ui.tap.home');
+    final completionBinding = reporter.currentHttpCompletionBinding();
+    final result = reporter.recordHttpClient(
+      url: 'https://example.com/api/order',
+      method: 'GET',
+      durationMs: 1200,
+      success: false,
+      errorType: HttpErrorTypes.timeout,
+      requestBinding: requestBinding,
+      completionBinding: completionBinding,
+    );
+
+    expect(result.accepted, isTrue);
+    final envelope = result.envelope!;
+    expect(envelope.context.route?.name, '/detail');
+    expect(envelope.context.route?.fullName, '/detail?symbol=NVDA.US');
+    expect(envelope.traceId, requestBinding.traceId);
+    expect(envelope.attributes[FieldPaths.pageInstanceId], pageA);
+    expect(envelope.attributes[FieldPaths.httpRouteChanged], isTrue);
+    expect(envelope.attributes[FieldPaths.httpCompletionRouteName], '/main');
+    expect(
+      envelope.attributes[FieldPaths.httpCompletionRouteFullName],
+      '/main',
+    );
+    expect(
+      envelope.attributes[FieldPaths.httpCompletionPageInstanceId],
+      completionBinding.pageInstanceId,
+    );
+
+    final breadcrumbs =
+        envelope.payload[FieldPaths.payloadBreadcrumbs] as List<dynamic>;
+    expect(breadcrumbs, isNotEmpty);
+    expect(
+      breadcrumbs
+          .whereType<Map<String, Object?>>()
+          .map((breadcrumb) => breadcrumb['route'])
+          .toSet(),
+      isNot(contains('/main')),
+    );
+  });
+
   test(
     'interaction collector treats non-positive concurrency as disabled',
     () async {

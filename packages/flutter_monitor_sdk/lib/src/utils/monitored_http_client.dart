@@ -34,6 +34,7 @@ class MonitoredHttpClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final startTime = DateTime.now();
+    final requestBinding = _reporter.currentHttpRequestBinding();
     final requestBody = request is http.Request && request.body.isNotEmpty
         ? request.bodyBytes
         : null;
@@ -43,6 +44,7 @@ class MonitoredHttpClient extends http.BaseClient {
       final endTime = DateTime.now();
       final duration = endTime.difference(startTime);
       final success = response.statusCode >= 200 && response.statusCode < 400;
+      final completionBinding = _reporter.currentHttpCompletionBinding();
 
       void record({Object? responseBody}) {
         _reporter.recordHttpClient(
@@ -60,6 +62,8 @@ class MonitoredHttpClient extends http.BaseClient {
           source: SignalSources.sdkHttp,
           startTime: startTime,
           endTime: endTime,
+          requestBinding: requestBinding,
+          completionBinding: completionBinding,
           payload: const <String, Object?>{
             PayloadKeys.httpSource: HttpPayloadSources.packageHttp,
           },
@@ -70,9 +74,10 @@ class MonitoredHttpClient extends http.BaseClient {
         record();
         return response;
       }
-      return _teeResponse(response, onBody: (bytes) => record(
-        responseBody: bytes,
-      ));
+      return _teeResponse(
+        response,
+        onBody: (bytes) => record(responseBody: bytes),
+      );
     } catch (e) {
       final endTime = DateTime.now();
       final duration = endTime.difference(startTime);
@@ -87,6 +92,8 @@ class MonitoredHttpClient extends http.BaseClient {
         source: SignalSources.sdkHttp,
         startTime: startTime,
         endTime: endTime,
+        requestBinding: requestBinding,
+        completionBinding: _reporter.currentHttpCompletionBinding(),
         payload: const <String, Object?>{
           PayloadKeys.httpSource: HttpPayloadSources.packageHttp,
         },

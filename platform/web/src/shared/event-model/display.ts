@@ -623,6 +623,9 @@ function collectNameFields(event: MonitorEvent, primary: DisplayField[], seconda
     pushField(event, secondary, 'attributes.http.status_code', { skipDash: true });
     pushField(event, secondary, 'attributes.http.success');
     pushField(event, secondary, 'attributes.http.error_type');
+    pushField(event, secondary, 'attributes.http.completion.route.full_name', {
+      skipDash: true,
+    });
     return;
   }
 
@@ -973,6 +976,10 @@ export function fieldDescription(path: string): string | undefined {
     'attributes.http.error_type': '网络错误类型',
     'attributes.http.retry_count': '重试次数',
     'attributes.http.cache_status': 'hit/miss/bypass/unknown',
+    'attributes.http.route_changed': '请求完成时页面已变化',
+    'attributes.http.completion.route.name': '请求完成时 route',
+    'attributes.http.completion.route.full_name': '请求完成时完整 route',
+    'attributes.http.completion.page_instance_id': '请求完成时页面实例',
     'attributes.request.size_bytes': '请求大小',
     'attributes.response.size_bytes': '响应大小',
     'attributes.ui.action': 'tap/scroll/input 等',

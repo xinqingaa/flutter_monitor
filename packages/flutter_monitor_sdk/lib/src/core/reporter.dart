@@ -725,6 +725,8 @@ class Reporter {
     String source = SignalSources.sdkHttp,
     DateTime? startTime,
     DateTime? endTime,
+    HttpRequestBinding? requestBinding,
+    HttpRequestBinding? completionBinding,
     Map<String, Object?> payload = const <String, Object?>{},
   }) {
     final finishedAt = endTime ?? DateTime.now();
@@ -741,6 +743,7 @@ class Reporter {
           );
     final effectiveRequestId =
         requestId ?? _requestIdFromHeaders(responseHeaders);
+    final routeChanged = _httpRouteChanged(requestBinding, completionBinding);
     final attributes = <String, Object?>{
       FieldPaths.httpMethod: method,
       FieldPaths.httpUrlNormalized: _normalizedUrl(url),
@@ -752,6 +755,17 @@ class Reporter {
       if (cacheStatus != null) FieldPaths.httpCacheStatus: cacheStatus,
       if (effectiveRequestId != null)
         FieldPaths.httpRequestId: effectiveRequestId,
+      if (requestBinding?.pageInstanceId != null)
+        FieldPaths.pageInstanceId: requestBinding!.pageInstanceId,
+      if (routeChanged) FieldPaths.httpRouteChanged: true,
+      if (routeChanged && completionBinding?.routeName != null)
+        FieldPaths.httpCompletionRouteName: completionBinding!.routeName,
+      if (routeChanged && completionBinding?.routeFullName != null)
+        FieldPaths.httpCompletionRouteFullName:
+            completionBinding!.routeFullName,
+      if (routeChanged && completionBinding?.pageInstanceId != null)
+        FieldPaths.httpCompletionPageInstanceId:
+            completionBinding!.pageInstanceId,
       if (requestSizeBytes != null)
         FieldPaths.requestSizeBytes: requestSizeBytes,
       if (responseSizeBytes != null)
@@ -774,8 +788,14 @@ class Reporter {
       PayloadKeys.url: urlWithoutQuery(url),
       ...detailSection,
     }..remove(PayloadKeys.error);
+    final previousTrace = _traceManager.capture(
+      sessionId: _sessionManager.currentSessionId,
+      breadcrumbs: const <Breadcrumb>[],
+    );
     final span = _traceManager.startSpan(
       name: EventNames.httpClient,
+      traceId: requestBinding?.traceId,
+      parentSpanId: requestBinding?.parentSpanId,
       startTime: startedAt,
       attributes: attributes,
       payload: <String, Object?>{
@@ -788,6 +808,11 @@ class Reporter {
       endTime: finishedAt,
       status: success ? EventStatus.ok : EventStatus.error,
       level: EventLevel.info,
+    );
+    _traceManager.setActiveTrace(
+      traceId: previousTrace.traceId,
+      spanId: previousTrace.spanId,
+      parentSpanId: previousTrace.parentSpanId,
     );
     if (finished == null) {
       return reportSdkEvent(
@@ -813,6 +838,8 @@ class Reporter {
         parentSpanId: finished.parentSpanId,
         includeBreadcrumbs: !success,
         eventPhase: EventPhases.instant,
+        contextRouteName: requestBinding?.routeName,
+        contextRouteFullName: requestBinding?.routeFullName,
         attributes: finished.attributes,
         payload: finished.payload,
       ),
@@ -1552,6 +1579,14 @@ class Reporter {
     );
   }
 
+  HttpRequestBinding currentHttpRequestBinding() {
+    return _currentHttpBinding();
+  }
+
+  HttpRequestBinding currentHttpCompletionBinding() {
+    return _currentHttpBinding();
+  }
+
   /// 为显式指定的路由构造交互页面归属。
   ///
   /// 业务在自动栈顶路由不准时（例如导航前预取）显式传入路由。若该路由已有活跃
@@ -1565,7 +1600,8 @@ class Reporter {
     final page = _activePageTraceForRoute(routeName);
     return InteractionPageBinding(
       routeName: routeName,
-      routeFullName: page?.routeFullName ??
+      routeFullName:
+          page?.routeFullName ??
           _effectiveRouteFullName(routeName, routeFullName),
       traceId: page?.traceId,
       pageInstanceId: page?.pageInstanceId,
@@ -1793,6 +1829,41 @@ class Reporter {
       if (record != null) return record;
     }
     return null;
+  }
+
+  HttpRequestBinding _currentHttpBinding() {
+    final trace = _traceManager.capture(
+      sessionId: _sessionManager.currentSessionId,
+      breadcrumbs: const <Breadcrumb>[],
+    );
+    final page = _topPageTrace();
+    final route = _contextManager.capture().context.route;
+    return HttpRequestBinding(
+      routeName: page?.routeName ?? route?.name,
+      routeFullName: page?.routeFullName ?? route?.fullName,
+      traceId: trace.traceId,
+      parentSpanId: trace.spanId,
+      pageInstanceId: page?.pageInstanceId,
+    );
+  }
+
+  bool _httpRouteChanged(
+    HttpRequestBinding? request,
+    HttpRequestBinding? completion,
+  ) {
+    if (request == null || completion == null) return false;
+    final requestRoute = request.routeFullName ?? request.routeName;
+    final completionRoute = completion.routeFullName ?? completion.routeName;
+    if (requestRoute != null &&
+        completionRoute != null &&
+        requestRoute != completionRoute) {
+      return true;
+    }
+    final requestPageInstanceId = request.pageInstanceId;
+    final completionPageInstanceId = completion.pageInstanceId;
+    return requestPageInstanceId != null &&
+        completionPageInstanceId != null &&
+        requestPageInstanceId != completionPageInstanceId;
   }
 
   void _resumeTopPage(
@@ -2052,6 +2123,22 @@ class PageActivitySnapshot {
       timestamp: timestamp ?? this.timestamp,
     );
   }
+}
+
+class HttpRequestBinding {
+  const HttpRequestBinding({
+    this.routeName,
+    this.routeFullName,
+    this.traceId,
+    this.parentSpanId,
+    this.pageInstanceId,
+  });
+
+  final String? routeName;
+  final String? routeFullName;
+  final String? traceId;
+  final String? parentSpanId;
+  final String? pageInstanceId;
 }
 
 class _PageTraceRecord {

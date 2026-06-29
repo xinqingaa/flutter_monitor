@@ -170,6 +170,9 @@ export interface SessionConsoleRow {
   errorType?: string;
   requestSizeBytes?: number;
   responseSizeBytes?: number;
+  routeChanged?: boolean;
+  completionRoute?: string;
+  completionPageInstanceId?: string;
   hasHttpQuery?: boolean;
   hasRequestHeaders?: boolean;
   hasRequestBody?: boolean;

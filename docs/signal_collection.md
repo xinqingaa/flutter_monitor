@@ -325,10 +325,11 @@ route 实例:
 
 ### 链路关联
 
-- 如果有 active page trace，HTTP span 应作为 page trace 的子 span。
+- HTTP 归属必须在 request start 冻结。如果有 active page trace，HTTP span 应作为发起时 page trace 的子 span，并使用发起时 `context.route.*` 和 `page.instance_id`。
 - 如果由用户 action 触发，应优先关联 action trace。
 - 冷启动期间请求应关联 startup trace。
 - 请求错误可追加 breadcrumb，并与后续 error 关联。
+- 如果 response/error 回来时用户已经进入另一个页面，主 envelope 仍归属发起页；完成页只写入 `http.route_changed` 与 `http.completion.*` 诊断字段。Workbench 和 DevTools 不应基于 completion route 切分主 session timeline，只能在 HTTP 行内小字或详情中提示响应页面。
 
 ### 字段映射
 
@@ -342,6 +343,9 @@ route 实例:
 - `http.retry_count`
 - `http.cache_status`
 - `http.request_id`（取自 `x-request-id` 等响应头）
+- `http.route_changed`：完成页与发起页不同。
+- `http.completion.route.name` / `http.completion.route.full_name`：请求完成时页面，仅作为诊断上下文。
+- `http.completion.page_instance_id`：请求完成时页面实例，仅作为诊断上下文。
 - `request.size_bytes`
 - `response.size_bytes`
 
@@ -363,6 +367,7 @@ route 实例:
 - `http.Client` 的响应体通过 tee 包装 `StreamedResponse` 流采集（只缓冲前 N 字节），不破坏业务消费；streaming body 大小可能不可得。
 - retry/cache 信息依赖具体网络库能力。
 - 网络采集不应修改业务请求语义。
+- 对于导航前预取、跨页面共享请求等场景，SDK 默认仍以调用时页面为 owner。未来业务 API 可显式覆盖 owner route/trace，但 Workbench 不应把 completion route 当作主归属。
 - SSE/WebSocket 长链接暂不建模（见 `docs/plan.md` backlog）；Dio stream 响应的耗时语义为“到响应头”。
 - 当前基础 SDK 不生成 HTTP start/end 双事件，不展示 in-flight 请求；Workbench 和服务端统计只消费 `name = http.client` 且 `event.phase = instant` 的 completed single-span envelope。
 

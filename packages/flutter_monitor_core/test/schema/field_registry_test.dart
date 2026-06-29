@@ -59,6 +59,27 @@ void main() {
       PrivacyLevel.queryable,
     );
     expect(
+      registry.lookup(FieldPaths.httpRouteChanged)?.valueType,
+      FieldValueType.boolean,
+    );
+    expect(registry.lookup(FieldPaths.httpRouteChanged)?.indexed, isTrue);
+    expect(
+      registry.lookup(FieldPaths.httpCompletionRouteName)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpCompletionRouteName)?.indexed,
+      isTrue,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpCompletionRouteFullName)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
+      registry.lookup(FieldPaths.httpCompletionPageInstanceId)?.privacyLevel,
+      PrivacyLevel.queryable,
+    );
+    expect(
       registry.lookup(FieldPaths.httpQuery)?.privacyLevel,
       PrivacyLevel.sensitive,
     );
@@ -400,6 +421,10 @@ void main() {
       FieldPaths.httpRetryCount,
       FieldPaths.httpCacheStatus,
       FieldPaths.httpRequestId,
+      FieldPaths.httpRouteChanged,
+      FieldPaths.httpCompletionRouteName,
+      FieldPaths.httpCompletionRouteFullName,
+      FieldPaths.httpCompletionPageInstanceId,
       FieldPaths.summaryCount,
       FieldPaths.summaryDurationP50Ms,
       FieldPaths.summaryDurationP95Ms,

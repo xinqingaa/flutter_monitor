@@ -133,6 +133,11 @@ abstract final class FieldPaths {
   static const httpRetryCount = 'http.retry_count';
   static const httpCacheStatus = 'http.cache_status';
   static const httpRequestId = 'http.request_id';
+  static const httpRouteChanged = 'http.route_changed';
+  static const httpCompletionRouteName = 'http.completion.route.name';
+  static const httpCompletionRouteFullName = 'http.completion.route.full_name';
+  static const httpCompletionPageInstanceId =
+      'http.completion.page_instance_id';
   static const requestSizeBytes = 'request.size_bytes';
   static const responseSizeBytes = 'response.size_bytes';
 

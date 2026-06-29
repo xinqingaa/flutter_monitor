@@ -94,12 +94,14 @@ class EventPipeline {
         breadcrumbs: const <Breadcrumb>[],
       );
       final effectiveTraceId = signal.traceId ?? activeTraceSnapshot.traceId;
+      final effectiveRoute =
+          signal.contextRouteName ?? contextSnapshot.context.route?.name;
       final traceSnapshot = activeTraceSnapshot
           .copyWith(
             breadcrumbs: _breadcrumbStore.relevantSnapshot(
               limit: breadcrumbLimit,
               traceId: effectiveTraceId,
-              route: contextSnapshot.context.route?.name,
+              route: effectiveRoute,
             ),
           )
           .overrideWith(
