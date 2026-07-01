@@ -6,13 +6,13 @@ Workbench Web 不是普通 JSON Viewer，也不是传统线上监控大盘。它
 
 ## 产品定位
 
-Workbench 是以 session 为主线的 Flutter 端侧链路诊断工作台，用可视化方式帮助开发者理解一次 App 使用过程中的启动、页面、请求、行为、错误、卡顿、内存和生命周期表现。
+Workbench 是以 session 为主线的 Flutter 端侧链路诊断工作台，用可视化方式帮助开发者理解一次 App 使用过程中的启动、页面、请求、行为、错误和生命周期表现；卡顿、内存、交互性能和 native 只在 SDK 显式开启并实际产生数据后作为诊断线索展示。
 
 Workbench 前端的核心目标：
 
 - 快速发现当前复现链路中最值得排查的问题。
 - 根据 QA 提供的 `userId + time range` 快速找到 session。
-- 还原一次用户或 QA 会话中的启动、页面进入、停留、请求、行为、错误和卡顿顺序。
+- 还原一次用户或 QA 会话中的启动、页面进入、停留、请求、行为、错误和生命周期顺序；显式开启诊断信号后可补充卡顿、内存和 native 线索。
 - 解释冷启动、热启动、页面进入、页面停留、页面稳定性和异常情况。
 - 从任何聚合视图、图表点位或问题列表回到对应 session timeline。
 - 保留完整 raw JSON，但不把 raw JSON 作为第一视觉入口。
@@ -364,11 +364,11 @@ Session Navigator 固定在日志流左侧：
 
 问题入口下沉到日志流顶部 Tab：
 
-- 每个 Tab 自带问题徽标，徽标只汇总本 Tab 关联的问题计数（错误/业务失败/慢页面/卡顿归到 “问题” Tab，失败 HTTP/慢 HTTP/HTTP 详情剥离归到 HTTP Tab，内存压力归到 内存 Tab，SDK 丢弃/重试/发送失败归到 SDK Tab）。
+- 每个 Tab 自带问题徽标，徽标只汇总本 Tab 关联的问题计数（错误/业务失败/慢页面归到 “问题” Tab，失败 HTTP/慢 HTTP/HTTP 详情剥离归到 HTTP Tab，SDK 丢弃/重试/发送失败归到 SDK Tab；卡顿和内存压力仅在对应诊断信号有数据时进入问题/诊断 Tab）。
 - 选中 Tab 后，Tab 行下方出现一行二级 chip：仅渲染当前 session 实际出现的问题维度，可与 Tab 叠加做问题级筛选；不存在的问题 chip 不渲染。
 - 切换 Tab 自动清空二级 chip。日志流、会话分段、行选中都遵循 “Tab → 子 chip → 搜索” 这一过滤组合。
 
-日志流默认展示全部事件，可切换：全部 / 问题 / 页面 / HTTP / 启动 / 交互性能 / 业务埋点 / 内存 / 生命周期 / SDK。分类规则：
+日志流默认展示主链路事件，可切换：全部 / 问题 / 页面 / HTTP / 启动 / 业务埋点 / 生命周期 / SDK。交互性能、内存、卡顿/native 等诊断 Tab 只有在当前 session 实际存在对应事件时才展示；工作台配置了某类 Tab 但当前会话没有采到数据时，不渲染空 Tab。分类规则：
 
 - `interaction.measure` 或带 `attributes["interaction.mode"]` 的事件归入交互性能。
 - `business.*` 或带 `attributes["business.action"]` 的非交互性能事件归入业务埋点。
@@ -388,7 +388,7 @@ Session Navigator 固定在日志流左侧：
 10:33:51  页面加载 /app
 load 236ms · firstFrame 42ms · stay 1m12s · RSS +8MB
 
-10:34:01  交互性能 refresh_feed
+10:34:01  交互性能 refresh_feed  （仅显式开启 measure 后）
 active 420ms · settle 180ms · slow frames 3 · action refresh_feed
 
 10:34:05  SDK 健康
@@ -464,7 +464,7 @@ JSON Inspector 渲染规则（response body / request body / request raw / respo
 | `http.client` | HTTP Inspector：摘要、请求、响应、上下文、原始数据 |
 | `app.cold_start` / `app.hot_start` / `sdk.init` | 启动 Inspector：启动耗时、首帧、可交互、SDK 初始化、启动期内存 |
 | `page.*` / `route.*` | 页面 Inspector：路由、加载、首帧、停留、返回/离开、页面帧与内存证据 |
-| `interaction.measure` | 交互性能 Inspector：action、mode、active/settle、frame、相关 HTTP |
+| `interaction.measure` | 交互性能 Inspector：action、mode、active/settle、frame、相关 HTTP；仅显式开启并采到数据后展示 |
 | `business.*` / `business.action` | 业务埋点 Inspector：业务 action、状态、耗时、业务 payload |
 | error / jank | 问题 Inspector：错误类型、mechanism、stack、卡顿帧证据和上下文足迹 |
 | `memory.*` / `native.memory.*` | 内存 Inspector：sample/growth/pressure/suspect leak 证据，不把 suspect 当成确定泄漏 |
@@ -475,16 +475,16 @@ JSON Inspector 渲染规则（response body / request body / request raw / respo
 
 Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view model，不是 SDK、core 或 service 协议字段。Workbench 不跨区段复制 route push/pop 事件，也不伪造前后页面节点；事件仍按 raw JSON 所属 `context.route.name`、`traceId`、`startTime/endTime/timestamp` 展示。
 
-- `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init` 和启动完成前的启动期 `memory.sample`。`app.first_frame_ms` 是启动 trace 上的字段，不作为独立 timeline 事件展示。
-- `页面 ${route}`：只由明确页面导航可见证据开启，即 `page.visit` 的 `event.phase=start`、`route.push`，或 `page.view` 且 `page.active_phase=page.resume`、`page.active_trigger=route_pop`。同一 `page.instance_id + traceId` 可以有多个导航可见区段：首次进入区段由 `page.enter + route_push` 表达，返回上一级后的新区段由 `page.resume + route_pop` 表达；后续 HTTP、业务足迹、交互性能、错误、卡顿和页面停留归入最近一个可见区段。归属优先使用 `page.instance_id + traceId`，业务/交互/请求/错误/卡顿节点缺少 `page.instance_id` 时可以用同一页面 `traceId` 回挂。例如 `/detail?id=2 -> /complex_list -> 返回 /detail?id=2` 时，返回后的 `interaction.measure` 应显示在 `页面 /detail?id=2 · 返回后继续` 区段，而不是回挂到首次进入区段。`page.resume + lifecycle_resumed` 只表示 App 前台恢复，不开启页面区段。
-- 页面区段标题可根据内容追加诊断语义，但不改变底层数据归属。优先级为：错误/业务失败、交互性能、业务操作、失败请求、卡顿、内存/生命周期。例如 `页面 /detail?id=1 · 业务失败 · 业务操作`、`页面 /detail?id=2 · 交互性能`。
+- `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init` 和 lifecycle/hot start 事实。`app.first_frame_ms` 是启动 trace 上的字段，不作为独立 timeline 事件展示；启动期 `memory.sample` 仅在 SDK 显式开启 memory 后出现。
+- `页面 ${route}`：只由明确页面导航可见证据开启，即 `page.visit` 的 `event.phase=start`、`route.push`，或 `page.view` 且 `page.active_phase=page.resume`、`page.active_trigger=route_pop`。同一 `page.instance_id + traceId` 可以有多个导航可见区段：首次进入区段由 `page.enter + route_push` 表达，返回上一级后的新区段由 `page.resume + route_pop` 表达；后续 HTTP、业务足迹、错误和页面停留归入最近一个可见区段。显式开启后，交互性能、卡顿、内存等诊断节点也归入最近一个可见区段。归属优先使用 `page.instance_id + traceId`，业务/交互/请求/错误/卡顿节点缺少 `page.instance_id` 时可以用同一页面 `traceId` 回挂。例如 `/detail?id=2 -> /complex_list -> 返回 /detail?id=2` 时，返回后的 `interaction.measure` 应显示在 `页面 /detail?id=2 · 返回后继续` 区段，而不是回挂到首次进入区段。`page.resume + lifecycle_resumed` 只表示 App 前台恢复，不开启页面区段。
+- 页面区段标题可根据内容追加诊断语义，但不改变底层数据归属。优先级为：错误/业务失败、业务操作、失败请求、生命周期；显式开启诊断信号后可追加交互性能、卡顿、内存。例如 `页面 /detail?id=1 · 业务失败 · 业务操作`、`页面 /detail?id=2 · 交互性能`。
 - `页面活动 ${route}`：只用于无法绑定到具体页面实例或不应开启页面区段的当前 route 非页面事件窗口，包括跨页面生命周期、热重启、前台恢复 `page.resume + lifecycle_resumed`、缺少 `page.instance_id` 的内存采样等。具体问题类型仍放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
 - `会话活动`：缺少 route 上下文的非页面事件窗口。
 - `SDK 诊断`：正常 `sdk.health.report`、成功的 `sdk.lifecycle.flush` 等自监控事件默认并入当前页面或会话活动区段，作为节点和摘要指标展示，不单独打断用户操作主线。只有 `sdk.queue.state`、`sdk.retry.schedule`、`sdk.queue.drop`、失败的 `sdk.output.flush`，或带 dropped/retry/flush failure 计数的 `sdk.health.report`，才作为异常 SDK 诊断突出；若无法归入当前页面/活动区段，才兜底展示为独立 SDK 区段。这类事件不应因为缺少 route 被展示为“未知页面”；如果区段内 SDK 事件带有 route，应展示 route。`sdk.queue.drop` 应展示 drop reason、drop count 和 `payload["dropped.summary"]` 中的被丢弃事件摘要。
 
-页面离开与停留的展示按语义区分：`route.pop` 是导航返回动作，`page.visit end` 是被 pop 页面实例闭合，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时和首帧耗时读取 `page.load` 上的 `page.load_ms` / `page.first_frame_ms`；页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`。同 route 多次进入时，Workbench 内部可用 `page.instance_id + traceId` 合并事件，但主界面优先展示 `context.route.fullName`，实例 id 只在 Inspector/raw JSON 诊断中出现。
+页面离开与停留的展示按语义区分：`route.pop` 是导航返回动作，`page.visit end` 是被 pop 页面实例闭合，`payload.page.end_reason=route_pop` 且 `attributes.page.to` 存在时显示为 `返回 ${to}`；`page.stay` 是停留指标，不代表页面慢，也不抢占返回/离开动作的视觉终点。页面加载耗时和首帧耗时读取 `page.load` 上的 `page.load_ms` / `page.first_frame_ms`；显式开启 frame/memory 后，页面帧表现与 RSS 变化读取同一页面主链路的 `page.visit end`。同 route 多次进入时，Workbench 内部可用 `page.instance_id + traceId` 合并事件，但主界面优先展示 `context.route.fullName`，实例 id 只在 Inspector/raw JSON 诊断中出现。
 
-启动和页面性能证据都来自主链路：启动读取 `app.cold_start` / `app.hot_start` end 上的 `memory.start/end/delta_rss_mb`，不再展示启动 FPS 或启动帧稳定性；页面读取 `page.visit` end 上的 `frame.*` 与 `memory.enter/exit/delta_rss_mb`。Workbench 不展示独立 `ui.frame.window`、页面 activity `memory.sample` 或迁移期过滤字段作为新增性能口径。`interaction.measure` 是页面内业务交互性能节点，节点摘要必须直接展示 `interaction.mode`、`interaction.active_ms`、`interaction.settle_ms` 和 `frame.*`，但它仍归属于所在页面区段，不替代页面主链路性能。
+启动和页面性能证据都来自主链路：默认读取 `app.cold_start` / `app.hot_start`、`sdk.init`、`page.load`、`page.stay` 等确定性耗时。只有 SDK 显式开启 memory/frame 后，才从启动 trace end 读取 `memory.start/end/delta_rss_mb`，从 `page.visit` end 读取 `frame.*` 与 `memory.enter/exit/delta_rss_mb`。Workbench 不展示独立 `ui.frame.window`、页面 activity `memory.sample` 或迁移期过滤字段作为新增性能口径。`interaction.measure` 是显式开启后的页面内业务交互性能节点，节点摘要展示 `interaction.mode`、`interaction.active_ms`、`interaction.settle_ms` 和可用的 `frame.*`，但它仍归属于所在页面区段，不替代页面主链路性能。
 
 ### Memory 展示口径
 
@@ -573,7 +573,7 @@ Workbench 第一版 UI 应优先使用“展示名 + 原始字段口径”的双
 
 性能类卡片优先使用：次数、平均耗时、中位耗时、慢端耗时、最慢一次、慢次数。问题类卡片优先使用：问题次数、问题 Session、最近一次、高频页面或高频接口。
 
-Workbench 的错误页和首页“错误/稳定性”只承接程序与稳定性错误，例如 `signalType=error` 或带 `error.*` 语义的非 HTTP envelope。业务 API 的 `track(action, result=failed)` 和 `measure(action, result=failed)` 表示业务结果失败，应在 session/page 链路中以“业务失败”告警展示，并可通过 `problemType=business_failure` 筛选，但不能推高 session 的异常状态或错误页统计。
+Workbench 的错误页和首页“错误/稳定性”只承接程序与稳定性错误，例如 `signalType=error` 或带 `error.*` 语义的非 HTTP envelope。业务 API 的 `track(action, result=failed)` 以及显式开启后的 `measure(action, result=failed)` 表示业务结果失败，应在 session/page 链路中以“业务失败”告警展示，并可通过 `problemType=business_failure` 筛选，但不能推高 session 的异常状态或错误页统计。
 
 首页 SDK 健康卡片只承接 `signalType=sdk` 的自监控 envelope，例如 `sdk.output.flush`、`sdk.queue.drop`、`sdk.retry.schedule`、`sdk.queue.state` 和 `sdk.config.applied`。它用于判断采集链路本身是否可靠，不应与业务 HTTP 失败、页面性能或稳定性错误混成同一个问题数。
 

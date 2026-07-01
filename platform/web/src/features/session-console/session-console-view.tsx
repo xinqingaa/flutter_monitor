@@ -6,6 +6,7 @@ import {
   Maximize2,
   Search,
   ServerCog,
+  Settings2,
   Timer,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
@@ -50,6 +51,10 @@ const filters: Array<{ key: FilterKey; label: string }> = [
   { key: 'sdk', label: 'SDK' },
 ];
 
+const tabStorageKey = 'flutter-monitor.session-console.enabled-tabs';
+const defaultEnabledTabs: FilterKey[] = ['all', 'pages', 'http', 'business'];
+const filterKeySet = new Set<FilterKey>(filters.map((item) => item.key));
+
 const tabChipKinds: Record<FilterKey, ChipKind[]> = {
   all: ['error', 'business_failure', 'failed_http', 'slow_http', 'slow_page', 'jank', 'memory', 'sdk_drop', 'sdk_retry', 'sdk_flush_failure', 'detail_dropped'],
   problems: ['error', 'business_failure', 'slow_page', 'jank'],
@@ -62,6 +67,27 @@ const tabChipKinds: Record<FilterKey, ChipKind[]> = {
   lifecycle: [],
   sdk: ['sdk_drop', 'sdk_retry', 'sdk_flush_failure'],
 };
+
+function readEnabledTabs(): Set<FilterKey> {
+  if (typeof window === 'undefined') return new Set(defaultEnabledTabs);
+  const stored = window.localStorage.getItem(tabStorageKey);
+  if (!stored) return new Set(defaultEnabledTabs);
+  try {
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return new Set(defaultEnabledTabs);
+    const next = parsed.filter((key): key is FilterKey => filterKeySet.has(key));
+    if (!next.includes('all')) next.unshift('all');
+    return new Set(next.length > 0 ? next : defaultEnabledTabs);
+  } catch {
+    return new Set(defaultEnabledTabs);
+  }
+}
+
+function writeEnabledTabs(tabs: Set<FilterKey>) {
+  if (typeof window === 'undefined') return;
+  const ordered = filters.map((item) => item.key).filter((key) => tabs.has(key));
+  window.localStorage.setItem(tabStorageKey, JSON.stringify(ordered));
+}
 
 function tabPredicate(filter: FilterKey, row: SessionConsoleRow): boolean {
   if (filter === 'all') return true;
@@ -173,6 +199,8 @@ export function SessionConsoleView({
 }) {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [query, setQuery] = useState('');
+  const [enabledTabs, setEnabledTabs] = useState<Set<FilterKey>>(readEnabledTabs);
+  const [tabConfigOpen, setTabConfigOpen] = useState(false);
   const [pageOverrides, setPageOverrides] = useState<Record<string, boolean>>({});
   const [peekEventId, setPeekEventId] = useState<string>();
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -184,9 +212,37 @@ export function SessionConsoleView({
 
   const closePeek = useCallback(() => setPeekEventId(undefined), []);
 
+  const visibleFilters = useMemo(
+    () => filters.filter((item) => item.key === 'all' || enabledTabs.has(item.key)),
+    [enabledTabs],
+  );
+
+  const toggleTab = useCallback((key: FilterKey) => {
+    if (key === 'all') return;
+    setEnabledTabs((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      next.add('all');
+      return next;
+    });
+  }, []);
+
+  const resetTabs = useCallback(() => {
+    setEnabledTabs(new Set(defaultEnabledTabs));
+  }, []);
+
   useEffect(() => {
     if (!inspectorCollapsed) setPeekEventId(undefined);
   }, [inspectorCollapsed]);
+
+  useEffect(() => {
+    writeEnabledTabs(enabledTabs);
+  }, [enabledTabs]);
+
+  useEffect(() => {
+    if (filter !== 'all' && !enabledTabs.has(filter)) setFilter('all');
+  }, [enabledTabs, filter]);
 
   useEffect(() => {
     setPeekEventId(undefined);
@@ -321,7 +377,7 @@ export function SessionConsoleView({
       <CardHeader className="grid gap-2 py-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap gap-1.5">
-            {filters.map((item) => {
+            {visibleFilters.map((item) => {
               const tabChips = tabChipMap[item.key] ?? [];
               const count = tabChips.reduce((sum, chip) => sum + chip.count, 0);
               const active = filter === item.key;
@@ -364,15 +420,57 @@ export function SessionConsoleView({
               );
             })}
           </div>
-          <label className="relative min-w-0 lg:w-72">
-            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="筛选 title/url/route/eventId"
-              className="h-8 pl-7 text-xs"
-            />
-          </label>
+          <div className="flex min-w-0 items-center gap-2">
+            <label className="relative min-w-0 lg:w-72">
+              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="筛选 title/url/route/eventId"
+                className="h-8 pl-7 text-xs"
+              />
+            </label>
+            <div className="relative shrink-0">
+              <IconTooltipButton
+                label="配置会话链路 tab"
+                icon={Settings2}
+                variant={tabConfigOpen ? 'default' : 'secondary'}
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setTabConfigOpen((open) => !open)}
+              />
+              {tabConfigOpen ? (
+                <div className="absolute right-0 top-9 z-30 w-48 rounded-md border border-zinc-200 bg-white p-2 shadow-lg">
+                  <div className="px-1 pb-1 text-[11px] font-semibold text-zinc-500">显示 tab</div>
+                  <div className="grid gap-1">
+                    {filters.filter((item) => item.key !== 'all').map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={enabledTabs.has(item.key)}
+                          onChange={() => toggleTab(item.key)}
+                          className="size-3.5 accent-teal-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="mt-1 h-7 w-full text-xs"
+                    onClick={resetTabs}
+                  >
+                    恢复默认
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </CardHeader>
 

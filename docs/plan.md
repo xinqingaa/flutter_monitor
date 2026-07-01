@@ -23,12 +23,14 @@ Flutter Monitor 当前已经具备作为 Flutter-only 端侧监控 workspace 使
 - `localLive`：本地或 QA 复现时批量写入 Monitor Service，并在 Workbench 中查看 session timeline、event detail 和 raw JSON。
 - `production`：内部灰度或小范围真实 App 验证时使用 SDK 队列、batch、retry、采样、限流、优先级和 self-monitoring。
 
-当前版本适合回答：
+当前版本默认适合回答：
 
-- 一次 session 中发生了哪些页面跳转、请求、行为、错误、卡顿、内存线索和生命周期变化。
-- 某个错误、失败请求、慢请求或卡顿发生在哪个页面、哪个 trace、哪个 span 和哪些 breadcrumbs 之后。
+- 一次 session 中发生了哪些页面跳转、请求、行为、错误和生命周期变化。
+- 某个错误、失败请求或慢请求发生在哪个页面、哪个 trace、哪个 span 和哪些 breadcrumbs 之后。
 - SDK 自身是否出现队列丢弃、flush 失败、重试、限流、采样或 payload 过大等可靠性问题。
 - QA 或开发能否通过 `sessionId`、`eventId`、`traceId`、route、user context 和时间范围回查 raw envelope。
+
+显式开启 `MonitorSignalConfig` 的诊断信号后，还可以补充观察 frame/jank、memory、native 和 `measure` 交互窗口线索。但这些信号默认关闭，不作为发布版默认主链路承诺。
 
 当前版本不适合作为以下能力的完成声明：
 
@@ -62,7 +64,7 @@ Flutter Monitor 当前已经具备作为 Flutter-only 端侧监控 workspace 使
 
 - SDK 已建立 raw signal -> context snapshot -> trace snapshot -> envelope -> validation -> privacy -> breadcrumb -> output 的主流程。
 - Reporter 已收敛为 SDK 内部 pipeline 入口。
-- 业务主动埋点通过 `FlutterMonitorSDK.track(...)`，交互性能通过 `FlutterMonitorSDK.measure(...)`。
+- 业务主动埋点通过 `FlutterMonitorSDK.track(...)`。`FlutterMonitorSDK.measure(...)` 保留为显式开启的实验/诊断 API，默认关闭，不作为普通接入推荐入口。
 - SDK 支持 session manager、trace/span manager、breadcrumb store、context manager 和 event pipeline。
 - 事件发生时使用当时的 context/trace snapshot，避免异步完成时错误吞掉当前页面上下文。
 - HTTP 请求归属已收敛为“发起页”为主线；如果未来出现跨页完成，只把响应页记录到 `http.completion.*` 诊断字段。
@@ -74,9 +76,9 @@ Flutter Monitor 当前已经具备作为 Flutter-only 端侧监控 workspace 使
 - 网络：Dio 和 `http.Client` 的 `http.client` span，包含耗时、状态、错误、请求归属和 breadcrumbs。
 - 错误：Flutter framework error、Dart uncaught error、业务主动 `recordError`。
 - 行为：`track` 进入标准业务 action 事件和 breadcrumb store。
-- 交互性能：`measure` 支持普通交互点和阶段型交互窗口。
-- 卡顿：`ui.jank.sequence` 可关联 route、page trace、frame summary 和 breadcrumbs。
-- 内存：基础 RSS sample、growth、pressure/suspect 线索和页面/启动边界 memory delta。
+- 交互性能：`measure` 支持普通交互点和阶段型交互窗口，但由 `MonitorSignalConfig.interactionMeasure` 显式开启。
+- 卡顿：`ui.jank.sequence` 可关联 route、page trace、frame summary 和 breadcrumbs，但默认关闭。
+- 内存：基础 RSS sample、growth、pressure/suspect 线索和页面/启动边界 memory delta，但默认关闭。
 - 生命周期：前后台切换、foreground/background duration、hot start、exit flush 证据。
 
 ### 生产接入可靠性
@@ -140,17 +142,21 @@ Flutter Monitor 当前已经具备作为 Flutter-only 端侧监控 workspace 使
 - 多租户、权限、审计、告警、长期冷热存储、企业质量治理大盘和生产级运维能力暂未完成。
 - SQLite/local service 更适合作为本地、QA、内部灰度和小规模验证入口。
 
+### 低可信性能诊断
+
+- FrameTiming、FPS、jank、memory 和 `measure` 依赖采样、平台调度、GC 和启发式阈值，默认关闭。
+- `measure` 暂不移除，但不再作为普通业务推荐 API。后续需要结合真实 App 验证决定保留、重命名为业务耗时埋点，或从 public 接入面移除。
+- 内存能力只表达 sample、growth 和 suspect 线索，不做对象级泄漏结论。
+
 ### 长链接与长停留页面
 
 - WebSocket/SSE 长链接消息级监控暂未建模。
 - 长停留页面性能切片暂未完成。
-- 业务交互性能窗口已有 SDK 侧基础能力，但 Workbench 中更细的 interaction 列表、聚合筛选和重叠提示仍可后续增强。
 
 ### Lifecycle 与边界场景
 
 - 热重启、后台恢复、短间隔 lifecycle 抖动和 session 首事件缺失等边界仍需要真实设备多轮采证。
 - Workbench 可展示已有 raw envelope，但对缺失 session 起点、event id 不连续或 cold start 缺失的诊断提示还可以增强。
-- 内存能力只表达 sample、growth 和 suspect 线索，不做对象级泄漏结论。
 
 ### 真实 App 长周期验证
 
@@ -170,7 +176,8 @@ Flutter Monitor 当前已经具备作为 Flutter-only 端侧监控 workspace 使
 
 ### 代码收敛
 
-- 冻结稳定 API：初始化、输出模式、`track`、`measure`、`recordError`、context、Dio interceptor、`http.Client` wrapper。
+- 稳定默认 API：初始化、输出模式、`track`、`recordError`、context、Dio interceptor、`http.Client` wrapper。
+- `measure` 暂时保留兼容，但默认关闭并标记为显式开启的诊断 API。
 - 不再新增大能力，只修复影响当前支持范围的 bug。
 - 保持 `flutter_monitor_core` 为唯一字段和协议来源。
 - Workbench/service 不补写 SDK 字段，只修查询、展示和 raw 回查问题。
@@ -209,13 +216,13 @@ pnpm --dir platform run smoke
 - 添加 Navigator observer。
 - 接入 Dio interceptor 或 `http.Client` wrapper。
 - 只在关键业务动作使用 `track`。
-- 只在关键交互使用 `measure`。
 - 使用统一 context 写入 user、release、environment、feature flags 等上下文。
-- 在 Workbench 中确认 session timeline、HTTP、错误、卡顿、SDK self-monitoring 和 raw JSON 都能回查。
+- 在 Workbench 中确认 session timeline、HTTP、错误、SDK self-monitoring 和 raw JSON 都能回查。
+- 如确需验证 frame/jank/memory/measure/native，通过 `MonitorSignalConfig` 显式开启，并在发布说明中标明这些是诊断线索而非默认精准指标。
 
 发布说明应明确：
 
 - 当前是 Flutter-only 主线可用版本。
 - Native、DevTools、remote config、evidence pack、长链接监控和企业级服务端能力暂未完成。
-- 内存能力是诊断线索，不是确定泄漏检测。
+- FrameTiming、jank、memory 和 measure 默认关闭；开启后也只是诊断线索，不是确定泄漏或确定性能根因。
 - 自动诊断不是当前能力，最终判断需要开发者结合代码和业务上下文。

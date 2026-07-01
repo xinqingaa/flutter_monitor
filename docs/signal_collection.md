@@ -103,6 +103,26 @@ priority suggestion
 
 `priority suggestion` 不是采集器私有协议；它应由 pipeline 映射为统一 event envelope 的 `priority` 字段，默认值为 `normal`。
 
+## 默认采集口径
+
+SDK 默认只开启确定性较高、能稳定还原 session 主链路的信号：
+
+- 启动与 lifecycle：冷启动、热启动、前后台时长和退出前 flush。
+- 页面与 route：页面进入、返回、停留、首帧兜底和 route context。
+- HTTP：业务显式接入 Dio interceptor 或 `http.Client` wrapper 后采集。
+- 错误：Flutter framework error、Dart uncaught error 和业务 `recordError`。
+- 业务动作：业务显式调用 `FlutterMonitorSDK.track(...)`。
+
+以下信号默认关闭，只有通过 SDK 配置显式开启后才采集：
+
+- FrameTiming / FPS / 页面 frame stats。
+- `ui.jank.sequence`。
+- Flutter/Dart RSS sample、growth、pressure 和 suspect leak 线索。
+- `FlutterMonitorSDK.measure(...)` 交互性能窗口。
+- native bridge 信号和 native bootstrap resource。
+
+默认关闭不是因为这些事件不进入模型，而是因为它们在真实设备上依赖采样、平台时机、GC、调度和启发式阈值，容易给出“不够准但看起来像结论”的数据。开启后仍必须进入统一 `EventEnvelope`，并继续遵守字段注册、隐私、采样、限流和 pipeline 规则。
+
 ## 启动采集
 
 ### 采集来源
@@ -150,8 +170,8 @@ Native 增强来源：
 - 冷启动 trace 应归属于当前 session。
 - 热启动 trace 应关联恢复后的 session 或当前 session activity window。
 - 启动首帧是 `app.cold_start` / `app.hot_start` trace end 上的观测字段，不再生成独立 `app.first_frame` span。
-- 启动期间的 HTTP、错误、卡顿、内存采样应关联 active startup trace。
-- 基础 SDK 默认把 RSS 起止值合并到 `app.cold_start` / `app.hot_start` trace end，不再采集启动帧摘要，也不为启动内存额外生成独立 trace。FPS、稳定性和慢帧等帧表现统一由页面 `page.visit` trace end 表达。
+- 启动期间的 HTTP、错误应关联 active startup trace；显式开启后，卡顿、memory/native 线索也应关联 active startup trace。
+- 基础 SDK 默认只把启动耗时、首帧和结束口径写入 `app.cold_start` / `app.hot_start` trace end。RSS 起止值只有在 `MonitorSignalConfig.memory = true` 时写入，不采集启动帧摘要，也不为启动内存额外生成独立 trace。
 
 ### 字段映射
 
@@ -165,9 +185,9 @@ Native 增强来源：
 - `sdk.init.duration_ms`
 - `context.lifecycle.previousState`
 - `native.start.elapsed_ms`
-- `memory.start_rss_mb`
-- `memory.end_rss_mb`
-- `memory.delta_rss_mb`
+- `memory.start_rss_mb`（显式开启 memory 后）
+- `memory.end_rss_mb`（显式开启 memory 后）
+- `memory.delta_rss_mb`（显式开启 memory 后）
 
 ### 限制与降级
 
@@ -210,7 +230,7 @@ Native 增强来源：
 - route push 创建或更新当前 route context。
 - `trace page.visit` 表达一次页面实例的生命周期，`span page.load` 表达页面加载阶段。
 - 页面性能采集应围绕页面实例维护可见阶段：同一时刻只有一个当前可见页面，但同一页面实例可能被覆盖后再次恢复，因此可能拥有多段可见阶段。
-- 页面依赖的 HTTP、jank、error、memory sample 应关联当前 page trace。基础 SDK 把页面可见阶段累计到的帧摘要和进入/退出 RSS 写入 `page.visit` trace end。
+- 页面依赖的 HTTP、error、业务 track 应关联当前 page trace；显式开启后，jank、frame stats、memory sample 也应关联当前 page trace。基础 SDK 默认不把页面帧摘要和进入/退出 RSS 写入 `page.visit` trace end，只有开启对应信号后才合并这些低可信诊断字段。
 - route pop/replace/page stay 应结束被移除的页面实例；route push 会结束旧页面的当前可见阶段并开启新页面实例。
 - route pop 返回到已有页面时，不创建新的页面实例，但必须用 `page.active_phase = page.resume` 和 `page.active_trigger = route_pop` 发出导航返回导致的恢复可见事实。Workbench 和 DevTools 可基于该事件把同一 `page.instance_id` 拆成多个用户导航可见区段。
 - App 从后台恢复到前台时，可以用 `page.active_phase = page.resume` 和 `page.active_trigger = lifecycle_resumed` 发出当前页面重新可见事实，但它属于 lifecycle / hot start 活动，不应被展示为“返回后继续”页面区段。
@@ -243,18 +263,18 @@ route 实例:
   A1: A1 恢复可见
 ```
 
-回到 A 时不应创建新的 A route 实例；它仍然是 `A1`。导航返回恢复阶段通过 `page.active_phase = page.resume` 和 `page.active_trigger = route_pop` 表达，页面级 FPS、慢帧和内存证据仍写回同一个页面实例的 `page.visit`。`page.visit` 的 `durationMs` 是页面实例生命周期，不等同于某一个可见区段的停留时长；调试工具展示用户操作链路时应优先按 `page.enter` / `route_pop` 触发的 `page.resume` 切分页面可见区段。
+回到 A 时不应创建新的 A route 实例；它仍然是 `A1`。导航返回恢复阶段通过 `page.active_phase = page.resume` 和 `page.active_trigger = route_pop` 表达。若显式开启 frame/memory 诊断，页面级 FPS、慢帧和内存证据仍写回同一个页面实例的 `page.visit`；默认情况下只保留页面链路和耗时事实。`page.visit` 的 `durationMs` 是页面实例生命周期，不等同于某一个可见区段的停留时长；调试工具展示用户操作链路时应优先按 `page.enter` / `route_pop` 触发的 `page.resume` 切分页面可见区段。
 
 推荐的内部流转：
 
 | 路由事件 | 页面实例动作 | 可见阶段动作 | 采集动作 |
 |---|---|---|---|
-| App 首个页面进入 / route push | 创建 `page.instance_id`，启动 `page.visit` | `page.active_phase = page.enter`，`page.active_trigger = route_push` | 记录进入 RSS；页面帧聚合开始；发出 `page.view` 进入足迹 |
-| 新 route push | 新建新页面实例 | 旧页面以 `page.covered` 闭合，新页面以 `page.enter` 开启 | 旧页面帧聚合 flush；新页面记录进入 RSS |
-| route pop | 结束被 pop 页面实例，生成 `page.stay` | 被 pop 页面以 `page.exit` 闭合；上一个页面以 `page.resume` + `route_pop` 恢复 | 被 pop 页面帧聚合 flush；被 pop 页面记录退出 RSS；发出 `route.pop` 和恢复页 `page.view` 足迹 |
-| lifecycle hidden/paused | 页面实例保留 | 当前页面以 `lifecycle.background` + `lifecycle_background` 闭合 | App/page 帧聚合 flush；lifecycle 低频内存采样 |
-| resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` + `lifecycle_resumed` 恢复 | App/page 帧聚合重新开始；lifecycle 恢复检查；发出恢复页 `page.view` 足迹；Workbench 不因此新开页面区段 |
-| detached/dispose | 尽力结束活跃页面实例 | 当前页面以 `app.dispose` 闭合 | flush 和最终采样尽力执行，不阻塞退出 |
+| App 首个页面进入 / route push | 创建 `page.instance_id`，启动 `page.visit` | `page.active_phase = page.enter`，`page.active_trigger = route_push` | 发出 `page.view` 进入足迹；开启 frame/memory 后记录进入 RSS 并开始页面帧聚合 |
+| 新 route push | 新建新页面实例 | 旧页面以 `page.covered` 闭合，新页面以 `page.enter` 开启 | 开启 frame/memory 后 flush 旧页面帧聚合并记录新页面进入 RSS |
+| route pop | 结束被 pop 页面实例，生成 `page.stay` | 被 pop 页面以 `page.exit` 闭合；上一个页面以 `page.resume` + `route_pop` 恢复 | 发出 `route.pop` 和恢复页 `page.view` 足迹；开启 frame/memory 后 flush 被 pop 页面帧聚合并记录退出 RSS |
+| lifecycle hidden/paused | 页面实例保留 | 当前页面以 `lifecycle.background` + `lifecycle_background` 闭合 | lifecycle 主链路处理后台和 flush；开启 frame/memory 后 flush 页面帧聚合并低频采样 |
+| resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` + `lifecycle_resumed` 恢复 | lifecycle 恢复检查；发出恢复页 `page.view` 足迹；开启 frame/memory 后重新开始页面帧聚合；Workbench 不因此新开页面区段 |
+| detached/dispose | 尽力结束活跃页面实例 | 当前页面以 `app.dispose` 闭合 | flush 尽力执行，不阻塞退出；开启 frame/memory 后做最终采样 |
 
 第一阶段不要求完整支持所有 Navigator 复杂操作。`didPush`、`didPop`、`didReplace` 和 SDK dispose 是基础路径；`popUntil`、嵌套路由、tab router、匿名 route 和第三方 router 集成应通过后续适配补充，但不能改变上述 route / page instance / active window 三层语义。
 
@@ -475,6 +495,8 @@ route 实例:
 
 ## 卡顿与帧采集
 
+卡顿与帧采集默认关闭。只有 `MonitorSignalConfig.frameStats`、`MonitorSignalConfig.jank` 或 `MonitorSignalConfig.interactionMeasure` 至少一个开启时，SDK 才注册统一 `FrameTiming` 回调。
+
 ### 采集来源
 
 - `SchedulerBinding.instance.addTimingsCallback`。
@@ -500,7 +522,7 @@ route 实例:
 - 卡顿应关联当前 `sessionId`、`context.route.*` / `context.module.*`、active page trace 或 action trace。
 - 卡顿事件应携带裁剪后的相关 breadcrumbs，优先选择同 trace / 同 route 足迹。
 - 卡顿前后的 HTTP、memory、native signals 可用于定位原因。
-- 页面帧摘要写入 `page.visit` end。启动 trace 不承载 FPS、稳定性或慢帧摘要，启动性能以耗时和 RSS 证据为准。
+- 开启页面 frame stats 后，页面帧摘要写入 `page.visit` end。启动 trace 不承载 FPS、稳定性或慢帧摘要，默认启动性能以耗时为准；开启 memory 后可补充 RSS 证据。
 
 ### 字段映射
 
@@ -531,9 +553,9 @@ route 实例:
 
 ### App 与页面帧聚合策略
 
-帧聚合用于补充正常情况下的 App 和页面帧表现，不替代 `ui.jank.sequence`。推荐通过统一 frame timing 入口同时驱动 jank detector 和 frame collector，避免多个模块各自注册 `addTimingsCallback` 后产生口径差异。基础 SDK 只保留内存聚合状态，并在主链路闭合时把摘要写入对应 trace end。
+帧聚合用于补充正常情况下的 App 和页面帧表现，不替代 `ui.jank.sequence`。由于 Flutter frame timing 对主线程完全阻塞、同步 I/O、部分插件阻塞和平台渲染问题覆盖不完整，它不应作为默认采集能力。开启后推荐通过统一 frame timing 入口同时驱动 jank detector 和 frame collector，避免多个模块各自注册 `addTimingsCallback` 后产生口径差异。
 
-默认策略应保持低事件量：
+显式开启后的策略应保持低事件量：
 
 - App 前台窗口在 App 进入前台时开始，在 background、detached 或 SDK dispose 时 flush。
 - 页面帧聚合在页面进入或恢复可见时开始，在 `page.covered`、`page.exit`、`lifecycle.background` 或 `app.dispose` 时 flush。
@@ -552,12 +574,14 @@ route 实例:
 
 ## 内存采集
 
+内存采集默认关闭。Flutter/Dart RSS、heap、growth 和 suspect leak 只能作为诊断线索，不应在默认链路中制造“疑似泄漏”等不稳定结论。
+
 ### 采集来源
 
 Flutter/Dart 层：
 
 - Dart/Flutter 可获得的 heap/external 线索，视运行环境能力而定。
-- 页面切换、生命周期变化、关键 trace 前后采样。
+- 页面切换、生命周期变化、关键 trace 前后采样（仅显式开启后）。
 - SDK 自身队列、缓存和 offline store 状态。
 
 Native 层：
@@ -588,7 +612,7 @@ Native 层：
 ### 链路关联
 
 - memory sample 应关联当前 `sessionId` 和 `context.route.*` / `context.module.*`。
-- 页面切换读取进入/退出 RSS 并写入 `page.visit` trace end，不额外输出页面 `memory.sample` envelope。session、lifecycle、jank 和 native 低频采样使用固定 `memory.sample_phase` 表达触发点。
+- 开启后，页面切换读取进入/退出 RSS 并写入 `page.visit` trace end，不额外输出页面 `memory.sample` envelope。session、lifecycle、jank 和 native 低频采样使用固定 `memory.sample_phase` 表达触发点。
 - 页面退出后持续增长可关联上一页面活跃窗口，但缺少足够证据时不得生成确定性泄漏结论。
 - memory pressure 应进入统一 metric 或 error 链路，并可被保存到 recent breadcrumbs 快照中帮助解释后续卡顿、错误或 OOM。
 - native memory 通过 bridge 进入同一 pipeline。
@@ -618,7 +642,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 
 ### 限制与降级
 
-- Flutter 层内存能力有限，不能保证跨平台一致。
+- Flutter 层内存能力有限，不能保证跨平台一致；默认关闭。
 - 内存泄漏只能表达为 suspect。
 - 业务层不得主动上报 `memory.growth`、`memory.pressure` 或 `memory.leak.suspect`；这些事件必须由 SDK collector/native bridge 根据采样、平台 warning 或阈值判断生成。
 - example 只能制造真实内存压力、持有、释放或 jank 场景来验证自动采集，不应通过 SDK public API 直接写入 memory 事件；生命周期采集通过真实 App 前后台切换触发。
@@ -790,7 +814,7 @@ Native memory pressure 映射规则：
 普通真实 App 接入的业务面应尽量收敛为：
 
 - `track(...)`：记录一次关键业务动作。
-- `measure(...)`：记录一次关键业务交互的性能窗口。
+- `measure(...)`：显式开启低可信性能诊断后，记录一次关键业务交互的性能窗口；默认关闭，不作为普通接入推荐。
 - 未来统一上下文入口，例如 `setContext(...)`：设置后续事件的通用排查上下文。
 
 业务方不应为了常规排查去理解或拼装 `FieldPaths`、`RawSignal`、`EventEnvelope`、trace/span/breadcrumb store、attributes/payload。
@@ -800,19 +824,19 @@ Native memory pressure 映射规则：
 - 用户触发关键业务动作。
 - 业务动作成功、失败、取消或开始。
 - 业务错误、降级或关键状态变化。
-- 用户触发需要观察帧表现的关键交互，例如 Tab 切换、图表缩放、弹层展开、筛选刷新、复杂滚动或页面内组件渲染。
+- 显式开启 `interactionMeasure` 后，用户触发需要观察帧表现的关键交互，例如 Tab 切换、图表缩放、弹层展开、筛选刷新、复杂滚动或页面内组件渲染。
 
 ### 生成事件
 
 - `breadcrumb <action>`，其中 `<action>` 来自 `track(action: ...)`。
-- `span interaction.measure`，其中业务交互名来自 `measure(action: ...)` 并写入 `business.action`。
+- `span interaction.measure`（显式开启后），其中业务交互名来自 `measure(action: ...)` 并写入 `business.action`。
 
 ### 链路关联
 
 - `track` 事件默认归属当前 session、当前 route context、当前 active trace 和当前 `page.instance_id`；module/scene 仅在上下文已存在时携带。缺失当前页面实例时可以只保留 route/trace，但 Workbench 不应因此把同一页面 trace 下的业务足迹拆成独立页面活动。
-- `measure` 事件默认归属当前 session、调用 `measure(...)` 时的 route context、page trace 和 `page.instance_id`；module/scene 仅在上下文已存在时携带。common 自动窗口、stage settle 窗口和 timeout 都可能跨过页面 push/pop，因此 route、trace 和页面实例必须在观测开始时冻结，完成时只写入窗口事实，不能重新绑定到当时的栈顶页面。
+- `measure` 事件仅在 `MonitorSignalConfig.interactionMeasure = true` 后产生，默认归属当前 session、调用 `measure(...)` 时的 route context、page trace 和 `page.instance_id`；module/scene 仅在上下文已存在时携带。common 自动窗口、stage settle 窗口和 timeout 都可能跨过页面 push/pop，因此 route、trace 和页面实例必须在观测开始时冻结，完成时只写入窗口事实，不能重新绑定到当时的栈顶页面。
 - 当自动栈顶路由不准时（例如导航前预取、目标页尚未入栈就开始观测），业务可显式传入 `routeName`（及可选 `routeFullName`）覆盖归属路由。显式路由同样在观测开始时冻结，优先于自动栈顶路由；若该路由已有活跃 page trace 则一并复用其 trace 和 `page.instance_id`，否则仅冻结路由名，trace 和页面实例可缺省。
-- pipeline 会将 `track` 和完成态 `measure` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
+- pipeline 会将 `track` 和显式开启后的完成态 `measure` 事件加入 breadcrumb store，使后续 error、jank、failed HTTP 可携带它作为上下文。
 - 业务层不需要知道 breadcrumb store，也不需要手动调用 `addBreadcrumb` 来实现常规埋点。
 
 ### 字段映射
@@ -829,7 +853,7 @@ Native memory pressure 映射规则：
 
 `properties` 是本次业务动作的诊断详情，默认不作为主要聚合索引。业务方需要按用户排查 session 时，应通过统一上下文入口写入 `context.user.userId`，而不是把 userId 放进 `track.properties`。
 
-`measure` 参数由 SDK 内部映射：
+`measure` 参数由 SDK 内部映射；默认关闭时 public API 返回 disabled handle，不产生 envelope：
 
 - `action` -> `business.action`
 - `mode` -> `interaction.mode`
@@ -864,7 +888,7 @@ Native memory pressure 映射规则：
 - `action` 必须稳定，动态业务 ID 不得进入 action/name。
 - `properties` 仍必须经过隐私过滤，不得包含 token、cookie、原始请求体、精确位置等 forbidden 字段。
 - `measure` 并发数量必须受配置限制；超限时 SDK 应拒绝新窗口或输出 SDK self-monitoring 事件，不能无限持有状态。
-- `measure` 即使没有足够 frame 样本，也应输出可回查的交互 span 和上下文；frame 字段可省略，并通过 payload 说明样本不足。
+- `measure` 的诊断价值依赖 frame timing 等低可信采样信号；开启后即使没有足够 frame 样本，也应输出可回查的交互 span 和上下文，frame 字段可省略，并通过 payload 说明样本不足。
 - `FieldPaths` 是 core/schema 内部契约，不暴露给普通业务接入。
 
 ## 通用上下文采集
@@ -977,7 +1001,7 @@ SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 | `localLive` | `MonitorMode.localLive()` | QA / 本地 Workbench 调试 | 本机 Monitor Service（默认 `http://localhost:3700/api/monitor/v1/events`） |
 | `production` | `MonitorMode.production(endpoint: ...)` | 灰度 / 线上 | 生产监控服务端 |
 
-采集层不区分模式：错误、启动、页面、网络、行为（track）、交互性能（measure）、卡顿、内存、生命周期在三种模式下按同一套规则采集，生成同一种 `EventEnvelope`。模式只影响采集之后的处置与上送。唯一与模式相关的采集差异是 HTTP body 截断默认值（localLive/consoleOnly 64KB，production 16KB）。
+输出模式不改变采集开关：默认只采集错误、启动/生命周期、页面/路由、网络和行为（track）等主链路信号；交互性能（measure）、卡顿、frame stats、内存和 native 由 `MonitorSignalConfig` 显式开启。所有已开启信号在三种模式下生成同一种 `EventEnvelope`。模式只影响采集之后的处置与上送。唯一与模式相关的采集差异是 HTTP body 截断默认值（localLive/consoleOnly 64KB，production 16KB）。
 
 pipeline 的采样与限流**只在 `production` 模式生效**；`consoleOnly` 和 `localLive` 下所有事件原样保留。production 下按以下顺序处置：
 
@@ -1119,10 +1143,11 @@ dio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
 final client = FlutterMonitorSDK.createHttpClient(); // 包装 package:http
 ```
 
-#### 性能 / 内存 / Session 配置
+#### 信号 / 性能 / 内存 / Session 配置
 
-- `MonitorPerformanceConfig`：卡顿阈值（`jankFrameTimeMultiplier` 默认 2.5、`consecutiveJankThreshold` 默认 4）、页面 frame 摘要开关、`measure(...)` 交互窗口参数。预设 `strict()`（更敏感）与 `lenient()`（低端机/噪声环境）。
-- `MonitorMemoryConfig`：`sampleInterval` 默认 30s、`growthThresholdMb` 默认 16、`suspectLeakThresholdMb` 默认 64。
+- `MonitorSignalConfig`：低可信诊断信号开关。`frameStats`、`jank`、`memory`、`interactionMeasure`、`native` 默认均为 `false`。
+- `MonitorPerformanceConfig`：卡顿阈值（`jankFrameTimeMultiplier` 默认 2.5、`consecutiveJankThreshold` 默认 4）和 `measure(...)` 交互窗口参数；只在对应 signal 开启后生效。预设 `strict()`（更敏感）与 `lenient()`（低端机/噪声环境）。
+- `MonitorMemoryConfig`：`sampleInterval` 默认 30s、`growthThresholdMb` 默认 16、`suspectLeakThresholdMb` 默认 64；只在 `signals.memory = true` 后生效。
 - `MonitorSessionConfig`：`backgroundSessionTimeout` 默认 30 分钟——后台超过该时长再回前台切新 session，短暂切后台仍归属同一 session。
 
 #### 运行时上下文：userId 从哪里来

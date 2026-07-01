@@ -41,17 +41,3 @@ void appTrack(
     ),
   );
 }
-
-MonitorMeasureHandle appMeasure({
-  required String action,
-  MonitorMeasureMode mode = MonitorMeasureMode.common,
-  String? target,
-  Map<String, Object?> properties = const <String, Object?>{},
-}) {
-  return FlutterMonitorSDK.measure(
-    action: action,
-    mode: mode,
-    target: target,
-    properties: properties,
-  );
-}

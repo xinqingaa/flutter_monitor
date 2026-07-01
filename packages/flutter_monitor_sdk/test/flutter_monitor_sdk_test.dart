@@ -26,6 +26,43 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('default signal config keeps low-confidence diagnostics disabled', () {
+    const config = MonitorConfig(appInfo: AppInfo(appKey: 'test'));
+    final signals = config.effectiveSignalConfig;
+
+    expect(signals.frameStats, isFalse);
+    expect(signals.jank, isFalse);
+    expect(signals.memory, isFalse);
+    expect(signals.interactionMeasure, isFalse);
+    expect(signals.native, isFalse);
+    expect(signals.needsFrameTiming, isFalse);
+  });
+
+  test('startup memory attributes require memory signal opt-in', () {
+    final defaultReporter = Reporter(
+      const MonitorConfig(appInfo: AppInfo(appKey: 'test')),
+    );
+    defaultReporter.beginStartupPerformance(startTime: DateTime.now());
+
+    expect(
+      defaultReporter.finishStartupPerformance(memoryEndRssMb: 200),
+      isEmpty,
+    );
+
+    final memoryReporter = Reporter(
+      const MonitorConfig(
+        appInfo: AppInfo(appKey: 'test'),
+        signals: MonitorSignalConfig(memory: true),
+      ),
+    );
+    memoryReporter.beginStartupPerformance(startTime: DateTime.now());
+    final attributes = memoryReporter.finishStartupPerformance(
+      memoryEndRssMb: 200,
+    );
+
+    expect(attributes, containsPair(FieldPaths.memoryEndRssMb, 200));
+  });
+
   test('envelope builder keeps registered attributes and payload overflow', () {
     final envelope = EnvelopeBuilder().build(
       signal: RawSignal(

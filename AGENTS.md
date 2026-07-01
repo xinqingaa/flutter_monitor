@@ -6,12 +6,12 @@
 
 Flutter Monitor 的目标是成为一个 **以链路为组织方式的 Flutter 端侧监控 workspace**。
 
-SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生命周期、native 和自定义业务信号，并通过统一上下文将这些信号组织成可回放、可聚合、可定位的用户会话链路。
+SDK 应采集错误、启动、页面、网络、行为、生命周期和自定义业务信号，并通过统一上下文将这些信号组织成可回放、可聚合、可定位的用户会话链路。卡顿、帧数、内存、native 和 `measure` 等依赖采样或平台时机的低可信诊断信号必须进入同一模型，但默认关闭，只能通过配置显式开启。
 
 目标效果：
 
 - 开发者能还原一次真实用户或 QA 会话中发生了什么。
-- 页面或模块出现性能问题时，能定位相关操作、请求、卡顿、错误、内存、设备、网络、版本和业务上下文。
+- 页面或模块出现问题时，能定位相关操作、请求、错误、生命周期、设备、网络、版本和业务上下文；显式开启诊断信号后，可补充卡顿、帧数、内存和 native 线索。
 - 用户无法准确描述页面或操作路径时，仍能通过 session timeline 和 breadcrumbs 辅助排查。
 - DevTools 能支持本地复现、性能优化和 QA 交接。
 - 服务端能支持长期聚合、趋势分析、告警、版本对比和影响面分析。
@@ -56,7 +56,7 @@ SDK 应采集错误、启动、页面、网络、行为、卡顿、内存、生�
 - 在哪个页面、模块、场景或 route stack？
 - 发生在哪个 session、trace 或 span 中？
 - 前后有哪些 breadcrumbs？
-- 当时 `resource.device.*`、`context.network.*`、`resource.app.*`、`context.release.featureFlags`、内存和 `context.native.*` 状态是什么？
+- 当时 `resource.device.*`、`context.network.*`、`resource.app.*`、`context.release.featureFlags` 是什么；显式开启诊断信号后，内存和 `context.native.*` 状态是什么？
 - 这个事件如何服务于问题定位、复现、聚合或告警？
 
 ## 核心信号
@@ -68,13 +68,13 @@ SDK 应覆盖但不限于以下信号：
 - 页面：路由进入/离开、页面加载、页面停留、页面可交互、页面来源。
 - 网络：Dio、`http`、请求/响应耗时、状态码、错误类型、请求/响应大小、重试、缓存。
 - 行为：点击、关键操作、页面访问、业务动作、用户路径。
-- 卡顿：连续慢帧、帧耗时分布、FPS、稳定性、设备等级、页面上下文。
-- 内存：memory sample、growth、pressure、native memory、suspect leak 线索。
+- 卡顿：连续慢帧、帧耗时分布、FPS、稳定性、设备等级、页面上下文。默认关闭，显式开启后只作为诊断线索。
+- 内存：memory sample、growth、pressure、native memory、suspect leak 线索。默认关闭，不得把增长宣称为确定泄漏。
 - 生命周期：前后台切换、启动恢复、退出前 flush。
 - Native：native memory、memory pressure、OOM、ANR、native crash、native lifecycle。
 - 自定义 trace：业务方主动标记的流程、阶段和指标。
 
-冷启动和热启动必须作为核心 trace。内存是核心信号，不应只作为附属指标。Native 能力必须通过 bridge 或 optional extension 接入统一模型。
+冷启动和热启动必须作为核心 trace。内存和 Native 能力必须进入统一模型，但默认不采集；Native 必须通过 bridge 或 optional extension 接入，不得绕过 SDK pipeline。
 
 ## DevTools 与服务端分工
 

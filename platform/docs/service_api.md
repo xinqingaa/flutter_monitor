@@ -331,7 +331,7 @@ Workbench service 只接收和存储 SDK 发来的 `EventEnvelope`。原始 enve
 Workbench 启动详情页按这个口径展示：
 
 - `启动阶段散点`：不连线、不做时间桶聚合；每个点对应一条启动链路里的已采集指标，包括冷启动到首帧、热重启和 SDK 初始化。
-- `启动内存变化`：只从 `app.cold_start` / `app.hot_start` trace end 读取 `memory.start_rss_mb`、`memory.end_rss_mb` 和 `memory.delta_rss_mb`。启动不展示 FPS 或帧稳定性。
+- `启动内存变化`：只有 SDK 显式开启 memory 并产生字段时，才从 `app.cold_start` / `app.hot_start` trace end 读取 `memory.start_rss_mb`、`memory.end_rss_mb` 和 `memory.delta_rss_mb`。启动不展示 FPS 或帧稳定性。
 - `后台间隔`：单独展示 `app.background_duration.durationMs`，不与毫秒级启动耗时混轴。
 - `热重启耗时`：只展示 `app.hot_start.durationMs`，不回退到 `app.background_duration`，避免把后台停留间隔伪装成热重启性能。
 
@@ -344,7 +344,7 @@ Workbench 启动详情页按这个口径展示：
 | `stay` | `name=page.stay` 的 `durationMs`。 |
 | `routeSummaries` | 按 `context.route.name` 分组的页面加载摘要。停留时长不混入加载摘要。 |
 
-`pages.events` 会额外返回 `name=page.visit`、`attributes["event.phase"]="end"` 且 `status != "unknown"` 的 trace end 记录。页面帧表现和 RSS 变化只从这条页面主链路结束事件读取，包括 `frame.fps`、`frame.stability`、`frame.max_ms`、`frame.sample_count`、`frame.slow_count`、`memory.enter_rss_mb`、`memory.exit_rss_mb` 和 `memory.delta_rss_mb`。
+`pages.events` 会额外返回 `name=page.visit`、`attributes["event.phase"]="end"` 且 `status != "unknown"` 的 trace end 记录。页面帧表现和 RSS 变化只有 SDK 显式开启 frame/memory 并产生字段时才展示，并且只从这条页面主链路结束事件读取，包括 `frame.fps`、`frame.stability`、`frame.max_ms`、`frame.sample_count`、`frame.slow_count`、`memory.enter_rss_mb`、`memory.exit_rss_mb` 和 `memory.delta_rss_mb`。
 
 Workbench Web 展示 route 时优先读取 `context.route.fullName`，再回退到 `context.route.name`。`page.instance_id` 只用于内部合并和 Inspector/raw JSON 诊断，不作为页面性能概览、图表坐标轴或会话链路区段标题的默认展示名。
 

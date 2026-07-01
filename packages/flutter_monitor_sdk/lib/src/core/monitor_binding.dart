@@ -55,6 +55,7 @@ class MonitorBinding {
   /// resource。该方法会发出冷启动、SDK init、memory sample 等首批事件，
   /// 因此初始化顺序对 envelope 上下文完整性非常关键。
   Future<void> _start({required DateTime appStartTime}) async {
+    final signals = config.effectiveSignalConfig;
     _startupTraceController = StartupTraceController(
       reporter: reporter,
       appStartTime: appStartTime,
@@ -86,9 +87,11 @@ class MonitorBinding {
       debugPrint("错误: PerformanceMonitor 初始化失败: $e");
     }
 
-    _frameTimingDispatcher = FrameTimingDispatcher();
+    if (signals.needsFrameTiming) {
+      _frameTimingDispatcher = FrameTimingDispatcher();
+    }
 
-    if (config.effectivePerformanceConfig.collectPageFrameStats) {
+    if (signals.frameStats) {
       try {
         _frameWindowCollector = FrameWindowCollector(
           onPageWindowFinished: reporter.addPageFrameStats,
@@ -101,59 +104,65 @@ class MonitorBinding {
       }
     }
 
-    try {
-      _interactionMeasureCollector = InteractionMeasureCollector(
-        config: config.effectivePerformanceConfig,
-        onFinished: reporter.recordInteractionMeasure,
-      );
-      _frameTimingDispatcher?.addListener(
-        _interactionMeasureCollector!.recordTimings,
-      );
-    } catch (e) {
-      debugPrint("错误: InteractionMeasureCollector 初始化失败: $e");
+    if (signals.interactionMeasure) {
+      try {
+        _interactionMeasureCollector = InteractionMeasureCollector(
+          config: config.effectivePerformanceConfig,
+          onFinished: reporter.recordInteractionMeasure,
+        );
+        _frameTimingDispatcher?.addListener(
+          _interactionMeasureCollector!.recordTimings,
+        );
+      } catch (e) {
+        debugPrint("错误: InteractionMeasureCollector 初始化失败: $e");
+      }
     }
 
-    try {
-      _jankMonitor = JankMonitor(
-        reporter,
-        getCurrentPage: () => _currentPage ?? 'unknown',
-        onJankSequenceReported: () {
-          unawaited(
-            _memoryCollector?.recordGrowth(
-                  trigger: TriggerValues.jankSequence,
-                  emitSample: true,
-                ) ??
-                Future<void>.value(),
-          );
-          unawaited(
-            _nativeBridgeController?.recordMemorySample(
-                  trigger: TriggerValues.jankSequence,
-                ) ??
-                Future<void>.value(),
-          );
-        },
-        config: config.effectivePerformanceConfig,
-      );
-      _jankMonitor!.init();
-      _frameTimingDispatcher?.addListener(_jankMonitor!.recordTimings);
-      debugPrint("✅ JankMonitor 初始化成功");
-    } catch (e) {
-      debugPrint("错误: JankMonitor 初始化失败: $e");
+    if (signals.jank) {
+      try {
+        _jankMonitor = JankMonitor(
+          reporter,
+          getCurrentPage: () => _currentPage ?? 'unknown',
+          onJankSequenceReported: () {
+            unawaited(
+              _memoryCollector?.recordGrowth(
+                    trigger: TriggerValues.jankSequence,
+                    emitSample: true,
+                  ) ??
+                  Future<void>.value(),
+            );
+            unawaited(
+              _nativeBridgeController?.recordMemorySample(
+                    trigger: TriggerValues.jankSequence,
+                  ) ??
+                  Future<void>.value(),
+            );
+          },
+          config: config.effectivePerformanceConfig,
+        );
+        _jankMonitor!.init();
+        _frameTimingDispatcher?.addListener(_jankMonitor!.recordTimings);
+        debugPrint("✅ JankMonitor 初始化成功");
+      } catch (e) {
+        debugPrint("错误: JankMonitor 初始化失败: $e");
+      }
     }
 
     _frameTimingDispatcher?.init();
 
-    try {
-      _memoryCollector = MemoryCollector(
-        reporter,
-        config: config.effectiveMemoryConfig,
-      );
-      unawaited(
-        _memoryCollector!.recordSample(trigger: TriggerValues.sessionStart),
-      );
-      debugPrint("✅ MemoryCollector 初始化成功");
-    } catch (e) {
-      debugPrint("错误: MemoryCollector 初始化失败: $e");
+    if (signals.memory) {
+      try {
+        _memoryCollector = MemoryCollector(
+          reporter,
+          config: config.effectiveMemoryConfig,
+        );
+        unawaited(
+          _memoryCollector!.recordSample(trigger: TriggerValues.sessionStart),
+        );
+        debugPrint("✅ MemoryCollector 初始化成功");
+      } catch (e) {
+        debugPrint("错误: MemoryCollector 初始化失败: $e");
+      }
     }
 
     try {
@@ -164,7 +173,7 @@ class MonitorBinding {
       debugPrint("错误: LifecycleManager 初始化失败: $e");
     }
 
-    final nativeBridge = config.nativeBridge;
+    final nativeBridge = signals.native ? config.nativeBridge : null;
     if (nativeBridge != null) {
       try {
         _nativeBridgeController = NativeBridgeController(
@@ -306,6 +315,7 @@ class MonitorBinding {
   /// 该方法接收 core 协议中的 lifecycle 字符串，public API 会先把
   /// `AppLifecycleState` 映射为这些字符串。
   Future<void> handleLifecycleState(String state, {DateTime? timestamp}) {
+    final signals = config.effectiveSignalConfig;
     return reporter.handleLifecycleState(state, timestamp: timestamp).then((_) {
       if (state == LifecycleStates.resumed ||
           state == LifecycleStates.paused ||
@@ -321,35 +331,43 @@ class MonitorBinding {
               endReason: StartupEndReasons.firstFrame,
             );
           });
-          unawaited(
-            _memoryCollector?.recordGrowth(
-                  trigger: TriggerValues.lifecycleResumed,
-                ) ??
-                Future<void>.value(),
-          );
-          unawaited(
-            _nativeBridgeController?.recordMemorySample(
-                  trigger: TriggerValues.lifecycleResumed,
-                ) ??
-                Future<void>.value(),
-          );
+          if (signals.memory) {
+            unawaited(
+              _memoryCollector?.recordGrowth(
+                    trigger: TriggerValues.lifecycleResumed,
+                  ) ??
+                  Future<void>.value(),
+            );
+          }
+          if (signals.native) {
+            unawaited(
+              _nativeBridgeController?.recordMemorySample(
+                    trigger: TriggerValues.lifecycleResumed,
+                  ) ??
+                  Future<void>.value(),
+            );
+          }
         } else {
           _frameWindowCollector?.finishPageWindow(
             PageActivePhases.lifecycleBackground,
             timestamp: timestamp,
           );
-          unawaited(
-            _memoryCollector?.recordSample(
-                  trigger: TriggerValues.lifecycleState(state),
-                ) ??
-                Future<void>.value(),
-          );
-          unawaited(
-            _nativeBridgeController?.recordMemorySample(
-                  trigger: TriggerValues.lifecycleState(state),
-                ) ??
-                Future<void>.value(),
-          );
+          if (signals.memory) {
+            unawaited(
+              _memoryCollector?.recordSample(
+                    trigger: TriggerValues.lifecycleState(state),
+                  ) ??
+                  Future<void>.value(),
+            );
+          }
+          if (signals.native) {
+            unawaited(
+              _nativeBridgeController?.recordMemorySample(
+                    trigger: TriggerValues.lifecycleState(state),
+                  ) ??
+                  Future<void>.value(),
+            );
+          }
         }
       }
     });
@@ -409,7 +427,11 @@ class MonitorBinding {
       );
     }
     unawaited(
-      Future<void>.microtask(() => reporter.recordPageActivityMemory(activity)),
+      Future<void>.microtask(() {
+        if (config.effectiveSignalConfig.memory) {
+          reporter.recordPageActivityMemory(activity);
+        }
+      }),
     );
   }
 }

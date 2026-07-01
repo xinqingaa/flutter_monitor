@@ -40,15 +40,15 @@ MonitorMode buildMonitorMode() {
   // final monitorMode = MonitorMode.consoleOnly();
 
   // 2. Workbench live 模式：适合接入本地 workbench service。
-  // final monitorMode = MonitorMode.localLive(
-  //   endpoint: Uri.parse(monitorServerUrl),
-  // );
+  final monitorMode = MonitorMode.localLive(
+    endpoint: Uri.parse(monitorServerUrl),
+  );
 
   // 3. 生产默认策略：队列 20000/64MB、batch 1MB、flush 15s、
   //    HTTP 全量保留（hard 证据）、memory sample 10%。
-  final monitorMode = MonitorMode.production(
-    endpoint: Uri.parse(productionMonitorUrl),
-  );
+  // final monitorMode = MonitorMode.production(
+  //   endpoint: Uri.parse(productionMonitorUrl),
+  // );
 
   // 4. 生产灰度策略：队列更小、flush 更慢、采样更低，适合首轮灰度。
   // final monitorMode = MonitorMode.production(
@@ -92,6 +92,15 @@ Future<void> main() async {
     appInfo: appInfo,
     mode: buildMonitorMode(),
     performance: MonitorPerformanceConfig.lenient(),
+    // 默认只采集启动/生命周期、路由、HTTP、错误和 track。
+    // 如需采集 frame/jank/memory/measure/native 等诊断信号，在初始化时显式开启：
+    // signals: MonitorSignalConfig(
+    //   frameStats: true,
+    //   jank: true,
+    //   memory: true,
+    //   interactionMeasure: true,
+    //   native: true,
+    // ),
     // HTTP 详情采集默认全开（query/headers/body 保真采集，body 截断
     // localLive 64KB / production 16KB）。需要脱敏或关闭时显式配置：
     // http: MonitorHttpConfig(

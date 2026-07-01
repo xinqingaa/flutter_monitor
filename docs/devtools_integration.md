@@ -260,7 +260,7 @@ DevTools 应支持导出当前 session，供 QA 转交开发。
 
 DevTools 应支持以下场景：
 
-- 页面加载慢：查看 page trace 下的 `context.route.name`、first frame、HTTP、jank、memory；如业务或 native 提供 interactive，再展示可交互点。
+- 页面加载慢：查看 page trace 下的 `context.route.name`、first frame、HTTP；如显式开启诊断信号，再参考 jank、memory；如业务或 native 提供 interactive，再展示可交互点。
 - 点击后卡顿：查看 action breadcrumb、后续 span、jank sequence 和 memory sample。
 - 请求慢：查看 http span 是否影响页面 trace 或 action trace。
 - 冷启动慢：查看 app cold start trace、SDK init、first frame；如业务或 native 提供 interactive，再展示可交互点。

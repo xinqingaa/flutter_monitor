@@ -66,23 +66,30 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
   }
 
   Future<void> _refreshReport() async {
-    final measure = appMeasure(
+    appTrack(
+      context,
       action: 'gallery.report.refresh',
-      mode: MonitorMeasureMode.stage,
       target: 'report_chart',
       properties: <String, Object?>{'segment': _selectedSegment},
+      result: MonitorTrackResult.started,
+      message: '已记录报表刷新行为',
     );
     await Future<void>.delayed(const Duration(milliseconds: 120));
     if (!mounted) {
-      measure.cancel(reason: 'page_disposed');
       return;
     }
     setState(() {
       _chartValues = _nextChartValues();
     });
     await _chartController.forward(from: 0);
-    measure.finish(
+    if (!mounted) return;
+    appTrack(
+      context,
+      action: 'gallery.report.refresh',
+      target: 'report_chart',
+      result: MonitorTrackResult.success,
       properties: <String, Object?>{'point.count': _chartValues.length},
+      message: '已记录报表刷新完成',
     );
   }
 
@@ -117,8 +124,11 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
       context,
       action: 'gallery.offline_report.generate',
       target: 'offline_report_button',
-      properties: <String, Object?>{'allocated_mb': mb, 'retained_mb': _retainedMb},
-      message: '已分配 ${mb}MB retained memory',
+      properties: <String, Object?>{
+        'allocated_mb': mb,
+        'retained_mb': _retainedMb,
+      },
+      message: '已分配 ${mb}MB；内存事件需初始化开启',
     );
   }
 
@@ -166,7 +176,7 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
           children: [
             AppSection(
               title: '内容表现',
-              subtitle: '图表切换和刷新会产生 interaction measure。',
+              subtitle: '图表切换和刷新只记录业务埋点；交互诊断需在 SDK 初始化时开启。',
               children: [
                 SegmentedButton<int>(
                   segments: const [
@@ -216,7 +226,7 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
             ),
             AppSection(
               title: '复杂内容流',
-              subtitle: '刷新图片墙会制造连续帧阻塞，用于验证卡顿链路。',
+              subtitle: '刷新图片墙会制造帧阻塞；卡顿/帧事件需在 SDK 初始化时开启。',
               children: [
                 FilledButton.icon(
                   onPressed: _jankController.isAnimating
@@ -239,8 +249,10 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
                             mainAxisSpacing: 8,
                             crossAxisSpacing: 8,
                           ),
-                      itemBuilder: (context, index) =>
-                          _GalleryTile(index: index, progress: _jankController.value),
+                      itemBuilder: (context, index) => _GalleryTile(
+                        index: index,
+                        progress: _jankController.value,
+                      ),
                     );
                   },
                 ),
@@ -248,7 +260,7 @@ class _PerformanceGalleryPageState extends State<PerformanceGalleryPage>
             ),
             AppSection(
               title: '离线报表缓存',
-              subtitle: '模拟 retained memory 和释放行为。',
+              subtitle: '模拟 retained memory 和释放行为；内存事件需在 SDK 初始化时开启。',
               children: [
                 Text('当前保留 $_retainedMb MB'),
                 const SizedBox(height: 12),

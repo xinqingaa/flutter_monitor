@@ -123,7 +123,9 @@ class Reporter {
   /// 和 SDK init span 发出前完成，避免 bootstrap 事件缺少 resource/context。
   Future<void> resolveBootstrapResources() async {
     await _fetchDeviceInfo();
-    await resolveNativeBootstrapResource(_config.nativeBridge);
+    await resolveNativeBootstrapResource(
+      _config.effectiveSignalConfig.native ? _config.nativeBridge : null,
+    );
   }
 
   Future<void> initAsync() => resolveBootstrapResources();
@@ -162,12 +164,16 @@ class Reporter {
   void beginStartupPerformance({required DateTime startTime}) {
     _startupPerfRecord = _StartupPerfRecord(
       startedAt: startTime,
-      startRssMb: captureRssMb(),
+      startRssMb: _memorySignalsEnabled ? captureRssMb() : null,
     );
   }
 
   /// 结束启动阶段内存证据记录，并返回可并入 trace 的 performance attributes。
   Map<String, Object?> finishStartupPerformance({num? memoryEndRssMb}) {
+    if (!_memorySignalsEnabled) {
+      _startupPerfRecord = null;
+      return const <String, Object?>{};
+    }
     final attributes =
         _startupPerfRecord
             ?.copyWith(endRssMb: memoryEndRssMb)
@@ -186,6 +192,8 @@ class Reporter {
       return null;
     }
   }
+
+  bool get _memorySignalsEnabled => _config.effectiveSignalConfig.memory;
 
   /// 接收 native bridge 送来的 native 信号。
   ///
@@ -510,7 +518,7 @@ class Reporter {
       startedAt: startedAt,
       previousRouteName: previousRouteName,
       previousRouteFullName: effectivePreviousRouteFullName,
-      memoryEnterRssMb: captureRssMb(),
+      memoryEnterRssMb: _memorySignalsEnabled ? captureRssMb() : null,
     );
     _pageInstanceStack.add(pageInstanceId);
     _traceManager.setActiveTrace(traceId: traceId);
@@ -624,7 +632,7 @@ class Reporter {
     final completedRecord = record.copyWith(
       nextRouteName: nextRouteName,
       nextRouteFullName: effectiveNextRouteFullName,
-      memoryExitRssMb: captureRssMb(),
+      memoryExitRssMb: _memorySignalsEnabled ? captureRssMb() : null,
     );
     _closePageWindow(
       record.pageInstanceId,
@@ -691,7 +699,9 @@ class Reporter {
         .map((record) {
           final recordWithStats =
               _pageTracesByInstanceId[record.pageInstanceId] ?? record;
-          return recordWithStats.copyWith(memoryExitRssMb: captureRssMb());
+          return recordWithStats.copyWith(
+            memoryExitRssMb: _memorySignalsEnabled ? captureRssMb() : null,
+          );
         })
         .toList(growable: false);
     _pageTracesByInstanceId.clear();

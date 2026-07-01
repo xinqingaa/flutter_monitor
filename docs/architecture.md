@@ -511,7 +511,7 @@ abstract interface class MonitorNativeBridge {
 接入要求：
 
 - `flutter_monitor_sdk` 只依赖 bridge 抽象，不强依赖 native plugin。
-- 未配置 bridge 时，SDK 使用 no-op 降级路径，`context.native.available = false`，启动、页面、HTTP、错误、卡顿、基础 memory、基础 lifecycle 和 `track` 不受影响。
+- 未配置 bridge 时，SDK 使用 no-op 降级路径，`context.native.available = false`，启动、页面、HTTP、错误、基础 lifecycle 和 `track` 不受影响。卡顿、frame stats、memory 和 native 均属于显式开启的诊断信号；未开启或 bridge 不可用时不应影响默认主链路。
 - 配置 bridge 时，SDK 在 bootstrap resource resolve 阶段解析一次 native resource snapshot；该阶段有短 deadline，成功后首批 bootstrap 事件携带 native context，不可用或超时时降级为 `context.native.available = false`。
 - `flutter_monitor_native` 提供 bridge 实现。
 - `flutter_monitor_core` 承载最终 event envelope、字段注册、隐私规则和可共享的 native raw payload contract。
@@ -556,8 +556,8 @@ Native signal 的最终字段映射发生在 SDK pipeline 入口：`flutter_moni
 
 如果用户不接入 `flutter_monitor_native`，或接入失败，SDK 必须无损降级：
 
-- Phase 3 的启动、页面、HTTP、错误、卡顿、行为、基础 lifecycle 和业务 `track` 能力继续工作。
-- Flutter/Dart 层可获得的 memory/lifecycle 仍可工作。
+- 默认主链路的启动、页面、HTTP、错误、基础 lifecycle 和业务 `track` 能力继续工作。
+- Flutter/Dart 层 lifecycle 仍可工作；memory 仅在 `MonitorSignalConfig.memory = true` 后采集。
 - native memory、native pressure、native lifecycle、native crash/OOM/ANR 线索缺失。
 - `context.native.available` 应为 `false`；需要解释缺失时使用 `context.missingReason = native_bridge_unavailable`。
 - 如果用户显式启用了 native bridge 但 bridge 不可用，应记录 SDK self-monitoring warning，而不是抛出影响 App 运行的异常。

@@ -79,7 +79,7 @@ Workbench 负责完整链路排查 UI：
 - 还原 session timeline。
 - 查看 trace/span 层级与页面链路。
 - 查看 event detail 和 raw JSON。
-- 查看 error、jank、failed HTTP 携带的 breadcrumbs。
+- 查看 error、failed HTTP 携带的 breadcrumbs；显式开启诊断信号后，也可查看 jank、memory、native 线索携带的 breadcrumbs。
 - 查看 route、user、device、network、release、lifecycle 等 context/resource 快照；module/scene 属于可选增强上下文，不作为基础接入前置条件。
 - 通过 SSE 实时观察 SDK 上报事件。
 - 按人类排查入口检索 session，例如 `userId + time range + appVersion/environment`、页面、错误、慢请求、卡顿和启动问题。
@@ -355,7 +355,7 @@ Workbench Web 不应只是事件列表和 raw JSON viewer。前端需要形成�
 - `/sessions/:sessionId`：Session 详情，展示一次用户链路的 timeline、关键指标、trace/event 联动和上下文。
 - `/traces/:traceId`：Trace 详情，聚焦一次启动、页面打开、接口链路或业务流程的 span/event 顺序。
 - `/events/:eventId`：Event 详情，展示字段释义、诊断摘要、关联上下文和完整 raw envelope。
-- 后续 `/performance`：性能分析页，聚合启动、页面、HTTP、卡顿、内存等指标。
+- 后续 `/performance`：性能分析页，默认聚合启动、页面、HTTP 等确定性指标；卡顿、内存等诊断指标仅在 SDK 显式开启并采到数据后展示。
 
 前端目录原则：
 
@@ -411,7 +411,7 @@ platform/web/src/
 - Startup Overview：冷启动、热启动的 count、p50、p95、max、最近慢启动。
 - Page Performance：各页面打开、首帧、可交互或停留耗时的 Top N 和慢页面数量。
 - HTTP Overview：请求数、失败率、p95、慢请求和失败请求入口。
-- Stability Overview：错误、卡顿、内存压力、native 异常的数量和受影响 session。
+- Stability Overview：默认展示错误、失败请求等确定性问题；卡顿、内存压力、native 异常仅在 SDK 显式开启并采到数据后展示。
 - Recent Problem Sessions：最近有 error、jank、failed HTTP、slow startup、slow page 的 session。
 
 首页卡片或表格中的每个摘要都必须能跳转到 session、trace 或 event 原始数据。
@@ -422,7 +422,7 @@ Raw JSON 信息最全，但信息密度过高。Event Inspector 必须同时提�
 
 解释后的诊断视图至少回答：
 
-- 这是什么事件：错误、启动、页面、网络、行为、卡顿、内存、生命周期、native 或 business。
+- 这是什么事件：错误、启动、页面、网络、行为、生命周期或 business；显式开启诊断信号后可包含卡顿、内存、native。
 - 发生在哪里：session、trace、span、route、module、scene。
 - 影响谁：user、device、app version、environment、release、network。
 - 状态如何：level、status、duration、priority、error type、HTTP status、frame duration、memory pressure 等。
@@ -474,14 +474,14 @@ Workbench Web 采用：
 
 - Session list：最近 session、事件数、起止时间、关键状态、错误/卡顿/HTTP 失败计数。
 - Session search：按 userId、时间范围、版本、环境、route、错误和性能问题查找 session。
-- Session timeline：按时间展示 startup、page、http、jank、error、lifecycle、memory、native、business track。
+- Session timeline：按时间展示 startup、page、http、error、lifecycle、business track；jank、memory、native、interaction measure 只有在 SDK 显式开启并实际产生 envelope 后展示。
 - Event detail：完整 envelope JSON、attributes、payload、context、resource。
 - Trace detail：trace 下的 span、breadcrumb、相关 event。
 - Breadcrumb viewer：关键事件携带的 breadcrumb 摘要和原始内容。
 - Filter/search：`eventId`、`sessionId`、`traceId`、`spanId`、`signalType`、`name`、`status`、`route`。
 - Live mode：通过 SSE 实时追加新事件。
 - SDK/service health：collector 状态、最近上报时间、缓存事件数。
-- Performance overview：冷启动/热启动、页面加载、HTTP、卡顿、错误的本地轻量聚合。
+- Performance overview：冷启动/热启动、页面加载、HTTP、错误的本地轻量聚合；卡顿/内存只在有数据时作为诊断视图展示。
 
 ### UI 原则
 
@@ -708,7 +708,7 @@ Phase 6 Monitor Service 承担：
 
 ### Phase W7：性能概览
 
-- 增加启动、页面、HTTP、错误、卡顿和 SDK 健康的本地轻量聚合。
+- 增加启动、页面、HTTP、错误和 SDK 健康的本地轻量聚合；卡顿/内存聚合仅在有数据时展示。
 - 聚合结果必须能回查原始 session、trace 或 event。
 
 ### Phase W8：Remote datasource 预留
@@ -728,8 +728,8 @@ Workbench MVP 完成时应满足：
 - 任意 timeline event 能查看完整 envelope JSON。
 - failed HTTP、error、jank 能展示 breadcrumb 数量、摘要和原始 breadcrumb 内容。
 - 页面 trace 能展示 `page.visit`、`route.push`、`page.load`、`page.stay` 的顺序和 duration；页面首帧读取 `page.load` 上的 `page.first_frame_ms` 字段。
-- startup trace 能展示 `app.cold_start`、`sdk.init`，并从 `app.cold_start` / `app.hot_start` trace end 展示启动 RSS 变化；启动不展示 FPS 或帧稳定性。
-- 页面性能能从 `page.visit` trace end 展示页面帧表现和 RSS 变化；同 route 多次进入内部按页面链路区分，主界面优先展示 `context.route.fullName`，`page.instance_id` 只在 Inspector/raw JSON 中作为诊断字段。
+- startup trace 能展示 `app.cold_start`、`sdk.init`；只有 SDK 显式开启 memory 后，才从 `app.cold_start` / `app.hot_start` trace end 展示启动 RSS 变化。启动不展示 FPS 或帧稳定性。
+- 页面性能默认展示页面加载、首帧、停留等确定性耗时；只有 SDK 显式开启 frame/memory 后，才从 `page.visit` trace end 展示页面帧表现和 RSS 变化。同 route 多次进入内部按页面链路区分，主界面优先展示 `context.route.fullName`，`page.instance_id` 只在 Inspector/raw JSON 中作为诊断字段。
 - 业务 `track` 事件能展示 `business.action`、`business.result`、`ui.target` 和 `payload.properties`。
 - Overview 能展示 SDK self-monitoring 健康摘要，包括队列长度、丢弃数、重试数、flush 失败、输出模式和主要 drop/retry/flush reason。
 - service API 接收 SDK 批量写入的统一 envelope。

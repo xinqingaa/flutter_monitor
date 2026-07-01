@@ -1,6 +1,6 @@
 # Flutter Monitor
 
-Flutter Monitor 是一个以链路为组织方式的 Flutter 端侧监控 workspace。它把错误、启动、页面、网络、行为、卡顿、内存、生命周期、native 和自定义业务信号归一到统一 `EventEnvelope`，再通过 `session`、`trace`、`span`、`breadcrumb`、`context` 和 `resource` 还原一次真实用户或 QA 会话。
+Flutter Monitor 是一个以链路为组织方式的 Flutter 端侧监控 workspace。它把错误、启动、页面、网络、行为、生命周期，以及显式开启后的卡顿、内存、native 和自定义诊断信号归一到统一 `EventEnvelope`，再通过 `session`、`trace`、`span`、`breadcrumb`、`context` 和 `resource` 还原一次真实用户或 QA 会话。
 
 项目的核心原则是：文档先行，`flutter_monitor_core` 统一约定字段和状态，`flutter_monitor_sdk` 执行 Flutter runtime 采集，`flutter_monitor_native` 提供 native 增强，Workbench 只消费统一 envelope 做诊断展示。不要为 SDK、native、Workbench、DevTools、CLI、MCP 或服务端创建第二套模型。
 
@@ -27,7 +27,7 @@ flutter_monitor/
 ## Package Roles
 
 - `packages/flutter_monitor_core` 是唯一模型来源，定义 `FieldPaths`、协议常量、字段注册、事件摘要、隐私等级和共享配置。它不依赖 Flutter，也不做采集、网络或 UI effect。
-- `packages/flutter_monitor_sdk` 是 Flutter 应用接入的主 SDK，负责错误、启动、页面、网络、行为、卡顿、内存、生命周期、自定义 trace、pipeline 和 output。
+- `packages/flutter_monitor_sdk` 是 Flutter 应用接入的主 SDK，负责错误、启动、页面、网络、行为、生命周期、显式开启的低可信诊断信号、pipeline 和 output。
 - `packages/flutter_monitor_native` 是可选 Flutter plugin，提供 native lifecycle、native memory、memory pressure 等增强信号，并通过统一模型回到 SDK pipeline。
 - `platform` 是 JS/TS workspace，承载 Monitor Service、Workbench Web 和 TypeScript 共享层。Workbench 是 UI 产品名；诊断规则与 Evidence API 也归属 platform，但不定义事件模型，不改写 SDK envelope。
 
@@ -89,7 +89,7 @@ bash scripts/run_example.sh --server-url http://host:3700/api/monitor/v1/events
 
 ## SDK 接入概要
 
-SDK 对业务暴露三种输出模式：`consoleOnly`（本地日志）、`localLive`（本地 Workbench 调试）、`production`（生产可靠上报）。三种模式采集规则完全一致；采样和限流只在 production 生效，且错误、HTTP、业务埋点、交互性能等 hard 证据永不被采样，压力下只压缩不静默丢弃。
+SDK 对业务暴露三种输出模式：`consoleOnly`（本地日志）、`localLive`（本地 Workbench 调试）、`production`（生产可靠上报）。三种模式的采集开关一致：默认开启错误、启动/生命周期、页面/路由、HTTP wrapper/interceptor 和业务 `track`；FrameTiming、jank、memory、native 和 `measure` 由 `MonitorSignalConfig` 显式开启。采样和限流只在 production 生效，且错误、HTTP、业务埋点等 hard 证据永不被采样，压力下只压缩不静默丢弃。
 
 - 证据保留三级（hard / compressible / sampleable）完整映射表：见 [事件模型](docs/event_model.md) 的"证据保留等级"章节。
 - 模式行为规则与全部配置项（`MonitorProductionPolicy`、`MonitorHttpConfig` 等）：见 [信号采集设计](docs/signal_collection.md) 的"输出模式行为与接入配置"章节。

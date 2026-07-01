@@ -311,6 +311,59 @@ class MonitorSessionConfig {
   static const MonitorSessionConfig defaultConfig = MonitorSessionConfig();
 }
 
+/// 信号采集开关。
+///
+/// SDK 默认只开启高确定性的主链路：错误、启动、页面/路由、HTTP 包装器、
+/// 业务 track 和 Flutter lifecycle。FrameTiming、jank、memory、native 和
+/// interaction measure 默认关闭；这些能力依赖采样、平台时机或启发式判断，
+/// 更适合作为显式 opt-in 的诊断/实验能力。
+class MonitorSignalConfig {
+  /// 是否启用页面 frame window 摘要。
+  final bool frameStats;
+
+  /// 是否启用基于 FrameTiming 的 jank sequence 识别。
+  final bool jank;
+
+  /// 是否启用 Flutter/Dart 层 RSS sample、growth 和 suspect 线索。
+  ///
+  /// 关闭时，启动和页面 trace 也不会写入 RSS delta 字段。
+  final bool memory;
+
+  /// 是否启用 `FlutterMonitorSDK.measure(...)` 交互性能窗口。
+  ///
+  /// 关闭时 public API 仍保留，但只返回 disabled handle，不产生事件。
+  final bool interactionMeasure;
+
+  /// 是否启用可选 native bridge 信号和 bootstrap resource 解析。
+  ///
+  /// 需要同时提供 [MonitorConfig.nativeBridge] 才会生效。
+  final bool native;
+
+  /// 创建信号采集开关。
+  const MonitorSignalConfig({
+    this.frameStats = false,
+    this.jank = false,
+    this.memory = false,
+    this.interactionMeasure = false,
+    this.native = false,
+  });
+
+  /// 默认采集开关：只保留精准主链路，低可信性能信号默认关闭。
+  static const defaultConfig = MonitorSignalConfig();
+
+  /// 开启全部诊断信号，适合本地专项验证或实验。
+  static const allDiagnostics = MonitorSignalConfig(
+    frameStats: true,
+    jank: true,
+    memory: true,
+    interactionMeasure: true,
+    native: true,
+  );
+
+  /// 是否需要注册 Flutter FrameTiming 回调。
+  bool get needsFrameTiming => frameStats || jank || interactionMeasure;
+}
+
 /// Memory 采样配置。
 ///
 /// 控制 Flutter/Dart 层 memory sample、growth 和 suspect leak 线索的采集频率
@@ -342,10 +395,10 @@ class MonitorMemoryConfig {
   static const MonitorMemoryConfig defaultConfig = MonitorMemoryConfig();
 }
 
-/// 性能采集配置。
+/// 性能采集阈值配置。
 ///
-/// 聚合三类性能能力：页面 frame window 摘要、UI 卡顿识别和
-/// `FlutterMonitorSDK.measure(...)` 业务交互性能观测。默认配置适合多数 App，
+/// 这里仅描述 frame/jank/interaction measure 的阈值与窗口参数，不决定这些
+/// 信号是否启动。实际采集开关由 [MonitorSignalConfig] 控制，默认关闭。
 /// 需要更敏感或更宽松时优先使用 [strict] / [lenient]。
 class MonitorPerformanceConfig {
   /// 单帧卡顿阈值乘数，实际阈值为当前刷新率 frame budget 乘以该值。
@@ -363,7 +416,10 @@ class MonitorPerformanceConfig {
   /// 是否启用基于刷新率的自适应卡顿阈值。
   final bool adaptiveJankThresholds;
 
-  /// 是否采集页面级 frame window 摘要。
+  /// 页面级 frame window 摘要的兼容开关。
+  ///
+  /// 新代码优先使用 [MonitorSignalConfig.frameStats]。该字段保留用于兼容
+  /// 历史配置；只有 signals 未显式开启时，不会单独启动采集。
   final bool collectPageFrameStats;
 
   /// common 模式调用后自动观察的交互窗口。
@@ -396,7 +452,7 @@ class MonitorPerformanceConfig {
     this.jitterToleranceMs = 8.0,
     this.jankDebounce = const Duration(milliseconds: 1000),
     this.adaptiveJankThresholds = true,
-    this.collectPageFrameStats = true,
+    this.collectPageFrameStats = false,
     this.commonObserveFor = const Duration(milliseconds: 1200),
     this.stageSettleWindow = const Duration(milliseconds: 250),
     this.interactionTimeout = const Duration(seconds: 5),
@@ -519,6 +575,9 @@ class MonitorConfig {
   /// Session 与生命周期配置。
   final MonitorSessionConfig? session;
 
+  /// 信号采集开关。
+  final MonitorSignalConfig? signals;
+
   /// Memory 采样配置。
   final MonitorMemoryConfig? memory;
 
@@ -545,14 +604,16 @@ class MonitorConfig {
   /// - [appInfo]：App 稳定资源信息，会进入 `resource.app.*`。
   /// - [mode]：输出模式，决定 console、Workbench live 或生产上报。
   /// - [session]：session 边界配置；不传时后台 30 分钟切新 session。
-  /// - [performance]：卡顿、页面 frame stats 和交互性能配置。
-  /// - [memory]：memory sample、growth 和 suspect leak 线索配置。
+  /// - [signals]：低可信诊断信号开关；frame/jank/memory/measure/native 默认关闭。
+  /// - [performance]：卡顿、页面 frame stats 和交互性能阈值配置。
+  /// - [memory]：memory sample、growth 和 suspect leak 线索配置，仅在 signals.memory 开启后生效。
   /// - [http]：HTTP 详情采集配置；不传时全量保真采集，body 截断按模式。
-  /// - [nativeBridge]：可选 native 增强信号入口；不传时保留 Flutter-only 能力。
+  /// - [nativeBridge]：可选 native 增强信号入口；还需要 signals.native 开启。
   const MonitorConfig({
     required this.appInfo,
     this.mode = const MonitorMode._(name: SdkOutputModes.consoleOnly),
     this.session,
+    this.signals,
     this.memory,
     this.performance,
     this.http,
@@ -562,6 +623,11 @@ class MonitorConfig {
   /// 获取实际使用的 session 配置。
   MonitorSessionConfig get effectiveSessionConfig {
     return session ?? MonitorSessionConfig.defaultConfig;
+  }
+
+  /// 获取实际使用的信号采集开关。
+  MonitorSignalConfig get effectiveSignalConfig {
+    return signals ?? MonitorSignalConfig.defaultConfig;
   }
 
   /// 获取实际使用的 memory 配置。

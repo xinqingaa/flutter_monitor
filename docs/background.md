@@ -8,7 +8,7 @@
 
 一句话定位：
 
-> Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路观测 workspace，采集错误、性能、网络、页面、行为、卡顿、内存等信号，并通过统一上下文把它们组织成可回放、可聚合、可定位的用户会话链路。
+> Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路观测 workspace，默认采集错误、启动、网络、页面、行为和生命周期等高确定性信号，并可显式开启卡顿、帧数、内存、native 等诊断信号，通过统一上下文把它们组织成可回放、可聚合、可定位的用户会话链路。
 
 这个定位里，“监控”没有消失，反而更强。监控不再只是“收集了很多指标”，而是“能帮助团队定位一个真实问题”。
 
@@ -21,11 +21,11 @@
 - Dio 与 `http` 请求耗时和状态；
 - 路由 PV 和页面停留时长；
 - 通过 `MonitoredGestureDetector` 采集的关键用户行为；
-- 基于 Flutter frame timing 的 UI 连续卡顿序列；
+- 基于 Flutter frame timing 的 UI 连续卡顿序列（显式开启的诊断能力）；
 - app、user、device、platform、timestamp 和 custom context 补充；
 - consoleOnly、localLive 和 production 三种输出模式。
 
-明确判断：现有代码的大部分不应该移除。错误、启动耗时、页面加载、API 耗时、卡顿、用户点击、PV、页面停留，这些都是非常有价值的信号源。
+明确判断：现有代码的大部分不应该移除。错误、启动耗时、页面加载、API 耗时、用户点击、PV、页面停留和生命周期，这些都是高确定性信号源。卡顿、帧数和内存依赖采样、GC、平台调度和启发式阈值，保留为显式开启的诊断能力，而不作为默认采集口径。
 
 问题不在于这些能力错了，而在于它们现在像散落的珠子：每个事件都能单独看，但很难还原“当时到底发生了什么”。链路观测要做的事，就是把这些珠子穿成线。
 
@@ -46,7 +46,7 @@
 | `MonitoredHttpClient` | `http.client` span 信号源 |
 | `BehaviorMonitor` | breadcrumb、action timeline 和关键业务动作信号源 |
 | `MonitoredGestureDetector` | ui tap breadcrumb 或业务 action trace 入口 |
-| `JankMonitor` | frame/jank 信号源，关联页面、操作、设备等级和 breadcrumbs |
+| `JankMonitor` | 显式开启的 frame/jank 诊断信号源，关联页面、操作、设备等级和 breadcrumbs |
 | `Reporter` | 从事件分发器升级为 envelope 构建和 pipeline 入口 |
 | `MonitorMode` | 统一事件模型的输出模式，负责选择 consoleOnly、localLive 或 production |
 
@@ -77,7 +77,7 @@
 
 推荐定位：
 
-> Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路化观测 workspace。它采集错误、性能、网络、页面、行为、卡顿、内存、生命周期和自定义信号，并通过 `sessionId`、`traceId`、`context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*`、`context.release.*` 和 `payload.breadcrumbs` 把这些信号关联起来，帮助团队复现、诊断、聚合和治理 App 质量问题。
+> Flutter Monitor 是一个面向 Flutter 应用的端侧监控与链路化观测 workspace。它默认采集错误、启动、网络、页面、行为、生命周期和自定义业务信号，并可显式开启卡顿、帧数、内存和 native 诊断信号，通过 `sessionId`、`traceId`、`context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*`、`context.release.*` 和 `payload.breadcrumbs` 把这些信号关联起来，帮助团队复现、诊断、聚合和治理 App 质量问题。
 
 这个定位保留了监控职责。真正变化的是组织模型：采集到的信号应该进入可诊断的时间线，而不是停留为互相独立的事件。
 

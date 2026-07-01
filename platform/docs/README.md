@@ -40,14 +40,16 @@ Workbench Web（默认 `http://localhost:4700`）的"性能 → 网络"页内置
 前提：App 侧登录后调用了 `FlutterMonitorSDK.setContext(userId: ...)`（见 `docs/signal_collection.md` 配置章节）。排查路径是"userId → session 列表 → session 内时间线 → trace 详情"：
 
 ```sh
-# 第 1 步：按 userId 找到该用户的会话；摘要自带 errorCount、jankCount、
+# 第 1 步：按 userId 找到该用户的会话；摘要自带 errorCount、
 # failedHttpCount、businessFailureCount、status、首末时间和设备/版本维度，
-# 可直接挑出问题会话
+# 可直接挑出问题会话。jank/memory/native 只有 SDK 显式开启并采到数据后
+# 才作为诊断计数出现。
 curl 'http://localhost:3700/api/monitor/v1/sessions?userId=333'
 
 # 第 2 步：取该会话的完整事件链路（按时间排序的全部 envelope）。
 # route.push/page.visit（去了哪些页面）→ track（点了什么）→ http.client
-# （发了什么请求）→ error.* / ui.jank.sequence / memory.*（出了什么问题），
+# （发了什么请求）→ error.*（出了什么问题）；显式开启诊断信号后，
+# 也可看到 ui.jank.sequence / memory.*，
 # 全部共享同一 sessionId，事件间靠 traceId 关联
 curl 'http://localhost:3700/api/monitor/v1/sessions/ses_1781253093076468_0'
 

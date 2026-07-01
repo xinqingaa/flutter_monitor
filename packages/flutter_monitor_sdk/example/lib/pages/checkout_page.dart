@@ -19,11 +19,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _submitOrder() async {
     if (_submitting) return;
-    final measure = appMeasure(
+    appTrack(
+      context,
       action: 'checkout.submit',
-      mode: MonitorMeasureMode.stage,
+      result: MonitorTrackResult.started,
       target: 'submit_order_button',
       properties: <String, Object?>{'coupon.code': _coupon},
+      message: '已记录订单提交行为',
     );
     setState(() {
       _submitting = true;
@@ -31,7 +33,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
     });
     await Future<void>.delayed(const Duration(milliseconds: 280));
     if (!mounted) {
-      measure.cancel(reason: 'page_disposed');
       return;
     }
     if (_coupon == 'DEMO_EXPIRED') {
@@ -39,20 +40,35 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _submitting = false;
         _message = '优惠券已过期，请更换后重试';
       });
-      measure.cancel(reason: 'coupon_expired');
+      appTrack(
+        context,
+        action: 'checkout.submit',
+        result: MonitorTrackResult.failed,
+        level: MonitorEventLevel.warning,
+        target: 'submit_order_button',
+        error: 'coupon_expired',
+        properties: <String, Object?>{'coupon.code': _coupon},
+        message: '已记录优惠券过期',
+      );
       return;
     }
 
     await Future<void>.delayed(const Duration(milliseconds: 420));
     if (!mounted) {
-      measure.cancel(reason: 'page_disposed');
       return;
     }
     setState(() {
       _submitting = false;
       _message = '订单提交成功';
     });
-    measure.finish(properties: const <String, Object?>{'result': 'success'});
+    appTrack(
+      context,
+      action: 'checkout.submit',
+      result: MonitorTrackResult.success,
+      target: 'submit_order_button',
+      properties: const <String, Object?>{'result': 'success'},
+      message: '已记录订单提交成功',
+    );
   }
 
   void _replaceCoupon() {
