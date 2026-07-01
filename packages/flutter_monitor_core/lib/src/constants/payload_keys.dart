@@ -15,6 +15,8 @@ abstract final class PayloadKeys {
   static const response = 'response';
   static const headers = 'headers';
   static const body = 'body';
+  static const bodyFormat = 'body_format';
+  static const bodyContentType = 'body_content_type';
   static const bodyTruncated = 'body_truncated';
   static const bodyOriginalLength = 'body_original_length';
   static const bodySha256 = 'body_sha256';

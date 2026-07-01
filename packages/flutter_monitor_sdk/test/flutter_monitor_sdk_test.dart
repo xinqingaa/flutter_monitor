@@ -849,6 +849,8 @@ void main() {
     final detail = section[PayloadKeys.httpDetail] as Map<String, Object?>;
     final request = detail[PayloadKeys.request] as Map<String, Object?>;
     expect(request[PayloadKeys.headers], {'content-type': 'application/json'});
+    expect(request[PayloadKeys.bodyFormat], 'text');
+    expect(request[PayloadKeys.bodyContentType], 'application/json');
     expect(request[PayloadKeys.body], '{"id":1}');
     expect(request[PayloadKeys.bodyTruncated], isFalse);
     expect(request[PayloadKeys.bodyOriginalLength], 8);
@@ -866,6 +868,30 @@ void main() {
       urlWithoutQuery('https://api.example.com/product?id=1#frag'),
       'https://api.example.com/product',
     );
+  });
+
+  test('http detail builder keeps binary body as metadata only', () {
+    final builder = HttpDetailBuilder(
+      config: const MonitorHttpConfig(maxBodyBytes: 8),
+      mode: SdkOutputModes.production,
+    );
+
+    final section = builder.build(
+      uri: Uri.parse('https://api.example.com/feed'),
+      responseHeaders: const <String, String>{
+        'content-type': 'application/x-protobuf',
+      },
+      responseBody: <int>[0x12, 0x07, 0x01, 0x02, 0x03, 0x04],
+    );
+
+    final detail = section[PayloadKeys.httpDetail] as Map<String, Object?>;
+    final response = detail[PayloadKeys.response] as Map<String, Object?>;
+    expect(response[PayloadKeys.bodyFormat], 'binary');
+    expect(response[PayloadKeys.bodyContentType], 'application/x-protobuf');
+    expect(response.containsKey(PayloadKeys.body), isFalse);
+    expect(response[PayloadKeys.bodyTruncated], isFalse);
+    expect(response[PayloadKeys.bodyOriginalLength], 6);
+    expect(response[PayloadKeys.bodySha256], isA<String>());
   });
 
   test('http detail builder applies redactor and capture switches', () {

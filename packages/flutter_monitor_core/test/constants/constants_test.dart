@@ -86,6 +86,8 @@ void main() {
     expect(PayloadKeys.httpQuery, 'http.query');
     expect(PayloadKeys.httpDetail, 'http.detail');
     expect(PayloadKeys.httpDetailDropped, 'http.detail_dropped');
+    expect(PayloadKeys.bodyFormat, 'body_format');
+    expect(PayloadKeys.bodyContentType, 'body_content_type');
     expect(PayloadKeys.bodyTruncated, 'body_truncated');
     expect(PayloadKeys.bodyOriginalLength, 'body_original_length');
     expect(PayloadKeys.bodySha256, 'body_sha256');

@@ -30,6 +30,7 @@ import { NodePeekPopover } from './node-peek-popover';
 import { groupLabel, groupTone, iconClass, issueTone, primaryStatusBadge, rowIcon } from './row-display';
 
 type FilterKey = 'all' | 'problems' | 'pages' | 'http' | 'startup' | 'interaction' | 'business' | 'memory' | 'lifecycle' | 'sdk';
+type FilterItem = { key: FilterKey; label: string };
 type ScrollReason = 'user-click' | 'external' | 'live';
 type PendingScroll = { type: 'row' | 'segment'; id: string; reason: ScrollReason };
 type ChipKind = SessionProblemChip['kind'];
@@ -38,7 +39,7 @@ type StreamBlock =
   | { kind: 'row'; row: SessionConsoleRow }
   | { kind: 'page-card'; instanceId: string; main: SessionConsoleRow; auxiliary: SessionConsoleRow[] };
 
-const filters: Array<{ key: FilterKey; label: string }> = [
+const filters: FilterItem[] = [
   { key: 'all', label: '全部' },
   { key: 'problems', label: '问题' },
   { key: 'pages', label: '页面' },
@@ -53,7 +54,15 @@ const filters: Array<{ key: FilterKey; label: string }> = [
 
 const tabStorageKey = 'flutter-monitor.session-console.enabled-tabs';
 const defaultEnabledTabs: FilterKey[] = ['all', 'pages', 'http', 'business'];
+const lockedTabs = new Set<FilterKey>(defaultEnabledTabs);
 const filterKeySet = new Set<FilterKey>(filters.map((item) => item.key));
+const tabConfigFilters: FilterItem[] = [
+  ...defaultEnabledTabs
+    .filter((key) => key !== 'all')
+    .map((key) => filters.find((item) => item.key === key))
+    .filter((item): item is FilterItem => Boolean(item)),
+  ...filters.filter((item) => item.key !== 'all' && !lockedTabs.has(item.key)),
+];
 
 const tabChipKinds: Record<FilterKey, ChipKind[]> = {
   all: ['error', 'business_failure', 'failed_http', 'slow_http', 'slow_page', 'jank', 'memory', 'sdk_drop', 'sdk_retry', 'sdk_flush_failure', 'detail_dropped'],
@@ -76,8 +85,7 @@ function readEnabledTabs(): Set<FilterKey> {
     const parsed = JSON.parse(stored);
     if (!Array.isArray(parsed)) return new Set(defaultEnabledTabs);
     const next = parsed.filter((key): key is FilterKey => filterKeySet.has(key));
-    if (!next.includes('all')) next.unshift('all');
-    return new Set(next.length > 0 ? next : defaultEnabledTabs);
+    return new Set([...defaultEnabledTabs, ...next]);
   } catch {
     return new Set(defaultEnabledTabs);
   }
@@ -218,12 +226,12 @@ export function SessionConsoleView({
   );
 
   const toggleTab = useCallback((key: FilterKey) => {
-    if (key === 'all') return;
+    if (lockedTabs.has(key)) return;
     setEnabledTabs((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      next.add('all');
+      for (const tab of lockedTabs) next.add(tab);
       return next;
     });
   }, []);
@@ -443,19 +451,14 @@ export function SessionConsoleView({
                 <div className="absolute right-0 top-9 z-30 w-48 rounded-md border border-zinc-200 bg-white p-2 shadow-lg">
                   <div className="px-1 pb-1 text-[11px] font-semibold text-zinc-500">显示 tab</div>
                   <div className="grid gap-1">
-                    {filters.filter((item) => item.key !== 'all').map((item) => (
-                      <label
+                    {tabConfigFilters.map((item) => (
+                      <TabOption
                         key={item.key}
-                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={enabledTabs.has(item.key)}
-                          onChange={() => toggleTab(item.key)}
-                          className="size-3.5 accent-teal-600"
-                        />
-                        <span>{item.label}</span>
-                      </label>
+                        item={item}
+                        checked={enabledTabs.has(item.key)}
+                        locked={lockedTabs.has(item.key)}
+                        onToggle={() => toggleTab(item.key)}
+                      />
                     ))}
                   </div>
                   <Button
@@ -523,6 +526,39 @@ function chipsByTab(chips: SessionProblemChip[]): Partial<Record<FilterKey, Sess
     if (matched.length > 0) result[tab.key] = matched;
   }
   return result;
+}
+
+function TabOption({
+  item,
+  checked,
+  locked,
+  onToggle,
+}: {
+  item: FilterItem;
+  checked: boolean;
+  locked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs',
+        locked
+          ? 'cursor-not-allowed bg-zinc-50 text-zinc-400'
+          : 'cursor-pointer text-zinc-700 hover:bg-zinc-50',
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={locked}
+        onChange={onToggle}
+        className="size-3.5 accent-teal-600 disabled:cursor-not-allowed"
+      />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {locked ? <span className="text-[10px] text-zinc-400">固定</span> : null}
+    </label>
+  );
 }
 
 function SessionNavigator({

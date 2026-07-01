@@ -38,12 +38,14 @@ class CapturedHttpBody {
 ///   "http.detail": {
 ///     "request": {"headers": {...}, "body": "...", "body_truncated": false,
 ///                 "body_original_length": 12, "body_sha256": "..."},
-///     "response": {...}
+///     "response": {"headers": {...}, "body_format": "binary",
+///                  "body_original_length": 128, "body_sha256": "..."}
 ///   }
 /// }
 /// ```
 ///
-/// body 超过 [maxBodyBytes] 时按字节截断，保留原始长度与全文 SHA-256。
+/// 文本 body 超过 [maxBodyBytes] 时按字节截断，保留原始长度与全文 SHA-256。
+/// 二进制 body 不落文本，只保留格式、content-type、长度和 hash。
 /// 配置了 redactor 时在最终组装后调用；redactor 返回 null 表示丢弃详情层。
 class HttpDetailBuilder {
   HttpDetailBuilder({required MonitorHttpConfig config, required String mode})
@@ -95,11 +97,25 @@ class HttpDetailBuilder {
     if (_config.captureHeaders && headers != null && headers.isNotEmpty) {
       side[PayloadKeys.headers] = Map<String, Object?>.from(headers);
     }
+    final contentType = _contentType(headers);
     if (body is CapturedHttpBody) {
       if (body.originalLength > 0) {
         final visible = body.bytes.length > _maxBodyBytes
             ? body.bytes.sublist(0, _maxBodyBytes)
             : body.bytes;
+        if (_shouldTreatAsBinary(contentType, body.bytes)) {
+          side[PayloadKeys.bodyFormat] = 'binary';
+          if (contentType != null)
+            side[PayloadKeys.bodyContentType] = contentType;
+          side[PayloadKeys.bodyTruncated] =
+              body.truncated || body.originalLength > visible.length;
+          side[PayloadKeys.bodyOriginalLength] = body.originalLength;
+          side[PayloadKeys.bodySha256] = body.sha256Hex;
+          return side;
+        }
+        side[PayloadKeys.bodyFormat] = 'text';
+        if (contentType != null)
+          side[PayloadKeys.bodyContentType] = contentType;
         side[PayloadKeys.body] = utf8.decode(visible, allowMalformed: true);
         side[PayloadKeys.bodyTruncated] =
             body.truncated || body.originalLength > visible.length;
@@ -114,12 +130,67 @@ class HttpDetailBuilder {
       final visible = truncated
           ? bodyBytes.sublist(0, _maxBodyBytes)
           : bodyBytes;
+      if (_shouldTreatAsBinary(contentType, bodyBytes)) {
+        side[PayloadKeys.bodyFormat] = 'binary';
+        if (contentType != null)
+          side[PayloadKeys.bodyContentType] = contentType;
+        side[PayloadKeys.bodyTruncated] = truncated;
+        side[PayloadKeys.bodyOriginalLength] = bodyBytes.length;
+        side[PayloadKeys.bodySha256] = sha256.convert(bodyBytes).toString();
+        return side;
+      }
+      side[PayloadKeys.bodyFormat] = 'text';
+      if (contentType != null) side[PayloadKeys.bodyContentType] = contentType;
       side[PayloadKeys.body] = utf8.decode(visible, allowMalformed: true);
       side[PayloadKeys.bodyTruncated] = truncated;
       side[PayloadKeys.bodyOriginalLength] = bodyBytes.length;
       side[PayloadKeys.bodySha256] = sha256.convert(bodyBytes).toString();
     }
     return side;
+  }
+
+  String? _contentType(Map<String, String>? headers) {
+    if (headers == null) return null;
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == 'content-type') {
+        final value = entry.value.trim();
+        return value.isEmpty ? null : value;
+      }
+    }
+    return null;
+  }
+
+  bool _shouldTreatAsBinary(String? contentType, List<int> bytes) {
+    if (bytes.isEmpty) return false;
+    if (contentType != null) {
+      final mime = contentType.split(';').first.trim().toLowerCase();
+      if (mime.startsWith('text/')) return false;
+      if (mime == 'application/json' ||
+          mime.endsWith('+json') ||
+          mime == 'application/xml' ||
+          mime.endsWith('+xml') ||
+          mime == 'application/x-www-form-urlencoded') {
+        return false;
+      }
+      if (mime == 'application/octet-stream' ||
+          mime == 'application/x-protobuf' ||
+          mime == 'application/protobuf' ||
+          mime == 'application/grpc' ||
+          mime.startsWith('image/') ||
+          mime.startsWith('audio/') ||
+          mime.startsWith('video/') ||
+          mime == 'application/zip' ||
+          mime == 'application/gzip' ||
+          mime == 'application/x-gzip' ||
+          mime == 'application/pdf') {
+        return true;
+      }
+    }
+    final sample = bytes.length > 1024 ? bytes.sublist(0, 1024) : bytes;
+    final controlCount = sample.where((byte) {
+      return byte < 0x09 || (byte > 0x0D && byte < 0x20);
+    }).length;
+    return controlCount / sample.length > 0.05;
   }
 
   /// 把任意来源的 body（String / bytes / JSON 结构）转为字节序列。

@@ -93,14 +93,16 @@ Future<void> main() async {
     mode: buildMonitorMode(),
     performance: MonitorPerformanceConfig.lenient(),
     // 默认只采集启动/生命周期、路由、HTTP、错误和 track。
-    // 如需采集 frame/jank/memory/measure/native 等诊断信号，在初始化时显式开启：
+    // 如需采集 frame/jank/memory/measure 等诊断信号，在初始化时显式开启：
     // signals: MonitorSignalConfig(
     //   frameStats: true,
     //   jank: true,
     //   memory: true,
     //   interactionMeasure: true,
-    //   native: true,
     // ),
+    // Native 信号需要同时接入 nativeBridge，并开启 signals.native：
+    // signals: MonitorSignalConfig(native: true),
+    // nativeBridge: FlutterMonitorNativeBridge(),
     // HTTP 详情采集默认全开（query/headers/body 保真采集，body 截断
     // localLive 64KB / production 16KB）。需要脱敏或关闭时显式配置：
     // http: MonitorHttpConfig(
@@ -111,7 +113,6 @@ Future<void> main() async {
     //     return detail;
     //   },
     // ),
-    // nativeBridge: FlutterMonitorNativeBridge(),
   );
 
   await FlutterMonitorSDK.init(

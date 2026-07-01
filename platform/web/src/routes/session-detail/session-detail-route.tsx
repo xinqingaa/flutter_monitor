@@ -269,8 +269,9 @@ export function SessionDetailRoute() {
         relatedEvents={timelineEvents}
         onClose={() => setHttpDetailEventId(undefined)}
         onSelectEvent={(event) => {
+          if (!event.eventId) return;
           setSelectedEventId(event.eventId);
-          setHttpDetailEventId(event.eventId);
+          setHttpDetailEventId(event.name === 'http.client' ? event.eventId : undefined);
         }}
       />
       <Dialog

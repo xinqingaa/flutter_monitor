@@ -1,7 +1,6 @@
-import { Braces, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, FileText, GitBranch, Info, Maximize2, MessageSquare, Search, Send, Unlock } from 'lucide-react';
+import { Braces, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, FileText, GitBranch, Info, Maximize2, MessageSquare, Search, Send, Terminal, Unlock } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CopyableId } from '../../components/common/copyable-id';
-import { EmptyState } from '../../components/common/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -12,10 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { useToast } from '../../components/ui/toast';
 import type { JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import { routeOf, userIdOf } from '../../shared/event-model/accessors';
-import { eventDisplay } from '../../shared/event-model/display';
+import { eventDisplay, timelineDisplay } from '../../shared/event-model/display';
 import { readCanonicalPath } from '../../shared/event-model/field-path';
 import { cn } from '../../shared/formatting/cn';
-import { copyJson } from '../../shared/formatting/download';
+import { copyJson, copyText } from '../../shared/formatting/download';
 import { formatDateTime, formatDuration, formatTime } from '../../shared/formatting/format';
 import { JsonViewer } from './json-viewer';
 
@@ -23,10 +22,20 @@ interface HttpDetail {
   request?: {
     headers?: JsonObject;
     body?: unknown;
+    body_format?: string;
+    body_content_type?: string;
+    body_truncated?: boolean;
+    body_original_length?: number;
+    body_sha256?: string;
   };
   response?: {
     headers?: JsonObject;
     body?: unknown;
+    body_format?: string;
+    body_content_type?: string;
+    body_truncated?: boolean;
+    body_original_length?: number;
+    body_sha256?: string;
   };
 }
 
@@ -55,14 +64,20 @@ export function HttpInspector({
             <SummaryBadges summary={summary} />
           </div>
           <div className="flex shrink-0 items-center gap-2 pr-1">
+            <HttpHeaderCopyActions event={event} summary={summary} variant="secondary" />
             <IconTooltipButton type="button" variant="secondary" size="icon" label="放大查看" icon={Maximize2} onClick={() => setMaximized(true)} />
-            <CopyableId value={event.eventId} />
             {panelAction}
           </div>
         </CardHeader>
         <CardContent className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden p-3">
           <HttpHeroBlock event={event} summary={summary} />
-          <HttpInspectorBody event={event} summary={summary} layout="horizontal" />
+          <HttpInspectorBody
+            event={event}
+            summary={summary}
+            layout="horizontal"
+            relatedEvents={relatedEvents}
+            onSelectRelatedEvent={onSelectEvent}
+          />
         </CardContent>
       </Card>
 
@@ -90,7 +105,6 @@ export function HttpInspectorDialog({
   onSelectEvent?: (event: MonitorEvent) => void;
   onClose: () => void;
 }) {
-  const { showToast } = useToast();
   const summary = useMemo(() => event ? httpSummary(event) : undefined, [event]);
   const siblings = useMemo(() => {
     const list = (relatedEvents ?? []).filter((item) => item.name === 'http.client');
@@ -104,14 +118,9 @@ export function HttpInspectorDialog({
   const previous = siblingIndex > 0 ? siblings[siblingIndex - 1] : undefined;
   const next = siblingIndex >= 0 && siblingIndex < siblings.length - 1 ? siblings[siblingIndex + 1] : undefined;
 
-  async function copyEventJson() {
-    if (!event) return;
-    try {
-      await copyJson(event);
-      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 HTTP EventEnvelope 已写入剪贴板。' });
-    } catch {
-      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
-    }
+  function selectRelatedEvent(target: MonitorEvent) {
+    onSelectEvent?.(target);
+    if (target.name !== 'http.client') onClose();
   }
 
   if (!event || !summary) return null;
@@ -130,7 +139,7 @@ export function HttpInspectorDialog({
       )}
       description={(
         <div className="grid min-w-0 gap-1">
-          <div className="min-w-0 truncate text-xs font-medium text-zinc-700">
+          <div className="min-w-0 break-all text-xs font-medium text-zinc-700">
             {[summary.method, summary.url].filter(Boolean).join(' ') || 'HTTP 请求'}
           </div>
           <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[11px] text-zinc-500">
@@ -166,25 +175,97 @@ export function HttpInspectorDialog({
             disabled={!next}
             onClick={() => next && onSelectEvent?.(next)}
           />
-          <IconTooltipButton type="button" variant="ghost" size="icon" label="复制原始数据" icon={Clipboard} onClick={() => void copyEventJson()} />
+          <HttpHeaderCopyActions event={event} summary={summary} variant="ghost" />
         </div>
       )}
     >
       <div className="h-full min-h-0 overflow-hidden p-4">
-        <HttpInspectorBody event={event} summary={summary} layout="vertical" />
+        <HttpInspectorBody
+          event={event}
+          summary={summary}
+          layout="vertical"
+          relatedEvents={relatedEvents}
+          onSelectRelatedEvent={selectRelatedEvent}
+        />
       </div>
     </Dialog>
   );
 }
 
 function SummaryBadges({ summary }: { summary: HttpSummary }) {
+  const reproducibility = requestReproducibility(summary);
+  const requestHeadersRedacted = headersLookRedacted(summary.detail?.request?.headers);
+  const hasSensitiveRequestHeaders = hasSensitiveHeaders(summary.detail?.request?.headers);
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
       <Badge tone={summary.failed ? 'danger' : 'good'}>{summary.statusLabel}</Badge>
-      {summary.detailDropped ? <Badge tone="warn">详情剥离</Badge> : <Badge tone="teal">详情完整</Badge>}
+      <Badge tone={reproducibility.tone}>{reproducibility.label}</Badge>
+      {summary.detailDropped ? <Badge tone="warn">详情剥离</Badge> : null}
       {summary.bodyTruncated ? <Badge tone="warn">body truncated</Badge> : null}
+      {!summary.hasRequestHeaders ? <Badge tone="neutral">缺少 headers</Badge> : null}
+      {!summary.hasRequestBody && methodUsuallyHasBody(summary.method) ? <Badge tone="neutral">缺少 body</Badge> : null}
+      {requestHeadersRedacted ? <Badge tone="info">headers 已脱敏</Badge> : hasSensitiveRequestHeaders ? <Badge tone="warn">含敏感 header</Badge> : null}
       {summary.source ? <Badge tone="neutral">{summary.source}</Badge> : null}
     </div>
+  );
+}
+
+function HttpHeaderCopyActions({
+  event,
+  summary,
+  variant,
+}: {
+  event: MonitorEvent;
+  summary: HttpSummary;
+  variant: 'ghost' | 'secondary';
+}) {
+  const { showToast } = useToast();
+  const reproducibility = useMemo(() => requestReproducibility(summary), [summary]);
+
+  async function copyEventJson() {
+    try {
+      await copyJson(event);
+      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 HTTP EventEnvelope 已写入剪贴板。' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
+    }
+  }
+
+  async function copyCurl() {
+    try {
+      const curl = buildCurlCommand(summary);
+      await copyText(curl);
+      showToast({ tone: 'success', title: '已复制 cURL', description: reproducibility.detail });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '当前 HTTP 事件缺少 URL，无法生成 cURL。' });
+    }
+  }
+
+  async function copyRequestJson() {
+    try {
+      await copyJson(buildRequestJson(event, summary));
+      showToast({ tone: 'success', title: '已复制 Request JSON', description: '请求侧 method、url、headers、body 与链路字段已写入剪贴板。' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入。' });
+    }
+  }
+
+  async function copyResponseJson() {
+    try {
+      await copyJson(buildResponseJson(event, summary));
+      showToast({ tone: 'success', title: '已复制 Response JSON', description: '响应侧 status、headers、body 与截断信息已写入剪贴板。' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入。' });
+    }
+  }
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <IconTooltipButton type="button" variant={variant} size="icon" label="复制 cURL" icon={Terminal} onClick={() => void copyCurl()} />
+      <IconTooltipButton type="button" variant={variant} size="icon" label="复制 Request JSON" icon={Clipboard} onClick={() => void copyRequestJson()} />
+      <IconTooltipButton type="button" variant={variant} size="icon" label="复制 Response JSON" icon={Clipboard} onClick={() => void copyResponseJson()} />
+      <IconTooltipButton type="button" variant={variant} size="icon" label="复制完整 JSON" icon={Clipboard} onClick={() => void copyEventJson()} />
+    </span>
   );
 }
 
@@ -196,7 +277,7 @@ function HttpHeroBlock({ event, summary, compact = false }: { event: MonitorEven
         compact && 'border-none bg-transparent p-0',
       )}
     >
-      <div className="min-w-0 truncate text-base font-semibold text-zinc-950">
+      <div className="min-w-0 break-all text-base font-semibold text-zinc-950">
         {[summary.method, summary.url].filter(Boolean).join(' ') || 'HTTP 请求'}
       </div>
       <div className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-blue-800">
@@ -211,19 +292,21 @@ function HttpHeroBlock({ event, summary, compact = false }: { event: MonitorEven
   );
 }
 
-function HttpInspectorBody({ event, summary, layout }: { event: MonitorEvent; summary: HttpSummary; layout: Layout }) {
-  const { showToast } = useToast();
+function HttpInspectorBody({
+  event,
+  summary,
+  layout,
+  relatedEvents,
+  onSelectRelatedEvent,
+}: {
+  event: MonitorEvent;
+  summary: HttpSummary;
+  layout: Layout;
+  relatedEvents?: MonitorEvent[];
+  onSelectRelatedEvent?: (event: MonitorEvent) => void;
+}) {
   const indicators = useMemo(() => computeTabIndicators(summary), [summary]);
   const defaultTab = useMemo(() => smartDefaultTab(summary), [summary]);
-
-  async function copyEventJson() {
-    try {
-      await copyJson(event);
-      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 HTTP EventEnvelope 已写入剪贴板。' });
-    } catch {
-      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
-    }
-  }
 
   if (layout === 'vertical') {
     return (
@@ -242,7 +325,8 @@ function HttpInspectorBody({ event, summary, layout }: { event: MonitorEvent; su
         <BodyTabsContent
           event={event}
           summary={summary}
-          onCopyEvent={() => void copyEventJson()}
+          relatedEvents={relatedEvents}
+          onSelectRelatedEvent={onSelectRelatedEvent}
           contentClassName="min-h-0 overflow-auto pr-1"
           maxBodyHeight="46vh"
         />
@@ -262,7 +346,8 @@ function HttpInspectorBody({ event, summary, layout }: { event: MonitorEvent; su
       <BodyTabsContent
         event={event}
         summary={summary}
-        onCopyEvent={() => void copyEventJson()}
+        relatedEvents={relatedEvents}
+        onSelectRelatedEvent={onSelectRelatedEvent}
         contentClassName="min-h-0 overflow-auto"
         maxBodyHeight="420px"
       />
@@ -314,13 +399,15 @@ function hasSensitiveHeaders(headers?: JsonObject): boolean {
 function BodyTabsContent({
   event,
   summary,
-  onCopyEvent,
+  relatedEvents,
+  onSelectRelatedEvent,
   contentClassName,
   maxBodyHeight,
 }: {
   event: MonitorEvent;
   summary: HttpSummary;
-  onCopyEvent: () => void;
+  relatedEvents?: MonitorEvent[];
+  onSelectRelatedEvent?: (event: MonitorEvent) => void;
   contentClassName: string;
   maxBodyHeight: string;
 }) {
@@ -336,15 +423,10 @@ function BodyTabsContent({
         <ResponsePanel summary={summary} maxBodyHeight={maxBodyHeight} />
       </TabsContent>
       <TabsContent value="context" className={contentClassName}>
-        <ContextPanel event={event} />
+        <ContextPanel event={event} relatedEvents={relatedEvents} onSelectEvent={onSelectRelatedEvent} />
       </TabsContent>
       <TabsContent value="raw" className="min-h-0 overflow-hidden">
-        <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
-          <div className="flex justify-end">
-            <IconTooltipButton type="button" variant="secondary" size="icon" label="复制完整 JSON" icon={Clipboard} onClick={onCopyEvent} />
-          </div>
-          <JsonViewer value={event} collapsed={2} showControls={false} />
-        </div>
+        <JsonViewer value={event} collapsed={2} showControls />
       </TabsContent>
     </>
   );
@@ -426,7 +508,7 @@ function SummaryPanel({ event, summary }: { event: MonitorEvent; summary: HttpSu
 }
 
 function RequestPanel({ event, summary, maxBodyHeight }: { event: MonitorEvent; summary: HttpSummary; maxBodyHeight: string }) {
-  const requestContentType = pickContentType(summary.detail?.request?.headers);
+  const requestContentType = bodyContentType(summary.detail?.request);
   return (
     <div className="grid gap-3">
       <Section title="URL 与 Query">
@@ -442,6 +524,10 @@ function RequestPanel({ event, summary, maxBodyHeight }: { event: MonitorEvent; 
           empty={requestBodyEmptyReason(summary)}
           maxHeight={maxBodyHeight}
           contentType={requestContentType}
+          format={summary.detail?.request?.body_format}
+          truncated={summary.detail?.request?.body_truncated}
+          originalLength={summary.detail?.request?.body_original_length}
+          sha256={summary.detail?.request?.body_sha256}
         />
       </Section>
       <Section title="Request Raw Fields">
@@ -460,7 +546,7 @@ function RequestPanel({ event, summary, maxBodyHeight }: { event: MonitorEvent; 
 }
 
 function ResponsePanel({ summary, maxBodyHeight }: { summary: HttpSummary; maxBodyHeight: string }) {
-  const responseContentType = pickContentType(summary.detail?.response?.headers);
+  const responseContentType = bodyContentType(summary.detail?.response);
   return (
     <div className="grid gap-3">
       <Section title="Response Status">
@@ -477,6 +563,7 @@ function ResponsePanel({ summary, maxBodyHeight }: { summary: HttpSummary; maxBo
           empty={responseEmptyReason(summary)}
           maxHeight={maxBodyHeight}
           contentType={responseContentType}
+          format={summary.detail?.response?.body_format}
           truncated={summary.bodyTruncated}
           originalLength={summary.bodyOriginalLength}
           sha256={summary.bodySha256}
@@ -486,10 +573,35 @@ function ResponsePanel({ summary, maxBodyHeight }: { summary: HttpSummary; maxBo
   );
 }
 
-function ContextPanel({ event }: { event: MonitorEvent }) {
+function ContextPanel({
+  event,
+  relatedEvents,
+  onSelectEvent,
+}: {
+  event: MonitorEvent;
+  relatedEvents?: MonitorEvent[];
+  onSelectEvent?: (event: MonitorEvent) => void;
+}) {
   const display = eventDisplay(event);
+  const contextEvents = useMemo(() => nearbyContextEvents(event, relatedEvents), [event, relatedEvents]);
   return (
     <div className="grid gap-3">
+      <Section title="相关上下文">
+        {contextEvents.length === 0 ? (
+          <EmptyLine text="当前 HTTP 前后没有可快速定位的页面、业务埋点、交互或错误节点。" />
+        ) : (
+          <div className="grid gap-1.5">
+            {contextEvents.map((item) => (
+              <RelatedEventButton
+                key={item.event.eventId ?? `${item.event.timestamp}-${item.event.name}`}
+                item={item}
+                disabled={!onSelectEvent}
+                onClick={() => onSelectEvent?.(item.event)}
+              />
+            ))}
+          </div>
+        )}
+      </Section>
       <Section title="链路位置">
         <Fact label="sessionId" value={<CopyableId value={event.sessionId} />} />
         <Fact label="traceId" value={<CopyableId value={event.traceId} />} />
@@ -517,6 +629,38 @@ function ContextPanel({ event }: { event: MonitorEvent }) {
   );
 }
 
+function RelatedEventButton({
+  item,
+  disabled: disabledProp = false,
+  onClick,
+}: {
+  item: RelatedContextEvent;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const display = timelineDisplay(item.event);
+  const disabled = disabledProp || !item.event.eventId;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-left hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <span className={cn('text-[11px] font-medium', item.position === 'before' ? 'text-zinc-500' : 'text-blue-600')}>
+        {item.position === 'before' ? '前置' : '后续'}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-semibold text-zinc-900">{display.title}</span>
+        <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
+          {[display.kindLabel, routeOf(item.event), item.event.status, formatTime(item.event.timestamp)].filter(Boolean).join(' · ')}
+        </span>
+      </span>
+      <span className="text-[11px] text-zinc-400">定位</span>
+    </button>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-zinc-200 bg-white">
@@ -530,7 +674,7 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2 text-sm">
       <span className="text-zinc-500">{label}</span>
-      <span className="min-w-0 break-words text-zinc-900">{value === undefined || value === '' ? '-' : value}</span>
+      <span className="min-w-0 break-all text-zinc-900">{value === undefined || value === '' ? '-' : value}</span>
     </div>
   );
 }
@@ -571,6 +715,7 @@ function BodyBlock({
   empty,
   maxHeight,
   contentType,
+  format,
   truncated,
   originalLength,
   sha256,
@@ -579,11 +724,22 @@ function BodyBlock({
   empty: string;
   maxHeight: string;
   contentType?: string;
+  format?: string;
   truncated?: boolean;
   originalLength?: number;
   sha256?: string;
 }) {
   const [mode, setMode] = useState<'formatted' | 'raw'>('formatted');
+  if (format === 'binary') {
+    return (
+      <BinaryBodyBlock
+        contentType={contentType}
+        truncated={truncated}
+        originalLength={originalLength}
+        sha256={sha256}
+      />
+    );
+  }
   if (!hasContent(value)) return <EmptyLine text={empty} />;
   const body = parseBody(value, { truncated });
   const canFormat = body.jsonValue !== undefined || body.formattedText !== undefined;
@@ -630,7 +786,7 @@ function BodyBlock({
       ) : null}
       {showFormatted && body.jsonValue !== undefined ? (
         <div className="overflow-hidden" style={wrapperStyle}>
-          <JsonViewer value={body.jsonValue} collapsed={2} showControls={false} />
+          <JsonViewer value={body.jsonValue} collapsed={2} showControls />
         </div>
       ) : showFormatted ? (
         <pre
@@ -677,6 +833,35 @@ function pickContentType(headers?: JsonObject): string | undefined {
     }
   }
   return undefined;
+}
+
+function bodyContentType(side?: HttpDetail['request'] | HttpDetail['response']): string | undefined {
+  return side?.body_content_type ?? pickContentType(side?.headers);
+}
+
+function BinaryBodyBlock({
+  contentType,
+  truncated,
+  originalLength,
+  sha256,
+}: {
+  contentType?: string;
+  truncated?: boolean;
+  originalLength?: number;
+  sha256?: string;
+}) {
+  return (
+    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
+      <div className="font-semibold text-zinc-800">二进制响应，不展示 body 文本。</div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <Chip label="format" value="binary" />
+        {contentType ? <Chip label="content-type" value={contentType} /> : null}
+        {originalLength !== undefined ? <Chip label="原始长度" value={byteLabel(originalLength)} /> : null}
+        {sha256 ? <Chip label="sha256" value={shortHash(sha256)} title={sha256} /> : null}
+        {truncated ? <Chip label="截断" value="true" /> : null}
+      </div>
+    </div>
+  );
 }
 
 const SENSITIVE_HEADER_KEYS = new Set([
@@ -954,14 +1139,20 @@ function httpSummary(event: MonitorEvent) {
   const detail = readCanonicalPath(event, 'payload.http.detail') as HttpDetail | undefined;
   const query = readCanonicalPath(event, 'payload.http.query');
   const method = readString(event, 'attributes.http.method');
-  const url = readString(event, 'attributes.http.url.normalized') ?? readString(event, 'payload.url');
+  const url = readString(event, 'payload.url') ?? readString(event, 'attributes.http.url.normalized');
   const statusCode = readNumber(event, 'attributes.http.status_code');
   const success = readBoolean(event, 'attributes.http.success');
   const failed = event.status === 'error' || success === false;
   const requestSize = readNumber(event, 'attributes.http.request_content_length') ?? readNumber(event, 'attributes.http.request.size_bytes');
   const responseSize = readNumber(event, 'attributes.http.response_content_length') ?? readNumber(event, 'attributes.http.response.size_bytes');
-  const bodyOriginalLength = readNumber(event, 'payload.body_original_length') ?? readNumber(event, 'payload.http.body_original_length');
-  const bodySha256 = readString(event, 'payload.body_sha256') ?? readString(event, 'payload.http.body_sha256');
+  const bodyOriginalLength =
+    numberValue(detail?.response?.body_original_length) ??
+    readNumber(event, 'payload.body_original_length') ??
+    readNumber(event, 'payload.http.body_original_length');
+  const bodySha256 =
+    stringValue(detail?.response?.body_sha256) ??
+    readString(event, 'payload.body_sha256') ??
+    readString(event, 'payload.http.body_sha256');
   const statusLabel = statusCode ? `${statusCode} ${failed ? 'Failed' : 'OK'}` : failed ? '请求失败' : '状态未知';
 
   return {
@@ -983,11 +1174,14 @@ function httpSummary(event: MonitorEvent) {
     query,
     hasQuery: hasContent(query),
     hasRequestHeaders: hasContent(detail?.request?.headers),
-    hasRequestBody: hasContent(detail?.request?.body),
+    hasRequestBody: hasContent(detail?.request?.body) || detail?.request?.body_format === 'binary',
     hasResponseHeaders: hasContent(detail?.response?.headers),
-    hasResponseBody: hasContent(detail?.response?.body),
+    hasResponseBody: hasContent(detail?.response?.body) || detail?.response?.body_format === 'binary',
     detailDropped: readBoolean(event, 'payload.http.detail_dropped') === true,
-    bodyTruncated: readBoolean(event, 'payload.body_truncated') ?? readBoolean(event, 'payload.http.body_truncated'),
+    bodyTruncated:
+      booleanValue(detail?.response?.body_truncated) ??
+      readBoolean(event, 'payload.body_truncated') ??
+      readBoolean(event, 'payload.http.body_truncated'),
     bodyOriginalLength,
     bodySha256,
   };
@@ -1005,6 +1199,177 @@ function responseEmptyReason(summary: HttpSummary): string {
   return '本次事件没有 response 详情，可能为空响应、旧数据，或接入方未开启对应采集。';
 }
 
+type BadgeTone = 'neutral' | 'good' | 'info' | 'warn' | 'danger' | 'purple' | 'teal';
+
+function requestReproducibility(summary: HttpSummary): { label: string; tone: BadgeTone; detail: string } {
+  if (!summary.url) {
+    return { label: '缺少 URL', tone: 'danger', detail: '当前事件缺少 URL，无法直接复现请求。' };
+  }
+  const issues: string[] = [];
+  if (summary.detailDropped) issues.push('详情剥离');
+  if (!summary.hasRequestHeaders) issues.push('缺少 headers');
+  if (methodUsuallyHasBody(summary.method) && !summary.hasRequestBody) issues.push('缺少 body');
+  if (summary.bodyTruncated) issues.push('body 已截断');
+  if (headersLookRedacted(summary.detail?.request?.headers)) issues.push('headers 已脱敏');
+  if (issues.length === 0) return { label: '完整请求', tone: 'good', detail: '请求 URL、headers 与 body 均来自当前事件采集数据。' };
+  return {
+    label: '可部分复现',
+    tone: summary.detailDropped ? 'warn' : 'info',
+    detail: `已生成 cURL，但${issues.join('、')}，复现结果可能与原请求不同。`,
+  };
+}
+
+function methodUsuallyHasBody(method?: string): boolean {
+  return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+}
+
+function buildCurlCommand(summary: HttpSummary): string {
+  const url = requestUrl(summary);
+  if (!url) throw new Error('missing_url');
+  const method = summary.method?.toUpperCase();
+  const lines = [`curl ${shellQuote(url)}`];
+  if (method && method !== 'GET') lines.push(`  -X ${method}`);
+  for (const [key, value] of Object.entries(summary.detail?.request?.headers ?? {})) {
+    if (value === undefined) continue;
+    lines.push(`  -H ${shellQuote(`${key}: ${formatHeaderValue(value)}`)}`);
+  }
+  if (hasContent(summary.detail?.request?.body)) {
+    lines.push(`  --data-raw ${shellQuote(bodyToText(summary.detail?.request?.body))}`);
+  }
+  return lines.join(' \\\n');
+}
+
+function buildRequestJson(event: MonitorEvent, summary: HttpSummary): JsonObject {
+  return {
+    method: summary.method,
+    url: requestUrl(summary),
+    query: summary.query,
+    headers: summary.detail?.request?.headers,
+    body: summary.detail?.request?.body,
+    bodyFormat: summary.detail?.request?.body_format,
+    bodyContentType: bodyContentType(summary.detail?.request),
+    bodyTruncated: summary.detail?.request?.body_truncated,
+    bodyOriginalLength: summary.detail?.request?.body_original_length,
+    bodySha256: summary.detail?.request?.body_sha256,
+    bodyMissingReason: summary.hasRequestBody ? undefined : requestBodyEmptyReason(summary),
+    requestId: summary.requestId,
+    traceId: event.traceId,
+    spanId: event.spanId,
+    eventId: event.eventId,
+    route: summary.route,
+    reproducibility: requestReproducibility(summary),
+  };
+}
+
+function buildResponseJson(event: MonitorEvent, summary: HttpSummary): JsonObject {
+  return {
+    statusCode: summary.statusCode,
+    statusLabel: summary.statusLabel,
+    success: summary.success,
+    errorType: summary.errorType,
+    headers: summary.detail?.response?.headers,
+    body: summary.detail?.response?.body,
+    bodyFormat: summary.detail?.response?.body_format,
+    bodyContentType: bodyContentType(summary.detail?.response),
+    bodyMissingReason: summary.hasResponseBody ? undefined : responseEmptyReason(summary),
+    bodyTruncated: summary.bodyTruncated,
+    bodyOriginalLength: summary.bodyOriginalLength,
+    bodySha256: summary.bodySha256,
+    requestId: summary.requestId,
+    traceId: event.traceId,
+    spanId: event.spanId,
+    eventId: event.eventId,
+    route: summary.route,
+  };
+}
+
+function requestUrl(summary: HttpSummary): string | undefined {
+  if (!summary.url) return undefined;
+  if (!hasContent(summary.query) || summary.url.includes('?')) return summary.url;
+  const query = queryToString(summary.query);
+  return query ? `${summary.url}?${query}` : summary.url;
+}
+
+function queryToString(value: unknown): string {
+  if (typeof value === 'string') return value.replace(/^\?/, '');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const params = new URLSearchParams();
+  for (const [key, raw] of Object.entries(value as JsonObject)) {
+    if (raw === undefined || raw === null) continue;
+    if (Array.isArray(raw)) {
+      for (const item of raw) params.append(key, String(item));
+    } else {
+      params.append(key, String(raw));
+    }
+  }
+  return params.toString();
+}
+
+function bodyToText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function headersLookRedacted(headers?: JsonObject): boolean {
+  if (!headers) return false;
+  return Object.values(headers).some((value) => {
+    const text = formatHeaderValue(value).toLowerCase();
+    return text.includes('redacted') || text.includes('masked') || text.includes('***') || text.includes('••');
+  });
+}
+
+type RelatedContextEvent = { event: MonitorEvent; position: 'before' | 'after' };
+
+function nearbyContextEvents(current: MonitorEvent, events?: MonitorEvent[]): RelatedContextEvent[] {
+  const currentTime = eventTimeMs(current);
+  const sorted = (events ?? [])
+    .filter((event) => event.sessionId === current.sessionId || !current.sessionId)
+    .slice()
+    .sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
+  if (sorted.length === 0) return [];
+  const index = current.eventId ? sorted.findIndex((event) => event.eventId === current.eventId) : -1;
+  const beforeSource = index >= 0
+    ? sorted.slice(Math.max(0, index - 10), index)
+    : sorted.filter((event) => eventTimeMs(event) < currentTime).slice(-10);
+  const afterSource = index >= 0
+    ? sorted.slice(index + 1, index + 11)
+    : sorted.filter((event) => eventTimeMs(event) > currentTime).slice(0, 10);
+  const before = beforeSource.filter((event) => isContextEvent(event, current)).slice(-4);
+  const after = afterSource.filter((event) => isContextEvent(event, current)).slice(0, 4);
+  return [
+    ...before.map((event) => ({ event, position: 'before' as const })),
+    ...after.map((event) => ({ event, position: 'after' as const })),
+  ];
+}
+
+function isContextEvent(event: MonitorEvent, current: MonitorEvent): boolean {
+  if (!event.eventId || event.eventId === current.eventId) return false;
+  if (event.name === 'http.client') return false;
+  if (event.status === 'error') return true;
+  const name = event.name ?? '';
+  return (
+    name.startsWith('page.') ||
+    name.startsWith('route.') ||
+    name.startsWith('business.') ||
+    name.startsWith('ui.') ||
+    name.startsWith('app.') ||
+    name.startsWith('lifecycle.') ||
+    event.signalType === 'event' ||
+    event.signalType === 'error'
+  );
+}
+
+function eventTimeMs(event: MonitorEvent): number {
+  const raw = event.timestamp ?? event.startTime ?? event.endTime;
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function readString(event: MonitorEvent, path: string): string | undefined {
   const value = readCanonicalPath(event, path);
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -1017,6 +1382,18 @@ function readNumber(event: MonitorEvent, path: string): number | undefined {
 
 function readBoolean(event: MonitorEvent, path: string): boolean | undefined {
   const value = readCanonicalPath(event, path);
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 

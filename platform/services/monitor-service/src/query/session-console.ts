@@ -355,7 +355,7 @@ function httpInfo(event: MonitorEvent): Partial<SessionConsoleRow> {
   const responseBody = response?.body;
   const query = readPath(event, ['payload', 'http.query']);
   const method = stringPath(event, ['attributes', 'http.method']);
-  const url = stringPath(event, ['attributes', 'http.url.normalized']) ?? stringPath(event, ['payload', 'url']);
+  const url = stringPath(event, ['payload', 'url']) ?? stringPath(event, ['attributes', 'http.url.normalized']);
   const statusCode = numberPath(event, ['attributes', 'http.status_code']);
   const routeChanged = booleanPath(event, ['attributes', 'http.route_changed']);
   const completionRoute =
