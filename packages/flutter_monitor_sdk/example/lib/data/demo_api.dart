@@ -12,147 +12,181 @@ class DemoApi {
   final Dio _dio;
   final http.Client _httpClient;
 
-  static final Uri githubUserUri = Uri.parse(
-    'https://api.github.com/users/flutter',
-  );
-  static final Uri githubReposUri = Uri.parse(
-    'https://api.github.com/orgs/flutter/repos?per_page=8&sort=updated',
-  );
-  static final Uri githubFailureUri = Uri.parse(
-    'https://api.github.com/non-existent-flutter-monitor-path',
-  );
-  static final Uri postsUri = Uri.parse(
-    'https://jsonplaceholder.typicode.com/posts?_limit=8',
-  );
-  static final Uri commentsUri = Uri.parse(
-    'https://jsonplaceholder.typicode.com/comments?postId=1',
-  );
-  static final Uri httpFailureUri = Uri.parse(
-    'https://jsonplaceholder.typicode.com/non-existent-path',
-  );
-  static final Uri timeoutUri = Uri.parse(
-    'https://10.255.255.1/flutter-monitor-timeout',
-  );
-  static const testApiBaseUrl = String.fromEnvironment(
-    'FM_TEST_API_BASE_URL',
+  static const serviceBaseUrl = String.fromEnvironment(
+    'FM_EXAMPLE_API_BASE_URL',
     defaultValue: 'http://127.0.0.1:3700',
   );
 
-  Future<GithubProfile> fetchGithubProfile() async {
-    final response = await _dio.getUri<Map<String, dynamic>>(githubUserUri);
-    final data = response.data;
-    if (data == null) {
-      throw StateError('GitHub profile response is empty');
-    }
-    return GithubProfile.fromJson(data);
+  Future<AppBootstrap> fetchBootstrap({String scene = 'launch'}) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/app/bootstrap',
+      queryParameters: <String, Object?>{'scene': scene},
+    );
+    return AppBootstrap.fromJson(_requireMap(response.data));
   }
 
-  Future<List<GithubRepo>> fetchGithubRepos() async {
-    final response = await _dio.getUri<List<dynamic>>(githubReposUri);
-    final data = response.data ?? const <dynamic>[];
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(GithubRepo.fromJson)
-        .toList(growable: false);
+  Future<AuthOptions> fetchAuthOptions() async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/auth/options',
+    );
+    return AuthOptions.fromJson(_requireMap(response.data));
   }
 
-  Future<List<DemoPost>> fetchPosts() async {
-    final response = await _httpClient.get(postsUri);
+  Future<LoginResult> login({required String userId}) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/auth/login',
+      data: <String, Object?>{
+        'userId': userId,
+        'device': 'example_flutter_app',
+      },
+    );
+    return LoginResult.fromJson(_requireMap(response.data));
+  }
+
+  Future<HomeFeedState> loadHomeFeed({String? userId}) async {
+    final feedUri = _uri(
+      '/api/example/home/feed',
+      queryParameters: <String, String>{'userId': userId ?? 'guest'},
+    );
+    final recommendationsUri = _uri(
+      '/api/example/home/recommendations',
+      queryParameters: <String, String>{'userId': userId ?? 'guest'},
+    );
+    final results = await Future.wait<Map<String, dynamic>>([
+      _getJsonWithHttp(feedUri),
+      _getJsonWithHttp(recommendationsUri),
+    ]);
+    return HomeFeedState.fromJson(results[0], results[1]);
+  }
+
+  Future<UserProfile> fetchUserProfile(String userId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/users/$userId/profile',
+    );
+    return UserProfile.fromJson(_requireMap(response.data));
+  }
+
+  Future<void> updatePreferences(
+    String userId, {
+    required bool premium,
+    required bool weakNetwork,
+  }) async {
+    await _dio.put<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/users/$userId/preferences',
+      data: <String, Object?>{
+        'premium': premium,
+        'weakNetwork': weakNetwork,
+        'updatedFrom': 'profile_tab',
+      },
+    );
+  }
+
+  Future<CartState> fetchCart({String? userId}) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/checkout/cart',
+      queryParameters: <String, Object?>{'userId': userId ?? 'guest'},
+    );
+    return CartState.fromJson(_requireMap(response.data));
+  }
+
+  Future<CouponResult> validateCoupon(String coupon) async {
+    final response = await _httpClient.post(
+      _uri('/api/example/checkout/coupons/validate'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode(<String, Object?>{'coupon': coupon}),
+    );
     _throwForStatus(response.statusCode);
-    final decoded = jsonDecode(response.body) as List<dynamic>;
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(DemoPost.fromJson)
-        .toList(growable: false);
+    return CouponResult.fromJson(_decodeMap(response.body));
   }
 
-  Future<List<DemoComment>> fetchComments() async {
-    final response = await _httpClient.get(commentsUri);
+  Future<OrderResult> submitOrder({
+    required String userId,
+    required String coupon,
+    required List<String> itemIds,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/checkout/orders',
+      data: <String, Object?>{
+        'userId': userId,
+        'coupon': coupon,
+        'itemIds': itemIds,
+      },
+    );
+    return OrderResult.fromJson(_requireMap(response.data));
+  }
+
+  Future<void> deleteCartItem(String itemId) async {
+    final response = await _httpClient.delete(
+      _uri('/api/example/checkout/cart/items/$itemId'),
+    );
     _throwForStatus(response.statusCode);
-    final decoded = jsonDecode(response.body) as List<dynamic>;
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(DemoComment.fromJson)
-        .toList(growable: false);
   }
 
-  Future<void> fetchDioFailure() async {
-    final response = await _dio.getUri<Object>(githubFailureUri);
+  Future<SyncSummary> fetchSyncSummary() async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/ops/sync/summary',
+    );
+    return SyncSummary.fromJson(_requireMap(response.data));
+  }
+
+  Future<void> syncOrders() async {
+    final response = await _httpClient.post(
+      _uri('/api/example/ops/sync/orders'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode(<String, Object?>{'source': 'ops_page'}),
+    );
+    _throwForStatus(response.statusCode);
+  }
+
+  Future<void> updatePricingRule() async {
+    await _dio.put<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/ops/pricing/rules/default_discount',
+      data: <String, Object?>{'discount': 0.9, 'scope': 'qa'},
+    );
+  }
+
+  Future<void> deleteDraft() async {
+    final response = await _httpClient.delete(
+      _uri('/api/example/ops/drafts/draft_legacy_001'),
+    );
+    _throwForStatus(response.statusCode);
+  }
+
+  Future<void> fetchDailyReport({bool fail = false}) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$serviceBaseUrl/api/example/ops/reports/daily',
+      queryParameters: <String, Object?>{'fail': fail},
+    );
     if ((response.statusCode ?? 0) >= 400) {
       throw StateError('HTTP ${response.statusCode}');
     }
-  }
-
-  Future<void> fetchHttpFailure() async {
-    final response = await _httpClient.get(httpFailureUri);
-    _throwForStatus(response.statusCode);
-  }
-
-  Future<void> fetchDioTimeout() async {
-    await _dio.getUri<Object>(timeoutUri).timeout(const Duration(seconds: 3));
-  }
-
-  Future<void> fetchHttpTimeout() async {
-    await _httpClient.get(timeoutUri).timeout(const Duration(seconds: 3));
-  }
-
-  Future<void> fetchLocalSlowWithDio() async {
-    final uri = _localSlowUri(delayMs: 1500, bytes: 256);
-    final response = await _dio.getUri<Object>(uri);
-    if ((response.statusCode ?? 0) >= 400) {
-      throw StateError('HTTP ${response.statusCode}');
-    }
-  }
-
-  Future<void> fetchLocalSlowWithHttp() async {
-    final uri = _localSlowUri(delayMs: 1500, bytes: 256);
-    final response = await _httpClient.get(uri);
-    _throwForStatus(response.statusCode);
-  }
-
-  Future<void> fetchLocalFastWithDio() async {
-    final uri = _localSlowUri(delayMs: 120, bytes: 512);
-    final response = await _dio.getUri<Object>(uri);
-    if ((response.statusCode ?? 0) >= 400) {
-      throw StateError('HTTP ${response.statusCode}');
-    }
-  }
-
-  Future<void> fetchLocalPayloadWithDio() async {
-    final uri = _localSlowUri(delayMs: 300, bytes: 32 * 1024);
-    final response = await _dio.getUri<Object>(uri);
-    if ((response.statusCode ?? 0) >= 400) {
-      throw StateError('HTTP ${response.statusCode}');
-    }
-  }
-
-  Future<void> fetchLocalStatusWithDio(int statusCode) async {
-    final response = await _dio.getUri<Object>(_localStatusUri(statusCode));
-    if ((response.statusCode ?? 0) >= 400) {
-      throw StateError('HTTP ${response.statusCode}');
-    }
-  }
-
-  Future<void> fetchLocalStatusWithHttp(int statusCode) async {
-    final response = await _httpClient.get(_localStatusUri(statusCode));
-    _throwForStatus(response.statusCode);
   }
 
   void close() {
     _httpClient.close();
   }
 
-  Uri _localSlowUri({required int delayMs, required int bytes}) {
-    return Uri.parse('$testApiBaseUrl/api/test/slow').replace(
-      queryParameters: <String, String>{
-        'delayMs': '$delayMs',
-        'bytes': '$bytes',
-      },
-    );
+  Uri _uri(String path, {Map<String, String>? queryParameters}) {
+    return Uri.parse(
+      '$serviceBaseUrl$path',
+    ).replace(queryParameters: queryParameters);
   }
 
-  Uri _localStatusUri(int statusCode) {
-    return Uri.parse('$testApiBaseUrl/api/test/status/$statusCode');
+  Future<Map<String, dynamic>> _getJsonWithHttp(Uri uri) async {
+    final response = await _httpClient.get(uri);
+    _throwForStatus(response.statusCode);
+    return _decodeMap(response.body);
+  }
+
+  Map<String, dynamic> _decodeMap(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw StateError('Example API response is not an object');
+  }
+
+  Map<String, dynamic> _requireMap(Map<String, dynamic>? data) {
+    if (data == null) throw StateError('Example API response is empty');
+    return data;
   }
 
   void _throwForStatus(int statusCode) {

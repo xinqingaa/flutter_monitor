@@ -1,3 +1,5 @@
+import 'package:example/data/demo_api.dart';
+import 'package:example/models/demo_models.dart';
 import 'package:example/router/app_navigation.dart';
 import 'package:example/session/app_session.dart';
 import 'package:example/widgets/app_section.dart';
@@ -6,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class ProfileTab extends StatefulWidget {
-  const ProfileTab({super.key});
+  const ProfileTab({super.key, required this.api});
+
+  final DemoApi api;
 
   @override
   State<ProfileTab> createState() => _ProfileTabState();
@@ -14,27 +18,83 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab>
     with AutomaticKeepAliveClientMixin {
+  UserProfile? _profile;
+  Object? _profileError;
   var _premium = false;
   var _weakNetwork = false;
+  var _loadingProfile = false;
 
   @override
   bool get wantKeepAlive => true;
 
-  void _togglePremium(bool value) {
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final userId = AppSession.userId;
+    if (userId == null || userId.isEmpty || _loadingProfile) return;
+    setState(() {
+      _loadingProfile = true;
+      _profileError = null;
+    });
+    try {
+      final profile = await widget.api.fetchUserProfile(userId);
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _premium = profile.tier == 'premium';
+        _weakNetwork = profile.weakNetwork;
+        _loadingProfile = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _profileError = error;
+        _loadingProfile = false;
+      });
+    }
+  }
+
+  Future<void> _togglePremium(bool value) async {
     setState(() => _premium = value);
     FlutterMonitorSDK.setContext(
       userType: value ? 'premium' : 'qa',
       userTags: value ? const ['vip', 'qa'] : const ['qa'],
       cohort: value ? 'example_premium' : 'example_session',
     );
+    await _savePreferences();
   }
 
-  void _toggleNetwork(bool value) {
+  Future<void> _toggleNetwork(bool value) async {
     setState(() => _weakNetwork = value);
     FlutterMonitorSDK.setContext(
       networkType: value ? 'cellular' : 'wifi',
       isWeakNetwork: value,
     );
+    await _savePreferences();
+  }
+
+  Future<void> _savePreferences() async {
+    final userId = AppSession.userId;
+    if (userId == null || userId.isEmpty) return;
+    try {
+      await widget.api.updatePreferences(
+        userId,
+        premium: _premium,
+        weakNetwork: _weakNetwork,
+      );
+    } catch (error, stackTrace) {
+      FlutterMonitorSDK.recordError(
+        error,
+        stackTrace: stackTrace,
+        type: 'profile_preferences_failed',
+        handled: true,
+        properties: <String, Object?>{'user.id': userId},
+      );
+    }
   }
 
   void _recordHandledError() {
@@ -92,6 +152,7 @@ class _ProfileTabState extends State<ProfileTab>
   Widget build(BuildContext context) {
     super.build(context);
     final userId = AppSession.userId ?? '未登录';
+    final profile = _profile;
     return Scaffold(
       appBar: AppBar(title: const Text('我的')),
       body: ListView(
@@ -100,8 +161,21 @@ class _ProfileTabState extends State<ProfileTab>
           Card(
             child: ListTile(
               leading: const CircleAvatar(child: Icon(Icons.person)),
-              title: Text('userId: $userId'),
-              subtitle: Text(_premium ? 'premium · qa' : 'qa · free tier'),
+              title: Text(profile?.name ?? 'userId: $userId'),
+              subtitle: Text(
+                _loadingProfile
+                    ? '正在读取资料'
+                    : _profileError != null
+                    ? '资料读取失败，稍后刷新'
+                    : _premium
+                    ? 'premium · qa'
+                    : 'qa · free tier',
+              ),
+              trailing: IconButton(
+                tooltip: '刷新资料',
+                onPressed: _loadingProfile ? null : _loadProfile,
+                icon: const Icon(Icons.refresh),
+              ),
             ),
           ),
           const SizedBox(height: 8),

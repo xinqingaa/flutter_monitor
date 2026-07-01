@@ -48,7 +48,7 @@ export function groupLabel(group: SessionConsoleRow['group']): string {
     http: 'HTTP',
     interaction: '交互',
     business: '埋点',
-    problem: '问题',
+    problem: '异常',
     performance: '性能',
     lifecycle: '生命周期',
     memory: '内存',

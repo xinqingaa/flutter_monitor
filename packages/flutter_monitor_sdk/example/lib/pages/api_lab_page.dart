@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:example/data/demo_api.dart';
+import 'package:example/models/demo_models.dart';
 import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:example/widgets/app_section.dart';
@@ -19,6 +20,7 @@ class _ApiLabPageState extends State<ApiLabPage> {
   late final DemoApi _api;
   final List<String> _logs = <String>[];
   final Set<String> _running = <String>{};
+  SyncSummary? _summary;
 
   @override
   void initState() {
@@ -27,6 +29,7 @@ class _ApiLabPageState extends State<ApiLabPage> {
       dio: widget.dio,
       httpClient: FlutterMonitorSDK.createHttpClient(),
     );
+    _loadSummary();
   }
 
   @override
@@ -69,6 +72,23 @@ class _ApiLabPageState extends State<ApiLabPage> {
     }
   }
 
+  Future<void> _loadSummary() async {
+    try {
+      final summary = await _api.fetchSyncSummary();
+      if (!mounted) return;
+      setState(() => _summary = summary);
+      _append('sync summary loaded');
+    } catch (error, stackTrace) {
+      _append('sync summary failed: $error');
+      FlutterMonitorSDK.recordError(
+        error,
+        stackTrace: stackTrace,
+        type: 'ops_sync_summary_failed',
+        handled: true,
+      );
+    }
+  }
+
   void _append(String message) {
     if (!mounted) return;
     setState(() {
@@ -104,82 +124,44 @@ class _ApiLabPageState extends State<ApiLabPage> {
       moduleName: 'ops',
       moduleScene: 'api_lab',
       child: Scaffold(
-        appBar: AppBar(title: const Text('数据同步中心')),
+        appBar: AppBar(title: const Text('运营同步中心')),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             AppSection(
-              title: '服务层接口',
-              subtitle: '本地 service 的成功、慢响应、大响应和状态码场景。',
+              title: '待处理摘要',
               children: [
-                _button(
-                  'dio_service_fast',
-                  'Dio · service fast',
-                  _api.fetchLocalFastWithDio,
-                ),
-                _button(
-                  'dio_service_payload',
-                  'Dio · service 32KB',
-                  _api.fetchLocalPayloadWithDio,
-                ),
-                _button(
-                  'dio_local_slow',
-                  'Dio · service slow',
-                  _api.fetchLocalSlowWithDio,
-                ),
-                _button(
-                  'http_local_slow',
-                  'http · service slow',
-                  _api.fetchLocalSlowWithHttp,
-                ),
-                _button(
-                  'dio_service_503',
-                  'Dio · service 503',
-                  () => _api.fetchLocalStatusWithDio(503),
-                ),
-                _button(
-                  'http_service_429',
-                  'http · service 429',
-                  () => _api.fetchLocalStatusWithHttp(429),
+                Text('待同步订单：${_summary?.pendingOrders ?? '-'}'),
+                Text('库存任务：${_summary?.inventoryTasks ?? '-'}'),
+                Text('上次同步：${_summary?.lastSyncAt?.toIso8601String() ?? '-'}'),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _loadSummary,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('刷新摘要'),
                 ),
               ],
             ),
             AppSection(
-              title: '公开接口',
-              subtitle: 'Dio 和 package:http 都会进入 SDK HTTP span。',
+              title: '运营动作',
+              subtitle: '覆盖 GET、POST、PUT、DELETE；慢同步只留在 HTTP tab。',
               children: [
-                _button('dio_github_profile', 'Dio · GitHub profile', () async {
-                  await _api.fetchGithubProfile();
-                }),
-                _button('dio_github_repos', 'Dio · GitHub repos', () async {
-                  await _api.fetchGithubRepos();
-                }),
-                _button('http_posts', 'http · JSONPlaceholder posts', () async {
-                  await _api.fetchPosts();
-                }),
+                _button('sync_orders', 'POST · 同步订单（慢请求）', _api.syncOrders),
                 _button(
-                  'http_comments',
-                  'http · JSONPlaceholder comments',
-                  () async {
-                    await _api.fetchComments();
-                  },
+                  'update_pricing',
+                  'PUT · 更新价格规则',
+                  _api.updatePricingRule,
                 ),
-              ],
-            ),
-            AppSection(
-              title: '失败和慢请求',
-              children: [
-                _button('dio_404', 'Dio · GitHub 404', _api.fetchDioFailure),
+                _button('delete_draft', 'DELETE · 删除过期草稿', _api.deleteDraft),
                 _button(
-                  'http_404',
-                  'http · JSONPlaceholder 404',
-                  _api.fetchHttpFailure,
+                  'daily_report',
+                  'GET · 拉取日报',
+                  () => _api.fetchDailyReport(),
                 ),
-                _button('dio_timeout', 'Dio · timeout', _api.fetchDioTimeout),
                 _button(
-                  'http_timeout',
-                  'http · timeout',
-                  _api.fetchHttpTimeout,
+                  'daily_report_503',
+                  'GET · 拉取日报异常 503',
+                  () => _api.fetchDailyReport(fail: true),
                 ),
               ],
             ),

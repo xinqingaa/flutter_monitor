@@ -41,7 +41,7 @@ type StreamBlock =
 
 const filters: FilterItem[] = [
   { key: 'all', label: '全部' },
-  { key: 'problems', label: '问题' },
+  { key: 'problems', label: '异常' },
   { key: 'pages', label: '页面' },
   { key: 'http', label: 'HTTP' },
   { key: 'startup', label: '启动' },
@@ -53,7 +53,7 @@ const filters: FilterItem[] = [
 ];
 
 const tabStorageKey = 'flutter-monitor.session-console.enabled-tabs';
-const defaultEnabledTabs: FilterKey[] = ['all', 'pages', 'http', 'business'];
+const defaultEnabledTabs: FilterKey[] = ['all', 'problems', 'pages', 'http', 'business'];
 const lockedTabs = new Set<FilterKey>(defaultEnabledTabs);
 const filterKeySet = new Set<FilterKey>(filters.map((item) => item.key));
 const tabConfigFilters: FilterItem[] = [
@@ -66,7 +66,7 @@ const tabConfigFilters: FilterItem[] = [
 
 const tabChipKinds: Record<FilterKey, ChipKind[]> = {
   all: ['error', 'business_failure', 'failed_http', 'slow_http', 'slow_page', 'jank', 'memory', 'sdk_drop', 'sdk_retry', 'sdk_flush_failure', 'detail_dropped'],
-  problems: ['error', 'business_failure', 'slow_page', 'jank'],
+  problems: ['error', 'failed_http'],
   pages: ['slow_page'],
   http: ['failed_http', 'slow_http', 'detail_dropped'],
   startup: [],
@@ -99,7 +99,7 @@ function writeEnabledTabs(tabs: Set<FilterKey>) {
 
 function tabPredicate(filter: FilterKey, row: SessionConsoleRow): boolean {
   if (filter === 'all') return true;
-  if (filter === 'problems') return row.issueLabels.length > 0 || row.group === 'problem';
+  if (filter === 'problems') return isExceptionRow(row);
   if (filter === 'pages') return row.group === 'page';
   if (filter === 'http') return row.group === 'http';
   if (filter === 'startup') return row.group === 'startup';
@@ -109,6 +109,13 @@ function tabPredicate(filter: FilterKey, row: SessionConsoleRow): boolean {
   if (filter === 'lifecycle') return row.group === 'lifecycle';
   if (filter === 'sdk') return row.group === 'sdk';
   return true;
+}
+
+function isExceptionRow(row: SessionConsoleRow): boolean {
+  return row.issueLabels.includes('错误') ||
+    row.issueLabels.includes('请求失败') ||
+    row.signalType === 'error' ||
+    (row.group === 'problem' && row.status === 'error');
 }
 
 function chipPredicate(kind: ChipKind): (row: SessionConsoleRow) => boolean {

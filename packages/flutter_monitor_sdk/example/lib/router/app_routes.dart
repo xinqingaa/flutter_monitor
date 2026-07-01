@@ -47,19 +47,20 @@ class AppRouter {
     required Dio workbenchDio,
   }) {
     return <AppRoute>[
-      const AppRoute(
+      AppRoute(
         name: AppRoutes.splash,
         moduleName: 'launch',
         moduleScene: 'splash',
-        builder: _buildSplash,
+        builder: (_) => SplashPage(dio: monitoredDio),
       ),
       AppRoute(
         name: AppRoutes.app,
         moduleName: 'home',
         moduleScene: 'feed',
-        builder: (_) => AppShell(workbenchDio: workbenchDio),
+        builder: (_) =>
+            AppShell(monitoredDio: monitoredDio, workbenchDio: workbenchDio),
       ),
-      const AppRoute(
+      AppRoute(
         name: AppRoutes.eventDetail,
         moduleName: 'content',
         moduleScene: 'event_detail',
@@ -71,23 +72,23 @@ class AppRouter {
         moduleScene: 'api_lab',
         builder: (_) => ApiLabPage(dio: monitoredDio),
       ),
-      const AppRoute(
+      AppRoute(
         name: AppRoutes.checkout,
         moduleName: 'commerce',
         moduleScene: 'checkout',
-        builder: _buildCheckout,
+        builder: (_) => CheckoutPage(dio: monitoredDio),
       ),
-      const AppRoute(
+      AppRoute(
         name: AppRoutes.performanceGallery,
         moduleName: 'content',
         moduleScene: 'performance_gallery',
         builder: _buildPerformanceGallery,
       ),
-      const AppRoute(
+      AppRoute(
         name: AppRoutes.login,
         moduleName: 'auth',
         moduleScene: 'login',
-        builder: _buildLogin,
+        builder: (_) => LoginPage(dio: monitoredDio),
       ),
       const AppRoute(
         name: AppRoutes.video,
@@ -98,17 +99,11 @@ class AppRouter {
     ];
   }
 
-  static Widget _buildSplash(BuildContext context) => const SplashPage();
-
   static Widget _buildEventDetail(BuildContext context) =>
       const EventDetailPage();
 
-  static Widget _buildCheckout(BuildContext context) => const CheckoutPage();
-
   static Widget _buildPerformanceGallery(BuildContext context) =>
       const PerformanceGalleryPage();
-
-  static Widget _buildLogin(BuildContext context) => const LoginPage();
 
   static Widget _buildVideo(BuildContext context) => const VideoPage();
 }

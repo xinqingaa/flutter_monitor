@@ -1,13 +1,14 @@
 import JsonView from '@uiw/react-json-view';
 import { lightTheme } from '@uiw/react-json-view/light';
 import { vscodeTheme } from '@uiw/react-json-view/vscode';
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Clipboard } from 'lucide-react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Button } from '../../components/ui/button';
+import { useToast } from '../../components/ui/toast';
 import { cn } from '../../shared/formatting/cn';
+import { copyJson, copyText } from '../../shared/formatting/download';
 
 export type JsonViewerTheme = 'light' | 'dark';
-
-const THEME_STORAGE_KEY = 'fm.json-viewer.theme';
 
 export interface JsonViewerProps {
   value: unknown;
@@ -17,28 +18,9 @@ export interface JsonViewerProps {
   displayDataTypes?: boolean;
   displayObjectSize?: boolean;
   showControls?: boolean;
+  rawText?: string;
   /** 强制 theme，不读取持久化偏好。 */
   theme?: JsonViewerTheme;
-}
-
-export function readStoredTheme(): JsonViewerTheme {
-  if (typeof window === 'undefined') return 'light';
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === 'dark' || stored === 'light') return stored;
-  } catch {
-    // ignore
-  }
-  return 'light';
-}
-
-export function persistTheme(theme: JsonViewerTheme): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // ignore
-  }
 }
 
 export function JsonViewer({
@@ -49,28 +31,33 @@ export function JsonViewer({
   displayDataTypes = false,
   displayObjectSize = true,
   showControls = true,
-  theme,
+  rawText: rawTextProp,
+  theme = 'light',
 }: JsonViewerProps) {
   const [collapsed, setCollapsed] = useState<boolean | number>(collapsedProp);
-  const [storedTheme, setStoredTheme] = useState<JsonViewerTheme>(() => theme ?? readStoredTheme());
-
-  useEffect(() => {
-    if (theme) setStoredTheme(theme);
-  }, [theme]);
-
-  const activeTheme: JsonViewerTheme = theme ?? storedTheme;
+  const [mode, setMode] = useState<'formatted' | 'raw'>('formatted');
+  const { showToast } = useToast();
 
   const safeValue = useMemo(() => normalize(value), [value]);
+  const rawText = useMemo(
+    () => rawTextProp ?? stringifyRaw(safeValue),
+    [rawTextProp, safeValue],
+  );
   const isObject = safeValue !== null && typeof safeValue === 'object';
 
-  const handleThemeChange = (next: JsonViewerTheme) => {
-    if (theme) return; // controlled externally
-    setStoredTheme(next);
-    persistTheme(next);
-  };
-
-  const isDark = activeTheme === 'dark';
+  const isDark = theme === 'dark';
   const themeStyle = isDark ? vscodeTheme : lightTheme;
+  const showFormatted = mode === 'formatted';
+
+  async function copyCurrentView() {
+    try {
+      if (showFormatted && isObject) await copyJson(safeValue);
+      else await copyText(rawText);
+      showToast({ tone: 'success', title: '已复制 JSON' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入。' });
+    }
+  }
 
   return (
     <div
@@ -87,30 +74,36 @@ export function JsonViewer({
             isDark ? 'border-zinc-800 bg-zinc-900 text-zinc-300' : 'border-zinc-200 bg-zinc-50 text-zinc-600',
           )}
         >
-          <span className="text-[11px] text-zinc-400">主题</span>
-          <ThemeToggleButton
-            label="亮"
-            active={activeTheme === 'light'}
-            disabled={!!theme}
+          <span className="text-[11px] text-zinc-400">视图</span>
+          <ViewToggleButton
+            label="格式化"
+            active={mode === 'formatted'}
             isDark={isDark}
-            onClick={() => handleThemeChange('light')}
+            onClick={() => setMode('formatted')}
           />
-          <ThemeToggleButton
-            label="暗"
-            active={activeTheme === 'dark'}
-            disabled={!!theme}
+          <ViewToggleButton
+            label="原文"
+            active={mode === 'raw'}
             isDark={isDark}
-            onClick={() => handleThemeChange('dark')}
+            onClick={() => setMode('raw')}
           />
           <span className="ml-auto flex items-center gap-1">
-            <ControlButton isDark={isDark} onClick={() => setCollapsed(false)}>全部展开</ControlButton>
-            <ControlButton isDark={isDark} onClick={() => setCollapsed(1)}>折叠 1 层</ControlButton>
-            <ControlButton isDark={isDark} onClick={() => setCollapsed(true)}>全部折叠</ControlButton>
+            {isObject && showFormatted ? (
+              <>
+                <ControlButton isDark={isDark} onClick={() => setCollapsed(false)}>全部展开</ControlButton>
+                <ControlButton isDark={isDark} onClick={() => setCollapsed(1)}>折叠 1 层</ControlButton>
+                <ControlButton isDark={isDark} onClick={() => setCollapsed(true)}>全部折叠</ControlButton>
+              </>
+            ) : null}
+            <ControlButton isDark={isDark} onClick={() => void copyCurrentView()}>
+              <Clipboard className="size-3.5" />
+              复制
+            </ControlButton>
           </span>
         </div>
       ) : null}
       <div className="min-h-0 overflow-auto p-3 text-xs leading-relaxed">
-        {isObject ? (
+        {isObject && showFormatted ? (
           <JsonView
             value={safeValue as object}
             style={themeStyle as CSSProperties}
@@ -122,33 +115,30 @@ export function JsonViewer({
             indentWidth={18}
           />
         ) : (
-          <pre className={isDark ? 'text-zinc-100' : 'text-zinc-800'}>{formatScalar(safeValue)}</pre>
+          <pre className={isDark ? 'text-zinc-100' : 'text-zinc-800'}>{rawText}</pre>
         )}
       </div>
     </div>
   );
 }
 
-function ThemeToggleButton({
+function ViewToggleButton({
   label,
   active,
-  disabled,
   isDark,
   onClick,
 }: {
   label: string;
   active: boolean;
-  disabled: boolean;
   isDark: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled={disabled}
       onClick={onClick}
       className={cn(
-        'inline-flex h-5 min-w-[26px] items-center justify-center rounded px-1.5 text-[11px] tabular-nums transition-colors',
+        'inline-flex h-5 min-w-[42px] items-center justify-center rounded px-1.5 text-[11px] tabular-nums transition-colors',
         active
           ? isDark
             ? 'bg-zinc-700 text-zinc-50'
@@ -156,7 +146,6 @@ function ThemeToggleButton({
           : isDark
             ? 'text-zinc-300 hover:bg-zinc-800'
             : 'text-zinc-600 hover:bg-zinc-200',
-        disabled && 'cursor-not-allowed opacity-60',
       )}
     >
       {label}
@@ -169,7 +158,7 @@ function ControlButton({
   onClick,
   isDark,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   onClick: () => void;
   isDark: boolean;
 }) {
@@ -196,7 +185,7 @@ function normalize(value: unknown): unknown {
   return value;
 }
 
-function formatScalar(value: unknown): string {
+function stringifyRaw(value: unknown): string {
   if (value === null) return 'null';
   if (typeof value === 'string') return value;
   try {

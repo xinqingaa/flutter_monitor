@@ -2,6 +2,7 @@ import 'package:example/main.dart';
 import 'package:example/models/monitor_event_models.dart';
 import 'package:example/pages/checkout_page.dart';
 import 'package:example/pages/event_detail_page.dart';
+import 'package:example/pages/login_page.dart';
 import 'package:example/pages/performance_gallery_page.dart';
 import 'package:example/pages/video_page.dart';
 import 'package:example/router/app_routes.dart';
@@ -81,7 +82,11 @@ void main() {
   });
 
   testWidgets('checkout page renders submit flow', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: CheckoutPage()));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CheckoutPage(dio: monitoredDio, loadCartOnStart: false),
+      ),
+    );
     await tester.pump();
 
     expect(find.text('订单结算'), findsOneWidget);
@@ -109,10 +114,15 @@ void main() {
   testWidgets('login page accepts userId and enters home', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        routes: AppRouter.routes(
-          monitoredDio: monitoredDio,
-          workbenchDio: workbenchDio,
-        ),
+        routes: {
+          AppRoutes.login: (_) => LoginPage(
+            dio: monitoredDio,
+            loadAuthOptionsOnStart: false,
+            remoteLogin: false,
+          ),
+          AppRoutes.app: (_) =>
+              Scaffold(appBar: AppBar(title: const Text('监控事件'))),
+        },
         initialRoute: AppRoutes.login,
       ),
     );
@@ -164,7 +174,9 @@ Future<void> _initSdk() async {
 
 Route<void> _eventDetailRoute(RouteSettings settings) {
   if (settings.name == AppRoutes.checkout) {
-    return MaterialPageRoute<void>(builder: (_) => const CheckoutPage());
+    return MaterialPageRoute<void>(
+      builder: (_) => CheckoutPage(dio: monitoredDio, loadCartOnStart: false),
+    );
   }
   if (settings.name == AppRoutes.performanceGallery) {
     return MaterialPageRoute<void>(

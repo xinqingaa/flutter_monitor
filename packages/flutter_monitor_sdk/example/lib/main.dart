@@ -125,7 +125,7 @@ Future<void> main() async {
       moduleScene: 'splash',
       releaseId: 'example-2026.06',
       featureFlags: ['example_real_app', 'sdk_reliability'],
-      experiments: <String, Object?>{'home_feed': 'github'},
+      experiments: <String, Object?>{'home_feed': 'mock_business'},
     ),
   );
 

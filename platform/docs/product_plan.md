@@ -362,13 +362,15 @@ Session Navigator 固定在日志流左侧：
 - 点击区段时，日志流滚动到当前视图下该分段的第一个事件，并同步右侧 Inspector；不再因点击副作用切回 `全部` Tab。
 - 当右侧 Inspector 收起时，点击日志节点必须给出可见反馈：HTTP 节点可打开专用 HTTP 详情，其他节点在当前行下方展开轻量 Quick Peek，展示一句话摘要、关键证据、上下文和“展开右侧 Inspector / 复制 ID / 打开原始事件”等操作。Quick Peek 是 Workbench view model，不新增协议字段。
 
-问题入口下沉到日志流顶部 Tab：
+异常入口下沉到日志流顶部 Tab：
 
-- 每个 Tab 自带问题徽标，徽标只汇总本 Tab 关联的问题计数（错误/业务失败/慢页面归到 “问题” Tab，失败 HTTP/慢 HTTP/HTTP 详情剥离归到 HTTP Tab，SDK 丢弃/重试/发送失败归到 SDK Tab；卡顿和内存压力仅在对应诊断信号有数据时进入问题/诊断 Tab）。
+- `异常` Tab 为常驻入口，只承接确定性异常：Dart/Flutter/SDK 主动记录的稳定性错误，以及 HTTP 非成功状态码、超时、取消等失败请求。业务返回 HTTP 200 但 body 内业务 code 失败时，不自动进入 `异常`，需要业务方通过 `track(result=failed)` 或 `recordError` 明确表达。
+- 慢请求不进入 `异常` Tab，只在 `HTTP` Tab 内以慢请求徽标、耗时和行状态提示；慢页面、业务失败、SDK 健康、内存和卡顿按各自 Tab 或诊断 Tab 展示。
+- 每个 Tab 自带徽标，徽标只汇总本 Tab 关联的问题或异常计数（错误/失败 HTTP 归到 `异常` Tab，失败 HTTP/慢 HTTP/HTTP 详情剥离归到 HTTP Tab，业务失败归到业务埋点 Tab，SDK 丢弃/重试/发送失败归到 SDK Tab；卡顿和内存压力仅在对应诊断信号有数据时进入诊断 Tab）。
 - 选中 Tab 后，Tab 行下方出现一行二级 chip：仅渲染当前 session 实际出现的问题维度，可与 Tab 叠加做问题级筛选；不存在的问题 chip 不渲染。
 - 切换 Tab 自动清空二级 chip。日志流、会话分段、行选中都遵循 “Tab → 子 chip → 搜索” 这一过滤组合。
 
-日志流默认展示主链路事件，可切换：全部 / 问题 / 页面 / HTTP / 启动 / 业务埋点 / 生命周期 / SDK。交互性能、内存、卡顿/native 等诊断 Tab 只有在当前 session 实际存在对应事件时才展示；工作台配置了某类 Tab 但当前会话没有采到数据时，不渲染空 Tab。分类规则：
+日志流默认展示主链路事件，可切换：全部 / 异常 / 页面 / HTTP / 启动 / 业务埋点 / 生命周期 / SDK。交互性能、内存、卡顿/native 等诊断 Tab 只有在当前 session 实际存在对应事件时才展示；工作台配置了某类 Tab 但当前会话没有采到数据时，不渲染空 Tab。分类规则：
 
 - `interaction.measure` 或带 `attributes["interaction.mode"]` 的事件归入交互性能。
 - `business.*` 或带 `attributes["business.action"]` 的非交互性能事件归入业务埋点。
@@ -446,14 +448,14 @@ HTTP body 展示规则：
 - 如果 body 是 JSON 字符串，默认解析后使用 JSON viewer 展示，避免一整行长字符串不可读。
 - 如果 body 不是 JSON，按文本展示并开启自动换行。
 - 提供“格式化 / 原文”切换；原文用于确认后端真实返回内容，格式化用于日常阅读。
-- 大 body 不撑开页面，限定高度并保留复制完整 raw envelope 的入口。
+- 大 body 不撑开页面，限定高度；每个 JSON Inspector 顶部提供复制当前视图的入口。
 
 JSON Inspector 渲染规则（response body / request body / request raw / response raw / 原始数据 / 上下文 breadcrumb）：
 
-- 使用节点级可折叠的 JSON 树（基于 `@uiw/react-json-view`），支持 `▸` / `▾` 单节点折叠展开、点击节点旁的 copy 按钮复制子树或路径，并提供顶部 “全部展开 / 折叠 1 层 / 全部折叠” 的批量操作。
+- 使用节点级可折叠的 JSON 树（基于 `@uiw/react-json-view`），支持 `▸` / `▾` 单节点折叠展开、点击节点旁的 copy 按钮复制子树或路径，并提供顶部 “格式化 / 原文” 切换、“全部展开 / 折叠 1 层 / 全部折叠” 和复制当前视图。
 - 默认折叠层级：response/request body 与 raw envelope = `collapsed=2`；headers = `collapsed=1`，确保打开 Inspector 后能立刻看到关键结构。
 - 容器统一限定 `min-h-[120px]` 与 `max-h-[320px~420px]`，保证大 body 不会挤占其它面板。
-- 数值、字符串、布尔、null 在树视图中保留类型颜色（vscode 主题），与代码编辑器折叠体验一致。
+- 数值、字符串、布尔、null 在树视图中保留类型颜色，与代码编辑器折叠体验一致。
 
 ### Typed Inspector 规则
 

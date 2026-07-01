@@ -10,7 +10,7 @@ import { QueryController } from './query/query.controller';
 import { QueryService } from './query/query.service';
 import { resolvePublicDir, resolveWebDistDir, StoreModule } from './store/store.module';
 import { StreamController } from './stream/stream.controller';
-import { TestController } from './test/test.controller';
+import { ExampleBusinessController } from './test/example-business.controller';
 
 const webDistDir = resolveWebDistDir();
 const publicDir = resolvePublicDir();
@@ -31,7 +31,7 @@ const staticRoot = existsSync(webDistDir) ? webDistDir : publicDir;
     StreamController,
     QueryController,
     EventsController,
-    TestController,
+    ExampleBusinessController,
   ],
   providers: [IngestService, HealthService, QueryService],
 })

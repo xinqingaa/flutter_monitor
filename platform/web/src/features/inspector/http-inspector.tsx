@@ -1,4 +1,4 @@
-import { Braces, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, FileText, GitBranch, Info, Maximize2, MessageSquare, Search, Send, Terminal, Unlock } from 'lucide-react';
+import { Braces, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, GitBranch, Info, Maximize2, MessageSquare, Search, Send, Terminal, Unlock } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { Badge } from '../../components/ui/badge';
@@ -14,7 +14,7 @@ import { routeOf, userIdOf } from '../../shared/event-model/accessors';
 import { eventDisplay, timelineDisplay } from '../../shared/event-model/display';
 import { readCanonicalPath } from '../../shared/event-model/field-path';
 import { cn } from '../../shared/formatting/cn';
-import { copyJson, copyText } from '../../shared/formatting/download';
+import { copyText } from '../../shared/formatting/download';
 import { formatDateTime, formatDuration, formatTime } from '../../shared/formatting/format';
 import { JsonViewer } from './json-viewer';
 
@@ -64,7 +64,7 @@ export function HttpInspector({
             <SummaryBadges summary={summary} />
           </div>
           <div className="flex shrink-0 items-center gap-2 pr-1">
-            <HttpHeaderCopyActions event={event} summary={summary} variant="secondary" />
+            <HttpHeaderCopyActions summary={summary} variant="secondary" />
             <IconTooltipButton type="button" variant="secondary" size="icon" label="放大查看" icon={Maximize2} onClick={() => setMaximized(true)} />
             {panelAction}
           </div>
@@ -175,7 +175,7 @@ export function HttpInspectorDialog({
             disabled={!next}
             onClick={() => next && onSelectEvent?.(next)}
           />
-          <HttpHeaderCopyActions event={event} summary={summary} variant="ghost" />
+          <HttpHeaderCopyActions summary={summary} variant="ghost" />
         </div>
       )}
     >
@@ -211,25 +211,14 @@ function SummaryBadges({ summary }: { summary: HttpSummary }) {
 }
 
 function HttpHeaderCopyActions({
-  event,
   summary,
   variant,
 }: {
-  event: MonitorEvent;
   summary: HttpSummary;
   variant: 'ghost' | 'secondary';
 }) {
   const { showToast } = useToast();
   const reproducibility = useMemo(() => requestReproducibility(summary), [summary]);
-
-  async function copyEventJson() {
-    try {
-      await copyJson(event);
-      showToast({ tone: 'success', title: '已复制原始数据', description: '完整 HTTP EventEnvelope 已写入剪贴板。' });
-    } catch {
-      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入，请在原始数据页手动复制。' });
-    }
-  }
 
   async function copyCurl() {
     try {
@@ -241,30 +230,9 @@ function HttpHeaderCopyActions({
     }
   }
 
-  async function copyRequestJson() {
-    try {
-      await copyJson(buildRequestJson(event, summary));
-      showToast({ tone: 'success', title: '已复制 Request JSON', description: '请求侧 method、url、headers、body 与链路字段已写入剪贴板。' });
-    } catch {
-      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入。' });
-    }
-  }
-
-  async function copyResponseJson() {
-    try {
-      await copyJson(buildResponseJson(event, summary));
-      showToast({ tone: 'success', title: '已复制 Response JSON', description: '响应侧 status、headers、body 与截断信息已写入剪贴板。' });
-    } catch {
-      showToast({ tone: 'danger', title: '复制失败', description: '浏览器拒绝了剪贴板写入。' });
-    }
-  }
-
   return (
     <span className="flex shrink-0 items-center gap-1">
       <IconTooltipButton type="button" variant={variant} size="icon" label="复制 cURL" icon={Terminal} onClick={() => void copyCurl()} />
-      <IconTooltipButton type="button" variant={variant} size="icon" label="复制 Request JSON" icon={Clipboard} onClick={() => void copyRequestJson()} />
-      <IconTooltipButton type="button" variant={variant} size="icon" label="复制 Response JSON" icon={Clipboard} onClick={() => void copyResponseJson()} />
-      <IconTooltipButton type="button" variant={variant} size="icon" label="复制完整 JSON" icon={Clipboard} onClick={() => void copyEventJson()} />
     </span>
   );
 }
@@ -729,7 +697,6 @@ function BodyBlock({
   originalLength?: number;
   sha256?: string;
 }) {
-  const [mode, setMode] = useState<'formatted' | 'raw'>('formatted');
   if (format === 'binary') {
     return (
       <BinaryBodyBlock
@@ -742,8 +709,6 @@ function BodyBlock({
   }
   if (!hasContent(value)) return <EmptyLine text={empty} />;
   const body = parseBody(value, { truncated });
-  const canFormat = body.jsonValue !== undefined || body.formattedText !== undefined;
-  const showFormatted = canFormat && mode === 'formatted';
   const wrapperStyle = { maxHeight, minHeight: '120px' } as const;
   const hasBanner = truncated || originalLength !== undefined || sha256 || contentType;
 
@@ -774,33 +739,16 @@ function BodyBlock({
           ) : null}
         </div>
       ) : null}
-      {canFormat ? (
-        <div className="flex justify-end gap-1">
-          <Button type="button" size="sm" variant={mode === 'formatted' ? 'default' : 'secondary'} className="h-7 px-2" onClick={() => setMode('formatted')}>
-            格式化
-          </Button>
-          <Button type="button" size="sm" variant={mode === 'raw' ? 'default' : 'secondary'} className="h-7 px-2" onClick={() => setMode('raw')}>
-            原文
-          </Button>
-        </div>
-      ) : null}
-      {showFormatted && body.jsonValue !== undefined ? (
+      {body.jsonValue !== undefined ? (
         <div className="overflow-hidden" style={wrapperStyle}>
-          <JsonViewer value={body.jsonValue} collapsed={2} showControls />
+          <JsonViewer value={body.jsonValue} rawText={body.raw} collapsed={2} showControls />
         </div>
-      ) : showFormatted ? (
-        <pre
-          className="whitespace-pre-wrap break-words overflow-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100"
-          style={wrapperStyle}
-        >
-          {body.formattedText}
-        </pre>
       ) : (
         <pre
           className="whitespace-pre-wrap break-words overflow-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100"
           style={wrapperStyle}
         >
-          {body.raw}
+          {body.formattedText ?? body.raw}
         </pre>
       )}
     </div>
@@ -1039,13 +987,13 @@ function DecodedHeaderView({ decoded }: { decoded: DecodedHeader }) {
         <div>
           <div className="text-zinc-500">header</div>
           <div className="overflow-hidden rounded-md border border-zinc-200 bg-white">
-            <JsonViewer value={decoded.header} collapsed={1} showControls={false} />
+            <JsonViewer value={decoded.header} collapsed={1} />
           </div>
         </div>
         <div>
           <div className="text-zinc-500">payload</div>
           <div className="overflow-hidden rounded-md border border-zinc-200 bg-white">
-            <JsonViewer value={decoded.payload} collapsed={1} showControls={false} />
+            <JsonViewer value={decoded.payload} collapsed={1} />
           </div>
         </div>
         <div className="font-mono text-[10px] text-zinc-500">
@@ -1237,50 +1185,6 @@ function buildCurlCommand(summary: HttpSummary): string {
     lines.push(`  --data-raw ${shellQuote(bodyToText(summary.detail?.request?.body))}`);
   }
   return lines.join(' \\\n');
-}
-
-function buildRequestJson(event: MonitorEvent, summary: HttpSummary): JsonObject {
-  return {
-    method: summary.method,
-    url: requestUrl(summary),
-    query: summary.query,
-    headers: summary.detail?.request?.headers,
-    body: summary.detail?.request?.body,
-    bodyFormat: summary.detail?.request?.body_format,
-    bodyContentType: bodyContentType(summary.detail?.request),
-    bodyTruncated: summary.detail?.request?.body_truncated,
-    bodyOriginalLength: summary.detail?.request?.body_original_length,
-    bodySha256: summary.detail?.request?.body_sha256,
-    bodyMissingReason: summary.hasRequestBody ? undefined : requestBodyEmptyReason(summary),
-    requestId: summary.requestId,
-    traceId: event.traceId,
-    spanId: event.spanId,
-    eventId: event.eventId,
-    route: summary.route,
-    reproducibility: requestReproducibility(summary),
-  };
-}
-
-function buildResponseJson(event: MonitorEvent, summary: HttpSummary): JsonObject {
-  return {
-    statusCode: summary.statusCode,
-    statusLabel: summary.statusLabel,
-    success: summary.success,
-    errorType: summary.errorType,
-    headers: summary.detail?.response?.headers,
-    body: summary.detail?.response?.body,
-    bodyFormat: summary.detail?.response?.body_format,
-    bodyContentType: bodyContentType(summary.detail?.response),
-    bodyMissingReason: summary.hasResponseBody ? undefined : responseEmptyReason(summary),
-    bodyTruncated: summary.bodyTruncated,
-    bodyOriginalLength: summary.bodyOriginalLength,
-    bodySha256: summary.bodySha256,
-    requestId: summary.requestId,
-    traceId: event.traceId,
-    spanId: event.spanId,
-    eventId: event.eventId,
-    route: summary.route,
-  };
 }
 
 function requestUrl(summary: HttpSummary): string | undefined {

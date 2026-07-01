@@ -16,7 +16,7 @@ class WorkbenchApi {
 
   final Dio _dio;
 
-  static const baseUrl = DemoApi.testApiBaseUrl;
+  static const baseUrl = DemoApi.serviceBaseUrl;
   static const _retryAttempts = 3;
   static const _retryDelay = Duration(milliseconds: 600);
 
@@ -90,7 +90,8 @@ class WorkbenchApi {
         await Future<void>.delayed(_retryDelay);
       }
     }
-    throw lastError ?? WorkbenchConnectionException('无法连接 Workbench service（$baseUrl）');
+    throw lastError ??
+        WorkbenchConnectionException('无法连接 Workbench service（$baseUrl）');
   }
 
   WorkbenchConnectionException _wrapConnectionError(DioException error) {

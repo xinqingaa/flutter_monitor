@@ -1,13 +1,17 @@
+import 'package:example/data/demo_api.dart';
 import 'package:example/data/workbench_api.dart';
+import 'package:example/models/demo_models.dart';
 import 'package:example/models/monitor_event_models.dart';
 import 'package:example/router/app_navigation.dart';
 import 'package:example/session/app_session.dart';
+import 'package:example/widgets/app_section.dart';
 import 'package:flutter/material.dart';
 
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key, required this.api});
+  const HomeTab({super.key, required this.workbenchApi, required this.demoApi});
 
-  final WorkbenchApi api;
+  final WorkbenchApi workbenchApi;
+  final DemoApi demoApi;
 
   @override
   State<HomeTab> createState() => HomeTabState();
@@ -16,6 +20,7 @@ class HomeTab extends StatefulWidget {
 class HomeTabState extends State<HomeTab>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   MonitorHomeState? _cachedState;
+  HomeFeedState? _feedState;
   Object? _error;
   var _loading = false;
   var _showMineOnly = true;
@@ -40,7 +45,8 @@ class HomeTabState extends State<HomeTab>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && (_error != null || _cachedState == null)) {
+    if (state == AppLifecycleState.resumed &&
+        (_error != null || _cachedState == null)) {
       _load(force: true);
     }
   }
@@ -55,13 +61,19 @@ class HomeTabState extends State<HomeTab>
     });
 
     try {
-      final state = await widget.api.loadHomeState(
-        showMineOnly: _showMineOnly,
-        currentUserId: AppSession.userId,
-      );
+      final results = await Future.wait<Object>([
+        widget.workbenchApi.loadHomeState(
+          showMineOnly: _showMineOnly,
+          currentUserId: AppSession.userId,
+        ),
+        widget.demoApi.loadHomeFeed(userId: AppSession.userId),
+      ]);
+      final state = results[0] as MonitorHomeState;
+      final feedState = results[1] as HomeFeedState;
       if (!mounted) return;
       setState(() {
         _cachedState = state.copyWith(showMineOnly: _showMineOnly);
+        _feedState = feedState;
         _loading = false;
       });
     } catch (error) {
@@ -162,6 +174,8 @@ class HomeTabState extends State<HomeTab>
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(child: _HealthBanner(health: state.health)),
+        if (_feedState != null)
+          SliverToBoxAdapter(child: _BusinessFeedSection(feed: _feedState!)),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -180,9 +194,7 @@ class HomeTabState extends State<HomeTab>
             hasScrollBody: false,
             child: Center(
               child: Text(
-                _showMineOnly
-                    ? '当前 userId 暂无事件，去其它页面操作后再刷新'
-                    : 'Workbench 暂无事件',
+                _showMineOnly ? '当前 userId 暂无事件，去其它页面操作后再刷新' : 'Workbench 暂无事件',
               ),
             ),
           )
@@ -193,10 +205,7 @@ class HomeTabState extends State<HomeTab>
               itemCount: events.length,
               itemBuilder: (context, index) {
                 final item = events[index];
-                return _EventCard(
-                  item: item,
-                  onTap: () => _openEvent(item),
-                );
+                return _EventCard(item: item, onTap: () => _openEvent(item));
               },
             ),
           ),
@@ -250,6 +259,45 @@ class _HealthBanner extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BusinessFeedSection extends StatelessWidget {
+  const _BusinessFeedSection({required this.feed});
+
+  final HomeFeedState feed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: AppSection(
+        title: '首页推荐',
+        subtitle: '${feed.userId} · ${feed.unreadCount} 条未读',
+        children: [
+          for (final item in feed.items.take(4))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(item.title),
+              subtitle: Text(item.subtitle),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    item.metricValue,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  Text(
+                    item.metricLabel,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

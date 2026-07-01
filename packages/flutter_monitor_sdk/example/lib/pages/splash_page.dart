@@ -1,26 +1,56 @@
+import 'package:dio/dio.dart';
+import 'package:example/data/demo_api.dart';
 import 'package:example/router/app_navigation.dart';
 import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class SplashPage extends StatefulWidget {
-  const SplashPage({super.key});
+  const SplashPage({super.key, required this.dio});
+
+  final Dio dio;
 
   @override
   State<SplashPage> createState() => _SplashPageState();
 }
 
 class _SplashPageState extends State<SplashPage> {
+  late final DemoApi _api;
+  String _status = '正在启动监控 SDK';
+
   @override
   void initState() {
     super.initState();
+    _api = DemoApi(
+      dio: widget.dio,
+      httpClient: FlutterMonitorSDK.createHttpClient(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enterLogin();
     });
   }
 
+  @override
+  void dispose() {
+    _api.close();
+    super.dispose();
+  }
+
   Future<void> _enterLogin() async {
-    await Future<void>.delayed(const Duration(milliseconds: 650));
+    try {
+      final bootstrap = await _api.fetchBootstrap();
+      if (!mounted) return;
+      setState(() {
+        _status = '已加载 ${bootstrap.release} 配置';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _status = '启动配置暂不可用，继续进入登录';
+      });
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
     AppNavigation.replaceToLogin(context);
   }
@@ -57,7 +87,7 @@ class _SplashPageState extends State<SplashPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '正在启动监控 SDK',
+                      _status,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),

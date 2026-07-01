@@ -1,5 +1,8 @@
 import 'dart:math';
 
+import 'package:dio/dio.dart';
+import 'package:example/data/demo_api.dart';
+import 'package:example/models/demo_models.dart';
 import 'package:example/router/app_navigation.dart';
 import 'package:example/router/app_routes.dart';
 import 'package:example/session/app_session.dart';
@@ -10,7 +13,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({
+    super.key,
+    required this.dio,
+    this.loadAuthOptionsOnStart = true,
+    this.remoteLogin = true,
+  });
+
+  final Dio dio;
+  final bool loadAuthOptionsOnStart;
+  final bool remoteLogin;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -18,11 +30,27 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _userIdController = TextEditingController();
+  late final DemoApi _api;
+  AuthOptions? _authOptions;
   var _submitting = false;
+  var _loadingOptions = false;
   String? _errorText;
 
   @override
+  void initState() {
+    super.initState();
+    _api = DemoApi(
+      dio: widget.dio,
+      httpClient: FlutterMonitorSDK.createHttpClient(),
+    );
+    if (widget.loadAuthOptionsOnStart) {
+      _loadAuthOptions();
+    }
+  }
+
+  @override
   void dispose() {
+    _api.close();
     _userIdController.dispose();
     super.dispose();
   }
@@ -33,6 +61,21 @@ class _LoginPageState extends State<LoginPage> {
     final value = (Random().nextInt(900) + 100).toString();
     _userIdController.text = value;
     setState(() => _errorText = null);
+  }
+
+  Future<void> _loadAuthOptions() async {
+    setState(() => _loadingOptions = true);
+    try {
+      final options = await _api.fetchAuthOptions();
+      if (!mounted) return;
+      setState(() {
+        _authOptions = options;
+        _loadingOptions = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingOptions = false);
+    }
   }
 
   Future<void> _enterHome() async {
@@ -47,22 +90,49 @@ class _LoginPageState extends State<LoginPage> {
       _submitting = true;
       _errorText = null;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    LoginResult login;
+    try {
+      login = widget.remoteLogin
+          ? await _api.login(userId: userId)
+          : LoginResult(
+              userId: userId,
+              name: 'QA 用户 $userId',
+              tier: 'qa',
+              token: 'test-token',
+            );
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _errorText = '登录接口失败：$error';
+      });
+      FlutterMonitorSDK.recordError(
+        error,
+        stackTrace: stackTrace,
+        type: 'auth_login_failed',
+        handled: true,
+        properties: <String, Object?>{'user.id': userId},
+      );
+      return;
+    }
     if (!mounted) return;
 
-    AppSession.setUserId(userId);
+    AppSession.setUserId(login.userId);
     FlutterMonitorSDK.setContext(
-      userId: userId,
-      userType: 'qa',
-      userTags: const ['qa'],
-      cohort: 'example_session',
+      userId: login.userId,
+      userType: login.tier,
+      userTags: login.tier == 'premium' ? const ['vip', 'qa'] : const ['qa'],
+      cohort: login.tier == 'premium' ? 'example_premium' : 'example_session',
     );
     appTrack(
       context,
       action: 'auth.login.submit',
       target: 'login_enter_button',
-      properties: <String, Object?>{'user.id': userId},
-      message: '已登录 userId=$userId，可在 Workbench 按用户筛选',
+      properties: <String, Object?>{
+        'user.id': login.userId,
+        'user.tier': login.tier,
+      },
+      message: '已登录 ${login.name}，可在 Workbench 按用户筛选',
     );
 
     if (!mounted) return;
@@ -102,7 +172,9 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '输入 QA 用户 ID 进入监控工作台',
+                          _loadingOptions
+                              ? '正在读取登录配置'
+                              : _authOptions?.notice ?? '输入 QA 用户 ID 进入监控工作台',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: colorScheme.onSurfaceVariant),

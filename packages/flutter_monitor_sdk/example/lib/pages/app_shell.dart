@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:example/data/demo_api.dart';
 import 'package:example/data/workbench_api.dart';
 import 'package:example/pages/home_tab.dart';
 import 'package:example/pages/profile_tab.dart';
@@ -10,8 +11,13 @@ import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 enum _TabSwitchSource { tap, swipe }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.workbenchDio});
+  const AppShell({
+    super.key,
+    required this.monitoredDio,
+    required this.workbenchDio,
+  });
 
+  final Dio monitoredDio;
   final Dio workbenchDio;
 
   @override
@@ -20,6 +26,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late final WorkbenchApi _workbenchApi;
+  late final DemoApi _demoApi;
   late final PageController _pageController;
   var _currentIndex = 0;
   var _animatingToIndex = -1;
@@ -28,11 +35,16 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _workbenchApi = WorkbenchApi(dio: widget.workbenchDio);
+    _demoApi = DemoApi(
+      dio: widget.monitoredDio,
+      httpClient: FlutterMonitorSDK.createHttpClient(),
+    );
     _pageController = PageController();
   }
 
   @override
   void dispose() {
+    _demoApi.close();
     _pageController.dispose();
     super.dispose();
   }
@@ -84,8 +96,8 @@ class _AppShellState extends State<AppShell> {
           onPageChanged: (index) =>
               _selectTab(index, source: _TabSwitchSource.swipe),
           children: [
-            HomeTab(api: _workbenchApi),
-            const ProfileTab(),
+            HomeTab(workbenchApi: _workbenchApi, demoApi: _demoApi),
+            ProfileTab(api: _demoApi),
           ],
         ),
         bottomNavigationBar: NavigationBar(

@@ -1,109 +1,64 @@
-class GithubProfile {
-  const GithubProfile({
-    required this.login,
-    required this.name,
-    required this.avatarUrl,
-    required this.publicRepos,
-    required this.followers,
-    required this.htmlUrl,
+class AppBootstrap {
+  const AppBootstrap({
+    required this.release,
+    required this.featureFlags,
+    required this.serverTime,
   });
 
-  final String login;
-  final String name;
-  final String avatarUrl;
-  final int publicRepos;
-  final int followers;
-  final String htmlUrl;
+  final String release;
+  final List<String> featureFlags;
+  final DateTime? serverTime;
 
-  factory GithubProfile.fromJson(Map<String, dynamic> json) {
-    return GithubProfile(
-      login: json['login'] as String? ?? 'flutter',
-      name: json['name'] as String? ?? 'Flutter',
-      avatarUrl: json['avatar_url'] as String? ?? '',
-      publicRepos: json['public_repos'] as int? ?? 0,
-      followers: json['followers'] as int? ?? 0,
-      htmlUrl: json['html_url'] as String? ?? '',
+  factory AppBootstrap.fromJson(Map<String, dynamic> json) {
+    return AppBootstrap(
+      release: json['release'] as String? ?? '-',
+      featureFlags: _stringList(json['featureFlags']),
+      serverTime: DateTime.tryParse(json['serverTime'] as String? ?? ''),
     );
   }
 }
 
-class GithubRepo {
-  const GithubRepo({
-    required this.id,
-    required this.name,
-    required this.fullName,
-    required this.description,
-    required this.stars,
-    required this.language,
-    required this.updatedAt,
-    required this.htmlUrl,
+class AuthOptions {
+  const AuthOptions({
+    required this.methods,
+    required this.notice,
+    required this.supportContact,
   });
 
-  final int id;
-  final String name;
-  final String fullName;
-  final String description;
-  final int stars;
-  final String language;
-  final DateTime? updatedAt;
-  final String htmlUrl;
+  final List<String> methods;
+  final String notice;
+  final String supportContact;
 
-  factory GithubRepo.fromJson(Map<String, dynamic> json) {
-    return GithubRepo(
-      id: json['id'] as int? ?? 0,
-      name: json['name'] as String? ?? 'unknown',
-      fullName: json['full_name'] as String? ?? 'flutter/unknown',
-      description: json['description'] as String? ?? 'No description',
-      stars: json['stargazers_count'] as int? ?? 0,
-      language: json['language'] as String? ?? 'Dart',
-      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? ''),
-      htmlUrl: json['html_url'] as String? ?? '',
+  factory AuthOptions.fromJson(Map<String, dynamic> json) {
+    return AuthOptions(
+      methods: _stringList(json['methods']),
+      notice: json['notice'] as String? ?? '请输入 userId',
+      supportContact: json['supportContact'] as String? ?? '-',
     );
   }
 }
 
-class DemoPost {
-  const DemoPost({
-    required this.id,
+class LoginResult {
+  const LoginResult({
     required this.userId,
-    required this.title,
-    required this.body,
-  });
-
-  final int id;
-  final int userId;
-  final String title;
-  final String body;
-
-  factory DemoPost.fromJson(Map<String, dynamic> json) {
-    return DemoPost(
-      id: json['id'] as int? ?? 0,
-      userId: json['userId'] as int? ?? 0,
-      title: json['title'] as String? ?? '',
-      body: json['body'] as String? ?? '',
-    );
-  }
-}
-
-class DemoComment {
-  const DemoComment({
-    required this.id,
     required this.name,
-    required this.email,
-    required this.body,
+    required this.tier,
+    required this.token,
   });
 
-  final int id;
+  final String userId;
   final String name;
-  final String email;
-  final String body;
+  final String tier;
+  final String token;
 
-  factory DemoComment.fromJson(Map<String, dynamic> json) {
-    return DemoComment(
-      id: json['id'] as int? ?? 0,
-      name: json['name'] as String? ?? '',
-      email: json['email'] as String? ?? '',
-      body: json['body'] as String? ?? '',
+  factory LoginResult.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    final userMap = user is Map<String, dynamic> ? user : <String, dynamic>{};
+    return LoginResult(
+      userId: userMap['userId'] as String? ?? '',
+      name: userMap['name'] as String? ?? 'QA 用户',
+      tier: userMap['tier'] as String? ?? 'free',
+      token: json['token'] as String? ?? '',
     );
   }
 }
@@ -127,46 +82,219 @@ class DemoFeedItem {
   final String metricLabel;
   final String metricValue;
 
-  factory DemoFeedItem.fromRepo(GithubRepo repo) {
+  factory DemoFeedItem.fromJson(Map<String, dynamic> json) {
     return DemoFeedItem(
-      id: 'repo_${repo.id}',
-      title: repo.name,
-      subtitle: repo.fullName,
-      description: repo.description,
-      source: 'GitHub',
-      metricLabel: 'Stars',
-      metricValue: repo.stars.toString(),
-    );
-  }
-
-  factory DemoFeedItem.fromPost(DemoPost post) {
-    return DemoFeedItem(
-      id: 'post_${post.id}',
-      title: post.title,
-      subtitle: 'JSONPlaceholder user ${post.userId}',
-      description: post.body,
-      source: 'JSONPlaceholder',
-      metricLabel: 'Post',
-      metricValue: '#${post.id}',
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      source: json['source'] as String? ?? '-',
+      metricLabel: json['metricLabel'] as String? ?? '-',
+      metricValue: json['metricValue'] as String? ?? '-',
     );
   }
 }
 
 class HomeFeedState {
   const HomeFeedState({
-    required this.profile,
-    required this.repos,
-    required this.posts,
+    required this.userId,
+    required this.unreadCount,
+    required this.items,
   });
 
-  final GithubProfile profile;
-  final List<GithubRepo> repos;
-  final List<DemoPost> posts;
+  final String userId;
+  final int unreadCount;
+  final List<DemoFeedItem> items;
 
-  List<DemoFeedItem> get items {
-    return <DemoFeedItem>[
-      for (final repo in repos.take(5)) DemoFeedItem.fromRepo(repo),
-      for (final post in posts.take(4)) DemoFeedItem.fromPost(post),
-    ];
+  factory HomeFeedState.fromJson(
+    Map<String, dynamic> feed,
+    Map<String, dynamic> recommendations,
+  ) {
+    return HomeFeedState(
+      userId: feed['userId'] as String? ?? 'guest',
+      unreadCount: _intValue(feed['unreadCount']),
+      items: [..._items(feed['items']), ..._items(recommendations['items'])],
+    );
   }
+}
+
+class UserProfile {
+  const UserProfile({
+    required this.userId,
+    required this.name,
+    required this.tier,
+    required this.tags,
+    required this.weakNetwork,
+    required this.notifications,
+  });
+
+  final String userId;
+  final String name;
+  final String tier;
+  final List<String> tags;
+  final bool weakNetwork;
+  final bool notifications;
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    final userMap = user is Map<String, dynamic> ? user : <String, dynamic>{};
+    final preferences = json['preferences'];
+    final prefs = preferences is Map<String, dynamic>
+        ? preferences
+        : <String, dynamic>{};
+    return UserProfile(
+      userId: userMap['userId'] as String? ?? '',
+      name: userMap['name'] as String? ?? 'QA 用户',
+      tier: userMap['tier'] as String? ?? 'free',
+      tags: _stringList(userMap['tags']),
+      weakNetwork: prefs['weakNetwork'] as bool? ?? false,
+      notifications: prefs['notifications'] as bool? ?? true,
+    );
+  }
+}
+
+class CartItem {
+  const CartItem({
+    required this.id,
+    required this.name,
+    required this.price,
+    required this.quantity,
+  });
+
+  final String id;
+  final String name;
+  final double price;
+  final int quantity;
+
+  factory CartItem.fromJson(Map<String, dynamic> json) {
+    return CartItem(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      price: _doubleValue(json['price']),
+      quantity: _intValue(json['quantity']),
+    );
+  }
+}
+
+class CartState {
+  const CartState({
+    required this.userId,
+    required this.coupon,
+    required this.items,
+    required this.total,
+  });
+
+  final String userId;
+  final String coupon;
+  final List<CartItem> items;
+  final double total;
+
+  factory CartState.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'];
+    return CartState(
+      userId: json['userId'] as String? ?? 'guest',
+      coupon: json['coupon'] as String? ?? '',
+      items: rawItems is List
+          ? rawItems
+                .whereType<Map<String, dynamic>>()
+                .map(CartItem.fromJson)
+                .toList(growable: false)
+          : const <CartItem>[],
+      total: _doubleValue(json['total']),
+    );
+  }
+}
+
+class CouponResult {
+  const CouponResult({
+    required this.ok,
+    required this.code,
+    required this.message,
+    required this.discount,
+  });
+
+  final bool ok;
+  final String code;
+  final String message;
+  final double discount;
+
+  factory CouponResult.fromJson(Map<String, dynamic> json) {
+    return CouponResult(
+      ok: json['ok'] as bool? ?? false,
+      code: json['code'] as String? ?? '-',
+      message: json['message'] as String? ?? '-',
+      discount: _doubleValue(json['discount']),
+    );
+  }
+}
+
+class OrderResult {
+  const OrderResult({
+    required this.ok,
+    required this.orderId,
+    required this.status,
+    required this.message,
+    required this.payable,
+  });
+
+  final bool ok;
+  final String orderId;
+  final String status;
+  final String message;
+  final double payable;
+
+  factory OrderResult.fromJson(Map<String, dynamic> json) {
+    return OrderResult(
+      ok: json['ok'] as bool? ?? false,
+      orderId: json['orderId'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      payable: _doubleValue(json['payable']),
+    );
+  }
+}
+
+class SyncSummary {
+  const SyncSummary({
+    required this.pendingOrders,
+    required this.inventoryTasks,
+    this.lastSyncAt,
+  });
+
+  final int pendingOrders;
+  final int inventoryTasks;
+  final DateTime? lastSyncAt;
+
+  factory SyncSummary.fromJson(Map<String, dynamic> json) {
+    return SyncSummary(
+      pendingOrders: _intValue(json['pendingOrders']),
+      inventoryTasks: _intValue(json['inventoryTasks']),
+      lastSyncAt: DateTime.tryParse(json['lastSyncAt'] as String? ?? ''),
+    );
+  }
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! List) return const <String>[];
+  return value.whereType<String>().toList(growable: false);
+}
+
+List<DemoFeedItem> _items(Object? value) {
+  if (value is! List) return const <DemoFeedItem>[];
+  return value
+      .whereType<Map<String, dynamic>>()
+      .map(DemoFeedItem.fromJson)
+      .toList(growable: false);
+}
+
+int _intValue(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value') ?? 0;
+}
+
+double _doubleValue(Object? value) {
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  return double.tryParse('$value') ?? 0;
 }
