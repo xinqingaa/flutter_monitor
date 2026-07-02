@@ -205,6 +205,9 @@ type InspectorKind = 'startup' | 'page' | 'interaction' | 'business' | 'problem'
 
 function inspectorProfile(event: MonitorEvent): { kind: InspectorKind; title: string; eyebrow: string } {
   const name = event.name ?? '';
+  if (event.signalType === 'error' || event.status === 'error' || textValue(event, 'attributes.error.type')) {
+    return { kind: 'problem', title: '异常 Inspector', eyebrow: '异常节点' };
+  }
   if (name === 'app.cold_start' || name === 'app.hot_start' || name === 'sdk.init') {
     return { kind: 'startup', title: '启动 Inspector', eyebrow: '启动链路' };
   }
@@ -223,8 +226,8 @@ function inspectorProfile(event: MonitorEvent): { kind: InspectorKind; title: st
   if (event.signalType === 'sdk' || name.startsWith('sdk.')) {
     return { kind: 'sdk', title: 'SDK Inspector', eyebrow: 'SDK 自监控节点' };
   }
-  if (event.status === 'error' || event.level === 'error' || name.includes('jank')) {
-    return { kind: 'problem', title: '问题 Inspector', eyebrow: '问题节点' };
+  if (event.level === 'error' || name.includes('jank')) {
+    return { kind: 'problem', title: '异常 Inspector', eyebrow: '异常节点' };
   }
   return { kind: 'generic', title: '节点诊断', eyebrow: '当前节点' };
 }
@@ -293,14 +296,134 @@ function BusinessDetails({ event }: { event: MonitorEvent }) {
 }
 
 function ProblemDetails({ event }: { event: MonitorEvent }) {
+  const message = errorMessage(event);
+  const stacktrace = errorStacktrace(event);
+  const contexts = errorContextItems(event);
+
   return (
-    <Section title="问题证据">
-      <Fact label="状态" value={statusLabel(event.status)} />
-      <Fact label="级别" value={event.level} />
-      <Fact label="错误类型" value={textValue(event, 'attributes.error.type') ?? textValue(event, 'payload.error_type')} />
-      <Fact label="机制" value={textValue(event, 'attributes.error.mechanism') ?? textValue(event, 'payload.mechanism')} />
-      <Fact label="帧表现" value={frameSummary(event)} />
-    </Section>
+    <div className="grid gap-3">
+      <section className="rounded-md border border-red-200 bg-red-50 p-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <Badge tone="danger">异常</Badge>
+          {textValue(event, 'attributes.error.type') ? <Badge tone="neutral">{textValue(event, 'attributes.error.type')}</Badge> : null}
+          {textValue(event, 'attributes.error.mechanism') ? <Badge tone="neutral">{textValue(event, 'attributes.error.mechanism')}</Badge> : null}
+          {textValue(event, 'attributes.error.handled') ? <Badge tone="info">handled {textValue(event, 'attributes.error.handled')}</Badge> : null}
+          {textValue(event, 'attributes.error.fatal') ? <Badge tone="info">fatal {textValue(event, 'attributes.error.fatal')}</Badge> : null}
+        </div>
+        <div className="mt-2 grid gap-1.5 text-sm">
+          <Fact label="所在页面" value={routeOf(event)} />
+          <Fact label="模块/场景" value={[moduleOf(event), sceneOf(event)].filter((value) => value !== '-').join(' / ')} />
+          <Fact label="发生时间" value={formatDateTime(event.timestamp)} />
+          <Fact label="traceId" value={<CopyableId value={event.traceId} />} />
+          <Fact label="eventId" value={<CopyableId value={event.eventId} />} />
+        </div>
+      </section>
+
+      <Section title="错误消息">
+        {message ? <ErrorTextBlock value={message} /> : <EmptyState title="没有采集到错误消息" />}
+      </Section>
+
+      <Section title="堆栈">
+        {stacktrace ? <ErrorTextBlock value={stacktrace} compact /> : <EmptyState title="没有采集到堆栈" />}
+      </Section>
+
+      <Section title="上下文">
+        {contexts.length === 0 ? (
+          <EmptyState title="没有上下文足迹" />
+        ) : (
+          <div className="grid gap-1.5">
+            {contexts.map((item) => <ErrorContextRow key={item.key} item={item} />)}
+          </div>
+        )}
+      </Section>
+
+      <Section title="异常字段">
+        <Fact label="状态" value={statusLabel(event.status)} />
+        <Fact label="级别" value={event.level} />
+        <Fact label="错误类型" value={textValue(event, 'attributes.error.type') ?? textValue(event, 'payload.error_type')} />
+        <Fact label="机制" value={textValue(event, 'attributes.error.mechanism') ?? textValue(event, 'payload.mechanism')} />
+        <Fact label="帧表现" value={frameSummary(event)} />
+      </Section>
+    </div>
+  );
+}
+
+function ErrorTextBlock({ value, compact = false }: { value: string; compact?: boolean }) {
+  return (
+    <pre
+      className={cn(
+        'max-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-200 bg-zinc-950 p-3 text-left font-mono text-xs leading-relaxed text-zinc-100',
+        compact && 'max-h-[420px]',
+      )}
+    >
+      {value}
+    </pre>
+  );
+}
+
+function errorMessage(event: MonitorEvent): string | undefined {
+  return textValue(event, 'payload.payload.error.message') ??
+    textValue(event, 'payload.error.message') ??
+    textValue(event, 'payload.message') ??
+    textValue(event, 'payload.error');
+}
+
+function errorStacktrace(event: MonitorEvent): string | undefined {
+  return textValue(event, 'payload.payload.error.stacktrace') ??
+    textValue(event, 'payload.error.stacktrace') ??
+    textValue(event, 'payload.stacktrace') ??
+    textValue(event, 'payload.stack');
+}
+
+type ErrorContextItem = {
+  key: string;
+  time?: string;
+  title: string;
+  subtitle?: string;
+  route?: string;
+  tone: 'neutral' | 'warn' | 'danger';
+};
+
+function errorContextItems(event: MonitorEvent): ErrorContextItem[] {
+  const breadcrumbs = breadcrumbsOf(event);
+  return breadcrumbs.slice(-8).map((breadcrumb, index) => {
+    const name = readBreadcrumbText(breadcrumb, ['name', 'action', 'event']) ?? `上下文 #${index + 1}`;
+    const route = readBreadcrumbText(breadcrumb, ['route', 'routeName', 'page', 'context.route.name']);
+    const status = readBreadcrumbText(breadcrumb, ['status', 'level']);
+    const httpStatus = readBreadcrumbText(breadcrumb, ['attributes.http.status_code', 'http.status_code']);
+    const method = readBreadcrumbText(breadcrumb, ['attributes.http.method', 'http.method']);
+    const url = readBreadcrumbText(breadcrumb, ['payload.url', 'url', 'attributes.http.url.normalized']);
+    const action = readBreadcrumbText(breadcrumb, ['attributes.business.action', 'business.action']);
+    const target = readBreadcrumbText(breadcrumb, ['attributes.ui.target', 'ui.target']);
+    const timestamp = readBreadcrumbText(breadcrumb, ['timestamp', 'time', 'occurredAt']);
+    const failed = status === 'error' || (httpStatus !== undefined && Number(httpStatus) >= 400);
+    return {
+      key: readBreadcrumbText(breadcrumb, ['eventId']) ?? `${index}-${name}`,
+      time: timestamp ? formatTime(timestamp) : undefined,
+      title: [method, url].filter(Boolean).join(' ') || action || name,
+      subtitle: [
+        httpStatus ? `HTTP ${httpStatus}` : undefined,
+        target ? `target ${target}` : undefined,
+        route ? `页面 ${route}` : undefined,
+      ].filter(Boolean).join(' · '),
+      route,
+      tone: failed ? 'danger' : status === 'warning' ? 'warn' : 'neutral',
+    };
+  });
+}
+
+function ErrorContextRow({ item }: { item: ErrorContextItem }) {
+  return (
+    <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-2 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm">
+      <span className="text-xs tabular-nums text-zinc-500">{item.time ?? '-'}</span>
+      <span className="min-w-0">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Badge tone={item.tone} className="rounded-md px-1.5 py-0">{item.tone === 'danger' ? '异常' : '上下文'}</Badge>
+          <span className="min-w-0 break-words font-medium text-zinc-900">{item.title}</span>
+        </span>
+        {item.subtitle ? <span className="mt-0.5 block break-words text-xs text-zinc-500">{item.subtitle}</span> : null}
+      </span>
+    </div>
   );
 }
 

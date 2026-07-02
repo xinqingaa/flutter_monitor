@@ -501,6 +501,15 @@ function buildSegments(rows: SessionConsoleRow[]): SessionConsoleSegment[] {
   let current: MutableSegment | undefined;
 
   for (const row of rows) {
+    const startupSegment = isStartupCloseRow(row)
+      ? mutable.find((segment) => segment.kind === 'startup')
+      : undefined;
+    if (startupSegment) {
+      startupSegment.rows.push(row);
+      if (!startupSegment.route && row.route) startupSegment.route = row.route;
+      continue;
+    }
+
     const route = row.route;
     const rowStartsPage = isPageEntryRow(row);
     const desiredKind = segmentKindForRow(row, current);
@@ -527,6 +536,12 @@ function buildSegments(rows: SessionConsoleRow[]): SessionConsoleSegment[] {
   }
 
   return mutable.map((segment, index) => finalizeSegment(segment, index, mutable[index + 1]));
+}
+
+function isStartupCloseRow(row: SessionConsoleRow): boolean {
+  return row.group === 'startup' &&
+    row.phase === 'end' &&
+    (row.name === 'app.cold_start' || row.name === 'app.hot_start');
 }
 
 function segmentKindForRow(row: SessionConsoleRow, current: MutableSegment | undefined): SessionConsoleSegment['kind'] {
@@ -823,7 +838,17 @@ function isSdkFlushFailure(event: MonitorEvent): boolean {
 }
 
 function sortEvents(events: MonitorEvent[]): MonitorEvent[] {
-  return [...events].sort((a, b) => timeValue(a.timestamp ?? a.startTime) - timeValue(b.timestamp ?? b.startTime));
+  return [...events].sort((a, b) => {
+    const timeDelta = timeValue(a.timestamp ?? a.startTime) - timeValue(b.timestamp ?? b.startTime);
+    if (timeDelta !== 0) return timeDelta;
+    return eventSequence(a.eventId) - eventSequence(b.eventId);
+  });
+}
+
+function eventSequence(eventId: string | undefined): number {
+  const value = eventId?.match(/_(\d+)$/)?.[1];
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function readPath(value: unknown, path: string[]): unknown {

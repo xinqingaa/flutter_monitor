@@ -74,7 +74,6 @@ export function JsonViewer({
             isDark ? 'border-zinc-800 bg-zinc-900 text-zinc-300' : 'border-zinc-200 bg-zinc-50 text-zinc-600',
           )}
         >
-          <span className="text-[11px] text-zinc-400">视图</span>
           <ViewToggleButton
             label="格式化"
             active={mode === 'formatted'}
@@ -90,14 +89,12 @@ export function JsonViewer({
           <span className="ml-auto flex items-center gap-1">
             {isObject && showFormatted ? (
               <>
-                <ControlButton isDark={isDark} onClick={() => setCollapsed(false)}>全部展开</ControlButton>
-                <ControlButton isDark={isDark} onClick={() => setCollapsed(1)}>折叠 1 层</ControlButton>
-                <ControlButton isDark={isDark} onClick={() => setCollapsed(true)}>全部折叠</ControlButton>
+                <ControlButton isDark={isDark} onClick={() => setCollapsed(false)}>展开</ControlButton>
+                <ControlButton isDark={isDark} onClick={() => setCollapsed(true)}>收起</ControlButton>
               </>
             ) : null}
-            <ControlButton isDark={isDark} onClick={() => void copyCurrentView()}>
+            <ControlButton isDark={isDark} onClick={() => void copyCurrentView()} ariaLabel="复制 JSON">
               <Clipboard className="size-3.5" />
-              复制
             </ControlButton>
           </span>
         </div>
@@ -157,16 +154,20 @@ function ControlButton({
   children,
   onClick,
   isDark,
+  ariaLabel,
 }: {
   children: ReactNode;
   onClick: () => void;
   isDark: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <Button
       type="button"
       size="sm"
       variant="ghost"
+      aria-label={ariaLabel}
+      title={ariaLabel}
       className={cn(
         'h-6 px-2 text-[11px]',
         isDark

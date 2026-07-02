@@ -452,7 +452,7 @@ HTTP body 展示规则：
 
 JSON Inspector 渲染规则（response body / request body / request raw / response raw / 原始数据 / 上下文 breadcrumb）：
 
-- 使用节点级可折叠的 JSON 树（基于 `@uiw/react-json-view`），支持 `▸` / `▾` 单节点折叠展开、点击节点旁的 copy 按钮复制子树或路径，并提供顶部 “格式化 / 原文” 切换、“全部展开 / 折叠 1 层 / 全部折叠” 和复制当前视图。
+- 使用节点级可折叠的 JSON 树（基于 `@uiw/react-json-view`），支持 `▸` / `▾` 单节点折叠展开、点击节点旁的 copy 按钮复制子树或路径，并提供顶部 “格式化 / 原文” 切换、“展开 / 收起” 和复制当前视图图标。
 - 默认折叠层级：response/request body 与 raw envelope = `collapsed=2`；headers = `collapsed=1`，确保打开 Inspector 后能立刻看到关键结构。
 - 容器统一限定 `min-h-[120px]` 与 `max-h-[320px~420px]`，保证大 body 不会挤占其它面板。
 - 数值、字符串、布尔、null 在树视图中保留类型颜色，与代码编辑器折叠体验一致。
@@ -468,7 +468,7 @@ JSON Inspector 渲染规则（response body / request body / request raw / respo
 | `page.*` / `route.*` | 页面 Inspector：路由、加载、首帧、停留、返回/离开、页面帧与内存证据 |
 | `interaction.measure` | 交互性能 Inspector：action、mode、active/settle、frame、相关 HTTP；仅显式开启并采到数据后展示 |
 | `business.*` / `business.action` | 业务埋点 Inspector：业务 action、状态、耗时、业务 payload |
-| error / jank | 问题 Inspector：错误类型、mechanism、stack、卡顿帧证据和上下文足迹 |
+| error / jank | 异常 Inspector：所在页面、错误类型、mechanism、message、stack、失败 HTTP、业务足迹和上下文 |
 | `memory.*` / `native.memory.*` | 内存 Inspector：sample/growth/pressure/suspect leak 证据，不把 suspect 当成确定泄漏 |
 | `sdk.*` | SDK Inspector：队列、flush、retry、drop、output mode、health report |
 | 其他 | 通用 Inspector：一眼看懂、关联链路、上下文、原始数据 |
@@ -479,6 +479,7 @@ Timeline 区段是 Workbench Web 基于原始 envelope 计算出的展示 view m
 
 - `启动链路`：来自冷启动初始窗口，承接 `app.cold_start`、`sdk.init` 和 lifecycle/hot start 事实。`app.first_frame_ms` 是启动 trace 上的字段，不作为独立 timeline 事件展示；启动期 `memory.sample` 仅在 SDK 显式开启 memory 后出现。
 - `页面 ${route}`：只由明确页面导航可见证据开启，即 `page.visit` 的 `event.phase=start`、`route.push`，或 `page.view` 且 `page.active_phase=page.resume`、`page.active_trigger=route_pop`。同一 `page.instance_id + traceId` 可以有多个导航可见区段：首次进入区段由 `page.enter + route_push` 表达，返回上一级后的新区段由 `page.resume + route_pop` 表达；后续 HTTP、业务足迹、错误和页面停留归入最近一个可见区段。显式开启后，交互性能、卡顿、内存等诊断节点也归入最近一个可见区段。归属优先使用 `page.instance_id + traceId`，业务/交互/请求/错误/卡顿节点缺少 `page.instance_id` 时可以用同一页面 `traceId` 回挂。例如 `/detail?id=2 -> /complex_list -> 返回 /detail?id=2` 时，返回后的 `interaction.measure` 应显示在 `页面 /detail?id=2 · 返回后继续` 区段，而不是回挂到首次进入区段。`page.resume + lifecycle_resumed` 只表示 App 前台恢复，不开启页面区段。
+- 启动闭合事件（例如 `app.cold_start` / `app.hot_start` 的 `event.phase=end`）可能晚于首个页面进入或首个页面 HTTP，但它只能回归已有启动链路，不能在页面中间新开第二个 `启动链路` 区段，也不能把同一个页面切成两个重复区段。
 - 页面区段标题可根据内容追加诊断语义，但不改变底层数据归属。优先级为：错误/业务失败、业务操作、失败请求、生命周期；显式开启诊断信号后可追加交互性能、卡顿、内存。例如 `页面 /detail?id=1 · 业务失败 · 业务操作`、`页面 /detail?id=2 · 交互性能`。
 - `页面活动 ${route}`：只用于无法绑定到具体页面实例或不应开启页面区段的当前 route 非页面事件窗口，包括跨页面生命周期、热重启、前台恢复 `page.resume + lifecycle_resumed`、缺少 `page.instance_id` 的内存采样等。具体问题类型仍放入摘要，例如 `失败请求 5`、`错误 2`、`热重启 1`、`后台 8.63s`。
 - `会话活动`：缺少 route 上下文的非页面事件窗口。
