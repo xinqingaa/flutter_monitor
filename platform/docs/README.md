@@ -5,7 +5,9 @@
 ## Documents
 
 - [Platform 架构与计划](workbench_plan.md)：Monitor Service、Datasource、存储、脚本编排、MVP 和验收标准。
-- [Workbench 产品计划](product_plan.md)：Workbench Web 产品定位、信息架构、展示原则、页面职责和交互口径。
+- [Workbench 功能清单](FEATURES.md)：当前期望的一级模块与能力边界（大屏 / HTTP / 埋点 / 异常）；与 `product_plan.md` 冲突时以本清单为准。
+- [Workbench Keep / Kill / Steal](KEEP_KILL_STEAL.md)：推倒重来时的取舍；数据层可留，页面默认作废，JsonViewer 仅克制复用。
+- [Workbench 产品计划](product_plan.md)：历史产品定位与交互口径，可作参考；重构期功能边界见 `FEATURES.md`。
 - [Workbench Service API（已废弃）](service_api.md)：历史 endpoint 说明；当前请以 `http://localhost:3700/docs`（Swagger）和 [`services/monitor-service/docs/boundaries.md`](../services/monitor-service/docs/boundaries.md) 为准。
 
 ## 常用查询路径
