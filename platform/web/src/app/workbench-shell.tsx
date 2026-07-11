@@ -11,7 +11,7 @@ import { WorkbenchV2Shell } from './workbench-v2-shell';
 
 export function WorkbenchShell() {
   const location = useLocation();
-  return location.pathname === '/http' ? <WorkbenchV2Shell /> : <LegacyWorkbenchShell />;
+  return ['/http', '/business', '/errors'].includes(location.pathname) ? <WorkbenchV2Shell /> : <LegacyWorkbenchShell />;
 }
 
 function LegacyWorkbenchShell() {

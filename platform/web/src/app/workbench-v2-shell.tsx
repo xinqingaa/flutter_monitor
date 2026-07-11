@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter } from '@tanstack/react-router';
-import { ChevronsLeft, ChevronsRight, Network, Pause, Play, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronsLeft, ChevronsRight, MousePointerClick, Network, Pause, Play, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { IconTooltipButton } from '../components/ui/icon-tooltip-button';
 import { useLiveInvalidation } from '../shared/datasource/queries';
@@ -30,14 +30,9 @@ export function WorkbenchV2Shell() {
           {collapsed ? null : <span className="min-w-0 truncate text-[13px] font-semibold text-text-primary max-[700px]:hidden">Flutter Monitor</span>}
         </div>
         <nav aria-label="Workbench 主导航" className="min-h-0 flex-1 p-2">
-          <Link
-            to="/http"
-            activeProps={{ 'aria-current': 'page' }}
-            className="flex h-9 items-center gap-2 rounded-control border border-border-selected bg-selected px-2 text-[13px] font-medium text-text-link outline-none focus-visible:ring-2 focus-visible:ring-interactive-focusRing"
-          >
-            <Network className="size-4 shrink-0" />
-            {collapsed ? null : <span className="truncate max-[700px]:hidden">HTTP</span>}
-          </Link>
+          <NavItem to="/http" label="HTTP" icon={Network} collapsed={collapsed} />
+          <NavItem to="/business" label="埋点" icon={MousePointerClick} collapsed={collapsed} />
+          <NavItem to="/errors" label="异常" icon={AlertTriangle} collapsed={collapsed} />
         </nav>
         <div className="grid shrink-0 gap-1 border-t border-border-default p-2">
           <IconTooltipButton type="button" variant="ghost" size="icon" label={live ? '暂停实时更新' : '恢复实时更新'} icon={live ? Pause : Play} onClick={() => setLive((value) => !value)} />
@@ -50,4 +45,8 @@ export function WorkbenchV2Shell() {
       </main>
     </div>
   );
+}
+
+function NavItem({ to, label, icon: Icon, collapsed }: { to: '/http' | '/business' | '/errors'; label: string; icon: typeof Network; collapsed: boolean }) {
+  return <Link to={to} activeProps={{ 'aria-current': 'page', className: 'border-border-selected bg-selected text-text-link' }} inactiveProps={{ className: 'border-transparent text-text-secondary hover:bg-subtle' }} className="mb-1 flex h-9 items-center gap-2 rounded-control border px-2 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-interactive-focusRing"><Icon className="size-4 shrink-0" />{collapsed ? null : <span className="truncate max-[700px]:hidden">{label}</span>}</Link>;
 }

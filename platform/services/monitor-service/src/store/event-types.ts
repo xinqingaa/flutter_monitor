@@ -89,6 +89,62 @@ export interface HttpCatalogResult {
   slowThresholdMs: number;
 }
 
+export interface BusinessCatalogQuery extends EventFilters {
+  action?: string;
+  result?: string[];
+}
+
+export interface BusinessCatalogItem {
+  eventId: string;
+  timestamp?: string;
+  action: string;
+  result?: string;
+  route?: string;
+  userId?: string;
+  sessionId?: string;
+  traceId?: string;
+  appVersion?: string;
+  summary: boolean;
+}
+
+export interface BusinessCatalogResult {
+  items: BusinessCatalogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ErrorCatalogQuery extends EventFilters {
+  errorType?: string;
+  mechanism?: string[];
+  fatal?: boolean;
+  handled?: boolean;
+  businessOnly?: boolean;
+}
+
+export interface ErrorCatalogItem {
+  eventId: string;
+  timestamp?: string;
+  kind: 'error' | 'business_failure';
+  type: string;
+  message?: string;
+  mechanism?: string;
+  fatal?: boolean;
+  handled?: boolean;
+  route?: string;
+  userId?: string;
+  sessionId?: string;
+  traceId?: string;
+  appVersion?: string;
+}
+
+export interface ErrorCatalogResult {
+  items: ErrorCatalogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface SessionSummary {
   sessionId: string;
   count: number;

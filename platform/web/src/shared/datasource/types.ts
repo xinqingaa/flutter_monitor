@@ -369,6 +369,13 @@ export interface HttpCatalogResult {
   slowThresholdMs: number;
 }
 
+export interface BusinessCatalogQuery extends SessionFilters { action?: string; result?: string[]; }
+export interface BusinessCatalogItem { eventId: string; timestamp?: string; action: string; result?: string; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; summary: boolean; }
+export interface BusinessCatalogResult { items: BusinessCatalogItem[]; total: number; limit: number; offset: number; }
+export interface ErrorCatalogQuery extends SessionFilters { errorType?: string; mechanism?: string[]; fatal?: boolean; handled?: boolean; businessOnly?: boolean; }
+export interface ErrorCatalogItem { eventId: string; timestamp?: string; kind: 'error' | 'business_failure'; type: string; message?: string; mechanism?: string; fatal?: boolean; handled?: boolean; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; }
+export interface ErrorCatalogResult { items: ErrorCatalogItem[]; total: number; limit: number; offset: number; }
+
 export interface DimensionAppOption {
   appKey: string;
   appName?: string;
@@ -422,6 +429,8 @@ export interface WorkbenchDatasource {
   health(): Promise<Record<string, unknown>>;
   recent(limit?: number, offset?: number, filters?: SessionFilters): Promise<EventListResult>;
   httpCatalog(query: HttpCatalogQuery): Promise<HttpCatalogResult>;
+  businessCatalog(query: BusinessCatalogQuery): Promise<BusinessCatalogResult>;
+  errorCatalog(query: ErrorCatalogQuery): Promise<ErrorCatalogResult>;
   dimensions(filters: SessionFilters): Promise<DimensionSummary>;
   listSessions(filters: SessionFilters): Promise<SessionListResult>;
   getSessionConsole(sessionId: string): Promise<SessionConsoleResult>;

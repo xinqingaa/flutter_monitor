@@ -196,6 +196,27 @@ export function httpCatalogFieldsOf(event: MonitorEvent): {
   };
 }
 
+export function domainCatalogFieldsOf(event: MonitorEvent): {
+  businessAction?: string;
+  businessResult?: string;
+  errorType?: string;
+  errorMechanism?: string;
+  errorFatal?: boolean;
+  errorHandled?: boolean;
+  errorMessage?: string;
+} {
+  const payloadError = readPath(event, ['payload', 'error']);
+  return {
+    businessAction: stringAttribute(event, 'business.action'),
+    businessResult: stringAttribute(event, 'business.result'),
+    errorType: stringAttribute(event, 'error.type') ?? (isRecord(payloadError) ? stringValue(payloadError.type) : undefined),
+    errorMechanism: stringAttribute(event, 'error.mechanism'),
+    errorFatal: booleanAttribute(event, 'error.fatal'),
+    errorHandled: booleanAttribute(event, 'error.handled'),
+    errorMessage: stringAttribute(event, 'error.message') ?? stringValue(readPath(event, ['payload', 'payload.error.message'])) ?? (isRecord(payloadError) ? stringValue(payloadError.message) : undefined) ?? stringValue(readPath(event, ['payload', 'message'])),
+  };
+}
+
 export function numericPayload(event: MonitorEvent, key: string): number | undefined {
   const value = readPath(event, ['payload', key]);
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;

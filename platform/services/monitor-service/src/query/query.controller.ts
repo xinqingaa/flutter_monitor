@@ -31,6 +31,21 @@ export class QueryController {
     return this.queryService.httpCatalog(query);
   }
 
+  @Get('catalog/business')
+  @ApiOperation({ summary: '埋点 Catalog 专用分页摘要' })
+  @ApiQuery({ name: 'action', required: false })
+  @ApiQuery({ name: 'result', required: false })
+  businessCatalog(@Query() query: Record<string, string | string[] | undefined>) { return this.queryService.businessCatalog(query); }
+
+  @Get('catalog/errors')
+  @ApiOperation({ summary: '异常与业务失败 Catalog 专用分页摘要' })
+  @ApiQuery({ name: 'errorType', required: false })
+  @ApiQuery({ name: 'mechanism', required: false })
+  @ApiQuery({ name: 'fatal', required: false, type: Boolean })
+  @ApiQuery({ name: 'handled', required: false, type: Boolean })
+  @ApiQuery({ name: 'businessOnly', required: false, type: Boolean })
+  errorCatalog(@Query() query: Record<string, string | string[] | undefined>) { return this.queryService.errorCatalog(query); }
+
   @Get('dimensions')
   @ApiOperation({ summary: '维度摘要' })
   dimensions(@Query() query: Record<string, string | string[] | undefined>) {

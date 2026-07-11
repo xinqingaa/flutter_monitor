@@ -28,6 +28,22 @@ export type HttpSearch = RootSearch & {
   detail?: string;
 };
 
+export type DomainSearch = RootSearch & {
+  sessionId?: string;
+  route?: string;
+  action?: string;
+  result?: string;
+  errorType?: string;
+  mechanism?: string;
+  fatal?: boolean;
+  handled?: boolean;
+  businessOnly?: boolean;
+  page?: number;
+  pageSize?: 25 | 50 | 100;
+  eventId?: string;
+  detail?: string;
+};
+
 const rootRoute = createRootRoute({
   validateSearch: (search: Record<string, unknown>): RootSearch => cleanSearch({
     appKey: stringListSearchParam(search.appKey),
@@ -98,6 +114,20 @@ const httpRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/http/http-foundation-route'), 'HttpFoundationRoute'),
 });
 
+const businessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/business',
+  validateSearch: domainSearch,
+  component: lazyRouteComponent(() => import('../routes/domain/domain-catalog-route'), 'BusinessCatalogRoute'),
+});
+
+const errorCatalogRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/errors',
+  validateSearch: domainSearch,
+  component: lazyRouteComponent(() => import('../routes/domain/domain-catalog-route'), 'ErrorCatalogRoute'),
+});
+
 const eventRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/events/$eventId',
@@ -128,9 +158,9 @@ const jankRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'JankRoute'),
 });
 
-const errorsRoute = createRoute({
+const legacyErrorsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/errors',
+  path: '/legacy/errors',
   component: lazyRouteComponent(() => import('../routes/performance/performance-routes'), 'ErrorsRoute'),
 });
 
@@ -146,12 +176,14 @@ const routeTree = rootRoute.addChildren([
   sessionRoute,
   eventsRoute,
   httpRoute,
+  businessRoute,
+  errorCatalogRoute,
   eventRoute,
   startupRoute,
   pagesRoute,
   networkRoute,
   jankRoute,
-  errorsRoute,
+  legacyErrorsRoute,
   traceRoute,
 ]);
 
@@ -222,6 +254,13 @@ function enumNumberSearch(value: unknown, values: readonly number[]): number | u
 function numericListSearchParam(value: unknown): string | undefined {
   const values = stringListSearch(value).filter((item) => /^\d+$/.test(item));
   return values.length ? values.join(',') : undefined;
+}
+
+function domainSearch(search: Record<string, unknown>): DomainSearch {
+  return cleanSearch({
+    appKey: stringListSearchParam(search.appKey), environment: stringListSearchParam(search.environment), appVersion: stringListSearchParam(search.appVersion), devicePlatform: stringListSearchParam(search.devicePlatform), from: stringSearch(search.from), to: stringSearch(search.to), userId: stringSearch(search.userId), sessionId: stringSearch(search.sessionId), route: stringListSearchParam(search.route),
+    action: stringSearch(search.action), result: stringListSearchParam(search.result), errorType: stringSearch(search.errorType), mechanism: stringListSearchParam(search.mechanism), fatal: booleanSearch(search.fatal), handled: booleanSearch(search.handled), businessOnly: booleanSearch(search.businessOnly), page: integerSearch(search.page, 1), pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined, eventId: stringSearch(search.eventId), detail: stringSearch(search.detail),
+  });
 }
 
 declare module '@tanstack/react-router' {

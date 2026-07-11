@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { LocalWorkbenchDatasource } from './local-workbench-datasource';
-import type { EventListResult, HttpCatalogQuery, MonitorEvent, SessionFilters, SessionListResult } from './types';
+import type { BusinessCatalogQuery, ErrorCatalogQuery, EventListResult, HttpCatalogQuery, MonitorEvent, SessionFilters, SessionListResult } from './types';
 
 export const datasource = new LocalWorkbenchDatasource();
 
@@ -10,6 +10,8 @@ export const queryKeys = {
   dimensions: (filters: SessionFilters) => ['dimensions', filters] as const,
   recent: (limit: number, offset = 0, filters: SessionFilters = {}) => ['recent', limit, offset, filters] as const,
   httpCatalog: (query: HttpCatalogQuery) => ['httpCatalog', query] as const,
+  businessCatalog: (query: BusinessCatalogQuery) => ['businessCatalog', query] as const,
+  errorCatalog: (query: ErrorCatalogQuery) => ['errorCatalog', query] as const,
   sessions: (filters: SessionFilters) => ['sessions', filters] as const,
   session: (sessionId: string | undefined) => ['session', sessionId] as const,
   sessionConsole: (sessionId: string | undefined) => ['sessionConsole', sessionId] as const,
@@ -46,6 +48,9 @@ export function useHttpCatalogQuery(query: HttpCatalogQuery) {
     queryFn: () => datasource.httpCatalog(query),
   });
 }
+
+export function useBusinessCatalogQuery(query: BusinessCatalogQuery) { return useQuery({ queryKey: queryKeys.businessCatalog(query), queryFn: () => datasource.businessCatalog(query) }); }
+export function useErrorCatalogQuery(query: ErrorCatalogQuery) { return useQuery({ queryKey: queryKeys.errorCatalog(query), queryFn: () => datasource.errorCatalog(query) }); }
 
 export function useSessionsQuery(filters: SessionFilters) {
   return useQuery({
@@ -110,6 +115,8 @@ export function useLiveInvalidation(enabled: boolean) {
       void queryClient.invalidateQueries({ queryKey: ['dimensions'] });
       void queryClient.invalidateQueries({ queryKey: ['recent'] });
       void queryClient.invalidateQueries({ queryKey: ['httpCatalog'] });
+      void queryClient.invalidateQueries({ queryKey: ['businessCatalog'] });
+      void queryClient.invalidateQueries({ queryKey: ['errorCatalog'] });
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
       void queryClient.invalidateQueries({ queryKey: ['performance'] });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) });

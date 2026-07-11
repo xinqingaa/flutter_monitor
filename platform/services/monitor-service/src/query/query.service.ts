@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { clampLimit, clampNumber, filtersFromQuery, httpCatalogQueryFromQuery } from '../query/request-filters';
+import { businessCatalogQueryFromQuery, clampLimit, clampNumber, errorCatalogQueryFromQuery, filtersFromQuery, httpCatalogQueryFromQuery } from '../query/request-filters';
 import type { MonitorStore } from '../store/monitor-store';
 import { MONITOR_STORE } from '../store/store.tokens';
 import { buildSessionConsole } from './session-console';
@@ -27,6 +27,10 @@ export class QueryService {
   httpCatalog(query: QueryRecord) {
     return this.store.listHttpCatalog(httpCatalogQueryFromQuery(query));
   }
+
+  businessCatalog(query: QueryRecord) { return this.store.listBusinessCatalog(businessCatalogQueryFromQuery(query)); }
+
+  errorCatalog(query: QueryRecord) { return this.store.listErrorCatalog(errorCatalogQueryFromQuery(query)); }
 
   dimensions(query: QueryRecord) {
     return this.store.dimensions(filtersFromQuery(query));

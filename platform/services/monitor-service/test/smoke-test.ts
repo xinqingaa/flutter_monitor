@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { httpCatalogFieldsOf } from '../src/store/event-accessors';
+import { domainCatalogFieldsOf, httpCatalogFieldsOf } from '../src/store/event-accessors';
 
 const port = Number.parseInt(process.env.FM_WORKBENCH_SMOKE_PORT || '3199', 10);
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -29,6 +29,7 @@ async function runSmokeTests(): Promise<void> {
   await waitForHealth();
   await postEvents();
   assertHttpBusinessCodeStates();
+  assertDomainCatalogFields();
   await assertMissingEventId();
   await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
     assert.equal(data.count, 5);
@@ -60,6 +61,17 @@ async function runSmokeTests(): Promise<void> {
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=business_failure', (data) => {
     assert.equal(data.count, 1);
     assert.equal(data.events[0].eventId, 'evt_smoke_business_failed');
+  });
+  await assertJson('/api/monitor/v1/catalog/business?action=coupon&result=failed&limit=1', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.items[0].eventId, 'evt_smoke_business_failed');
+    assert.equal(data.items[0].action, 'detail.coupon.apply');
+    assert.equal(data.items[0].summary, false);
+  });
+  await assertJson('/api/monitor/v1/catalog/errors?businessOnly=true', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.items[0].kind, 'business_failure');
+    assert.equal(data.items[0].eventId, 'evt_smoke_business_failed');
   });
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=missing_app&appKey=smoke_app', (data) => {
     assert.equal(data.count, 5);
@@ -345,6 +357,17 @@ function assertHttpBusinessCodeStates(): void {
     httpCatalogFieldsOf({ ...base, payload: { 'http.detail': { response: { body: 'not-json' } } } }).businessCodeState,
     'parse_failed',
   );
+}
+
+function assertDomainCatalogFields(): void {
+  const fields = domainCatalogFieldsOf({
+    attributes: { 'error.type': 'StateError', 'error.mechanism': 'dart', 'error.fatal': false, 'error.handled': true },
+    payload: { 'payload.error.message': 'bad state', 'payload.error.stacktrace': '#0 main' },
+  });
+  assert.equal(fields.errorType, 'StateError');
+  assert.equal(fields.errorMechanism, 'dart');
+  assert.equal(fields.errorHandled, true);
+  assert.equal(fields.errorMessage, 'bad state');
 }
 
 async function assertMissingEventId(): Promise<void> {

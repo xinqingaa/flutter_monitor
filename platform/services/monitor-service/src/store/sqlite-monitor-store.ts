@@ -12,6 +12,7 @@ import {
   deviceModelOf,
   devicePlatformOf,
   deviceTierOf,
+  domainCatalogFieldsOf,
   environmentOf,
   eventTimeValue,
   flavorOf,
@@ -39,9 +40,15 @@ import type {
   DimensionAppOption,
   DimensionOption,
   DimensionSummary,
+  BusinessCatalogItem,
+  BusinessCatalogQuery,
+  BusinessCatalogResult,
   DurationSummary,
   ErrorPerformanceSummary,
   EventFilters,
+  ErrorCatalogItem,
+  ErrorCatalogQuery,
+  ErrorCatalogResult,
   HttpPerformanceSummary,
   HttpCatalogItem,
   HttpCatalogQuery,
@@ -118,6 +125,14 @@ const INDEX_COLUMNS = [
   'http_business_code',
   'http_business_code_state',
   'http_completed',
+  'business_action',
+  'business_result',
+  'error_type',
+  'error_mechanism',
+  'error_fatal',
+  'error_handled',
+  'error_message',
+  'catalog_problem_kind',
 ] as const;
 
 export class SqliteMonitorStore implements MonitorStore {
@@ -205,6 +220,24 @@ export class SqliteMonitorStore implements MonitorStore {
       offset,
       slowThresholdMs,
     };
+  }
+
+  listBusinessCatalog(query: BusinessCatalogQuery): BusinessCatalogResult {
+    const limit = clampLimit(query.limit, 50);
+    const offset = clampOffset(query.offset);
+    const { whereSql, params } = whereFromBusinessCatalogQuery(query);
+    const total = this.selectRows<CountRow>(`select count(*) as count from events ${whereSql}`, params)[0]?.count ?? 0;
+    const rows = this.selectRows<EventRow>(`select envelope_json from events ${whereSql} order by timestamp_ms desc, sequence desc limit ? offset ?`, [...params, limit, offset]);
+    return { items: rows.map((row) => businessCatalogItemFromEvent(JSON.parse(row.envelope_json) as MonitorEvent)), total, limit, offset };
+  }
+
+  listErrorCatalog(query: ErrorCatalogQuery): ErrorCatalogResult {
+    const limit = clampLimit(query.limit, 50);
+    const offset = clampOffset(query.offset);
+    const { whereSql, params } = whereFromErrorCatalogQuery(query);
+    const total = this.selectRows<CountRow>(`select count(*) as count from events ${whereSql}`, params)[0]?.count ?? 0;
+    const rows = this.selectRows<EventRow>(`select envelope_json from events ${whereSql} order by timestamp_ms desc, sequence desc limit ? offset ?`, [...params, limit, offset]);
+    return { items: rows.map((row) => errorCatalogItemFromEvent(JSON.parse(row.envelope_json) as MonitorEvent)), total, limit, offset };
   }
 
   groupEvents(by: string): Array<Record<string, unknown>> {
@@ -425,6 +458,14 @@ export class SqliteMonitorStore implements MonitorStore {
         http_business_code text,
         http_business_code_state text,
         http_completed integer,
+        business_action text,
+        business_result text,
+        error_type text,
+        error_mechanism text,
+        error_fatal integer,
+        error_handled integer,
+        error_message text,
+        catalog_problem_kind text,
         envelope_json text not null
       );
     `);
@@ -445,6 +486,8 @@ export class SqliteMonitorStore implements MonitorStore {
       create index if not exists idx_events_http_catalog on events(name, http_method, http_status_code, timestamp_ms, sequence);
       create index if not exists idx_events_http_host on events(http_host, timestamp_ms, sequence);
       create index if not exists idx_events_http_business_code on events(http_business_code, timestamp_ms, sequence);
+      create index if not exists idx_events_business_catalog on events(business_action, business_result, timestamp_ms, sequence);
+      create index if not exists idx_events_error_catalog on events(catalog_problem_kind, error_type, error_mechanism, timestamp_ms, sequence);
     `);
     this.backfillIndexColumns();
     this.flushToDisk();
@@ -497,8 +540,16 @@ export class SqliteMonitorStore implements MonitorStore {
         http_business_code,
         http_business_code_state,
         http_completed,
+        business_action,
+        business_result,
+        error_type,
+        error_mechanism,
+        error_fatal,
+        error_handled,
+        error_message,
+        catalog_problem_kind,
         envelope_json
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(event_id) do update set
         session_id = excluded.session_id,
         trace_id = excluded.trace_id,
@@ -536,12 +587,21 @@ export class SqliteMonitorStore implements MonitorStore {
         http_business_code = excluded.http_business_code,
         http_business_code_state = excluded.http_business_code_state,
         http_completed = excluded.http_completed,
+        business_action = excluded.business_action,
+        business_result = excluded.business_result,
+        error_type = excluded.error_type,
+        error_mechanism = excluded.error_mechanism,
+        error_fatal = excluded.error_fatal,
+        error_handled = excluded.error_handled,
+        error_message = excluded.error_message,
+        catalog_problem_kind = excluded.catalog_problem_kind,
         envelope_json = excluded.envelope_json
     `);
     try {
       this.db.run('begin');
       for (const event of events) {
         const http = httpCatalogFieldsOf(event);
+        const domain = domainCatalogFieldsOf(event);
         statement.run([
           event.eventId ?? null,
           event.sessionId ?? null,
@@ -580,6 +640,14 @@ export class SqliteMonitorStore implements MonitorStore {
           http.businessCode ?? null,
           http.businessCodeState,
           isCompletedHttpEvent(event) ? 1 : 0,
+          domain.businessAction ?? null,
+          domain.businessResult ?? null,
+          domain.errorType ?? null,
+          domain.errorMechanism ?? null,
+          booleanSqlValue(domain.errorFatal),
+          booleanSqlValue(domain.errorHandled),
+          domain.errorMessage ?? null,
+          catalogProblemKind(event),
           JSON.stringify(event),
         ]);
       }
@@ -696,6 +764,14 @@ export class SqliteMonitorStore implements MonitorStore {
       http_business_code: 'text',
       http_business_code_state: 'text',
       http_completed: 'integer',
+      business_action: 'text',
+      business_result: 'text',
+      error_type: 'text',
+      error_mechanism: 'text',
+      error_fatal: 'integer',
+      error_handled: 'integer',
+      error_message: 'text',
+      catalog_problem_kind: 'text',
     };
     for (const column of INDEX_COLUMNS) {
       if (existing.has(column)) continue;
@@ -714,6 +790,7 @@ export class SqliteMonitorStore implements MonitorStore {
           or problem_type is null
           or problem_type = 'error'
           or (name = 'http.client' and (http_business_code_state is null or http_completed is null))
+          or catalog_problem_kind is null
         limit 5000
       `,
     );
@@ -745,6 +822,14 @@ export class SqliteMonitorStore implements MonitorStore {
         ,http_business_code = ?
         ,http_business_code_state = ?
         ,http_completed = ?
+        ,business_action = ?
+        ,business_result = ?
+        ,error_type = ?
+        ,error_mechanism = ?
+        ,error_fatal = ?
+        ,error_handled = ?
+        ,error_message = ?
+        ,catalog_problem_kind = ?
       where event_id = ?
     `);
     try {
@@ -752,6 +837,7 @@ export class SqliteMonitorStore implements MonitorStore {
       for (const row of rows) {
         const event = JSON.parse(row.envelope_json) as MonitorEvent;
         const http = httpCatalogFieldsOf(event);
+        const domain = domainCatalogFieldsOf(event);
         statement.run([
           appKeyOf(event) ?? null,
           appNameOf(event) ?? null,
@@ -778,6 +864,14 @@ export class SqliteMonitorStore implements MonitorStore {
           http.businessCode ?? null,
           http.businessCodeState,
           isCompletedHttpEvent(event) ? 1 : 0,
+          domain.businessAction ?? null,
+          domain.businessResult ?? null,
+          domain.errorType ?? null,
+          domain.errorMechanism ?? null,
+          booleanSqlValue(domain.errorFatal),
+          booleanSqlValue(domain.errorHandled),
+          domain.errorMessage ?? null,
+          catalogProblemKind(event),
           row.event_id,
         ]);
       }
@@ -870,6 +964,43 @@ function whereFromHttpCatalogQuery(query: HttpCatalogQuery, slowThresholdMs: num
     params.push(slowThresholdMs);
   }
   return { whereSql: `where ${clauses.join(' and ')}`, params };
+}
+
+function whereFromBusinessCatalogQuery(query: BusinessCatalogQuery): { whereSql: string; params: SqlParam[] } {
+  const { whereSql, params } = whereFromFilters(query);
+  const clauses = whereSql ? [whereSql.slice('where '.length)] : [];
+  clauses.push('business_action is not null');
+  addLikeFilter(clauses, params, 'business_action', query.action);
+  addEqualityFilter(clauses, params, 'business_result', query.result);
+  return { whereSql: `where ${clauses.join(' and ')}`, params };
+}
+
+function whereFromErrorCatalogQuery(query: ErrorCatalogQuery): { whereSql: string; params: SqlParam[] } {
+  const { whereSql, params } = whereFromFilters(query);
+  const clauses = whereSql ? [whereSql.slice('where '.length)] : [];
+  clauses.push(query.businessOnly ? "catalog_problem_kind = 'business_failure'" : "catalog_problem_kind in ('error', 'business_failure')");
+  addLikeFilter(clauses, params, 'error_type', query.errorType);
+  addEqualityFilter(clauses, params, 'error_mechanism', query.mechanism);
+  if (query.fatal !== undefined) { clauses.push('error_fatal = ?'); params.push(booleanSqlValue(query.fatal)); }
+  if (query.handled !== undefined) { clauses.push('error_handled = ?'); params.push(booleanSqlValue(query.handled)); }
+  return { whereSql: `where ${clauses.join(' and ')}`, params };
+}
+
+function businessCatalogItemFromEvent(event: MonitorEvent): BusinessCatalogItem {
+  const domain = domainCatalogFieldsOf(event);
+  return { eventId: event.eventId ?? '', timestamp: event.timestamp ?? event.startTime, action: domain.businessAction ?? event.name ?? '未知动作', result: domain.businessResult, route: routeOf(event), userId: userIdOf(event), sessionId: event.sessionId, traceId: event.traceId, appVersion: appVersionOf(event), summary: event.name === 'business.action.summary' };
+}
+
+function errorCatalogItemFromEvent(event: MonitorEvent): ErrorCatalogItem {
+  const domain = domainCatalogFieldsOf(event);
+  const businessFailure = isBusinessFailureEvent(event);
+  return { eventId: event.eventId ?? '', timestamp: event.timestamp ?? event.startTime, kind: businessFailure ? 'business_failure' : 'error', type: businessFailure ? (domain.businessAction ?? '业务失败') : (domain.errorType ?? event.name ?? '未知错误'), message: businessFailure ? domain.businessResult : domain.errorMessage, mechanism: domain.errorMechanism, fatal: domain.errorFatal, handled: domain.errorHandled, route: routeOf(event), userId: userIdOf(event), sessionId: event.sessionId, traceId: event.traceId, appVersion: appVersionOf(event) };
+}
+
+function catalogProblemKind(event: MonitorEvent): string {
+  if (isBusinessFailureEvent(event)) return 'business_failure';
+  if (isStabilityErrorEvent(event)) return 'error';
+  return 'none';
 }
 
 function httpCatalogItemFromEvent(event: MonitorEvent): HttpCatalogItem {

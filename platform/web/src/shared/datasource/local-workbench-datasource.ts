@@ -1,5 +1,9 @@
 import type {
   DimensionSummary,
+  BusinessCatalogQuery,
+  BusinessCatalogResult,
+  ErrorCatalogQuery,
+  ErrorCatalogResult,
   EventListResult,
   HttpCatalogQuery,
   HttpCatalogResult,
@@ -35,6 +39,16 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
       offset: typeof data.offset === 'number' ? data.offset : (query.offset ?? 0),
       slowThresholdMs: typeof data.slowThresholdMs === 'number' ? data.slowThresholdMs : 1000,
     };
+  }
+
+  async businessCatalog(query: BusinessCatalogQuery): Promise<BusinessCatalogResult> {
+    const data = await this.getJson(`/api/monitor/v1/catalog/business?${toParams(query)}`);
+    return { items: Array.isArray(data.items) ? data.items : [], total: typeof data.total === 'number' ? data.total : 0, limit: typeof data.limit === 'number' ? data.limit : (query.limit ?? 50), offset: typeof data.offset === 'number' ? data.offset : (query.offset ?? 0) };
+  }
+
+  async errorCatalog(query: ErrorCatalogQuery): Promise<ErrorCatalogResult> {
+    const data = await this.getJson(`/api/monitor/v1/catalog/errors?${toParams(query)}`);
+    return { items: Array.isArray(data.items) ? data.items : [], total: typeof data.total === 'number' ? data.total : 0, limit: typeof data.limit === 'number' ? data.limit : (query.limit ?? 50), offset: typeof data.offset === 'number' ? data.offset : (query.offset ?? 0) };
   }
 
   async dimensions(filters: SessionFilters): Promise<DimensionSummary> {

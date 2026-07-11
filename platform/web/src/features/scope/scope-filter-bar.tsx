@@ -4,16 +4,16 @@ import { Input } from '../../components/ui/input';
 import { Select } from '../../components/ui/select';
 import type { DimensionSummary } from '../../shared/datasource/types';
 import { isoToLocalInput, localInputToIso } from '../../shared/formatting/format';
-import type { HttpSearch } from '../../app/router';
+type ScopeSearch = { from?: string; to?: string; userId?: string; sessionId?: string; appVersion?: string; environment?: string; route?: string };
 
 export function ScopeFilterBar({
   search,
   dimensions,
   onPatch,
 }: {
-  search: HttpSearch;
+  search: ScopeSearch;
   dimensions?: DimensionSummary;
-  onPatch: (patch: Partial<HttpSearch>, resetPage?: boolean) => void;
+  onPatch: (patch: Partial<ScopeSearch>, resetPage?: boolean) => void;
 }) {
   const [from, setFrom] = useState(isoToLocalInput(search.from));
   const [to, setTo] = useState(isoToLocalInput(search.to));

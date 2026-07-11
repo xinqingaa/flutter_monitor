@@ -1,4 +1,4 @@
-import type { EventFilters, HttpCatalogQuery } from '../store/event-types';
+import type { BusinessCatalogQuery, ErrorCatalogQuery, EventFilters, HttpCatalogQuery } from '../store/event-types';
 
 type QueryValue = string | string[] | undefined;
 
@@ -45,6 +45,14 @@ export function httpCatalogQueryFromQuery(query: Record<string, QueryValue>): Ht
     slowOnly: readQueryBoolean(query, 'slowOnly'),
     slowThresholdMs: readQueryNumber(query, 'slowThresholdMs'),
   };
+}
+
+export function businessCatalogQueryFromQuery(query: Record<string, QueryValue>): BusinessCatalogQuery {
+  return { ...filtersFromQuery(query), action: readQueryString(query, 'action'), result: readQueryStringList(query, 'result') };
+}
+
+export function errorCatalogQueryFromQuery(query: Record<string, QueryValue>): ErrorCatalogQuery {
+  return { ...filtersFromQuery(query), errorType: readQueryString(query, 'errorType'), mechanism: readQueryStringList(query, 'mechanism'), fatal: readQueryBoolean(query, 'fatal'), handled: readQueryBoolean(query, 'handled'), businessOnly: readQueryBoolean(query, 'businessOnly') };
 }
 
 export function clampLimit(value: unknown, fallback: number): number {
