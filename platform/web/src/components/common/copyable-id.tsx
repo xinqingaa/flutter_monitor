@@ -26,7 +26,7 @@ export function CopyableId({ value, short = true }: { value?: string; short?: bo
           size="icon"
           variant="ghost"
           className="h-6 w-6 shrink-0"
-          title="Copy ID"
+          aria-label={`复制 ID ${display}`}
           onClick={() => void copyValue()}
         >
           <Copy className="size-3.5" />

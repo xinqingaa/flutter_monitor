@@ -1,4 +1,4 @@
-import type { EventFilters } from '../store/event-types';
+import type { EventFilters, HttpCatalogQuery } from '../store/event-types';
 
 type QueryValue = string | string[] | undefined;
 
@@ -29,6 +29,21 @@ export function filtersFromQuery(query: Record<string, QueryValue>): EventFilter
     problemType: readQueryStringList(query, 'problemType'),
     limit: readQueryNumber(query, 'limit'),
     offset: readQueryNumber(query, 'offset'),
+  };
+}
+
+export function httpCatalogQueryFromQuery(query: Record<string, QueryValue>): HttpCatalogQuery {
+  return {
+    ...filtersFromQuery(query),
+    url: readQueryString(query, 'url'),
+    method: readQueryStringList(query, 'method'),
+    result: readHttpResult(query),
+    requestId: readQueryString(query, 'requestId'),
+    statusCode: readQueryNumberList(query, 'statusCode'),
+    businessCode: readQueryStringList(query, 'businessCode'),
+    host: readQueryString(query, 'host'),
+    slowOnly: readQueryBoolean(query, 'slowOnly'),
+    slowThresholdMs: readQueryNumber(query, 'slowThresholdMs'),
   };
 }
 
@@ -65,6 +80,18 @@ function readQueryNumber(query: Record<string, QueryValue>, key: string): number
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readQueryNumberList(query: Record<string, QueryValue>, key: string): number[] | undefined {
+  const values = readQueryStringList(query, key)
+    ?.map((value) => Number.parseInt(value, 10))
+    .filter(Number.isFinite);
+  return values?.length ? [...new Set(values)] : undefined;
+}
+
+function readHttpResult(query: Record<string, QueryValue>): HttpCatalogQuery['result'] {
+  const value = readQueryString(query, 'result');
+  return value === 'success' || value === 'failed' || value === 'unknown' ? value : undefined;
 }
 
 function readQueryBoolean(query: Record<string, QueryValue>, key: string): boolean | undefined {

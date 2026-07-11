@@ -52,6 +52,12 @@ const eventsRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/events/events-route'), 'EventsRoute'),
 });
 
+const httpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/http',
+  component: lazyRouteComponent(() => import('../routes/http/http-foundation-route'), 'HttpFoundationRoute'),
+});
+
 const eventRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/events/$eventId',
@@ -99,6 +105,7 @@ const routeTree = rootRoute.addChildren([
   sessionsRoute,
   sessionRoute,
   eventsRoute,
+  httpRoute,
   eventRoute,
   startupRoute,
   pagesRoute,

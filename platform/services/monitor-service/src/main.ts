@@ -41,6 +41,7 @@ async function bootstrap(): Promise<void> {
   console.log('GET  /api/monitor/v1/stream');
   console.log('GET  /api/monitor/v1/sessions?userId=&from=&to=');
   console.log('GET  /api/monitor/v1/performance/overview');
+  console.log('GET  /api/monitor/v1/catalog/http');
   console.log('GET  /api/monitor/v1/events/:eventId');
   console.log('GET  /api/monitor/v1/sessions/:sessionId');
   console.log('GET  /api/monitor/v1/traces/:traceId');

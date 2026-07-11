@@ -47,6 +47,48 @@ export interface EventFilters {
   offset?: number;
 }
 
+export type HttpBusinessCodeState = 'value' | 'absent' | 'detail_unavailable' | 'parse_failed';
+
+export interface HttpCatalogQuery extends EventFilters {
+  url?: string;
+  method?: string[];
+  result?: 'success' | 'failed' | 'unknown';
+  requestId?: string;
+  statusCode?: number[];
+  businessCode?: string[];
+  host?: string;
+  slowOnly?: boolean;
+  slowThresholdMs?: number;
+}
+
+export interface HttpCatalogItem {
+  eventId: string;
+  timestamp?: string;
+  method?: string;
+  url?: string;
+  host?: string;
+  statusCode?: number;
+  businessCode?: string;
+  businessCodeState: HttpBusinessCodeState;
+  durationMs?: number;
+  success?: boolean;
+  route?: string;
+  sessionId?: string;
+  traceId?: string;
+  requestId?: string;
+  requestSizeBytes?: number;
+  responseSizeBytes?: number;
+  detailDropped: boolean;
+}
+
+export interface HttpCatalogResult {
+  items: HttpCatalogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  slowThresholdMs: number;
+}
+
 export interface SessionSummary {
   sessionId: string;
   count: number;

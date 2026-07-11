@@ -327,6 +327,48 @@ export interface SessionFilters {
   offset?: number;
 }
 
+export type HttpBusinessCodeState = 'value' | 'absent' | 'detail_unavailable' | 'parse_failed';
+
+export interface HttpCatalogQuery extends SessionFilters {
+  url?: string;
+  method?: string[];
+  result?: 'success' | 'failed' | 'unknown';
+  requestId?: string;
+  statusCode?: number[];
+  businessCode?: string[];
+  host?: string;
+  slowOnly?: boolean;
+  slowThresholdMs?: number;
+}
+
+export interface HttpCatalogItem {
+  eventId: string;
+  timestamp?: string;
+  method?: string;
+  url?: string;
+  host?: string;
+  statusCode?: number;
+  businessCode?: string;
+  businessCodeState: HttpBusinessCodeState;
+  durationMs?: number;
+  success?: boolean;
+  route?: string;
+  sessionId?: string;
+  traceId?: string;
+  requestId?: string;
+  requestSizeBytes?: number;
+  responseSizeBytes?: number;
+  detailDropped: boolean;
+}
+
+export interface HttpCatalogResult {
+  items: HttpCatalogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  slowThresholdMs: number;
+}
+
 export interface DimensionAppOption {
   appKey: string;
   appName?: string;
@@ -379,6 +421,7 @@ export interface EventListResult {
 export interface WorkbenchDatasource {
   health(): Promise<Record<string, unknown>>;
   recent(limit?: number, offset?: number, filters?: SessionFilters): Promise<EventListResult>;
+  httpCatalog(query: HttpCatalogQuery): Promise<HttpCatalogResult>;
   dimensions(filters: SessionFilters): Promise<DimensionSummary>;
   listSessions(filters: SessionFilters): Promise<SessionListResult>;
   getSessionConsole(sessionId: string): Promise<SessionConsoleResult>;

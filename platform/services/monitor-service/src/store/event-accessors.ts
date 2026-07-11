@@ -145,6 +145,54 @@ export function numericAttribute(event: MonitorEvent, key: string): number | und
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+export function booleanAttribute(event: MonitorEvent, key: string): boolean | undefined {
+  const value = readPath(event, ['attributes', key]);
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+export function httpCatalogFieldsOf(event: MonitorEvent): {
+  method?: string;
+  url?: string;
+  host?: string;
+  statusCode?: number;
+  requestId?: string;
+  success?: boolean;
+  businessCode?: string;
+  businessCodeState: 'value' | 'absent' | 'detail_unavailable' | 'parse_failed';
+} {
+  const normalizedUrl = stringAttribute(event, 'http.url.normalized');
+  const rawUrl = stringValue(readPath(event, ['payload', 'url']));
+  const url = rawUrl ?? normalizedUrl;
+  let host: string | undefined;
+  if (url) {
+    try {
+      host = new URL(url).host || undefined;
+    } catch {
+      host = undefined;
+    }
+  }
+
+  const detailDropped = readPath(event, ['payload', 'http.detail_dropped']) === true;
+  const response = readPath(event, ['payload', 'http', 'detail', 'response']);
+  const body = isRecord(response) ? response.body : undefined;
+  const bodyTruncated = isRecord(response) && response.body_truncated === true;
+  const business = businessCodeFromBody(body);
+  const businessCodeState = detailDropped || bodyTruncated
+    ? 'detail_unavailable'
+    : business.state;
+
+  return {
+    method: stringAttribute(event, 'http.method'),
+    url,
+    host,
+    statusCode: numericAttribute(event, 'http.status_code'),
+    requestId: stringAttribute(event, 'http.request_id') ?? stringValue(readPath(event, ['payload', 'request_id'])),
+    success: booleanAttribute(event, 'http.success'),
+    businessCode: businessCodeState === 'value' ? business.value : undefined,
+    businessCodeState,
+  };
+}
+
 export function numericPayload(event: MonitorEvent, key: string): number | undefined {
   const value = readPath(event, ['payload', key]);
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -174,6 +222,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function businessCodeFromBody(body: unknown): { state: 'value' | 'absent' | 'parse_failed'; value?: string } {
+  if (body === undefined || body === null || body === '') return { state: 'absent' };
+  let parsed = body;
+  if (typeof body === 'string') {
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return { state: 'parse_failed' };
+    }
+  }
+  if (!isRecord(parsed)) return { state: 'parse_failed' };
+  if (!Object.prototype.hasOwnProperty.call(parsed, 'code')) return { state: 'absent' };
+  const code = parsed.code;
+  if (typeof code === 'string' || typeof code === 'number') return { state: 'value', value: String(code) };
+  return { state: 'parse_failed' };
 }
 
 function isMemoryPressureEvent(event: MonitorEvent): boolean {

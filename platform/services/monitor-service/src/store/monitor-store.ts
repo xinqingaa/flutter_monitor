@@ -1,6 +1,8 @@
 import type {
   DimensionSummary,
   EventFilters,
+  HttpCatalogQuery,
+  HttpCatalogResult,
   MonitorEvent,
   PerformanceOverview,
   SessionSummary,
@@ -23,6 +25,7 @@ export interface MonitorStore {
     events: MonitorEvent[];
     hasMore: boolean;
   };
+  listHttpCatalog(query: HttpCatalogQuery): HttpCatalogResult;
   groupEvents(by: string): Array<Record<string, unknown>>;
   listSessions(filters: EventFilters): {
     sessions: SessionSummary[];

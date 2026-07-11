@@ -7,8 +7,14 @@ import { ScopeBar, ScopeBarPanel, ScopeSummaryBadge } from '../features/scope/sc
 import { hasActiveScope, pickScopeSearch, useScopeFilters } from '../features/scope/scope-filters';
 import { useLiveInvalidation } from '../shared/datasource/queries';
 import { LiveContext } from './live-context';
+import { WorkbenchV2Shell } from './workbench-v2-shell';
 
 export function WorkbenchShell() {
+  const location = useLocation();
+  return location.pathname === '/http' ? <WorkbenchV2Shell /> : <LegacyWorkbenchShell />;
+}
+
+function LegacyWorkbenchShell() {
   const [live, setLive] = useState(true);
   const router = useRouter();
   const location = useLocation();

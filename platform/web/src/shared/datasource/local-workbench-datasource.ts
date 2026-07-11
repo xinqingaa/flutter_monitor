@@ -1,6 +1,8 @@
 import type {
   DimensionSummary,
   EventListResult,
+  HttpCatalogQuery,
+  HttpCatalogResult,
   MonitorEvent,
   PerformanceOverview,
   SessionConsoleResult,
@@ -21,6 +23,17 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
       limit: typeof data.limit === 'number' ? data.limit : limit,
       offset: typeof data.offset === 'number' ? data.offset : offset,
       hasMore: Boolean(data.hasMore),
+    };
+  }
+
+  async httpCatalog(query: HttpCatalogQuery): Promise<HttpCatalogResult> {
+    const data = await this.getJson(`/api/monitor/v1/catalog/http?${toParams(query)}`);
+    return {
+      items: Array.isArray(data.items) ? data.items : [],
+      total: typeof data.total === 'number' ? data.total : 0,
+      limit: typeof data.limit === 'number' ? data.limit : (query.limit ?? 50),
+      offset: typeof data.offset === 'number' ? data.offset : (query.offset ?? 0),
+      slowThresholdMs: typeof data.slowThresholdMs === 'number' ? data.slowThresholdMs : 1000,
     };
   }
 

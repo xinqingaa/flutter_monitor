@@ -4,14 +4,14 @@ import type * as React from 'react';
 import { cn } from '../../shared/formatting/cn';
 
 const buttonVariants = cva(
-  'inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4',
+  'inline-flex h-9 items-center justify-center gap-2 rounded-control border px-3 text-sm font-medium transition-colors duration-[120ms] outline-none focus-visible:ring-2 focus-visible:ring-interactive-focusRing disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none [&_svg]:size-4',
   {
     variants: {
       variant: {
-        default: 'border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 [&_*]:text-white',
-        secondary: 'border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50 [&_*]:text-zinc-900',
-        ghost: 'border-transparent bg-transparent text-zinc-700 hover:bg-zinc-100 [&_*]:text-zinc-700',
-        danger: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 [&_*]:text-red-700',
+        default: 'border-accent-default bg-accent-default text-text-inverse hover:border-accent-hover hover:bg-accent-hover [&_*]:text-text-inverse',
+        secondary: 'border-border-default bg-surface text-text-primary hover:bg-subtle [&_*]:text-text-primary',
+        ghost: 'border-transparent bg-transparent text-text-secondary hover:bg-subtle [&_*]:text-text-secondary',
+        danger: 'border-status-danger bg-status-danger-subtle text-status-danger hover:brightness-95 [&_*]:text-status-danger',
       },
       size: {
         default: 'h-8 px-3',
@@ -32,12 +32,11 @@ export interface ButtonProps
   asChild?: boolean;
 }
 
-export function Button({ className, variant, size, asChild = false, style, ...props }: ButtonProps) {
+export function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
   const Comp = asChild ? Slot : 'button';
   return (
     <Comp
       className={cn(buttonVariants({ variant, size }), className)}
-      style={variant === 'default' ? { ...style, color: '#fff' } : style}
       {...props}
     />
   );

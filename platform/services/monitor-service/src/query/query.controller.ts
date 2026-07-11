@@ -15,6 +15,22 @@ export class QueryController {
     return this.queryService.recent(query);
   }
 
+  @Get('catalog/http')
+  @ApiOperation({ summary: 'HTTP Catalog 专用分页摘要' })
+  @ApiQuery({ name: 'url', required: false, description: 'URL 模糊匹配' })
+  @ApiQuery({ name: 'method', required: false, description: '逗号分隔或重复参数' })
+  @ApiQuery({ name: 'result', required: false, enum: ['success', 'failed', 'unknown'] })
+  @ApiQuery({ name: 'requestId', required: false })
+  @ApiQuery({ name: 'statusCode', required: false })
+  @ApiQuery({ name: 'businessCode', required: false })
+  @ApiQuery({ name: 'host', required: false })
+  @ApiQuery({ name: 'slowOnly', required: false, type: Boolean })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  httpCatalog(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.httpCatalog(query);
+  }
+
   @Get('dimensions')
   @ApiOperation({ summary: '维度摘要' })
   dimensions(@Query() query: Record<string, string | string[] | undefined>) {

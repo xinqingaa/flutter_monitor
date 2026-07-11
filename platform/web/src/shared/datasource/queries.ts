@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { LocalWorkbenchDatasource } from './local-workbench-datasource';
-import type { EventListResult, MonitorEvent, SessionFilters, SessionListResult } from './types';
+import type { EventListResult, HttpCatalogQuery, MonitorEvent, SessionFilters, SessionListResult } from './types';
 
 export const datasource = new LocalWorkbenchDatasource();
 
@@ -9,6 +9,7 @@ export const queryKeys = {
   health: ['health'] as const,
   dimensions: (filters: SessionFilters) => ['dimensions', filters] as const,
   recent: (limit: number, offset = 0, filters: SessionFilters = {}) => ['recent', limit, offset, filters] as const,
+  httpCatalog: (query: HttpCatalogQuery) => ['httpCatalog', query] as const,
   sessions: (filters: SessionFilters) => ['sessions', filters] as const,
   session: (sessionId: string | undefined) => ['session', sessionId] as const,
   sessionConsole: (sessionId: string | undefined) => ['sessionConsole', sessionId] as const,
@@ -36,6 +37,13 @@ export function useRecentQuery(limit = 80, offset = 0, filters: SessionFilters =
   return useQuery({
     queryKey: queryKeys.recent(limit, offset, filters),
     queryFn: () => datasource.recent(limit, offset, filters),
+  });
+}
+
+export function useHttpCatalogQuery(query: HttpCatalogQuery) {
+  return useQuery({
+    queryKey: queryKeys.httpCatalog(query),
+    queryFn: () => datasource.httpCatalog(query),
   });
 }
 
@@ -101,6 +109,7 @@ export function useLiveInvalidation(enabled: boolean) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.health });
       void queryClient.invalidateQueries({ queryKey: ['dimensions'] });
       void queryClient.invalidateQueries({ queryKey: ['recent'] });
+      void queryClient.invalidateQueries({ queryKey: ['httpCatalog'] });
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
       void queryClient.invalidateQueries({ queryKey: ['performance'] });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) });

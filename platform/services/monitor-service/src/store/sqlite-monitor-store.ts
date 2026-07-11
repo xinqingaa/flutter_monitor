@@ -20,6 +20,7 @@ import {
   isBusinessFailureEvent,
   isFailedHttpEvent,
   isJankEvent,
+  httpCatalogFieldsOf,
   isStabilityErrorEvent,
   nameOf,
   nativeAvailableOf,
@@ -42,6 +43,9 @@ import type {
   ErrorPerformanceSummary,
   EventFilters,
   HttpPerformanceSummary,
+  HttpCatalogItem,
+  HttpCatalogQuery,
+  HttpCatalogResult,
   JankPerformanceSummary,
   MetricGroupSummary,
   MonitorEvent,
@@ -104,6 +108,16 @@ const INDEX_COLUMNS = [
   'native_platform',
   'native_version',
   'problem_type',
+  'http_method',
+  'http_url',
+  'http_host',
+  'http_status_code',
+  'http_request_id',
+  'http_success',
+  'http_duration_ms',
+  'http_business_code',
+  'http_business_code_state',
+  'http_completed',
 ] as const;
 
 export class SqliteMonitorStore implements MonitorStore {
@@ -171,6 +185,25 @@ export class SqliteMonitorStore implements MonitorStore {
     return {
       events: events.slice(0, safeLimit),
       hasMore: events.length > safeLimit,
+    };
+  }
+
+  listHttpCatalog(query: HttpCatalogQuery): HttpCatalogResult {
+    const limit = clampLimit(query.limit, 50);
+    const offset = clampOffset(query.offset);
+    const slowThresholdMs = query.slowThresholdMs ?? 1000;
+    const { whereSql, params } = whereFromHttpCatalogQuery(query, slowThresholdMs);
+    const total = this.selectRows<CountRow>(`select count(*) as count from events ${whereSql}`, params)[0]?.count ?? 0;
+    const rows = this.selectRows<EventRow>(
+      `select envelope_json from events ${whereSql} order by timestamp_ms desc, sequence desc limit ? offset ?`,
+      [...params, limit, offset],
+    );
+    return {
+      items: rows.map((row) => httpCatalogItemFromEvent(JSON.parse(row.envelope_json) as MonitorEvent)),
+      total,
+      limit,
+      offset,
+      slowThresholdMs,
     };
   }
 
@@ -382,6 +415,16 @@ export class SqliteMonitorStore implements MonitorStore {
         signal_type text,
         name text,
         status text,
+        http_method text,
+        http_url text,
+        http_host text,
+        http_status_code integer,
+        http_request_id text,
+        http_success integer,
+        http_duration_ms real,
+        http_business_code text,
+        http_business_code_state text,
+        http_completed integer,
         envelope_json text not null
       );
     `);
@@ -399,6 +442,9 @@ export class SqliteMonitorStore implements MonitorStore {
       create index if not exists idx_events_native_time on events(app_key, native_available, native_platform, timestamp_ms, sequence);
       create index if not exists idx_events_problem_time on events(problem_type, timestamp_ms, sequence);
       create index if not exists idx_events_name_time on events(name, signal_type, status, timestamp_ms, sequence);
+      create index if not exists idx_events_http_catalog on events(name, http_method, http_status_code, timestamp_ms, sequence);
+      create index if not exists idx_events_http_host on events(http_host, timestamp_ms, sequence);
+      create index if not exists idx_events_http_business_code on events(http_business_code, timestamp_ms, sequence);
     `);
     this.backfillIndexColumns();
     this.flushToDisk();
@@ -441,8 +487,18 @@ export class SqliteMonitorStore implements MonitorStore {
         signal_type,
         name,
         status,
+        http_method,
+        http_url,
+        http_host,
+        http_status_code,
+        http_request_id,
+        http_success,
+        http_duration_ms,
+        http_business_code,
+        http_business_code_state,
+        http_completed,
         envelope_json
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(event_id) do update set
         session_id = excluded.session_id,
         trace_id = excluded.trace_id,
@@ -470,11 +526,22 @@ export class SqliteMonitorStore implements MonitorStore {
         signal_type = excluded.signal_type,
         name = excluded.name,
         status = excluded.status,
+        http_method = excluded.http_method,
+        http_url = excluded.http_url,
+        http_host = excluded.http_host,
+        http_status_code = excluded.http_status_code,
+        http_request_id = excluded.http_request_id,
+        http_success = excluded.http_success,
+        http_duration_ms = excluded.http_duration_ms,
+        http_business_code = excluded.http_business_code,
+        http_business_code_state = excluded.http_business_code_state,
+        http_completed = excluded.http_completed,
         envelope_json = excluded.envelope_json
     `);
     try {
       this.db.run('begin');
       for (const event of events) {
+        const http = httpCatalogFieldsOf(event);
         statement.run([
           event.eventId ?? null,
           event.sessionId ?? null,
@@ -503,6 +570,16 @@ export class SqliteMonitorStore implements MonitorStore {
           signalTypeOf(event) ?? null,
           nameOf(event) ?? null,
           statusOf(event) ?? null,
+          http.method ?? null,
+          http.url ?? null,
+          http.host ?? null,
+          http.statusCode ?? null,
+          http.requestId ?? null,
+          booleanSqlValue(http.success),
+          event.durationMs ?? null,
+          http.businessCode ?? null,
+          http.businessCodeState,
+          isCompletedHttpEvent(event) ? 1 : 0,
           JSON.stringify(event),
         ]);
       }
@@ -609,6 +686,16 @@ export class SqliteMonitorStore implements MonitorStore {
       native_platform: 'text',
       native_version: 'text',
       problem_type: 'text',
+      http_method: 'text',
+      http_url: 'text',
+      http_host: 'text',
+      http_status_code: 'integer',
+      http_request_id: 'text',
+      http_success: 'integer',
+      http_duration_ms: 'real',
+      http_business_code: 'text',
+      http_business_code_state: 'text',
+      http_completed: 'integer',
     };
     for (const column of INDEX_COLUMNS) {
       if (existing.has(column)) continue;
@@ -626,6 +713,7 @@ export class SqliteMonitorStore implements MonitorStore {
           or native_available is null
           or problem_type is null
           or problem_type = 'error'
+          or (name = 'http.client' and (http_business_code_state is null or http_completed is null))
         limit 5000
       `,
     );
@@ -647,12 +735,23 @@ export class SqliteMonitorStore implements MonitorStore {
         native_platform = ?,
         native_version = ?,
         problem_type = ?
+        ,http_method = ?
+        ,http_url = ?
+        ,http_host = ?
+        ,http_status_code = ?
+        ,http_request_id = ?
+        ,http_success = ?
+        ,http_duration_ms = ?
+        ,http_business_code = ?
+        ,http_business_code_state = ?
+        ,http_completed = ?
       where event_id = ?
     `);
     try {
       this.db.run('begin');
       for (const row of rows) {
         const event = JSON.parse(row.envelope_json) as MonitorEvent;
+        const http = httpCatalogFieldsOf(event);
         statement.run([
           appKeyOf(event) ?? null,
           appNameOf(event) ?? null,
@@ -669,6 +768,16 @@ export class SqliteMonitorStore implements MonitorStore {
           nativePlatformOf(event) ?? null,
           nativeVersionOf(event) ?? null,
           problemTypeOf(event) ?? null,
+          http.method ?? null,
+          http.url ?? null,
+          http.host ?? null,
+          http.statusCode ?? null,
+          http.requestId ?? null,
+          booleanSqlValue(http.success),
+          event.durationMs ?? null,
+          http.businessCode ?? null,
+          http.businessCodeState,
+          isCompletedHttpEvent(event) ? 1 : 0,
           row.event_id,
         ]);
       }
@@ -742,6 +851,54 @@ function whereFromFilters(filters: EventFilters): { whereSql: string; params: Sq
   };
 }
 
+function whereFromHttpCatalogQuery(query: HttpCatalogQuery, slowThresholdMs: number): { whereSql: string; params: SqlParam[] } {
+  const { whereSql, params } = whereFromFilters(query);
+  const clauses = whereSql ? [whereSql.slice('where '.length)] : [];
+  clauses.push("name = 'http.client'");
+  clauses.push('http_completed = 1');
+  addLikeFilter(clauses, params, 'http_url', query.url);
+  addEqualityFilter(clauses, params, 'http_method', query.method);
+  addLikeFilter(clauses, params, 'http_request_id', query.requestId);
+  addNumericListFilter(clauses, params, 'http_status_code', query.statusCode);
+  addEqualityFilter(clauses, params, 'http_business_code', query.businessCode);
+  addLikeFilter(clauses, params, 'http_host', query.host);
+  if (query.result === 'success') clauses.push('http_success = 1');
+  if (query.result === 'failed') clauses.push('(http_success = 0 or status = \'error\')');
+  if (query.result === 'unknown') clauses.push("http_success is null and status != 'error'");
+  if (query.slowOnly) {
+    clauses.push('http_duration_ms >= ?');
+    params.push(slowThresholdMs);
+  }
+  return { whereSql: `where ${clauses.join(' and ')}`, params };
+}
+
+function httpCatalogItemFromEvent(event: MonitorEvent): HttpCatalogItem {
+  const http = httpCatalogFieldsOf(event);
+  return {
+    eventId: event.eventId ?? '',
+    timestamp: event.timestamp ?? event.startTime,
+    method: http.method,
+    url: http.url,
+    host: http.host,
+    statusCode: http.statusCode,
+    businessCode: http.businessCode,
+    businessCodeState: http.businessCodeState,
+    durationMs: event.durationMs,
+    success: http.success,
+    route: routeOf(event),
+    sessionId: event.sessionId,
+    traceId: event.traceId,
+    requestId: http.requestId,
+    requestSizeBytes: numericAttribute(event, 'http.request_content_length') ?? numericAttribute(event, 'http.request.size_bytes'),
+    responseSizeBytes: numericAttribute(event, 'http.response_content_length') ?? numericAttribute(event, 'http.response.size_bytes'),
+    detailDropped: readPayloadBoolean(event, 'http.detail_dropped'),
+  };
+}
+
+function readPayloadBoolean(event: MonitorEvent, key: string): boolean {
+  return event.payload?.[key] === true;
+}
+
 function addEqualityFilter(
   clauses: string[],
   params: SqlParam[],
@@ -781,6 +938,17 @@ function addBooleanFilter(
   if (value === undefined) return;
   clauses.push(`${columnName} = ?`);
   params.push(booleanSqlValue(value));
+}
+
+function addNumericListFilter(
+  clauses: string[],
+  params: SqlParam[],
+  columnName: string,
+  values: number[] | undefined,
+): void {
+  if (!values?.length) return;
+  clauses.push(`${columnName} in (${values.map(() => '?').join(', ')})`);
+  params.push(...values);
 }
 
 function booleanSqlValue(value: boolean | undefined): number | null {

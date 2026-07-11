@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { httpCatalogFieldsOf } from '../src/store/event-accessors';
 
 const port = Number.parseInt(process.env.FM_WORKBENCH_SMOKE_PORT || '3199', 10);
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -27,6 +28,7 @@ async function runSmokeTests(): Promise<void> {
   try {
   await waitForHealth();
   await postEvents();
+  assertHttpBusinessCodeStates();
   await assertMissingEventId();
   await assertJson('/api/monitor/v1/recent?limit=10', (data) => {
     assert.equal(data.count, 5);
@@ -35,6 +37,25 @@ async function runSmokeTests(): Promise<void> {
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=failed_http', (data) => {
     assert.equal(data.count, 1);
     assert.equal(data.events[0].eventId, 'evt_smoke_http');
+  });
+  await assertJson('/api/monitor/v1/catalog/http?method=POST&host=api.example.com&statusCode=422&businessCode=COUPON_01&result=failed&slowOnly=true&slowThresholdMs=100', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.limit, 50);
+    assert.equal(data.offset, 0);
+    assert.equal(data.slowThresholdMs, 100);
+    assert.equal(data.items[0].eventId, 'evt_smoke_http');
+    assert.equal(data.items[0].host, 'api.example.com');
+    assert.equal(data.items[0].businessCode, 'COUPON_01');
+    assert.equal(data.items[0].businessCodeState, 'value');
+  });
+  await assertJson('/api/monitor/v1/catalog/http?url=coupon&requestId=req-smoke&route=/detail&limit=1&offset=0', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.items.length, 1);
+    assert.equal(data.items[0].requestId, 'req-smoke');
+  });
+  await assertJson('/api/monitor/v1/events/evt_smoke_http', (data) => {
+    assert.equal(data.event.eventId, 'evt_smoke_http');
+    assert.equal(data.event.businessCode, undefined);
   });
   await assertJson('/api/monitor/v1/recent?limit=10&appKey=smoke_app&problemType=business_failure', (data) => {
     assert.equal(data.count, 1);
@@ -295,13 +316,35 @@ async function postEvents(): Promise<void> {
             device: { platform: 'android', model: 'Pixel', deviceTier: 'high' },
           },
           context: { user: { userId: 'user_smoke' }, route: { name: '/detail' }, native: { available: false, platform: 'android' } },
-          attributes: { 'event.phase': 'instant', 'http.success': false },
-          payload: {},
+          attributes: {
+            'event.phase': 'instant',
+            'http.method': 'POST',
+            'http.url.normalized': '/v1/coupon/apply',
+            'http.status_code': 422,
+            'http.success': false,
+            'http.request_id': 'req-smoke',
+            'http.request.size_bytes': 24,
+            'http.response.size_bytes': 48,
+          },
+          payload: {
+            url: 'https://api.example.com/v1/coupon/apply?source=smoke',
+            http: { detail: { response: { body: '{"code":"COUPON_01","data":null}' } } },
+          },
         },
       ],
     }),
   });
   assert.equal(response.status, 202);
+}
+
+function assertHttpBusinessCodeStates(): void {
+  const base = { name: 'http.client', attributes: { 'event.phase': 'instant' } };
+  assert.deepEqual(httpCatalogFieldsOf({ ...base, payload: {} }).businessCodeState, 'absent');
+  assert.deepEqual(httpCatalogFieldsOf({ ...base, payload: { 'http.detail_dropped': true } }).businessCodeState, 'detail_unavailable');
+  assert.deepEqual(
+    httpCatalogFieldsOf({ ...base, payload: { http: { detail: { response: { body: 'not-json' } } } } }).businessCodeState,
+    'parse_failed',
+  );
 }
 
 async function assertMissingEventId(): Promise<void> {

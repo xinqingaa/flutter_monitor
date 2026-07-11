@@ -43,6 +43,15 @@ Monitor Service 只接收和存储 SDK 发来的 `EventEnvelope`。
 
 摘要字段不是 SDK envelope 字段，但应尽量携带 `eventId`/`sessionId`/`traceId` 以便回查 raw JSON。
 
+## HTTP Catalog 查询边界
+
+`GET /api/monitor/v1/catalog/http` 是 HTTP 工作台的服务端分页查询。它只返回可通过 `eventId` 回查的摘要，完整详情继续读取 raw envelope。
+
+- Host 从 `payload.url` 派生；业务码从 `payload.http.detail.response.body` 顶层 `code` 派生。
+- 派生值只写 SQLite 索引列，不写回 `envelope_json`。
+- `businessCodeState` 区分 `value`、`absent`、`detail_unavailable`、`parse_failed`。
+- 结果固定按事件时间倒序，返回 `items + total + limit + offset + slowThresholdMs`。
+
 ## Session Console View Model
 
 `/api/monitor/v1/sessions/:sessionId/console` 返回的 `SessionConsoleRow` 是 Workbench 专用 view model，禁止替代 SDK schema 字段。Workbench 信息架构按下列规则消费：

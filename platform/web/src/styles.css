@@ -1,10 +1,76 @@
 @import "tailwindcss";
 
+@theme {
+  --color-canvas: var(--fm-canvas);
+  --color-surface: var(--fm-surface);
+  --color-subtle: var(--fm-subtle);
+  --color-selected: var(--fm-selected);
+  --color-border-default: var(--fm-border-default);
+  --color-border-muted: var(--fm-border-muted);
+  --color-border-focus: var(--fm-border-focus);
+  --color-border-selected: var(--fm-border-selected);
+  --color-text-primary: var(--fm-text-primary);
+  --color-text-secondary: var(--fm-text-secondary);
+  --color-text-muted: var(--fm-text-muted);
+  --color-text-link: var(--fm-text-link);
+  --color-text-code: var(--fm-text-code);
+  --color-text-inverse: var(--fm-text-inverse);
+  --color-accent-default: var(--fm-accent-default);
+  --color-accent-hover: var(--fm-accent-hover);
+  --color-accent-active: var(--fm-accent-active);
+  --color-accent-subtle: var(--fm-accent-subtle);
+  --color-status-success: var(--fm-status-success);
+  --color-status-success-subtle: var(--fm-status-success-subtle);
+  --color-status-warning: var(--fm-status-warning);
+  --color-status-warning-subtle: var(--fm-status-warning-subtle);
+  --color-status-danger: var(--fm-status-danger);
+  --color-status-danger-subtle: var(--fm-status-danger-subtle);
+  --color-status-info: var(--fm-status-info);
+  --color-status-info-subtle: var(--fm-status-info-subtle);
+  --color-status-neutral: var(--fm-status-neutral);
+  --color-status-neutral-subtle: var(--fm-status-neutral-subtle);
+  --color-interactive-focusRing: var(--fm-focus-ring);
+  --color-interactive-overlay: var(--fm-overlay);
+  --radius-control: 4px;
+  --radius-panel: 6px;
+  --radius-overlay: 8px;
+}
+
 :root {
   color-scheme: light;
-  background: #f4f4f5;
-  color: #18181b;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --fm-canvas: #f4f4f5;
+  --fm-surface: #ffffff;
+  --fm-subtle: #fafafa;
+  --fm-selected: #f0fdfa;
+  --fm-border-default: #e4e4e7;
+  --fm-border-muted: #f4f4f5;
+  --fm-border-focus: #0d9488;
+  --fm-border-selected: #0d9488;
+  --fm-text-primary: #18181b;
+  --fm-text-secondary: #52525b;
+  --fm-text-muted: #a1a1aa;
+  --fm-text-link: #0f766e;
+  --fm-text-code: #27272a;
+  --fm-text-inverse: #ffffff;
+  --fm-accent-default: #0d9488;
+  --fm-accent-hover: #0f766e;
+  --fm-accent-active: #115e59;
+  --fm-accent-subtle: #f0fdfa;
+  --fm-status-success: #059669;
+  --fm-status-success-subtle: #ecfdf5;
+  --fm-status-warning: #d97706;
+  --fm-status-warning-subtle: #fffbeb;
+  --fm-status-danger: #dc2626;
+  --fm-status-danger-subtle: #fef2f2;
+  --fm-status-info: #2563eb;
+  --fm-status-info-subtle: #eff6ff;
+  --fm-status-neutral: #71717a;
+  --fm-status-neutral-subtle: #f4f4f5;
+  --fm-focus-ring: #99f6e4;
+  --fm-overlay: rgb(9 9 11 / 0.32);
+  background: var(--fm-canvas);
+  color: var(--fm-text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 16px;
 }
 
@@ -54,5 +120,21 @@ pre {
 @media (max-width: 900px) {
   body {
     overflow: auto;
+  }
+}
+
+@media (max-width: 700px) {
+  .workbench-v2 {
+    grid-template-columns: 56px minmax(0, 1fr) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
