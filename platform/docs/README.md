@@ -6,11 +6,13 @@
 
 - [Platform 架构与计划](workbench_plan.md)：Monitor Service、Datasource、存储、脚本编排、MVP 和验收标准。
 - [Workbench 功能清单](FEATURES.md)：当前期望的一级模块与能力边界（大屏 / HTTP / 埋点 / 异常）；与 `product_plan.md` 冲突时以本清单为准。
-- [Workbench DESIGN](DESIGN.md)：active 的视觉、交互与页面设计事实源；当前开放 HTTP 样板页实施。
+- [Workbench DESIGN](DESIGN.md)：active 的视觉、交互与页面设计事实源；HTTP 样板已确认并用于全站实现。
 - [Workbench 前端重构计划](FRONTEND_REFACTOR_PLAN.md)：4 个验收阶段、8 个实施步骤，以及每阶段的范围、产物、验证和停止条件。
 - [Workbench Keep / Kill / Steal](KEEP_KILL_STEAL.md)：推倒重来时的取舍；数据层可留，页面默认作废，JsonViewer 仅克制复用。
 - [Workbench 产品计划](product_plan.md)：历史产品定位与交互口径，可作参考；重构期功能边界见 `FEATURES.md`。
 - [Workbench Service API（已废弃）](service_api.md)：历史 endpoint 说明；当前请以 `http://localhost:3700/docs`（Swagger）和 [`services/monitor-service/docs/boundaries.md`](../services/monitor-service/docs/boundaries.md) 为准。
+
+当前 Workbench 正式一级入口为大屏、HTTP、埋点、异常；Session 是从各入口进入的二级链路排查层。旧 Overview/Sessions/Startup/Pages/Network/Jank 路径只做兼容重定向，不再构成并行信息架构。
 
 ## 常用查询路径
 

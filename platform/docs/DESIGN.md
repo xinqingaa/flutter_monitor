@@ -8,6 +8,7 @@
 - 旧实现取舍：[`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)
 - 当前样板：HTTP 列表 Catalog + Split
 - 实施门禁：允许开始 HTTP 样板页；样板验收前不得铺开埋点、异常和大屏页面
+- 样板确认：2026-07-11，HTTP Catalog / Preview / Record 桌面与窄屏验收通过，作为全站实现基线
 
 本文是 Workbench 前端重构的设计与交互事实源。它必须能独立指导实现，不依赖仓库外设计文档。功能冲突时以 `FEATURES.md` 为准；旧代码是否保留以 `KEEP_KILL_STEAL.md` 为准。
 

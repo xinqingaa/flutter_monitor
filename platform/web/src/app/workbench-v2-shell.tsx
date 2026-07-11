@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter } from '@tanstack/react-router';
-import { AlertTriangle, ChevronsLeft, ChevronsRight, MousePointerClick, Network, Pause, Play, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronsLeft, ChevronsRight, LayoutDashboard, MousePointerClick, Network, Pause, Play, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { IconTooltipButton } from '../components/ui/icon-tooltip-button';
 import { useLiveInvalidation } from '../shared/datasource/queries';
@@ -24,12 +24,13 @@ export function WorkbenchV2Shell() {
     <div className={collapsed ? 'workbench-v2 grid h-full grid-cols-[56px_minmax(0,1fr)]' : 'workbench-v2 grid h-full grid-cols-[216px_minmax(0,1fr)]'}>
       <aside className="flex min-h-0 flex-col border-r border-border-default bg-surface max-[700px]:w-14">
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border-default px-3">
-          <Link to="/http" className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-border-default bg-surface">
+          <Link to="/" className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-border-default bg-surface">
             <img src="/logo.png" alt="Flutter Monitor" className="size-6" />
           </Link>
           {collapsed ? null : <span className="min-w-0 truncate text-[13px] font-semibold text-text-primary max-[700px]:hidden">Flutter Monitor</span>}
         </div>
         <nav aria-label="Workbench 主导航" className="min-h-0 flex-1 p-2">
+          <NavItem to="/" label="大屏" icon={LayoutDashboard} collapsed={collapsed} />
           <NavItem to="/http" label="HTTP" icon={Network} collapsed={collapsed} />
           <NavItem to="/business" label="埋点" icon={MousePointerClick} collapsed={collapsed} />
           <NavItem to="/errors" label="异常" icon={AlertTriangle} collapsed={collapsed} />
@@ -47,6 +48,6 @@ export function WorkbenchV2Shell() {
   );
 }
 
-function NavItem({ to, label, icon: Icon, collapsed }: { to: '/http' | '/business' | '/errors'; label: string; icon: typeof Network; collapsed: boolean }) {
+function NavItem({ to, label, icon: Icon, collapsed }: { to: '/' | '/http' | '/business' | '/errors'; label: string; icon: typeof Network; collapsed: boolean }) {
   return <Link to={to} activeProps={{ 'aria-current': 'page', className: 'border-border-selected bg-selected text-text-link' }} inactiveProps={{ className: 'border-transparent text-text-secondary hover:bg-subtle' }} className="mb-1 flex h-9 items-center gap-2 rounded-control border px-2 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-interactive-focusRing"><Icon className="size-4 shrink-0" />{collapsed ? null : <span className="truncate max-[700px]:hidden">{label}</span>}</Link>;
 }
