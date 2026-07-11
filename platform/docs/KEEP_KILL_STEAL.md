@@ -8,7 +8,7 @@
 - **优先保留数据层与交互通性**，不优先保留组件皮肤。
 - **克制复用**：即使相对可用的组件，也不整包锁定；能抽逻辑就抽逻辑，UI 仍可按 DESIGN 重做。
 
-状态：`draft`
+状态：`active`（与 `FEATURES.md`、`DESIGN.md` 共同约束 HTTP 样板页实施）
 
 ---
 
@@ -159,7 +159,7 @@ HTTP 已验证该结构（请求/响应分 Tab）。埋点、异常共用同一�
 2. HTTP/埋点/异常详情：优先复用 **解析与摘要函数**（若可抽离），JSX 按 DESIGN 重写。  
 3. JsonViewer：**克制复用**——过渡期可用，DESIGN 锁定后按规范替换或包一层，不以其视觉定全站。  
 4. Session 首批只做打开 + 选中 event + 简单时间线。  
-5. 结构性 UI 变更先改 `FEATURES.md` / 未来 `DESIGN.md`，再改代码；禁止「先美化旧页」。
+5. 功能边界变更先改 `FEATURES.md`，结构性 UI 变更先改 `DESIGN.md`，再改代码；禁止「先美化旧页」。
 
 ---
 
@@ -169,5 +169,5 @@ HTTP 已验证该结构（请求/响应分 Tab）。埋点、异常共用同一�
 | --- | --- |
 | [`FEATURES.md`](FEATURES.md) | 要有什么能力（功能边界） |
 | **本文** | 旧实现怎么取舍（Keep / Kill / Steal） |
-| 未来 `DESIGN.md` | 气质、Token、页面 Task/Layout、样板页 |
+| [`DESIGN.md`](DESIGN.md) | 气质、Token、交互契约、页面 Task/Layout、样板页与验收门禁 |
 | `product_plan.md` | 历史参考；与 FEATURES 冲突时以 FEATURES 为准 |

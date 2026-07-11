@@ -5,9 +5,9 @@
 与 `product_plan.md` 的关系：`product_plan.md` 可作历史参考；**本文件是当前期望的功能事实源**。二者冲突时以本文件为准，再回写产品文档。
 
 现有实现取舍见 [`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)（页面默认推倒；数据层可留；JsonViewer 克制复用）。
-视觉与页面模式见 [`DESIGN.md`](DESIGN.md)（draft）。
+视觉、交互与页面模式见 [`DESIGN.md`](DESIGN.md)（active；HTTP 样板页实施门禁已开放）。
 
-状态：`draft`（待 DESIGN 确认 active 后开始样板页）
+状态：`active`（允许开始 HTTP 样板页；其它业务页面仍受 DESIGN 样板验收门禁约束）
 
 ---
 
