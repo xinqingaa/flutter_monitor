@@ -37,7 +37,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed right-3 top-14 z-[60] grid w-[min(360px,calc(100vw-24px))] gap-2">
+      <div className="pointer-events-none fixed right-3 top-14 z-[300] grid w-[min(360px,calc(100vw-24px))] gap-2">
         {messages.map((message) => (
           <ToastItem key={message.id} message={message} onClose={() => removeToast(message.id)} />
         ))}

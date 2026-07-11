@@ -10,6 +10,8 @@ export interface ScopeFilters {
   from?: string;
   to?: string;
   userId?: string;
+  sessionId?: string;
+  route?: string[];
 }
 
 const SCOPE_KEYS: Array<keyof ScopeFilters> = [
@@ -20,6 +22,8 @@ const SCOPE_KEYS: Array<keyof ScopeFilters> = [
   'from',
   'to',
   'userId',
+  'sessionId',
+  'route',
 ];
 
 export function useScopeFilters(): {
@@ -83,6 +87,8 @@ function readScopeFilters(search: unknown): ScopeFilters {
     from: stringValue(search.from),
     to: stringValue(search.to),
     userId: stringValue(search.userId),
+    sessionId: stringValue(search.sessionId),
+    route: stringListValue(search.route),
   });
 }
 

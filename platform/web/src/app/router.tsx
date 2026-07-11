@@ -11,6 +11,23 @@ type RootSearch = {
   userId?: string;
 };
 
+export type HttpSearch = RootSearch & {
+  sessionId?: string;
+  route?: string;
+  url?: string;
+  method?: string;
+  result?: 'success' | 'failed' | 'unknown';
+  requestId?: string;
+  statusCode?: string;
+  businessCode?: string;
+  host?: string;
+  slowOnly?: boolean;
+  page?: number;
+  pageSize?: 25 | 50 | 100;
+  eventId?: string;
+  detail?: string;
+};
+
 const rootRoute = createRootRoute({
   validateSearch: (search: Record<string, unknown>): RootSearch => cleanSearch({
     appKey: stringListSearchParam(search.appKey),
@@ -55,6 +72,29 @@ const eventsRoute = createRoute({
 const httpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/http',
+  validateSearch: (search: Record<string, unknown>): HttpSearch => cleanSearch({
+    appKey: stringListSearchParam(search.appKey),
+    environment: stringListSearchParam(search.environment),
+    appVersion: stringListSearchParam(search.appVersion),
+    devicePlatform: stringListSearchParam(search.devicePlatform),
+    from: stringSearch(search.from),
+    to: stringSearch(search.to),
+    userId: stringSearch(search.userId),
+    sessionId: stringSearch(search.sessionId),
+    route: stringListSearchParam(search.route),
+    url: stringSearch(search.url),
+    method: stringListSearchParam(search.method),
+    result: enumSearch(search.result, ['success', 'failed', 'unknown']),
+    requestId: stringSearch(search.requestId),
+    statusCode: numericListSearchParam(search.statusCode),
+    businessCode: stringListSearchParam(search.businessCode),
+    host: stringSearch(search.host),
+    slowOnly: booleanSearch(search.slowOnly),
+    page: integerSearch(search.page, 1),
+    pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined,
+    eventId: stringSearch(search.eventId),
+    detail: stringSearch(search.detail),
+  }),
   component: lazyRouteComponent(() => import('../routes/http/http-foundation-route'), 'HttpFoundationRoute'),
 });
 
@@ -156,6 +196,32 @@ function cleanSearch<T extends Record<string, unknown>>(search: T): T {
       return value !== undefined && value !== '';
     }),
   ) as T;
+}
+
+function enumSearch<T extends string>(value: unknown, values: readonly T[]): T | undefined {
+  const candidate = stringSearch(value);
+  return candidate && values.includes(candidate as T) ? candidate as T : undefined;
+}
+
+function booleanSearch(value: unknown): boolean | undefined {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
+}
+
+function integerSearch(value: unknown, min: number): number | undefined {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= min ? parsed : undefined;
+}
+
+function enumNumberSearch(value: unknown, values: readonly number[]): number | undefined {
+  const parsed = integerSearch(value, 1);
+  return parsed !== undefined && values.includes(parsed) ? parsed : undefined;
+}
+
+function numericListSearchParam(value: unknown): string | undefined {
+  const values = stringListSearch(value).filter((item) => /^\d+$/.test(item));
+  return values.length ? values.join(',') : undefined;
 }
 
 declare module '@tanstack/react-router' {

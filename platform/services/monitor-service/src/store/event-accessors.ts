@@ -173,7 +173,10 @@ export function httpCatalogFieldsOf(event: MonitorEvent): {
   }
 
   const detailDropped = readPath(event, ['payload', 'http.detail_dropped']) === true;
-  const response = readPath(event, ['payload', 'http', 'detail', 'response']);
+  const flatDetail = readPath(event, ['payload', 'http.detail']);
+  const nestedDetail = readPath(event, ['payload', 'http', 'detail']);
+  const detail = isRecord(flatDetail) ? flatDetail : nestedDetail;
+  const response = isRecord(detail) ? detail.response : undefined;
   const body = isRecord(response) ? response.body : undefined;
   const bodyTruncated = isRecord(response) && response.body_truncated === true;
   const business = businessCodeFromBody(body);

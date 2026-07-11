@@ -328,7 +328,7 @@ async function postEvents(): Promise<void> {
           },
           payload: {
             url: 'https://api.example.com/v1/coupon/apply?source=smoke',
-            http: { detail: { response: { body: '{"code":"COUPON_01","data":null}' } } },
+            'http.detail': { response: { body: '{"code":"COUPON_01","data":null}' } },
           },
         },
       ],
@@ -342,7 +342,7 @@ function assertHttpBusinessCodeStates(): void {
   assert.deepEqual(httpCatalogFieldsOf({ ...base, payload: {} }).businessCodeState, 'absent');
   assert.deepEqual(httpCatalogFieldsOf({ ...base, payload: { 'http.detail_dropped': true } }).businessCodeState, 'detail_unavailable');
   assert.deepEqual(
-    httpCatalogFieldsOf({ ...base, payload: { http: { detail: { response: { body: 'not-json' } } } } }).businessCodeState,
+    httpCatalogFieldsOf({ ...base, payload: { 'http.detail': { response: { body: 'not-json' } } } }).businessCodeState,
     'parse_failed',
   );
 }
