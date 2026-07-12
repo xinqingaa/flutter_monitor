@@ -54,6 +54,14 @@ Monitor Service 只接收和存储 SDK 发来的 `EventEnvelope`。
 
 `/catalog/business` 只收录带 `business.action` 的单次埋点与 `business.action.summary`；`measure` 不进入主集合。`/catalog/errors` 是稳定性 error 与 `business.result=failed` 的无重复并集，明确排除 completed HTTP、jank、memory 与 native 诊断事件。两者均只返回可由 `eventId` 回查的摘要。
 
+## Workbench 候选与大屏聚合
+
+- `GET /api/monitor/v1/dimensions?q=<substring>&limit=<n>` 在共享范围内返回 `userIds`、`sessionIds`、`requestIds` 真实候选。排序为完全匹配、前缀匹配、其余包含匹配，再按最近出现时间和稳定字典序；候选只来自 SQLite 索引。
+- `GET /api/monitor/v1/performance/timeseries` 返回质量问题、HTTP 总量、埋点结果与冷启动统计的 service 端时间分桶。未提供范围时默认近 24 小时；前端不得用当前 Catalog 页冒充趋势。
+- `GET /api/monitor/v1/dashboard/business-actions` 返回 Action 总量/失败数 TopN，并携带可回查的代表 `eventId` / `sessionId`。
+- 启动下钻复用 `performance/overview.startup.events` 中的 `eventId + sessionId`；不存在可回查事件时，Workbench 必须禁用下钻。
+- dimensions、timeseries 与 performance overview 都是查询 view model，不写回 `envelope_json`，也不构成第二套 SDK/core 协议。
+
 ## Session Console View Model
 
 `/api/monitor/v1/sessions/:sessionId/console` 返回的 `SessionConsoleRow` 是 Workbench 专用 view model，禁止替代 SDK schema 字段。Workbench 信息架构按下列规则消费：

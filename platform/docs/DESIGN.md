@@ -6,9 +6,10 @@
 - last_updated: 2026-07-11
 - 功能事实源：[`FEATURES.md`](FEATURES.md)
 - 旧实现取舍：[`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)
+- Phase 5 计划：[`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)
 - 当前样板：HTTP 列表 Catalog + Split
-- 实施门禁：允许开始 HTTP 样板页；样板验收前不得铺开埋点、异常和大屏页面
 - 样板确认：2026-07-11，HTTP Catalog / Preview / Record 桌面与窄屏验收通过，作为全站实现基线
+- Phase 5：官方 shadcn 组件/Blocks 提供布局骨架；Tremor 是唯一图表引擎；本轮不迁 MUI
 
 本文是 Workbench 前端重构的设计与交互事实源。它必须能独立指导实现，不依赖仓库外设计文档。功能冲突时以 `FEATURES.md` 为准；旧代码是否保留以 `KEEP_KILL_STEAL.md` 为准。
 
@@ -46,14 +47,14 @@
 
 | 页面 | Task | Layout | 变体 | 窄屏降级 |
 | --- | --- | --- | --- | --- |
-| 大屏 | Hub | Stack | 范围条 + 不超过 4 个可点指标 + 最近问题 | 单列 Stack |
+| 大屏 | Hub | Dashboard Grid | 紧凑范围工具栏 + 不超过 4 个可点指标 + 5 张可点 Tremor 图 + 最近问题 | 单列 Stack |
 | HTTP 列表 | Catalog | Split | 主表 + 右侧摘要预览；URL 默认无域名 | `<1024px` 收起常驻预览，点行进入 Sheet/详情 |
 | HTTP 详情 | Record | Drawer | 摘要 → 请求/响应 → 上下文 → Raw | `<900px` 全高 Sheet 或 full page |
 | 埋点列表 | Catalog | Split | 主表 + 右侧摘要预览 | 同 HTTP |
 | 埋点详情 | Record | Drawer | 摘要 → properties → 关联 → 上下文 → Raw | 同 HTTP 详情 |
 | 异常列表 | Catalog | Split | 主表 + 右侧摘要预览 | 同 HTTP |
 | 异常详情 | Record | Drawer | 摘要 → stack/breadcrumbs → 关联 → 上下文 → Raw | 同 HTTP 详情 |
-| Session 链路 | Workspace | Split | 简易 timeline + 右侧 Record | `<900px` Stack + Sheet |
+| Session 链路 | Workspace | Resizable master-detail | Session 切换 + 摘要 + Tabs 事件流 + 右侧 Record | `<900px` Stack + Sheet |
 
 Session 是跨模块链路组装层，不占一级导航。HTTP、埋点、异常的列表和详情必须能带 `eventId` 进入对应 Session。
 
@@ -97,6 +98,8 @@ Session 是跨模块链路组装层，不占一级导航。HTTP、埋点、异�
 ## 响应式布局
 
 - 展开侧边栏宽 216px；折叠态宽 56px
+- 桌面使用 shadcn Sidebar 的展开/折叠状态；窄屏使用其移动 Sheet，不保留占据内容宽度的 56px 图标栏
+- 页面 Header 统一承载 Sidebar trigger、Breadcrumb、live 状态和页面操作，业务页不重复手写 Header 壳
 - Catalog 主表最小宽 640px，并占据剩余空间
 - 摘要预览默认宽 360px，最小 320px，最大 480px
 - Split 可拖动；宽度只存本地，不进入 URL；必须提供恢复默认宽度能力
@@ -148,6 +151,39 @@ URL 是可分享、可刷新恢复的已提交状态事实源。输入框编辑�
 - 所有交互控件覆盖 default、hover、focus、disabled、loading；危险操作另有 danger
 - focus 可见；图标按钮有 tooltip 和可访问名称；表格行可以用键盘选择和打开
 - loading 不阻断已经可用的筛选输入；后台刷新尽量保留现有内容
+- 可见时间统一为本地时区 `YYYY-MM-DD HH:mm:ss`；原始 ISO/毫秒放 tooltip，不改变原始值
+- Select 未选中时显示“全部环境”“全部方法”等稳定空态；对应 URL 参数应删除而不是写入空字符串
+- 文本筛有内容时约 300ms debounce 并使用 history replace；清空立即重置，Enter 只作为立即提交捷径
+- `userId`、`sessionId`、`requestId` 使用真实 service 候选 Combobox，支持异步 loading/empty/error、清除和键盘选择
+
+### 大屏图表
+
+- 第一屏固定五图：质量趋势、HTTP 健康、埋点结果趋势、业务动作排行、启动趋势；指标卡、图表和最近问题共享同一范围
+- 质量趋势由 service 时间分桶，点击系列点进入对应 Catalog，并携带该桶 `from` / `to` 和类型筛选
+- HTTP 健康使用请求量柱 + 失败率线；点击时间桶进入 HTTP Catalog
+- 埋点结果趋势使用 success / failed / cancelled 堆叠柱；点击进入对应结果与时间桶
+- 业务动作排行使用 Bar List / 横向 Bar；每行携带可回查代表事件，并按 Action 下钻
+- 启动趋势展示冷启动平均与慢启动次数；点击只在存在可回查的 `eventId + sessionId` 时进入 Session
+- 图表覆盖 loading、empty、error 和禁用下钻原因；无数据不能伪装为正常零值
+- 主标题使用人话；p50/p95 只能作为 tooltip/口径说明
+- 图表使用 Tremor 并消费 semantic tokens；禁止装饰性不可点击图和 echarts 双引擎
+
+### 范围工具栏
+
+- 大屏与 Catalog 顶部使用单行 Toolbar，不在每个控件上方重复显示 Label
+- 时间使用 shadcn 官方 Date Range Picker；一个 trigger 展示预设或日期范围，Popover 内选择日期并按需补开始/结束时间
+- 用户 ID、Session ID 使用官方 Combobox；版本、环境、路由使用官方 Select；低频范围项进入 Dropdown Menu 或移动 Sheet
+- 选中条件以紧凑 Badge 表达并可单独清除；窄屏只保留日期与“筛选”按钮
+- 空数据统一使用官方 Empty；加载使用 Skeleton；分页使用官方 Pagination
+
+### Session 二级工作区
+
+- Session 不占一级导航；Sidebar 在主导航下方用 Separator + `SidebarMenuSub` 展示最近 3–5 个 Session
+- Breadcrumb 为 `Workbench > Session > <short sessionId>`，并支持从最近 Session 或工作区切换器进入
+- 工作区顶部展示 Session Combobox、用户、时间、版本和问题计数
+- 主区使用官方 Resizable；左侧用 Tabs + ScrollArea + Item + Collapsible 组成事件流，右侧 Record 使用 Tabs
+- 不手绘竖线圆点 Timeline；时间顺序、类型 Badge、问题状态和分组标题表达链路
+- 移动端事件详情使用官方 Sheet/Drawer；切换 Session 后清除不属于新 Session 的 `eventId` / `traceId`
 
 ## HTTP 样板页
 
@@ -242,7 +278,10 @@ HttpCatalogItem
 ## 实现约束
 
 - 框架：React 19 + Vite + TypeScript
-- 组件：Radix + CVA + Tailwind v4 + lucide-react
+- 布局与 primitive：使用 shadcn 官方 registry 组件和 Dashboard Blocks 的组合方式；至少覆盖 Sidebar、Breadcrumb、Data Table、Command/Popover、Select、Dropdown Menu、Pagination、Skeleton、Separator、Date Picker/Calendar、Empty、Resizable、ScrollArea、Collapsible、Item、Sheet/Drawer、Tabs、Tooltip
+- shadcn 源码进入 `components/ui/` 并由仓库维护；只做最小 token 映射，不在业务页重写临时 Sidebar、Breadcrumb、Table 或 Popover
+- 组件底座：Radix + CVA + Tailwind v4 + lucide-react；`components.json` 记录配置，业务组合仍归 `features/` / `app/`
+- 图表：Tremor 是唯一图表引擎；禁止保留 echarts 依赖、封装和废弃页面消费者
 - 路由：TanStack Router；筛选和阅读状态使用 search params
 - 查询：TanStack Query；live 使用 `useLiveInvalidation`
 - Overlay：基于 Radix Dialog 扩展 Drawer/Sheet

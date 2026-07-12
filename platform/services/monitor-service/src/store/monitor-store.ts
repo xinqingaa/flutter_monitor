@@ -1,7 +1,9 @@
 import type {
   DimensionSummary,
+  FailureTimeseries,
   BusinessCatalogQuery,
   BusinessCatalogResult,
+  BusinessActionSummary,
   ErrorCatalogQuery,
   ErrorCatalogResult,
   EventFilters,
@@ -42,7 +44,9 @@ export interface MonitorStore {
   };
   searchEvents(query: string, filters: EventFilters): MonitorEvent[];
   performanceOverview(filters: EventFilters): PerformanceOverview;
-  dimensions(filters: EventFilters): DimensionSummary;
+  dimensions(filters: EventFilters, options?: { q?: string; limit?: number }): DimensionSummary;
+  failureTimeseries(filters: EventFilters, bucket: 'hour' | 'day'): FailureTimeseries;
+  businessActionSummary(filters: EventFilters, limit: number): BusinessActionSummary;
   health(): MonitorStoreHealth;
   close?(): void;
 }

@@ -19,7 +19,7 @@ export function Sheet({
   title: React.ReactNode;
   description?: React.ReactNode;
   children: React.ReactNode;
-  side?: 'right' | 'bottom';
+  side?: 'left' | 'right' | 'bottom';
   className?: string;
   initialFocusRef?: React.RefObject<HTMLElement | null>;
 }) {
@@ -37,6 +37,8 @@ export function Sheet({
             'fixed z-[100] grid bg-surface shadow-xl outline-none motion-reduce:transition-none',
             side === 'right'
               ? 'inset-y-0 right-0 w-[min(720px,72vw)] grid-rows-[auto_minmax(0,1fr)] border-l border-border-default max-[900px]:w-full'
+              : side === 'left'
+                ? 'inset-y-0 left-0 w-[min(288px,84vw)] grid-rows-[auto_minmax(0,1fr)] border-r border-border-default'
               : 'inset-x-0 bottom-0 max-h-[92dvh] grid-rows-[auto_minmax(0,1fr)] rounded-t-lg border border-border-default',
             className,
           )}

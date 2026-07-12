@@ -432,6 +432,7 @@ export interface DimensionAppOption {
 export interface DimensionOption {
   value: string;
   count: number;
+  lastTimestamp?: string;
 }
 
 export interface DimensionSummary {
@@ -452,4 +453,44 @@ export interface DimensionSummary {
   statuses: DimensionOption[];
   names: DimensionOption[];
   signalTypes: DimensionOption[];
+  userIds: DimensionOption[];
+  sessionIds: DimensionOption[];
+  requestIds: DimensionOption[];
+}
+
+export type TimeseriesBucket = 'hour' | 'day';
+
+export interface FailureTimeseriesPoint {
+  from: string;
+  to: string;
+  httpTotal: number;
+  failedHttp: number;
+  errors: number;
+  businessFailures: number;
+  businessSuccess: number;
+  businessCancelled: number;
+  coldStartCount: number;
+  coldStartTotalMs: number;
+  coldStartSlowCount: number;
+  startupEventId?: string;
+  startupSessionId?: string;
+}
+
+export interface FailureTimeseries {
+  from: string;
+  to: string;
+  bucket: TimeseriesBucket;
+  points: FailureTimeseriesPoint[];
+}
+
+export interface BusinessActionSummaryItem {
+  action: string;
+  total: number;
+  failed: number;
+  eventId?: string;
+  sessionId?: string;
+}
+
+export interface BusinessActionSummary {
+  items: BusinessActionSummaryItem[];
 }

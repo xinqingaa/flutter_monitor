@@ -9,6 +9,9 @@ import type {
   HttpCatalogResult,
   MonitorEvent,
   PerformanceOverview,
+  FailureTimeseries,
+  BusinessActionSummary,
+  TimeseriesBucket,
   SessionConsoleResult,
   SessionFilters,
   SessionListResult,
@@ -51,8 +54,8 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
     return { items: Array.isArray(data.items) ? data.items : [], total: typeof data.total === 'number' ? data.total : 0, limit: typeof data.limit === 'number' ? data.limit : (query.limit ?? 50), offset: typeof data.offset === 'number' ? data.offset : (query.offset ?? 0) };
   }
 
-  async dimensions(filters: SessionFilters): Promise<DimensionSummary> {
-    const data = await this.getJson(`/api/monitor/v1/dimensions?${toParams(filters)}`);
+  async dimensions(filters: SessionFilters, options?: { q?: string; limit?: number }): Promise<DimensionSummary> {
+    const data = await this.getJson(`/api/monitor/v1/dimensions?${toParams({ ...filters, q: options?.q, limit: options?.limit })}`);
     return {
       apps: Array.isArray(data.apps) ? data.apps : [],
       appNames: Array.isArray(data.appNames) ? data.appNames : [],
@@ -71,6 +74,9 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
       statuses: Array.isArray(data.statuses) ? data.statuses : [],
       names: Array.isArray(data.names) ? data.names : [],
       signalTypes: Array.isArray(data.signalTypes) ? data.signalTypes : [],
+      userIds: Array.isArray(data.userIds) ? data.userIds : [],
+      sessionIds: Array.isArray(data.sessionIds) ? data.sessionIds : [],
+      requestIds: Array.isArray(data.requestIds) ? data.requestIds : [],
     };
   }
 
@@ -107,6 +113,14 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
 
   async performanceOverview(filters: SessionFilters): Promise<PerformanceOverview> {
     return this.getJson(`/api/monitor/v1/performance/overview?${toParams(filters)}`) as Promise<PerformanceOverview>;
+  }
+
+  async failureTimeseries(filters: SessionFilters, bucket?: TimeseriesBucket): Promise<FailureTimeseries> {
+    return this.getJson(`/api/monitor/v1/performance/timeseries?${toParams({ ...filters, bucket })}`) as Promise<FailureTimeseries>;
+  }
+
+  async businessActionSummary(filters: SessionFilters, limit = 8): Promise<BusinessActionSummary> {
+    return this.getJson(`/api/monitor/v1/dashboard/business-actions?${toParams({ ...filters, limit })}`) as Promise<BusinessActionSummary>;
   }
 
   async searchEvents(query: string, filters: SessionFilters): Promise<MonitorEvent[]> {

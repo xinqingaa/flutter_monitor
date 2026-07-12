@@ -1,13 +1,5 @@
 export function formatTime(timestamp?: string): string {
-  if (!timestamp) return '--:--:--';
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return timestamp;
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    fractionalSecondDigits: 3,
-  }).format(date);
+  return formatDateTime(timestamp);
 }
 
 export function formatDateTime(timestamp?: string): string {
@@ -15,13 +7,13 @@ export function formatDateTime(timestamp?: string): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
   const pad = (value: number) => String(value).padStart(2, '0');
-  const year = pad(date.getFullYear() % 100);
+  const year = String(date.getFullYear());
   const month = pad(date.getMonth() + 1);
   const day = pad(date.getDate());
   const hour = pad(date.getHours());
   const minute = pad(date.getMinutes());
   const second = pad(date.getSeconds());
-  return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
 export function formatDuration(value?: number): string {

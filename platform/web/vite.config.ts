@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   plugins: [react(), tailwindcss()],
   build: {
     rollupOptions: {
@@ -12,12 +14,7 @@ export default defineConfig({
           if (id.includes('/@tanstack/react-router/') || id.includes('/@tanstack/react-query/')) {
             return 'vendor-router';
           }
-          if (id.includes('/zrender/')) {
-            return 'vendor-zrender';
-          }
-          if (id.includes('/echarts/')) {
-            return 'vendor-echarts';
-          }
+          if (id.includes('/@tremor/')) return 'vendor-charts';
           if (
             id.includes('/@radix-ui/') ||
             id.includes('/lucide-react/') ||

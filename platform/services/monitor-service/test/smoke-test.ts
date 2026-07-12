@@ -80,6 +80,14 @@ async function runSmokeTests(): Promise<void> {
     assert.equal(data.apps[0].appKey, 'smoke_app');
     assert.equal(data.environments.some((item: any) => item.value === 'dev'), true);
     assert.equal(data.devicePlatforms.some((item: any) => item.value === 'android'), true);
+    assert.equal(data.userIds[0].value, 'user_smoke');
+    assert.equal(data.sessionIds[0].value, 'ses_smoke');
+    assert.equal(data.requestIds[0].value, 'req-smoke');
+  });
+  await assertJson('/api/monitor/v1/dimensions?q=smoke&limit=10', (data) => {
+    assert.equal(data.userIds.some((item: any) => item.value === 'user_smoke'), true);
+    assert.equal(data.sessionIds.some((item: any) => item.value === 'ses_smoke'), true);
+    assert.equal(data.requestIds.some((item: any) => item.value === 'req-smoke'), true);
   });
   await assertJson('/api/monitor/v1/sessions?userId=user_smoke&environment=dev', (data) => {
     assert.equal(data.count, 1);
@@ -120,6 +128,24 @@ async function runSmokeTests(): Promise<void> {
     assert.equal(serialized.includes('ui.frame.window'), false);
     assert.equal(serialized.includes('page.active_window_id'), false);
     assert.equal(serialized.includes('memory.sample_delay_ms'), false);
+  });
+  await assertJson('/api/monitor/v1/performance/timeseries?from=2026-05-29T10:00:00.000Z&to=2026-05-29T11:00:00.000Z&bucket=hour', (data) => {
+    assert.equal(data.bucket, 'hour');
+    assert.equal(data.points.length, 1);
+    assert.equal(data.points[0].failedHttp, 1);
+    assert.equal(data.points[0].businessFailures, 1);
+    assert.equal(data.points[0].errors, 0);
+    assert.equal(data.points[0].httpTotal, 1);
+    assert.equal(data.points[0].businessSuccess, 0);
+    assert.equal(data.points[0].coldStartCount, 1);
+    assert.equal(data.points[0].coldStartTotalMs, 1000);
+    assert.equal(data.points[0].startupEventId, 'evt_smoke_start');
+  });
+  await assertJson('/api/monitor/v1/dashboard/business-actions?limit=5', (data) => {
+    assert.equal(data.items[0].action, 'detail.coupon.apply');
+    assert.equal(data.items[0].total, 1);
+    assert.equal(data.items[0].failed, 1);
+    assert.equal(data.items[0].eventId, 'evt_smoke_business_failed');
   });
 
   await restartService();

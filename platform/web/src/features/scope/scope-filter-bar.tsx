@@ -1,52 +1,42 @@
+import { SlidersHorizontal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { DateRangePicker } from '../../components/ui/date-range-picker';
+import { IdCombobox } from '../../components/ui/id-combobox';
 import { Select } from '../../components/ui/select';
+import { Sheet } from '../../components/ui/sheet';
+import { useIsMobile } from '../../shared/hooks/use-mobile';
+import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
+import { useDimensionsQuery } from '../../shared/datasource/queries';
 import type { DimensionSummary } from '../../shared/datasource/types';
-import { isoToLocalInput, localInputToIso } from '../../shared/formatting/format';
+
 type ScopeSearch = { from?: string; to?: string; userId?: string; sessionId?: string; appVersion?: string; environment?: string; route?: string };
 
-export function ScopeFilterBar({
-  search,
-  dimensions,
-  onPatch,
-}: {
-  search: ScopeSearch;
-  dimensions?: DimensionSummary;
-  onPatch: (patch: Partial<ScopeSearch>, resetPage?: boolean) => void;
-}) {
-  const [from, setFrom] = useState(isoToLocalInput(search.from));
-  const [to, setTo] = useState(isoToLocalInput(search.to));
-  const [userId, setUserId] = useState(search.userId ?? '');
-  const [sessionId, setSessionId] = useState(search.sessionId ?? '');
+export function ScopeFilterBar({ search, dimensions, onPatch }: { search: ScopeSearch; dimensions?: DimensionSummary; onPatch: (patch: Partial<ScopeSearch>, resetPage?: boolean) => void }) {
+  const mobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [userQuery, setUserQuery] = useState(search.userId ?? '');
+  const [sessionQuery, setSessionQuery] = useState(search.sessionId ?? '');
+  const debouncedUser = useDebouncedValue(userQuery, 250);
+  const debouncedSession = useDebouncedValue(sessionQuery, 250);
+  const scope = { from: search.from, to: search.to, appVersion: search.appVersion, environment: search.environment, route: search.route };
+  const userSuggestions = useDimensionsQuery(scope, debouncedUser);
+  const sessionSuggestions = useDimensionsQuery(scope, debouncedSession);
+  useEffect(() => setUserQuery(search.userId ?? ''), [search.userId]);
+  useEffect(() => setSessionQuery(search.sessionId ?? ''), [search.sessionId]);
 
-  useEffect(() => setFrom(isoToLocalInput(search.from)), [search.from]);
-  useEffect(() => setTo(isoToLocalInput(search.to)), [search.to]);
-  useEffect(() => setUserId(search.userId ?? ''), [search.userId]);
-  useEffect(() => setSessionId(search.sessionId ?? ''), [search.sessionId]);
+  const controls = <>
+    <IdCombobox value={search.userId} label="用户 ID" query={userQuery} options={userSuggestions.data?.userIds ?? []} loading={userSuggestions.isFetching} error={userSuggestions.isError} onQueryChange={setUserQuery} onChange={(userId) => onPatch({ userId }, true)} className="w-full sm:w-40" />
+    <IdCombobox value={search.sessionId} label="Session ID" query={sessionQuery} options={sessionSuggestions.data?.sessionIds ?? []} loading={sessionSuggestions.isFetching} error={sessionSuggestions.isError} onQueryChange={setSessionQuery} onChange={(sessionId) => onPatch({ sessionId }, true)} className="w-full sm:w-44" />
+    <Select value={search.appVersion} placeholder="全部版本" options={options(dimensions?.appVersions)} onChange={(appVersion) => onPatch({ appVersion }, true)} className="w-full sm:w-36" />
+    <Select value={search.environment} placeholder="全部环境" options={options(dimensions?.environments)} onChange={(environment) => onPatch({ environment }, true)} className="w-full sm:w-32" />
+    <Select value={search.route} placeholder="全部路由" options={options(dimensions?.routes)} onChange={(route) => onPatch({ route }, true)} className="w-full sm:w-40" />
+  </>;
 
-  function commitText(key: 'userId' | 'sessionId', value: string) {
-    onPatch({ [key]: value.trim() || undefined }, true);
-  }
-
-  return (
-    <section aria-label="范围筛选" className="flex min-w-0 flex-wrap items-end gap-2 border-b border-border-default bg-surface px-3 py-2">
-      <FilterField label="开始时间"><Input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 w-[172px] text-xs" /></FilterField>
-      <FilterField label="结束时间"><Input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 w-[172px] text-xs" /></FilterField>
-      <Button size="sm" onClick={() => onPatch({ from: localInputToIso(from), to: localInputToIso(to) }, true)}>应用时间</Button>
-      <FilterField label="用户 ID"><Input value={userId} onChange={(event) => setUserId(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && commitText('userId', userId)} onBlur={() => commitText('userId', userId)} className="h-8 w-36 text-xs" placeholder="输入后回车" /></FilterField>
-      <FilterField label="Session ID"><Input value={sessionId} onChange={(event) => setSessionId(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && commitText('sessionId', sessionId)} onBlur={() => commitText('sessionId', sessionId)} className="h-8 w-36 text-xs" placeholder="输入后回车" /></FilterField>
-      <FilterField label="版本"><Select value={search.appVersion} placeholder="全部版本" options={options(dimensions?.appVersions)} onChange={(value) => onPatch({ appVersion: value }, true)} className="w-32" /></FilterField>
-      <FilterField label="环境"><Select value={search.environment} placeholder="全部环境" options={options(dimensions?.environments)} onChange={(value) => onPatch({ environment: value }, true)} className="w-28" /></FilterField>
-      <FilterField label="关联路由"><Select value={search.route} placeholder="全部路由" options={options(dimensions?.routes)} onChange={(value) => onPatch({ route: value }, true)} className="w-36" /></FilterField>
-    </section>
-  );
+  return <section aria-label="范围筛选" className="flex min-w-0 items-center gap-2 border-b border-border-default bg-surface px-3 py-2">
+    <DateRangePicker from={search.from} to={search.to} onChange={(value) => onPatch(value, true)} className="shrink-0" />
+    {mobile ? <><Button variant="outline" className="ml-auto shadow-none" onClick={() => setSheetOpen(true)}><SlidersHorizontal />筛选</Button><Sheet open={sheetOpen} onOpenChange={setSheetOpen} title="范围筛选" description="用户、Session、版本、环境与路由"><div className="grid gap-3 p-4">{controls}<Button variant="ghost" onClick={() => { onPatch({ userId: undefined, sessionId: undefined, appVersion: undefined, environment: undefined, route: undefined }, true); setSheetOpen(false); }}><X />清除范围筛选</Button></div></Sheet></> : <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{controls}</div>}
+  </section>;
 }
 
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="grid gap-0.5 text-[11px] leading-4 text-text-secondary"><span>{label}</span>{children}</label>;
-}
-
-function options(items?: Array<{ value: string; count: number }>) {
-  return (items ?? []).map((item) => ({ value: item.value, label: `${item.value} (${item.count})` }));
-}
+function options(items?: Array<{ value: string; count: number }>) { return (items ?? []).map((item) => ({ value: item.value, label: `${item.value} (${item.count})` })); }

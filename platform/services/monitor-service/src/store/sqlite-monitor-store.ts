@@ -43,8 +43,10 @@ import type {
   BusinessCatalogItem,
   BusinessCatalogQuery,
   BusinessCatalogResult,
+  BusinessActionSummary,
   DurationSummary,
   ErrorPerformanceSummary,
+  FailureTimeseries,
   EventFilters,
   ErrorCatalogItem,
   ErrorCatalogQuery,
@@ -340,7 +342,77 @@ export class SqliteMonitorStore implements MonitorStore {
     };
   }
 
-  dimensions(filters: EventFilters): DimensionSummary {
+  failureTimeseries(filters: EventFilters, bucket: 'hour' | 'day'): FailureTimeseries {
+    const fromMs = Date.parse(filters.from ?? '') || Date.now() - 24 * 60 * 60 * 1000;
+    const toMs = Date.parse(filters.to ?? '') || Date.now();
+    const bucketMs = bucket === 'day' ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+    const firstBucket = Math.floor(fromMs / bucketMs) * bucketMs;
+    const emptyPoint = () => ({ httpTotal: 0, failedHttp: 0, errors: 0, businessFailures: 0, businessSuccess: 0, businessCancelled: 0, coldStartCount: 0, coldStartTotalMs: 0, coldStartSlowCount: 0, startupEventId: undefined as string | undefined, startupSessionId: undefined as string | undefined, startupMaxMs: -1 });
+    const points = new Map<number, ReturnType<typeof emptyPoint>>();
+    for (let cursor = firstBucket; cursor < toMs; cursor += bucketMs) {
+      points.set(cursor, emptyPoint());
+    }
+    for (const event of this.selectFilteredEvents(filters)) {
+      const time = eventTimeValue(event);
+      if (!Number.isFinite(time) || time < fromMs || time > toMs) continue;
+      const start = Math.floor(time / bucketMs) * bucketMs;
+      const point = points.get(start);
+      if (!point) continue;
+      if (isHttpEvent(event)) point.httpTotal += 1;
+      if (isFailedHttpEvent(event)) point.failedHttp += 1;
+      if (isStabilityErrorEvent(event)) point.errors += 1;
+      const domain = domainCatalogFieldsOf(event);
+      if (domain.businessResult === 'failed') point.businessFailures += 1;
+      if (domain.businessResult === 'success') point.businessSuccess += 1;
+      if (domain.businessResult === 'cancelled') point.businessCancelled += 1;
+      if (nameOf(event) === 'app.cold_start' && typeof event.durationMs === 'number') {
+        point.coldStartCount += 1;
+        point.coldStartTotalMs += event.durationMs;
+        if (event.durationMs >= 1000) point.coldStartSlowCount += 1;
+        if (event.durationMs > point.startupMaxMs) {
+          point.startupMaxMs = event.durationMs;
+          point.startupEventId = event.eventId;
+          point.startupSessionId = event.sessionId;
+        }
+      }
+    }
+    return {
+      from: new Date(fromMs).toISOString(),
+      to: new Date(toMs).toISOString(),
+      bucket,
+      points: [...points.entries()].map(([start, { startupMaxMs: _startupMaxMs, ...value }]) => ({
+        from: new Date(Math.max(start, fromMs)).toISOString(),
+        to: new Date(Math.min(start + bucketMs, toMs)).toISOString(),
+        ...value,
+      })),
+    };
+  }
+
+  businessActionSummary(filters: EventFilters, limit: number): BusinessActionSummary {
+    const summaries = new Map<string, { total: number; failed: number; eventId?: string; sessionId?: string; time: number }>();
+    for (const event of this.selectFilteredEvents({ ...filters, limit: undefined, offset: undefined })) {
+      const domain = domainCatalogFieldsOf(event);
+      if (!domain.businessAction) continue;
+      const current = summaries.get(domain.businessAction) ?? { total: 0, failed: 0, time: -1 };
+      current.total += 1;
+      if (domain.businessResult === 'failed') current.failed += 1;
+      const time = eventTimeValue(event);
+      if (time > current.time) {
+        current.time = time;
+        current.eventId = event.eventId;
+        current.sessionId = event.sessionId;
+      }
+      summaries.set(domain.businessAction, current);
+    }
+    return {
+      items: [...summaries.entries()]
+        .map(([action, value]) => ({ action, total: value.total, failed: value.failed, eventId: value.eventId, sessionId: value.sessionId }))
+        .sort((a, b) => b.total - a.total || b.failed - a.failed || a.action.localeCompare(b.action))
+        .slice(0, Math.min(Math.max(limit, 1), 50)),
+    };
+  }
+
+  dimensions(filters: EventFilters, options: { q?: string; limit?: number } = {}): DimensionSummary {
     const dimensionFilters = withoutPaging(filters);
     const appFilters = { ...dimensionFilters, appKey: undefined };
     const { whereSql: appWhereSql, params: appParams } = whereFromFilters(appFilters);
@@ -398,6 +470,9 @@ export class SqliteMonitorStore implements MonitorStore {
       statuses: this.dimensionOptions('status', dimensionFilters, 'status'),
       names: this.dimensionOptions('name', dimensionFilters, 'name'),
       signalTypes: this.dimensionOptions('signal_type', dimensionFilters, 'signalType'),
+      userIds: this.suggestOptions('user_id', { ...dimensionFilters, userId: undefined }, options),
+      sessionIds: this.suggestOptions('session_id', { ...dimensionFilters, sessionId: undefined }, options),
+      requestIds: this.suggestOptions('http_request_id', dimensionFilters, options),
     };
   }
 
@@ -902,6 +977,33 @@ export class SqliteMonitorStore implements MonitorStore {
       `,
       params,
     ).map((row) => ({ value: row.value, count: row.count }));
+  }
+
+  private suggestOptions(
+    columnName: 'user_id' | 'session_id' | 'http_request_id',
+    filters: EventFilters,
+    options: { q?: string; limit?: number },
+  ): DimensionOption[] {
+    const { whereSql, params } = whereFromFilters(withoutPaging(filters));
+    const q = options.q?.trim().toLowerCase();
+    const clauses = [`${columnName} is not null`, `${columnName} <> ''`];
+    if (q) {
+      clauses.push(`lower(${columnName}) like ? escape '\\'`);
+      params.push(`%${escapeLike(q)}%`);
+    }
+    const connector = whereSql ? 'and' : 'where';
+    const rankSql = q
+      ? `case when lower(${columnName}) = ? then 0 when lower(${columnName}) like ? escape '\\' then 1 else 2 end,`
+      : '';
+    const rankParams: SqlParam[] = q ? [q, `${escapeLike(q)}%`] : [];
+    return this.selectRows<DimensionRow & { last_timestamp_ms: number }>(
+      `select ${columnName} as value, count(*) as count, max(timestamp_ms) as last_timestamp_ms
+       from events ${whereSql} ${connector} ${clauses.join(' and ')}
+       group by ${columnName}
+       order by ${rankSql} last_timestamp_ms desc, value asc
+       limit ?`,
+      [...params, ...rankParams, Math.min(Math.max(options.limit ?? 20, 1), 100)],
+    ).map((row) => ({ value: row.value, count: row.count, lastTimestamp: new Date(row.last_timestamp_ms).toISOString() }));
   }
 }
 

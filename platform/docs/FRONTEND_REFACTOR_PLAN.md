@@ -297,6 +297,8 @@ bash scripts/check.sh
 | 一、查询与设计地基 | 已完成 | 已完成 | 已通过并进入下一阶段 | complete |
 | 二、HTTP 样板 | 已完成 | 已完成 | 验收通过 | complete |
 | 三、埋点与异常 | 已完成 | 已完成 | 验收通过并进入下一阶段 | complete |
-| 四、大屏与 Session 收口 | 已完成 | 已完成 | 待验收 | review |
+| 四、大屏与 Session 收口 | 已完成 | 已完成 | 已通过 | complete |
+
+Phase 1–4 结项后的体验升级见 [`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)。
 
 开始或完成某一步时同步更新本表。不得一次性把未实际完成的阶段标为完成。

@@ -48,6 +48,8 @@ export class QueryController {
 
   @Get('dimensions')
   @ApiOperation({ summary: '维度摘要' })
+  @ApiQuery({ name: 'q', required: false, description: 'ID 候选 substring 查询' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   dimensions(@Query() query: Record<string, string | string[] | undefined>) {
     return this.queryService.dimensions(query);
   }
@@ -75,6 +77,20 @@ export class QueryController {
   @ApiOperation({ summary: '性能概览' })
   performanceOverview(@Query() query: Record<string, string | string[] | undefined>) {
     return this.queryService.performanceOverview(query);
+  }
+
+  @Get('performance/timeseries')
+  @ApiOperation({ summary: '失败 HTTP、异常与业务失败时间序列' })
+  @ApiQuery({ name: 'bucket', required: false, enum: ['hour', 'day'] })
+  failureTimeseries(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.failureTimeseries(query);
+  }
+
+  @Get('dashboard/business-actions')
+  @ApiOperation({ summary: 'Workbench 大屏业务动作 TopN' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  businessActions(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.businessActions(query);
   }
 
   @Get('performance/pages')

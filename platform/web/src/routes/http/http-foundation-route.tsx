@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { Radio } from 'lucide-react';
 import type { HttpSearch } from '../../app/router';
 import { SplitPane } from '../../components/layout/split-pane';
 import { Button } from '../../components/ui/button';
@@ -32,7 +31,7 @@ export function HttpFoundationRoute() {
   const hasFilters = ALL_FILTER_KEYS.some((key) => search[key] !== undefined);
 
   function patch(patchValue: Partial<HttpSearch>, resetPage = false) {
-    void navigate({ search: (current) => clean({ ...current, ...patchValue, ...(resetPage ? { page: undefined, eventId: undefined, detail: undefined } : {}) }) });
+    void navigate({ search: (current) => clean({ ...current, ...patchValue, ...(resetPage ? { page: undefined, eventId: undefined, detail: undefined } : {}) }), replace: resetPage });
   }
   function clearKeys(keys: Array<keyof HttpSearch>) { patch(Object.fromEntries(keys.map((key) => [key, undefined])) as Partial<HttpSearch>, true); }
   function select(item: HttpCatalogItem) {
@@ -52,12 +51,8 @@ export function HttpFoundationRoute() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border-default bg-surface px-4">
-        <div className="min-w-0"><h1 className="truncate text-[15px] font-semibold leading-6 text-text-primary">HTTP 请求</h1><p className="truncate text-xs leading-[18px] text-text-secondary">最近完成的客户端请求</p></div>
-        <div className="flex items-center gap-3 text-xs text-text-secondary"><span className="inline-flex items-center gap-1"><Radio className="size-3.5 text-status-success" />Live</span><label className="inline-flex items-center gap-2"><input type="checkbox" checked={fullUrl} onChange={(event) => { setFullUrl(event.target.checked); localStorage.setItem('flutter-monitor.http.full-url', String(event.target.checked)); }} />完整 URL</label></div>
-      </header>
       <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
-      <HttpFilterBar search={search} total={total} slowThresholdMs={catalog.data?.slowThresholdMs} onPatch={patch} onResetHttp={() => clearKeys(HTTP_KEYS)} onClearAll={() => clearKeys(ALL_FILTER_KEYS)} />
+      <HttpFilterBar search={search} total={total} slowThresholdMs={catalog.data?.slowThresholdMs} fullUrl={fullUrl} onFullUrlChange={(value) => { setFullUrl(value); localStorage.setItem('flutter-monitor.http.full-url', String(value)); }} onPatch={patch} onResetHttp={() => clearKeys(HTTP_KEYS)} onClearAll={() => clearKeys(ALL_FILTER_KEYS)} />
       <SplitPane
         primary={(
           <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_44px]">

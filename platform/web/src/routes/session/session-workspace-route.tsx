@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { AlertTriangle, ArrowLeft, GitBranch } from 'lucide-react';
-import { SplitPane } from '../../components/layout/split-pane';
-import { Sheet } from '../../components/ui/sheet';
+import { AlertTriangle, AppWindow, GitBranch, MousePointerClick, Network, Rocket } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
+import { IdCombobox } from '../../components/ui/id-combobox';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '../../components/ui/item';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../components/ui/resizable';
+import { ScrollArea } from '../../components/ui/scroll-area';
+import { Sheet } from '../../components/ui/sheet';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { CopyableId } from '../../components/common/copyable-id';
 import { JsonViewer } from '../../features/inspector/json-viewer';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { useEventQuery, useSessionQuery } from '../../shared/datasource/queries';
+import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
+import { useDimensionsQuery, useEventQuery, useSessionQuery } from '../../shared/datasource/queries';
 import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventKind, issueLabels, readPath, sortEvents } from '../../shared/event-model/accessors';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
@@ -22,29 +26,63 @@ export function SessionWorkspaceRoute() {
   const navigate = useNavigate({ from: '/sessions/$sessionId' });
   const session = useSessionQuery(sessionId);
   const [group, setGroup] = useState<Group>('all');
+  const [sessionQuery, setSessionQuery] = useState(sessionId);
+  const debouncedSession = useDebouncedValue(sessionQuery, 250);
+  const suggestions = useDimensionsQuery({}, debouncedSession);
   const selectedRef = useRef<HTMLButtonElement>(null);
   const events = useMemo(() => sortEvents(session.data ?? []).filter(inPrimaryTimeline), [session.data]);
+  const visible = events.filter((event) => group === 'all' || groupOf(event) === group);
   const selectedEvent = events.find((event) => event.eventId === search.eventId);
   const detail = useEventQuery(search.eventId);
-  const visible = events.filter((event) => group === 'all' || groupOf(event) === group);
-  const narrow = useMedia('(max-width: 1023px)');
+  const narrow = useMedia('(max-width: 899px)');
+  const first = events[0];
+  const last = events.at(-1);
+  const userId = stringValue(readPath(first, ['context', 'user', 'userId']));
+  const appVersion = stringValue(readPath(first, ['resource', 'app', 'appVersion']));
+  const problemCount = events.filter((event) => groupOf(event) === 'problem').length;
 
+  useEffect(() => { setSessionQuery(sessionId); }, [sessionId]);
   useEffect(() => { if (search.eventId) selectedRef.current?.scrollIntoView({ block: 'center' }); }, [search.eventId, visible.length]);
-  function select(event: MonitorEvent) { if (!event.eventId) return; void navigate({ search: { eventId: event.eventId, traceId: event.traceId } }); }
+  function select(event: MonitorEvent) { if (event.eventId) void navigate({ search: { eventId: event.eventId, traceId: event.traceId } }); }
+  function switchSession(next?: string) { if (!next || next === sessionId) return; void navigate({ to: '/sessions/$sessionId', params: { sessionId: next }, search: {} }); }
   const record = <SessionRecord event={detail.data ?? selectedEvent} loading={detail.isLoading} />;
-  return <div className="flex h-full min-h-0 flex-col bg-canvas">
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border-default bg-surface px-3"><div className="flex min-w-0 items-center gap-2"><Button asChild size="icon" variant="ghost"><a href="/" aria-label="返回大屏"><ArrowLeft /></a></Button><div className="min-w-0"><h1 className="truncate text-[15px] font-semibold">Session 链路</h1><div className="flex items-center gap-1 text-xs text-text-secondary"><GitBranch className="size-3"/><CopyableId value={sessionId}/></div></div></div><span className="text-xs tabular-nums text-text-secondary">{events.length} 个主要事件</span></header>
-    <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-border-default bg-surface px-3">{(['all','startup','page','http','business','problem'] as Group[]).map((value)=><Button key={value} size="sm" variant={group===value?'default':'ghost'} onClick={()=>setGroup(value)}>{groupLabel(value)} <span className="tabular-nums opacity-70">{value==='all'?events.length:events.filter((event)=>groupOf(event)===value).length}</span></Button>)}</div>
-    {session.isLoading ? <State text="正在加载 Session"/> : session.isError ? <State text="Session 加载失败"/> : events.length===0 ? <State text="Session 中没有启动、页面、HTTP、埋点或错误事件"/> : <SplitPane storageKey="flutter-monitor.session.record-width" defaultSize={460} minSize={380} maxSize={720} primary={<div className="h-full overflow-auto bg-surface p-3"><div className="relative mx-auto grid max-w-4xl gap-1 border-l border-border-default pl-4">{visible.map((event)=><TimelineRow key={event.eventId} event={event} selected={event.eventId===search.eventId} selectedRef={event.eventId===search.eventId?selectedRef:undefined} onClick={()=>select(event)}/>)}</div></div>} secondary={record}/>} 
-    {narrow ? <Sheet open={Boolean(search.eventId)} onOpenChange={(open)=>{if(!open)void navigate({search:{}})}} title={selectedEvent?.name ?? '事件详情'}>{record}</Sheet> : null}
+
+  return <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-canvas">
+    <section className="flex min-w-0 flex-wrap items-center gap-3 border-b border-border-default bg-surface px-3 py-2">
+      <IdCombobox value={sessionId} label="Session ID" query={sessionQuery} options={suggestions.data?.sessionIds ?? []} loading={suggestions.isFetching} error={suggestions.isError} onQueryChange={setSessionQuery} onChange={switchSession} className="w-64" />
+      <Summary label="时间" value={`${formatDateTime(first?.timestamp ?? first?.startTime)} - ${formatDateTime(last?.timestamp ?? last?.endTime)}`} />
+      <Summary label="用户" value={userId ?? '-'} mono />
+      <Summary label="版本" value={appVersion ?? '-'} />
+      <Badge tone={problemCount ? 'danger' : 'neutral'}>{problemCount} 个问题</Badge>
+    </section>
+    {session.isLoading ? <SessionEmpty title="正在加载 Session" description="读取事件链路与上下文" /> : session.isError ? <SessionEmpty title="Session 加载失败" description="请检查 Monitor Service 后重试" danger /> : events.length === 0 ? <SessionEmpty title="没有主要事件" description="当前 Session 中没有启动、页面、HTTP、埋点或错误事件" /> : narrow ? <MobileWorkspace group={group} setGroup={setGroup} events={events} visible={visible} selectedId={search.eventId} selectedRef={selectedRef} onSelect={select} record={record} onClose={() => void navigate({ search: {} })} /> : <ResizablePanelGroup orientation="horizontal" className="min-h-0 bg-surface">
+      <ResizablePanel defaultSize={58} minSize={40}><EventBrowser group={group} setGroup={setGroup} events={events} visible={visible} selectedId={search.eventId} selectedRef={selectedRef} onSelect={select} /></ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel defaultSize={42} minSize={30}><div className="h-full min-h-0 border-l border-border-default bg-surface">{record}</div></ResizablePanel>
+    </ResizablePanelGroup>}
   </div>;
 }
 
-function TimelineRow({event,selected,selectedRef,onClick}:{event:MonitorEvent;selected:boolean;selectedRef?:React.RefObject<HTMLButtonElement|null>;onClick:()=>void}){const group=groupOf(event);const issues=issueLabels(event);return <button ref={selectedRef} type="button" onClick={onClick} className={cn('relative grid min-h-14 w-full grid-cols-[90px_minmax(0,1fr)_auto] items-center gap-3 rounded-control border border-transparent px-3 py-2 text-left outline-none hover:bg-subtle focus-visible:ring-2 focus-visible:ring-interactive-focusRing',selected&&'border-border-selected bg-selected')}><span className={cn('absolute -left-[21px] size-2 rounded-full bg-status-neutral',issues.length&&'bg-status-danger',selected&&'size-2.5 bg-accent-default')}/><span className="font-mono text-[11px] text-text-muted">{formatDateTime(event.timestamp??event.startTime).slice(9)}</span><span className="min-w-0"><span className="block truncate text-sm font-medium">{eventTitle(event)}</span><span className="block truncate text-xs text-text-secondary">{event.status??event.signalType}{event.durationMs!==undefined?` · ${formatDuration(event.durationMs)}`:''}</span></span><Badge tone={issues.length?'danger':'neutral'}>{groupLabel(group)}</Badge></button>}
-function SessionRecord({event,loading}:{event?:MonitorEvent;loading:boolean}){if(loading)return <State text="正在加载事件"/>;if(!event)return <State text="选择一个事件查看详情"/>;return <div className="grid gap-3 p-3 pt-12 text-xs"><div><div className="flex items-center gap-2"><Badge tone={issueLabels(event).length?'danger':'neutral'}>{groupLabel(groupOf(event))}</Badge><span className="text-text-secondary">{formatDateTime(event.timestamp??event.startTime)}</span></div><h2 className="mt-2 break-all text-sm font-semibold">{eventTitle(event)}</h2></div><div className="grid gap-2 border-y border-border-default py-3"><Id label="Event" value={event.eventId}/><Id label="Trace" value={event.traceId}/><Id label="Span" value={event.spanId}/></div><Tabs defaultValue="summary" className="grid gap-2"><TabsList className="w-fit"><TabsTrigger value="summary">摘要</TabsTrigger><TabsTrigger value="context">上下文</TabsTrigger><TabsTrigger value="raw">Raw</TabsTrigger></TabsList><TabsContent value="summary"><JsonViewer value={{status:event.status,durationMs:event.durationMs,attributes:event.attributes,payload:event.payload}} collapsed={2}/></TabsContent><TabsContent value="context"><JsonViewer value={{resource:event.resource,context:event.context}} collapsed={2}/></TabsContent><TabsContent value="raw"><JsonViewer value={event} collapsed={2}/></TabsContent></Tabs></div>}
-function State({text}:{text:string}){return <div className="grid h-full min-h-40 place-items-center p-6 text-sm text-text-secondary">{text}</div>};function Id({label,value}:{label:string;value?:string}){return <div className="flex items-center justify-between gap-2"><span>{label}</span><CopyableId value={value}/></div>}
-function inPrimaryTimeline(event:MonitorEvent){return ['startup','page','http','business','error'].includes(eventKind(event))||readPath(event,['attributes','business.result'])==='failed'}
-function groupOf(event:MonitorEvent):Group{const kind=eventKind(event);if(kind==='error'||event.status==='error'&&kind!=='http'||readPath(event,['attributes','business.result'])==='failed')return'problem';if(kind==='startup')return'startup';if(kind==='page')return'page';if(kind==='http')return'http';if(kind==='business')return'business';return'all'}
-function groupLabel(group:Group){return({all:'全部',startup:'启动',page:'页面',http:'HTTP',business:'埋点',problem:'问题'})[group]}
-function eventTitle(event:MonitorEvent){if(eventKind(event)==='http')return `${String(readPath(event,['attributes','http.method'])??'HTTP')} ${String(readPath(event,['attributes','http.url.normalized'])??event.name)}`;return String(readPath(event,['attributes','business.action'])??readPath(event,['attributes','error.type'])??event.name??'事件')}
-function useMedia(query:string){const [matches,setMatches]=useState(()=>window.matchMedia(query).matches);useEffect(()=>{const media=window.matchMedia(query);const update=()=>setMatches(media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update)},[query]);return matches}
+function EventBrowser({ group, setGroup, events, visible, selectedId, selectedRef, onSelect }: { group: Group; setGroup: (group: Group) => void; events: MonitorEvent[]; visible: MonitorEvent[]; selectedId?: string; selectedRef: React.RefObject<HTMLButtonElement | null>; onSelect: (event: MonitorEvent) => void }) {
+  return <Tabs value={group} onValueChange={(value) => setGroup(value as Group)} className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+    <ScrollArea className="border-b border-border-default"><div className="w-max px-3 py-2"><TabsList>{groups.map((value) => <TabsTrigger key={value} value={value}>{groupLabel(value)} <span className="ml-1 tabular-nums opacity-60">{value === 'all' ? events.length : events.filter((event) => groupOf(event) === value).length}</span></TabsTrigger>)}</TabsList></div></ScrollArea>
+    <TabsContent value={group} className="min-h-0 overflow-hidden"><ScrollArea className="h-full"><ItemGroup className="p-2">{visible.map((event) => <EventItem key={event.eventId} event={event} selected={event.eventId === selectedId} selectedRef={event.eventId === selectedId ? selectedRef : undefined} onClick={() => onSelect(event)} />)}</ItemGroup></ScrollArea></TabsContent>
+  </Tabs>;
+}
+
+function EventItem({ event, selected, selectedRef, onClick }: { event: MonitorEvent; selected: boolean; selectedRef?: React.RefObject<HTMLButtonElement | null>; onClick: () => void }) { const group = groupOf(event); const issues = issueLabels(event); const Icon = groupIcon(group); const timestamp = event.timestamp ?? event.startTime; return <Item asChild size="sm" variant={selected ? 'outline' : 'default'} className={cn('w-full cursor-pointer rounded-md text-left hover:bg-accent/50', selected && 'border-border-selected bg-selected')}><button ref={selectedRef} type="button" onClick={onClick}><ItemMedia variant="icon"><Icon className={issues.length ? 'text-status-danger' : 'text-text-secondary'} /></ItemMedia><ItemContent><ItemTitle className="max-w-full truncate">{eventTitle(event)}</ItemTitle><ItemDescription className="flex flex-wrap gap-x-2 text-xs"><span title={timestamp}>{formatDateTime(timestamp)}</span><span>{event.status ?? event.signalType}</span>{event.durationMs !== undefined ? <span>{formatDuration(event.durationMs)}</span> : null}</ItemDescription></ItemContent><ItemActions><Badge tone={issues.length ? 'danger' : 'neutral'}>{groupLabel(group)}</Badge></ItemActions></button></Item> }
+
+function MobileWorkspace(props: Parameters<typeof EventBrowser>[0] & { record: React.ReactNode; onClose: () => void }) { return <><EventBrowser {...props} /><Sheet open={Boolean(props.selectedId)} onOpenChange={(open) => !open && props.onClose()} title="事件详情">{props.record}</Sheet></>; }
+function SessionRecord({ event, loading }: { event?: MonitorEvent; loading: boolean }) { if (loading) return <SessionEmpty title="正在加载事件" description="读取原始 EventEnvelope" />; if (!event) return <SessionEmpty title="选择一个事件" description="从左侧事件流查看摘要、上下文和 Raw" />; return <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"><div className="border-b border-border-default p-3"><div className="flex items-center gap-2"><Badge tone={issueLabels(event).length ? 'danger' : 'neutral'}>{groupLabel(groupOf(event))}</Badge><span className="text-xs text-text-secondary">{formatDateTime(event.timestamp ?? event.startTime)}</span></div><h2 className="mt-2 break-all text-sm font-semibold">{eventTitle(event)}</h2><div className="mt-2 flex flex-wrap gap-3 text-xs"><Id label="Event" value={event.eventId} /><Id label="Trace" value={event.traceId} /><Id label="Span" value={event.spanId} /></div></div><Tabs defaultValue="summary" className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] p-3"><TabsList className="w-fit"><TabsTrigger value="summary">摘要</TabsTrigger><TabsTrigger value="context">上下文</TabsTrigger><TabsTrigger value="raw">Raw</TabsTrigger></TabsList><TabsContent value="summary" className="min-h-0 overflow-auto"><JsonViewer value={{ status: event.status, durationMs: event.durationMs, attributes: event.attributes, payload: event.payload }} collapsed={2} /></TabsContent><TabsContent value="context" className="min-h-0 overflow-auto"><JsonViewer value={{ resource: event.resource, context: event.context }} collapsed={2} /></TabsContent><TabsContent value="raw" className="min-h-0 overflow-auto"><JsonViewer value={event} collapsed={2} /></TabsContent></Tabs></div> }
+function SessionEmpty({ title, description, danger }: { title: string; description: string; danger?: boolean }) { return <Empty className="h-full border-0"><EmptyHeader><EmptyMedia variant="icon">{danger ? <AlertTriangle className="text-status-danger" /> : <GitBranch />}</EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader></Empty>; }
+function Summary({ label, value, mono }: { label: string; value: string; mono?: boolean }) { return <div className="min-w-0 text-xs"><span className="text-text-muted">{label}</span><div className={cn('max-w-72 truncate text-text-primary', mono && 'font-mono')}>{value}</div></div>; }
+function Id({ label, value }: { label: string; value?: string }) { return <span className="inline-flex items-center gap-1 text-text-secondary"><span>{label}</span><CopyableId value={value} /></span>; }
+
+const groups: Group[] = ['all', 'startup', 'page', 'http', 'business', 'problem'];
+function inPrimaryTimeline(event: MonitorEvent) { return ['startup', 'page', 'http', 'business', 'error'].includes(eventKind(event)) || readPath(event, ['attributes', 'business.result']) === 'failed'; }
+function groupOf(event: MonitorEvent): Group { const kind = eventKind(event); if (kind === 'error' || (event.status === 'error' && kind !== 'http') || readPath(event, ['attributes', 'business.result']) === 'failed') return 'problem'; if (kind === 'startup') return 'startup'; if (kind === 'page') return 'page'; if (kind === 'http') return 'http'; if (kind === 'business') return 'business'; return 'all'; }
+function groupLabel(group: Group) { return ({ all: '全部', startup: '启动', page: '页面', http: 'HTTP', business: '埋点', problem: '问题' })[group]; }
+function groupIcon(group: Group) { return group === 'startup' ? Rocket : group === 'page' ? AppWindow : group === 'http' ? Network : group === 'business' ? MousePointerClick : group === 'problem' ? AlertTriangle : GitBranch; }
+function eventTitle(event: MonitorEvent) { if (eventKind(event) === 'http') return `${String(readPath(event, ['attributes', 'http.method']) ?? 'HTTP')} ${String(readPath(event, ['attributes', 'http.url.normalized']) ?? event.name)}`; return String(readPath(event, ['attributes', 'business.action']) ?? readPath(event, ['attributes', 'error.type']) ?? event.name ?? '事件'); }
+function stringValue(value: unknown) { return typeof value === 'string' ? value : undefined; }
+function useMedia(query: string) { const [matches, setMatches] = useState(() => window.matchMedia(query).matches); useEffect(() => { const media = window.matchMedia(query); const update = () => setMatches(media.matches); media.addEventListener('change', update); return () => media.removeEventListener('change', update); }, [query]); return matches; }

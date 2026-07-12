@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { LocalWorkbenchDatasource } from './local-workbench-datasource';
-import type { BusinessCatalogQuery, ErrorCatalogQuery, EventListResult, HttpCatalogQuery, MonitorEvent, SessionFilters, SessionListResult } from './types';
+import type { BusinessCatalogQuery, ErrorCatalogQuery, EventListResult, HttpCatalogQuery, MonitorEvent, SessionFilters, SessionListResult, TimeseriesBucket } from './types';
 
 export const datasource = new LocalWorkbenchDatasource();
 
 export const queryKeys = {
   health: ['health'] as const,
-  dimensions: (filters: SessionFilters) => ['dimensions', filters] as const,
+  dimensions: (filters: SessionFilters, q?: string) => ['dimensions', filters, q] as const,
   recent: (limit: number, offset = 0, filters: SessionFilters = {}) => ['recent', limit, offset, filters] as const,
   httpCatalog: (query: HttpCatalogQuery) => ['httpCatalog', query] as const,
   businessCatalog: (query: BusinessCatalogQuery) => ['businessCatalog', query] as const,
@@ -18,6 +18,8 @@ export const queryKeys = {
   trace: (traceId: string | undefined) => ['trace', traceId] as const,
   event: (eventId: string | undefined) => ['event', eventId] as const,
   performance: (filters: SessionFilters) => ['performance', filters] as const,
+  timeseries: (filters: SessionFilters, bucket?: TimeseriesBucket) => ['timeseries', filters, bucket] as const,
+  businessActions: (filters: SessionFilters, limit: number) => ['businessActions', filters, limit] as const,
   search: (query: string, filters: SessionFilters) => ['search', query, filters] as const,
 };
 
@@ -28,10 +30,10 @@ export function useHealthQuery() {
   });
 }
 
-export function useDimensionsQuery(filters: SessionFilters) {
+export function useDimensionsQuery(filters: SessionFilters, q?: string) {
   return useQuery({
-    queryKey: queryKeys.dimensions(filters),
-    queryFn: () => datasource.dimensions(filters),
+    queryKey: queryKeys.dimensions(filters, q),
+    queryFn: () => datasource.dimensions(filters, { q, limit: 30 }),
   });
 }
 
@@ -98,6 +100,14 @@ export function usePerformanceQuery(filters: SessionFilters) {
   });
 }
 
+export function useFailureTimeseriesQuery(filters: SessionFilters, bucket?: TimeseriesBucket) {
+  return useQuery({ queryKey: queryKeys.timeseries(filters, bucket), queryFn: () => datasource.failureTimeseries(filters, bucket) });
+}
+
+export function useBusinessActionSummaryQuery(filters: SessionFilters, limit = 8) {
+  return useQuery({ queryKey: queryKeys.businessActions(filters, limit), queryFn: () => datasource.businessActionSummary(filters, limit) });
+}
+
 export function useSearchMutation() {
   return useMutation({
     mutationFn: ({ query, filters }: { query: string; filters: SessionFilters }) =>
@@ -119,6 +129,8 @@ export function useLiveInvalidation(enabled: boolean) {
       void queryClient.invalidateQueries({ queryKey: ['errorCatalog'] });
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
       void queryClient.invalidateQueries({ queryKey: ['performance'] });
+      void queryClient.invalidateQueries({ queryKey: ['timeseries'] });
+      void queryClient.invalidateQueries({ queryKey: ['businessActions'] });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.sessionConsole(event.sessionId) });
       if (event.traceId) void queryClient.invalidateQueries({ queryKey: queryKeys.trace(event.traceId) });

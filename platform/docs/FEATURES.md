@@ -7,7 +7,7 @@
 现有实现取舍见 [`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)（页面默认推倒；数据层可留；JsonViewer 克制复用）。
 视觉、交互与页面模式见 [`DESIGN.md`](DESIGN.md)（active；HTTP 样板页实施门禁已开放）。
 
-状态：`active`（允许开始 HTTP 样板页；其它业务页面仍受 DESIGN 样板验收门禁约束）
+状态：`active`（Phase 1–4 四入口已验收；Phase 5 体验升级见 [`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)）
 
 ---
 
@@ -39,6 +39,9 @@
 | S.6 | 关联路由筛选 | `context.route.*` | 服务端已有 |
 | S.7 | 链路跳转 | 列表行 / 详情 → Session（选中对应 `eventId`）；复制 `eventId` / `sessionId` / `traceId` | 前端为主；Session 页已有基础 |
 | S.8 | 列表必备状态 | loading / empty / error / noResults；分页或虚拟滚动 | 前端 |
+| S.9 | 统一时间展示 | 列表、Preview、Record、最近问题和 Session 使用 `YYYY-MM-DD HH:mm:ss`；原始时间/毫秒可放 tooltip | 前端 |
+| S.10 | 文本筛自动查询 | URL、action、error 等文本输入约 300ms debounce；清空立即重置 | 前端 |
+| S.11 | ID 模糊选择 | `userId`、`sessionId`、`requestId` 使用真实候选 Combobox；完全匹配、前缀、包含依次排序 | service dimensions/suggest + 前端 |
 
 **暂缓**
 
@@ -60,13 +63,18 @@
 | 1.4 | 埋点指标 | 动作量、失败动作；点击进入埋点列表 | 服务端需补埋点聚合（小改） |
 | 1.5 | 异常指标 | error + 业务失败数量与影响面；点击进入异常列表 | 服务端部分已有；业务失败计数已有 |
 | 1.6 | 最近问题入口 | 最近失败 HTTP / error / 业务失败 → 详情或 Session | 服务端 list + 前端 |
-| 1.7 | 趋势（可选） | 启动 / HTTP 失败 / 异常随时间；点位回列表或 Session | 服务端可后补 |
+| 1.7 | 质量趋势 | HTTP 失败、error、业务失败随时间；点位进入带时间与类型预筛的 Catalog | service 时间分桶查询 |
+| 1.8 | HTTP 健康 | 请求量柱 + 失败率线；点击进入对应时间桶 HTTP Catalog | service 时间分桶查询 |
+| 1.9 | 埋点结果趋势 | success / failed / cancelled 随时间；点击进入埋点 Catalog | service 时间分桶查询 |
+| 1.10 | 业务动作排行 | Action 总量与失败数 TopN；点击按 Action/结果预筛 | service Action 聚合 |
+| 1.11 | 启动趋势 | 冷启动平均、慢启动次数；可定位到代表事件所在 Session | 聚合摘要必须携带可回查 `eventId` |
 
 **明确不做**
 
 - 默认不展示内存、帧数、jank、native
-- 不做不可点击的装饰性指标卡
+- 不做不可点击的装饰性指标卡或图表
 - 主标签不直接使用 `p50` / `p95` 等术语（口径可放说明）
+- 第一屏使用 4–5 张分析图；图表只使用 Tremor，不保留 echarts 双引擎
 
 ---
 
@@ -182,6 +190,9 @@
 | 5.2 | Session 时间线 | 启动 / 页面 / HTTP / 埋点 / 错误；默认不强调 memory / jank | 已有 console；展示口径收口 |
 | 5.3 | 按 `traceId` 查看同流程 | 详情或 Session 内高亮 / 过滤 | 服务端 `getTrace` 已有 |
 | 5.4 | ID 复制 | `eventId` / `sessionId` / `traceId` / `http.request_id` | 前端 |
+| 5.5 | 最近 Session | Sidebar 二级分组展示最近 3–5 个 Session；不提升为一级入口 | service sessions + 前端 |
+| 5.6 | Session 切换 | 在 Session 工作区按 sessionId / userId / 时间搜索并切换；切换后清除无效 eventId | dimensions/suggest + 前端 |
+| 5.7 | Session 事件流 | 启动 / 页面 / HTTP / 埋点 / 问题 Tabs；主从布局、分组、问题定位和移动 Sheet | 前端官方组件组合 |
 
 ---
 
@@ -204,12 +215,15 @@
 - 筛选：`http.request_id`、`http.method`、`http.status_code`、URL 模糊、Host、成败/慢、`business.action`、`business.result`、`error.type` / `error.mechanism`、fatal/handled
 - 业务码：ingest 时从响应 body 解析与 `data` 同级的 `code` 并索引
 - 大屏：埋点聚合；异常口径收口为 error + 业务失败
+- 大屏：质量、HTTP、埋点与启动时间分桶；Action TopN；代表事件均可通过 `eventId` 回查
+- dimensions/suggest：按范围提供 `userId`、`sessionId`、`requestId` substring 候选
 
 ### 前端
 
-- 四大模块页面与详情壳
+- 四大模块页面与详情壳（官方 shadcn Sidebar / Breadcrumb / Table / Command 等作为布局基础）
 - 共享筛选条、URL 默认不展示域名、链路跳转与 ID 复制
 - 列表 / 详情必备状态
+- Tremor 三图、完整状态和 drilldown
 
 ### 暂缓 / 不改 SDK
 

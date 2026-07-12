@@ -33,7 +33,8 @@ export class QueryService {
   errorCatalog(query: QueryRecord) { return this.store.listErrorCatalog(errorCatalogQueryFromQuery(query)); }
 
   dimensions(query: QueryRecord) {
-    return this.store.dimensions(filtersFromQuery(query));
+    const q = typeof query.q === 'string' ? query.q : undefined;
+    return this.store.dimensions(filtersFromQuery(query), { q, limit: clampLimit(query.limit, 20) });
   }
 
   sessions(query: QueryRecord) {
@@ -63,6 +64,19 @@ export class QueryService {
 
   performanceOverview(query: QueryRecord) {
     return this.store.performanceOverview(filtersFromQuery(query));
+  }
+
+  failureTimeseries(query: QueryRecord) {
+    const filters = filtersFromQuery(query);
+    const now = Date.now();
+    const from = filters.from ?? new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    const to = filters.to ?? new Date(now).toISOString();
+    const bucket = query.bucket === 'day' ? 'day' : 'hour';
+    return this.store.failureTimeseries({ ...filters, from, to, limit: undefined, offset: undefined }, bucket);
+  }
+
+  businessActions(query: QueryRecord) {
+    return this.store.businessActionSummary(filtersFromQuery(query), clampLimit(query.limit, 8));
   }
 
   performancePages(query: QueryRecord) {

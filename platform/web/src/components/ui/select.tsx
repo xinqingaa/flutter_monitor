@@ -40,7 +40,7 @@ export function Select({
         )}
       >
         <SelectPrimitive.Value placeholder={placeholder}>
-          <span className="block min-w-0 max-w-full truncate whitespace-nowrap">{selected?.triggerLabel ?? selected?.label}</span>
+          <span className="block min-w-0 max-w-full truncate whitespace-nowrap">{selected?.triggerLabel ?? selected?.label ?? placeholder}</span>
         </SelectPrimitive.Value>
         <SelectPrimitive.Icon asChild>
           <ChevronDown className="size-4 shrink-0 text-zinc-400" />
