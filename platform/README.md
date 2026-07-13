@@ -56,7 +56,9 @@ pnpm run smoke
 
 ## Docs
 
-- [Platform 文档索引](docs/README.md)
-- [Platform 架构与计划](docs/workbench_plan.md)
-- [Workbench 产品计划](docs/product_plan.md)
+- [文档索引](docs/README.md)
+- [产品](docs/product.md)
+- [架构](docs/architecture.md)
+- [Example Demo](docs/EXAMPLE_DEMO.md)
 - [Monitor Service 数据边界](services/monitor-service/docs/boundaries.md)
+- API：`http://localhost:3700/docs`（Swagger）

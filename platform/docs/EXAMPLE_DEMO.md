@@ -1,11 +1,9 @@
 # Example Demo（体育健康 App + Mock API）
 
-- status: active
-- last_updated: 2026-07-13
 - App：`packages/flutter_monitor_sdk/example`
 - Mock：`platform/services/monitor-service` → `/api/example/v1/*`
 
-本文锁定 example 作为**真实商业 App 演示**，不是 Monitor / Workbench 客户端。
+Example 是**真实商业 App 演示**，不是 Monitor / Workbench 客户端。
 
 ## 硬约束
 
@@ -101,19 +99,18 @@ Splash → Login
 属性建议：`result`=`success|failed`，失败带 `biz_code` / `message`。  
 HTTP 证据靠 Dio interceptor，不对每个请求再 `track`。
 
-## Kill / Keep
+## 范围与约束
 
-**Kill**
+Example **不做**：
 
-- `WorkbenchApi`、首页 recent 事件流
-- Dio + http 双栈业务调用
-- 旧商店 / checkout / ops mock 叙事
-- API Lab / Performance Gallery / Video 作为主产品页
+- 调用 Monitor 查询 API、首页 recent 事件流、或自建 Workbench 客户端
+- 业务路径混用 `package:http`（仅 Dio + SDK interceptor）
+- 旧商店 / checkout / ops mock 叙事；API Lab / Performance Gallery / Video 不作主产品页
 
-**Keep**
+Example **保留**：
 
 - SDK init、`MonitorMode`、routeObserver、Dio interceptor
-- Splash → Login → 主壳流程思路
+- Splash → Login → 主壳流程
 - `appTrack` 封装（仅白名单调用）
 
 ## 演示路径

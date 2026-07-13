@@ -123,10 +123,10 @@ Platform / Workbench 文档：
 
 - [Platform README](platform/README.md)
 - [Platform 文档索引](platform/docs/README.md)
-- [Platform 架构与计划](platform/docs/workbench_plan.md)
-- [Workbench 产品计划](platform/docs/product_plan.md)
+- [Workbench 产品](platform/docs/product.md)
+- [Platform 架构](platform/docs/architecture.md)
 - [Monitor Service 数据边界](platform/services/monitor-service/docs/boundaries.md)
-- [Workbench Service API（已废弃，见 Swagger）](platform/docs/service_api.md)
+- API：`http://localhost:3700/docs`（Swagger）
 
 `README.md` 只作为项目入口。事件模型以 `docs/event_model.md` 为准；采集口径以 `docs/signal_collection.md` 为准；Platform 边界以 `platform/docs/` 为准。
 

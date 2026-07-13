@@ -20,7 +20,7 @@
 
 1. 纯 Workbench 展示问题
    - 例：布局、侧栏、颜色、卡片、图表、文案、筛选交互。
-   - 先看 `platform/docs/README.md`、`platform/docs/product_plan.md`、`platform/docs/workbench_plan.md`。
+   - 先看 `platform/docs/README.md`、`platform/docs/product.md`、`platform/docs/architecture.md`。
    - 通常只改 `platform/web` 或 `platform/services/monitor-service` 查询摘要。
 
 2. Workbench 数据展示不对
@@ -123,7 +123,8 @@ bash scripts/check.sh
 文档迁移或链接调整后至少运行：
 
 ```sh
-rg "(^|[^/])docs/workbench_(plan|product_plan|service_api)\\.md|workbench_service_api|workbench_product_plan" README.md AGENTS.md docs platform/docs
+rg "docs/(workbench_plan|product_plan|service_api|FEATURES|FRONTEND_REFACTOR|PHASE5_UX|KEEP_KILL|UI_AUDIT)\\.md" README.md AGENTS.md SKILL.md docs platform
+test -f platform/docs/product.md && test -f platform/docs/architecture.md
 rg "热恢复" docs platform/docs platform/README.md README.md AGENTS.md
 ```
 

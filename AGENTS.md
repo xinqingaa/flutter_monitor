@@ -143,9 +143,8 @@ DevTools 侧目标：
 - `docs/architecture.md`：workspace 目标架构、包职责、代码目录、模块边界和运行时数据流。
 - `docs/plan.md`：当前状态总览、分阶段实施计划、验收标准和待办验证清单。
 - `platform/docs/README.md`：Platform 文档索引和消费侧边界。
-- `platform/docs/workbench_plan.md`：Platform 架构、Monitor Service、Datasource、存储、脚本和验收标准。
-- `platform/docs/product_plan.md`：Workbench Web 产品定位、信息架构、展示原则和交互设计。
-- `platform/docs/service_api.md`：历史 Workbench service HTTP API（已废弃，见 Swagger）。
+- `platform/docs/product.md`：Workbench 信息架构、共享交互与各模块现状。
+- `platform/docs/architecture.md`：Platform 架构、Monitor Service / Web 边界与排查食谱。
 
 README 只作为项目入口，不作为架构、协议或 schema 的唯一事实源。
 

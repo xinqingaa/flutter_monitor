@@ -5,7 +5,6 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] },
     "noEmit": true,
     "types": ["vite/client"]
