@@ -6,7 +6,7 @@
 - last_updated: 2026-07-13
 - decision order: [`FEATURES.md`](FEATURES.md) -> [`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md) -> [`DESIGN.md`](DESIGN.md) -> 本计划
 - implementation order: docs -> 必要 service/datasource -> web -> 自动验证 -> PC 人工验收
-- current target: 阶段 3
+- current target: 阶段 3、4、5
 
 本计划只跟踪前端工作台重构。构建通过不等于视觉完成；阶段必须同时满足代码、官方来源对照和指定视口验收，才能标记 `complete`。
 
@@ -140,7 +140,7 @@ git diff --check
 | 0. 审计与基线 | complete | 文档职责与八阶段状态已统一 |
 | 1. 主题与基础组件 | complete | 官方配置、主题和 primitive 边界已验证 |
 | 2. App Shell | complete | 1440/1280/1024、折叠导航和移动 Sheet 已验证 |
-| 3. HTTP Catalog | pending | 待验收 |
+| 3. HTTP Catalog | in_progress | 本轮执行 |
 | 4. 详情与浮层 | pending | 待验收 |
 | 5. 大屏 | pending | 待验收 |
 | 6. 埋点 / 异常 / Session | pending | 待验收 |

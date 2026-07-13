@@ -3,7 +3,6 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { HttpSearch } from '../../app/router';
 import { Button } from '../../components/ui/button';
 import { Pagination, PaginationContent, PaginationItem } from '../../components/ui/pagination';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../components/ui/resizable';
 import { FilterSelect } from '../../components/common/filter-select';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { HttpFilterBar } from '../../features/http/http-filter-bar';
@@ -54,13 +53,12 @@ export function HttpFoundationRoute() {
     <div className="flex h-full min-h-0 flex-col bg-background">
       <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
       <HttpFilterBar search={search} total={total} slowThresholdMs={catalog.data?.slowThresholdMs} fullUrl={fullUrl} onFullUrlChange={(value) => { setFullUrl(value); localStorage.setItem('flutter-monitor.http.full-url', String(value)); }} onPatch={patch} onResetHttp={() => clearKeys(HTTP_KEYS)} onClearAll={() => clearKeys(ALL_FILTER_KEYS)} />
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0">
-        <ResizablePanel defaultSize={76} minSize={55}>
-          <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
+          <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]">
             <HttpCatalogTable items={items} state={state} selectedId={search.eventId} fullUrl={fullUrl} slowThresholdMs={catalog.data?.slowThresholdMs ?? 1000} onSelect={select} onOpen={open} onRetry={() => void catalog.refetch()} />
-            <footer className="flex items-center justify-between gap-4 border-t px-4 py-2 text-sm text-muted-foreground">
-              <span className="tabular-nums">共 {total} 条，第 {page} / {totalPages} 页</span>
-              <div className="flex items-center gap-4">
+            <footer className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t px-4 py-2 text-sm text-muted-foreground">
+              <span className="whitespace-nowrap tabular-nums">共 {total} 条，第 {page} / {totalPages} 页</span>
+              <div className="flex items-center gap-3">
                 <FilterSelect value={String(pageSize)} placeholder="每页" options={[25, 50, 100].map((value) => ({ value: String(value), label: `${value} 条/页` }))} onChange={(value) => patch({ pageSize: Number(value) as 25 | 50 | 100, page: undefined, eventId: undefined, detail: undefined })} className="w-28" />
                 <Pagination className="w-auto">
                   <PaginationContent>
@@ -71,14 +69,10 @@ export function HttpFoundationRoute() {
               </div>
             </footer>
           </div>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={24} minSize={20}>
-          <aside className="h-full min-h-0 overflow-auto bg-muted/20">
+          <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
             <CatalogPreviewPane item={selected} loading={Boolean(search.eventId && catalog.isLoading)} error={Boolean(search.eventId && catalog.isError)} onOpen={() => selected && open(selected)} />
           </aside>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      </div>
       <HttpRecord open={Boolean(search.detail)} item={detailItem} event={detail.data} loading={detail.isLoading} error={detail.isError} onOpenChange={(openValue) => { if (!openValue) patch({ detail: undefined }); }} />
     </div>
   );

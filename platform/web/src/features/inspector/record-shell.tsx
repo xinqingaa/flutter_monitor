@@ -1,5 +1,11 @@
 import type * as React from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../../components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '../../components/ui/sheet';
 
 export type RecordShellState = 'loading' | 'ready' | 'notFound' | 'partial' | 'error';
 
@@ -7,6 +13,7 @@ export function RecordShell({
   open,
   onOpenChange,
   title,
+  description,
   summary,
   state,
   children,
@@ -15,6 +22,7 @@ export function RecordShell({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: React.ReactNode;
+  description?: React.ReactNode;
   summary?: React.ReactNode;
   state: RecordShellState;
   children?: React.ReactNode;
@@ -22,11 +30,21 @@ export function RecordShell({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="grid h-full w-full grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-2xl" onOpenAutoFocus={(event) => { if (!initialFocusRef?.current) return; event.preventDefault(); initialFocusRef.current.focus(); }}>
-        <SheetHeader className="border-b px-6 py-4"><SheetTitle className="pr-8">{title}</SheetTitle></SheetHeader>
-        <div data-state={state} className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-          {summary ? <section className="border-b p-4">{summary}</section> : null}
-          <section className="min-h-0 overflow-hidden p-4">{children}</section>
+      <SheetContent
+        className="flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        onOpenAutoFocus={(event) => {
+          if (!initialFocusRef?.current) return;
+          event.preventDefault();
+          initialFocusRef.current.focus();
+        }}
+      >
+        <SheetHeader className="border-b px-6 py-4 text-left">
+          <SheetTitle className="pr-8">{title}</SheetTitle>
+          {description ? <SheetDescription>{description}</SheetDescription> : null}
+        </SheetHeader>
+        {summary ? <div className="border-b px-6 py-4">{summary}</div> : null}
+        <div data-state={state} className="min-h-0 flex-1 overflow-hidden">
+          {children}
         </div>
       </SheetContent>
     </Sheet>

@@ -33,9 +33,9 @@ export function ScopeFilterBar({ search, dimensions, onPatch }: { search: ScopeS
     <FilterSelect value={search.route} placeholder="全部路由" options={options(dimensions?.routes)} onChange={(route) => onPatch({ route }, true)} className="w-full sm:w-40" />
   </>;
 
-  return <section aria-label="范围筛选" className="flex min-w-0 items-center gap-2 border-b border-border-default bg-surface px-3 py-2">
+  return <section aria-label="范围筛选" className="flex min-w-0 items-center gap-2 border-b bg-background px-3 py-2">
     <DateRangePicker from={search.from} to={search.to} onChange={(value) => onPatch(value, true)} className="shrink-0" />
-    {mobile ? <><Button variant="outline" className="ml-auto" onClick={() => setSheetOpen(true)}><SlidersHorizontal />筛选</Button><Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent><SheetHeader><SheetTitle>范围筛选</SheetTitle><SheetDescription>用户、Session、版本、环境与路由</SheetDescription></SheetHeader><div className="flex flex-col gap-3">{controls}<Button variant="ghost" onClick={() => { onPatch({ userId: undefined, sessionId: undefined, appVersion: undefined, environment: undefined, route: undefined }, true); setSheetOpen(false); }}><X />清除范围筛选</Button></div></SheetContent></Sheet></> : <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{controls}</div>}
+    {mobile ? <><Button variant="outline" className="ml-auto" onClick={() => setSheetOpen(true)}><SlidersHorizontal data-icon="inline-start" />筛选</Button><Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent><SheetHeader><SheetTitle>范围筛选</SheetTitle><SheetDescription>用户、Session、版本、环境与路由</SheetDescription></SheetHeader><div className="flex flex-col gap-3">{controls}<Button variant="ghost" onClick={() => { onPatch({ userId: undefined, sessionId: undefined, appVersion: undefined, environment: undefined, route: undefined }, true); setSheetOpen(false); }}><X data-icon="inline-start" />清除范围筛选</Button></div></SheetContent></Sheet></> : <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{controls}</div>}
   </section>;
 }
 

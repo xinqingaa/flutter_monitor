@@ -2,6 +2,7 @@ import { Filter, MoreHorizontal, RotateCcw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { HttpSearch } from '../../app/router';
 import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
 import { Checkbox } from '../../components/ui/checkbox';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
 import { Field, FieldGroup, FieldLabel } from '../../components/ui/field';
@@ -42,7 +43,7 @@ export function HttpFilterBar({ search, total, slowThresholdMs, fullUrl, onFullU
         <FilterSelect value={search.method} placeholder="全部方法" options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => ({ value, label: value }))} onChange={(value) => onPatch({ method: value }, true)} className="w-28" />
         <FilterSelect value={search.result} placeholder="全部结果" options={[{ value: 'success', label: '成功' }, { value: 'failed', label: '失败' }, { value: 'unknown', label: '未知' }]} onChange={(value) => onPatch({ result: value as HttpSearch['result'] }, true)} className="w-28" />
         <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-          <PopoverTrigger asChild><Button variant="outline"><Filter />更多筛选{activeMore ? ` (${activeMore})` : ''}</Button></PopoverTrigger>
+          <PopoverTrigger asChild><Button variant="outline"><Filter data-icon="inline-start" />更多筛选{activeMore ? ` (${activeMore})` : ''}</Button></PopoverTrigger>
           <PopoverContent align="end" className="w-96">
             <FieldGroup>
               <Field><FieldLabel>Request ID</FieldLabel><IdCombobox value={search.requestId} label="Request ID" query={requestQuery} options={suggestions.data?.requestIds ?? []} loading={suggestions.isFetching} error={suggestions.isError} onQueryChange={setRequestQuery} onChange={(requestId) => onPatch({ requestId }, true)} className="w-full" /></Field>
@@ -53,11 +54,11 @@ export function HttpFilterBar({ search, total, slowThresholdMs, fullUrl, onFullU
         </Popover>
         <span className="whitespace-nowrap text-sm text-muted-foreground">{total} 条</span>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label="HTTP 视图与筛选操作"><MoreHorizontal /></Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label="HTTP 视图与筛选操作"><MoreHorizontal data-icon="inline-start" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuCheckboxItem checked={fullUrl} onCheckedChange={(checked) => onFullUrlChange(checked === true)}>显示完整 URL</DropdownMenuCheckboxItem></DropdownMenuGroup><DropdownMenuSeparator /><DropdownMenuGroup><DropdownMenuItem onSelect={onResetHttp}><RotateCcw />重置 HTTP 筛选</DropdownMenuItem><DropdownMenuItem onSelect={onClearAll}><X />清除全部筛选</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {HTTP_KEYS.some((key) => search[key] !== undefined) ? <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">{HTTP_KEYS.flatMap((key) => search[key] ? [<span key={key} className="rounded-md bg-muted px-2 py-1">{key}: {String(search[key])}</span>] : [])}</div> : null}
+      {HTTP_KEYS.some((key) => search[key] !== undefined) ? <div className="mt-2 flex flex-wrap gap-2">{HTTP_KEYS.flatMap((key) => search[key] ? [<Badge key={key} variant="secondary">{key}: {String(search[key])}</Badge>] : [])}</div> : null}
     </section>
   );
 }
