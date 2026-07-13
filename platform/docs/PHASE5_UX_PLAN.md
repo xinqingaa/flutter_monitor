@@ -6,7 +6,7 @@
 - last_updated: 2026-07-13
 - decision order: [`FEATURES.md`](FEATURES.md) -> [`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md) -> [`DESIGN.md`](DESIGN.md) -> 本计划
 - implementation order: docs -> 必要 service/datasource -> web -> 自动验证 -> PC 人工验收
-- current target: 阶段 3、4、5
+- current target: 阶段 7
 
 本计划只跟踪前端工作台重构。构建通过不等于视觉完成；阶段必须同时满足代码、官方来源对照和指定视口验收，才能标记 `complete`。
 
@@ -140,9 +140,9 @@ git diff --check
 | 0. 审计与基线 | complete | 文档职责与八阶段状态已统一 |
 | 1. 主题与基础组件 | complete | 官方配置、主题和 primitive 边界已验证 |
 | 2. App Shell | complete | 1440/1280/1024、折叠导航和移动 Sheet 已验证 |
-| 3. HTTP Catalog | in_progress | 本轮执行 |
-| 4. 详情与浮层 | pending | 待验收 |
-| 5. 大屏 | pending | 待验收 |
-| 6. 埋点 / 异常 / Session | pending | 待验收 |
-| 7. 清理旧代码 | pending | 待验收 |
+| 3. HTTP Catalog | complete | Data Table、筛选、分页、行操作、详情 Sheet 与 PC 视口已验证 |
+| 4. 详情与浮层 | complete | HTTP Record 使用 Sheet + Tabs + ScrollArea；详情状态已验证 |
+| 5. 大屏 | complete | Dashboard 使用 Card + Chart 官方组合；1440/1280/1024 无页面级横向滚动 |
+| 6. 埋点 / 异常 / Session | complete | Session 已使用 Resizable、ScrollArea、Tabs、Sheet、Empty、Badge；埋点 / 异常已对齐 HTTP Catalog PC 布局与筛选口径 |
+| 7. 清理旧代码 | in_progress | 已删除无引用 SplitPane；legacy-dialog、empty-state、status-badge 仍有消费者，暂不删除 |
 | 8. 验证与验收 | pending | 待验收 |

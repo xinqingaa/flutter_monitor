@@ -7,7 +7,7 @@
 - 功能事实源：[`FEATURES.md`](FEATURES.md)
 - 旧实现取舍：[`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)
 - 实施计划：[`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)
-- 当前状态：阶段 0–2 已完成；阶段 3–5 正在实施，HTTP Catalog 是官方页面基线样板
+- 当前状态：阶段 0–6 已完成；阶段 7 进行中，已开始删除无引用旧视觉组合
 
 本文只定义 Workbench 的产品气质、信息架构和实现原则。它不定义一套独立于 shadcn 的视觉系统，也不规定组件的像素尺寸、颜色、圆角、阴影、z-index 或具体页面排版。
 

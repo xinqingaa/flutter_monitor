@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { AlertTriangle, ArrowUpRight, MousePointerClick, Network, Rocket } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Network } from 'lucide-react';
 import {
   Area,
   AreaChart,
@@ -110,7 +110,6 @@ export function DashboardRoute() {
       label: '启动',
       value: overview?.startup.count ?? 0,
       detail: `冷启动平均 ${formatDuration(overview?.startup.coldStart.averageMs)} · 最慢 ${formatDuration(overview?.startup.coldStart.maxMs)}`,
-      icon: Rocket,
       target: startupTarget
         ? `/sessions/${encodeURIComponent(startupTarget.sessionId!)}?eventId=${encodeURIComponent(startupTarget.eventId!)}`
         : undefined,
@@ -120,7 +119,6 @@ export function DashboardRoute() {
       label: 'HTTP',
       value: overview?.http.count ?? 0,
       detail: `${overview?.http.failedCount ?? 0} 失败 · ${overview?.http.slowCount ?? 0} 慢请求`,
-      icon: Network,
       target: href('/http', search, { result: 'failed' }),
       issue: Boolean(overview?.http.failedCount),
     },
@@ -128,7 +126,6 @@ export function DashboardRoute() {
       label: '埋点',
       value: business.data?.total ?? 0,
       detail: `${businessFailed.data?.total ?? 0} 个失败动作`,
-      icon: MousePointerClick,
       target: href('/business', search, { result: 'failed' }),
       issue: Boolean(businessFailed.data?.total),
     },
@@ -136,7 +133,6 @@ export function DashboardRoute() {
       label: '异常',
       value: errors.data?.total ?? 0,
       detail: `${overview?.errors.affectedSessionCount ?? 0} 个受影响 Session`,
-      icon: AlertTriangle,
       target: href('/errors', search),
       issue: Boolean(errors.data?.total),
     },
@@ -148,28 +144,25 @@ export function DashboardRoute() {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <section aria-label="核心指标" className="grid gap-4 px-4 md:grid-cols-2 lg:px-6 xl:grid-cols-4">
-            {summaries.map(({ label, value, detail, icon: Icon, target, issue }) => {
-              const card = (
-                <Card className="h-full">
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <div className="flex flex-col gap-2">
-                      <CardDescription>{label}</CardDescription>
-                      <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
-                    </div>
-                    <Badge variant={issue ? 'destructive' : 'outline'}>
-                      <Icon />
-                      {issue ? '需关注' : '查看'}
-                    </Badge>
-                  </CardHeader>
-                  <CardFooter className="text-sm text-muted-foreground">{detail}</CardFooter>
-                </Card>
-              );
-              return target ? (
-                <a key={label} href={target} className="outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {card}
-                </a>
-              ) : <div key={label} aria-disabled="true">{card}</div>;
-            })}
+            {summaries.map(({ label, value, detail, target, issue }) => (
+              <Card key={label} className="h-full">
+                <CardHeader className="flex flex-row items-start justify-between gap-4">
+                  <div className="flex flex-col gap-2">
+                    <CardDescription>{label}</CardDescription>
+                    <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={issue ? 'destructive' : 'secondary'}>{issue ? '异常' : '正常'}</Badge>
+                    {target ? (
+                      <Button asChild size="icon" variant="ghost" aria-label={`查看${label}`}>
+                        <a href={target}><ArrowUpRight data-icon="inline-start" /></a>
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardHeader>
+                <CardFooter className="text-sm text-muted-foreground">{detail}</CardFooter>
+              </Card>
+            ))}
           </section>
 
           <section className="grid grid-cols-1 gap-4 px-4 lg:px-6 xl:grid-cols-12">

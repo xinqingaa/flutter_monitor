@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/pop
 import { FilterSelect } from '../../components/common/filter-select';
 import { IdCombobox } from '../../components/common/id-combobox';
 import { useDimensionsQuery } from '../../shared/datasource/queries';
+import { resultFilterLabel, resultFilterOptions } from '../../shared/formatting/filter-labels';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
 
 const HTTP_KEYS: Array<keyof HttpSearch> = ['url', 'method', 'result', 'requestId', 'statusCode', 'businessCode', 'host', 'slowOnly'];
@@ -41,7 +42,7 @@ export function HttpFilterBar({ search, total, slowThresholdMs, fullUrl, onFullU
       <div className="flex min-w-0 items-center gap-2">
         <Input aria-label="URL 模糊筛选" value={url} onChange={(event) => { setUrl(event.target.value); if (!event.target.value) onPatch({ url: undefined }, true); }} onKeyDown={(event) => event.key === 'Enter' && onPatch({ url: url.trim() || undefined }, true)} placeholder="筛选 URL，自动查询" className="min-w-[260px] flex-1" />
         <FilterSelect value={search.method} placeholder="全部方法" options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => ({ value, label: value }))} onChange={(value) => onPatch({ method: value }, true)} className="w-28" />
-        <FilterSelect value={search.result} placeholder="全部结果" options={[{ value: 'success', label: '成功' }, { value: 'failed', label: '失败' }, { value: 'unknown', label: '未知' }]} onChange={(value) => onPatch({ result: value as HttpSearch['result'] }, true)} className="w-28" />
+        <FilterSelect value={search.result} placeholder="全部结果" options={resultFilterOptions} onChange={(value) => onPatch({ result: value as HttpSearch['result'] }, true)} className="w-28" />
         <Popover open={moreOpen} onOpenChange={setMoreOpen}>
           <PopoverTrigger asChild><Button variant="outline"><Filter data-icon="inline-start" />更多筛选{activeMore ? ` (${activeMore})` : ''}</Button></PopoverTrigger>
           <PopoverContent align="end" className="w-96">
@@ -58,7 +59,7 @@ export function HttpFilterBar({ search, total, slowThresholdMs, fullUrl, onFullU
           <DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuCheckboxItem checked={fullUrl} onCheckedChange={(checked) => onFullUrlChange(checked === true)}>显示完整 URL</DropdownMenuCheckboxItem></DropdownMenuGroup><DropdownMenuSeparator /><DropdownMenuGroup><DropdownMenuItem onSelect={onResetHttp}><RotateCcw />重置 HTTP 筛选</DropdownMenuItem><DropdownMenuItem onSelect={onClearAll}><X />清除全部筛选</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {HTTP_KEYS.some((key) => search[key] !== undefined) ? <div className="mt-2 flex flex-wrap gap-2">{HTTP_KEYS.flatMap((key) => search[key] ? [<Badge key={key} variant="secondary">{key}: {String(search[key])}</Badge>] : [])}</div> : null}
+      {HTTP_KEYS.some((key) => search[key] !== undefined) ? <div className="mt-2 flex flex-wrap gap-2">{HTTP_KEYS.flatMap((key) => search[key] ? [<Badge key={key} variant="secondary">{httpFilterLabel(key, search[key])}</Badge>] : [])}</div> : null}
     </section>
   );
 }
@@ -76,3 +77,19 @@ function numericList(value?: string): string | undefined {
   return valid.length ? [...new Set(valid)].sort().join(',') : undefined;
 }
 function list(value?: string) { return value?.split(',').map((item) => item.trim()).filter(Boolean); }
+
+function httpFilterLabel(key: keyof HttpSearch, value: unknown): string {
+  const labels: Partial<Record<keyof HttpSearch, string>> = {
+    url: 'URL',
+    method: '方法',
+    result: '结果',
+    requestId: 'Request ID',
+    statusCode: '状态码',
+    businessCode: '业务码',
+    host: 'Host',
+    slowOnly: '慢请求',
+  };
+  if (key === 'result') return `${labels[key]}: ${resultFilterLabel(String(value))}`;
+  if (key === 'slowOnly') return '仅慢请求';
+  return `${labels[key] ?? key}: ${String(value)}`;
+}

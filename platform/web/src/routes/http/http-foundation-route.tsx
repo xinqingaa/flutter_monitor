@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { HttpSearch } from '../../app/router';
-import { Button } from '../../components/ui/button';
-import { Pagination, PaginationContent, PaginationItem } from '../../components/ui/pagination';
-import { FilterSelect } from '../../components/common/filter-select';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { HttpFilterBar } from '../../features/http/http-filter-bar';
 import { HttpCatalogTable, type CatalogState } from '../../features/http/http-catalog-table';
+import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { CatalogPreviewPane } from '../../features/catalog/catalog-preview-pane';
 import { HttpRecord } from '../../features/inspector/http-record';
 import { useDimensionsQuery, useEventQuery, useHttpCatalogQuery } from '../../shared/datasource/queries';
@@ -35,7 +33,7 @@ export function HttpFoundationRoute() {
   }
   function clearKeys(keys: Array<keyof HttpSearch>) { patch(Object.fromEntries(keys.map((key) => [key, undefined])) as Partial<HttpSearch>, true); }
   function select(item: HttpCatalogItem) {
-    const narrow = window.matchMedia('(max-width: 1023px)').matches;
+    const narrow = window.matchMedia('(max-width: 1399px)').matches;
     patch({ eventId: item.eventId, detail: narrow ? item.eventId : undefined });
   }
   function open(item: HttpCatalogItem) { patch({ eventId: item.eventId, detail: item.eventId }); }
@@ -47,27 +45,21 @@ export function HttpFoundationRoute() {
 
   const state: CatalogState = catalog.isLoading && !catalog.data ? 'loading' : catalog.isError ? 'error' : items.length === 0 ? (hasFilters ? 'noResults' : 'empty') : items.some((item) => item.detailDropped) ? 'partial' : 'ready';
   const total = catalog.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
       <HttpFilterBar search={search} total={total} slowThresholdMs={catalog.data?.slowThresholdMs} fullUrl={fullUrl} onFullUrlChange={(value) => { setFullUrl(value); localStorage.setItem('flutter-monitor.http.full-url', String(value)); }} onPatch={patch} onResetHttp={() => clearKeys(HTTP_KEYS)} onClearAll={() => clearKeys(ALL_FILTER_KEYS)} />
       <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
-          <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+          <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
             <HttpCatalogTable items={items} state={state} selectedId={search.eventId} fullUrl={fullUrl} slowThresholdMs={catalog.data?.slowThresholdMs ?? 1000} onSelect={select} onOpen={open} onRetry={() => void catalog.refetch()} />
-            <footer className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t px-4 py-2 text-sm text-muted-foreground">
-              <span className="whitespace-nowrap tabular-nums">共 {total} 条，第 {page} / {totalPages} 页</span>
-              <div className="flex items-center gap-3">
-                <FilterSelect value={String(pageSize)} placeholder="每页" options={[25, 50, 100].map((value) => ({ value: String(value), label: `${value} 条/页` }))} onChange={(value) => patch({ pageSize: Number(value) as 25 | 50 | 100, page: undefined, eventId: undefined, detail: undefined })} className="w-28" />
-                <Pagination className="w-auto">
-                  <PaginationContent>
-                    <PaginationItem><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => patch({ page: page - 1, eventId: undefined, detail: undefined })}>上一页</Button></PaginationItem>
-                    <PaginationItem><Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => patch({ page: page + 1, eventId: undefined, detail: undefined })}>下一页</Button></PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-            </footer>
+            <CatalogPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+              onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
+            />
           </div>
           <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
             <CatalogPreviewPane item={selected} loading={Boolean(search.eventId && catalog.isLoading)} error={Boolean(search.eventId && catalog.isError)} onOpen={() => selected && open(selected)} />
