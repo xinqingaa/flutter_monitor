@@ -1,32 +1,107 @@
+import * as React from 'react';
+import { format } from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { Button } from './button';
 import { Calendar } from './calendar';
+import { Field, FieldLabel } from './field';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
+import { cn } from '../../shared/formatting/cn';
 import { useIsMobile } from '../../shared/hooks/use-mobile';
 
-export function DateRangePicker({ from, to, onChange, className }: { from?: string; to?: string; onChange: (value: { from?: string; to?: string }) => void; className?: string }) {
-  const [open, setOpen] = useState(false);
+/**
+ * shadcn DatePickerWithRange baseline (Calendar + Popover + Field).
+ * Business only: ISO URL props, zh label, mobile month count.
+ * Radix uses `asChild` (not base-ui `render`).
+ */
+export function DateRangePicker({
+  from,
+  to,
+  onChange,
+  className,
+  label = '时间范围',
+}: {
+  from?: string;
+  to?: string;
+  onChange: (value: { from?: string; to?: string }) => void;
+  className?: string;
+  label?: string;
+}) {
   const mobile = useIsMobile();
-  const value = useMemo<DateRange | undefined>(() => {
-    const start = parseDate(from);
-    const end = parseDate(to);
-    return start || end ? { from: start, to: end } : undefined;
+  const [date, setDate] = React.useState<DateRange | undefined>(() => rangeFromProps(from, to));
+
+  React.useEffect(() => {
+    setDate(rangeFromProps(from, to));
   }, [from, to]);
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild>
-      <Button variant="outline" className={`h-9 min-w-48 justify-start border-border-default bg-surface px-3 font-normal shadow-none ${className ?? ''}`} aria-label="选择日期范围">
-        <CalendarIcon className="text-text-muted" />
-        <span className="truncate">{rangeLabel(value)}</span>
-      </Button>
-    </PopoverTrigger>
-    <PopoverContent align="start" className="w-auto p-0">
-      <Calendar mode="range" selected={value} numberOfMonths={mobile ? 1 : 2} onSelect={(range) => { if (!range?.from) return; if (!range.to) return; const end = new Date(range.to); end.setHours(23, 59, 59, 999); onChange({ from: startOfDay(range.from).toISOString(), to: end.toISOString() }); setOpen(false); }} />
-    </PopoverContent>
-  </Popover>;
+
+  return (
+    <Field className={cn('w-auto gap-0', className)}>
+      <FieldLabel htmlFor="date-picker-range" className="sr-only">
+        {label}
+      </FieldLabel>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            id="date-picker-range"
+            variant="outline"
+            className="min-w-60 justify-start px-2.5 font-normal"
+          >
+            <CalendarIcon data-icon="inline-start" />
+            {date?.from ? (
+              date.to ? (
+                <>
+                  {format(date.from, 'yyyy-MM-dd')} - {format(date.to, 'yyyy-MM-dd')}
+                </>
+              ) : (
+                format(date.from, 'yyyy-MM-dd')
+              )
+            ) : (
+              <span>全部时间</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="range"
+            defaultMonth={date?.from}
+            selected={date}
+            onSelect={(next) => {
+              setDate(next);
+              // Commit to URL only when cleared or range is complete — never discard half-selection.
+              if (!next?.from) {
+                onChange({ from: undefined, to: undefined });
+                return;
+              }
+              if (!next.to) return;
+              const end = new Date(next.to);
+              end.setHours(23, 59, 59, 999);
+              onChange({
+                from: startOfDay(next.from).toISOString(),
+                to: end.toISOString(),
+              });
+            }}
+            numberOfMonths={mobile ? 1 : 2}
+          />
+        </PopoverContent>
+      </Popover>
+    </Field>
+  );
 }
 
-function parseDate(value?: string) { if (!value) return undefined; const date = new Date(value); return Number.isNaN(date.getTime()) ? undefined : date; }
-function startOfDay(value: Date) { const date = new Date(value); date.setHours(0, 0, 0, 0); return date; }
-function rangeLabel(value?: DateRange) { if (!value?.from) return '全部时间'; const format = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; return value.to ? `${format(value.from)} - ${format(value.to)}` : format(value.from); }
+function rangeFromProps(from?: string, to?: string): DateRange | undefined {
+  const start = parseDate(from);
+  const end = parseDate(to);
+  return start || end ? { from: start, to: end } : undefined;
+}
+
+function parseDate(value?: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function startOfDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}

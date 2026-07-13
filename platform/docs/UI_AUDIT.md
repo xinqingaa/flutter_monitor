@@ -18,7 +18,7 @@
 
 | 组件 | 路径 | 判定 | 问题 | 修复方向 |
 | --- | --- | --- | --- | --- |
-| DateRangePicker | `components/ui/date-range-picker.tsx` | 可修 → 本轮修 | 必须 `from+to` 才 `onChange`；立刻关 Popover；`shadow-none` / `border-border-default` / `bg-surface` 削皮 | 本地 draft 中间态；完整范围可确认；清除；打开期间不丢半选；`className` 只做布局 |
+| DateRangePicker | `components/ui/date-range-picker.tsx` | 对齐 | 曾自研 Apply 栏 / 强制双端才关 | 以官方 `DatePickerWithRange` 为准：`onSelect` 本地态 + 半选展示；完整/清空才写 URL；Field+Label；Radix `asChild` |
 | IdCombobox | `components/ui/id-combobox.tsx` | 可修 → 本轮修 | Trigger 削皮；loading/error 用手搓 `div` 而非 Empty/文案区惯例 | 恢复 outline 默认观感；空态用 `CommandEmpty`；loading 文案保留为业务例外 |
 | Select | `components/ui/select.tsx` | 需重做 → 本轮可修 | 硬编码 zinc/teal；无 `SelectGroup`；「全部」哨兵值为业务必需 | 语义 token + Group；保留 `__all__` 哨兵为业务例外 |
 | ScopeFilterBar | `features/scope/scope-filter-bar.tsx` | 可修 | 筛选按钮 `shadow-none`；Sheet 内 `grid gap` 未用 Field | 去掉削皮；Field 布局可放 P1 |
@@ -52,14 +52,14 @@
 
 ## 本轮已落地（P0）
 
-1. DateRangePicker：draft + 确认/清除，半选不丢弃、不强制立刻关。
+1. DateRangePicker：对齐官方 `DatePickerWithRange`（无 Apply 栏；`onSelect` 半选；完整/清空写 URL）。
 2. IdCombobox / Select：去掉过度削皮，Select 改语义色与 Group。
 3. Scope 筛选触发按钮去掉 `shadow-none`。
 
 ## 验收对照
 
-- [ ] Date Range：可只选起点再选终点；未确认前关浮层不写坏 URL 半状态策略符合实现注释
-- [ ] Date Range：确认后才更新 URL；可清除为「全部时间」
-- [ ] Select：「全部…」可选且显示 placeholder 语义
-- [ ] Combobox：模糊查 + 选中写 URL；观感接近官方 Combobox
-- [ ] `pnpm typecheck`（web）通过
+- [x] Date Range：官方交互——半选显示在 Trigger；不立刻关；完整范围才写 URL
+- [x] Date Range：清空可选为「全部时间」
+- [x] Select：「全部…」可选且显示 placeholder 语义；语义 token + Group
+- [x] Combobox：模糊查 + 选中写 URL；去掉削皮，空态走 CommandEmpty
+- [x] `pnpm typecheck`（web）通过（2026-07-13）

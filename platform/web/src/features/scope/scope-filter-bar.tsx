@@ -35,7 +35,7 @@ export function ScopeFilterBar({ search, dimensions, onPatch }: { search: ScopeS
 
   return <section aria-label="范围筛选" className="flex min-w-0 items-center gap-2 border-b border-border-default bg-surface px-3 py-2">
     <DateRangePicker from={search.from} to={search.to} onChange={(value) => onPatch(value, true)} className="shrink-0" />
-    {mobile ? <><Button variant="outline" className="ml-auto shadow-none" onClick={() => setSheetOpen(true)}><SlidersHorizontal />筛选</Button><Sheet open={sheetOpen} onOpenChange={setSheetOpen} title="范围筛选" description="用户、Session、版本、环境与路由"><div className="grid gap-3 p-4">{controls}<Button variant="ghost" onClick={() => { onPatch({ userId: undefined, sessionId: undefined, appVersion: undefined, environment: undefined, route: undefined }, true); setSheetOpen(false); }}><X />清除范围筛选</Button></div></Sheet></> : <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{controls}</div>}
+    {mobile ? <><Button variant="outline" className="ml-auto" onClick={() => setSheetOpen(true)}><SlidersHorizontal />筛选</Button><Sheet open={sheetOpen} onOpenChange={setSheetOpen} title="范围筛选" description="用户、Session、版本、环境与路由"><div className="flex flex-col gap-3 p-4">{controls}<Button variant="ghost" onClick={() => { onPatch({ userId: undefined, sessionId: undefined, appVersion: undefined, environment: undefined, route: undefined }, true); setSheetOpen(false); }}><X />清除范围筛选</Button></div></Sheet></> : <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{controls}</div>}
   </section>;
 }
 
