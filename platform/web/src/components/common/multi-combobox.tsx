@@ -1,14 +1,19 @@
 import { Check, ChevronsUpDown, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '../ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import type { DimensionOption } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
 
+function sameValues(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
 /**
  * Multi-value Combobox for remote dimension suggestions (userId / sessionId).
- * Follows shadcn Combobox (Popover + Command); keeps panel open while toggling.
+ * Draft edits while open; commits once when the popover closes.
  */
 export function MultiCombobox({
   values,
@@ -31,8 +36,15 @@ export function MultiCombobox({
   onChange: (values?: string[]) => void;
   className?: string;
 }) {
+  const committed = values ?? [];
   const [open, setOpen] = useState(false);
-  const selected = values ?? [];
+  const [draft, setDraft] = useState<string[]>(committed);
+
+  useEffect(() => {
+    if (!open) setDraft(committed);
+  }, [committed, open]);
+
+  const selected = open ? draft : committed;
   const selectedSet = new Set(selected);
   const triggerLabel = selected.length === 0
     ? `全部${label}`
@@ -41,19 +53,31 @@ export function MultiCombobox({
       : `${label} ${selected.length}`;
 
   function toggle(value: string) {
-    const next = selectedSet.has(value)
-      ? selected.filter((item) => item !== value)
-      : [...selected, value].sort((a, b) => a.localeCompare(b));
-    onChange(next.length > 0 ? next : undefined);
+    setDraft((current) => {
+      const set = new Set(current);
+      const next = set.has(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value].sort((a, b) => a.localeCompare(b));
+      return next;
+    });
   }
 
-  function clear() {
-    onChange(undefined);
+  function clearDraft() {
+    setDraft([]);
     onQueryChange('');
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      if (!sameValues(draft, committed)) onChange(draft.length > 0 ? draft : undefined);
+    } else {
+      setDraft(committed);
+    }
+    setOpen(nextOpen);
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -84,12 +108,7 @@ export function MultiCombobox({
             {!loading && !error ? (
               <CommandGroup>
                 {selected.length > 0 ? (
-                  <CommandItem
-                    value="__clear__"
-                    onSelect={() => {
-                      clear();
-                    }}
-                  >
+                  <CommandItem value="__clear__" onSelect={clearDraft}>
                     <X data-icon="inline-start" />
                     清除当前条件
                   </CommandItem>

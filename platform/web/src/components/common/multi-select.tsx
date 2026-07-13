@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import {
   DropdownMenu,
@@ -12,6 +13,11 @@ import {
 import { cn } from '../../shared/formatting/cn';
 import type { FilterSelectOption } from './filter-select';
 
+function sameValues(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
 export function MultiSelect({
   values,
   placeholder,
@@ -19,7 +25,7 @@ export function MultiSelect({
   onChange,
   className,
   ariaLabel,
-  open,
+  open: openProp,
   onOpenChange,
 }: {
   values?: string[];
@@ -31,7 +37,16 @@ export function MultiSelect({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const selected = values ?? [];
+  const committed = values ?? [];
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = openProp ?? uncontrolledOpen;
+  const [draft, setDraft] = useState<string[]>(committed);
+
+  useEffect(() => {
+    if (!open) setDraft(committed);
+  }, [committed, open]);
+
+  const selected = open ? draft : committed;
   const selectedSet = new Set(selected);
   const label = selected.length === 0
     ? placeholder
@@ -42,14 +57,27 @@ export function MultiSelect({
       : `${placeholder.replace(/^全部/, '')} ${selected.length}`;
 
   function toggle(value: string, checked: boolean) {
-    const next = checked
-      ? [...selected, value].sort((a, b) => a.localeCompare(b))
-      : selected.filter((item) => item !== value);
-    onChange(next.length > 0 ? next : undefined);
+    setDraft((current) => {
+      const next = checked
+        ? [...current, value].sort((a, b) => a.localeCompare(b))
+        : current.filter((item) => item !== value);
+      return next;
+    });
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      const next = draft.length > 0 ? draft : undefined;
+      if (!sameValues(draft, committed)) onChange(next);
+    } else {
+      setDraft(committed);
+    }
+    if (openProp === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"

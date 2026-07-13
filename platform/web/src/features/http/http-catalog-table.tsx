@@ -7,6 +7,7 @@ import {
   CatalogTable,
   type CatalogState,
 } from '../catalog/catalog-table';
+import { SortableHeader } from '../catalog/sortable-header';
 import type { HttpCatalogItem } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
@@ -19,6 +20,9 @@ export function HttpCatalogTable({
   selectedId,
   fullUrl,
   slowThresholdMs,
+  sortBy,
+  sortDir,
+  onSort,
   onSelect,
   onOpen,
   onRetry,
@@ -28,6 +32,9 @@ export function HttpCatalogTable({
   selectedId?: string;
   fullUrl: boolean;
   slowThresholdMs: number;
+  sortBy: 'timestamp' | 'durationMs';
+  sortDir: 'asc' | 'desc';
+  onSort: (sortBy: 'timestamp' | 'durationMs') => void;
   onSelect: (item: HttpCatalogItem) => void;
   onOpen: (item: HttpCatalogItem) => void;
   onRetry: () => void;
@@ -36,7 +43,14 @@ export function HttpCatalogTable({
     () => [
       {
         accessorKey: 'timestamp',
-        header: '时间',
+        header: () => (
+          <SortableHeader
+            label="时间"
+            active={sortBy === 'timestamp'}
+            direction={sortDir}
+            onClick={() => onSort('timestamp')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="whitespace-nowrap font-mono text-xs text-muted-foreground" title={row.original.timestamp}>
             {formatTime(row.original.timestamp)}
@@ -82,7 +96,17 @@ export function HttpCatalogTable({
       },
       {
         accessorKey: 'durationMs',
-        header: '耗时',
+        header: () => (
+          <div className="flex justify-end">
+            <SortableHeader
+              label="耗时"
+              active={sortBy === 'durationMs'}
+              direction={sortDir}
+              align="right"
+              onClick={() => onSort('durationMs')}
+            />
+          </div>
+        ),
         cell: ({ row }) => (
           <span
             className={cn(
@@ -116,7 +140,7 @@ export function HttpCatalogTable({
         ),
       },
     ],
-    [fullUrl, onOpen, slowThresholdMs],
+    [fullUrl, onOpen, onSort, slowThresholdMs, sortBy, sortDir],
   );
 
   return (
@@ -155,7 +179,7 @@ function columnClass(id: string, header: boolean) {
     id === 'method' && 'w-[76px]',
     id === 'statusCode' && 'w-[88px] text-right',
     id === 'businessCode' && 'w-[96px] text-right',
-    id === 'durationMs' && 'w-[92px] text-right',
+    id === 'durationMs' && 'w-[108px] text-right',
     id === 'route' && 'w-[140px]',
     id === 'actions' && 'w-[52px]',
     !header && 'overflow-hidden',

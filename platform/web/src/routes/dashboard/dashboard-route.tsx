@@ -79,7 +79,7 @@ export function DashboardRoute() {
   const business = useBusinessCatalogQuery({ ...scope, limit: 1, offset: 0 });
   const businessFailed = useBusinessCatalogQuery({ ...scope, result: ['failed'], limit: 1, offset: 0 });
   const errors = useErrorCatalogQuery({ ...scope, limit: 6, offset: 0 });
-  const failedHttp = useHttpCatalogQuery({ ...scope, result: 'failed', limit: 6, offset: 0 });
+  const failedHttp = useHttpCatalogQuery({ ...scope, result: ['failed'], limit: 6, offset: 0 });
   const overview = performance.data;
   const startupTarget = overview?.startup.events.find((event) => event.sessionId && event.eventId);
   const points = trend.data?.points ?? [];

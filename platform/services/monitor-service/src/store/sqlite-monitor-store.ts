@@ -211,8 +211,12 @@ export class SqliteMonitorStore implements MonitorStore {
     const slowThresholdMs = query.slowThresholdMs ?? 1000;
     const { whereSql, params } = whereFromHttpCatalogQuery(query, slowThresholdMs);
     const total = this.selectRows<CountRow>(`select count(*) as count from events ${whereSql}`, params)[0]?.count ?? 0;
+    const orderSql = catalogOrderSql(query.sortBy, query.sortDir, {
+      timestamp: 'timestamp_ms',
+      durationMs: 'http_duration_ms',
+    }, 'timestamp_ms');
     const rows = this.selectRows<EventRow>(
-      `select envelope_json from events ${whereSql} order by timestamp_ms desc, sequence desc limit ? offset ?`,
+      `select envelope_json from events ${whereSql} ${orderSql} limit ? offset ?`,
       [...params, limit, offset],
     );
     return {
@@ -229,7 +233,8 @@ export class SqliteMonitorStore implements MonitorStore {
     const offset = clampOffset(query.offset);
     const { whereSql, params } = whereFromBusinessCatalogQuery(query);
     const total = this.selectRows<CountRow>(`select count(*) as count from events ${whereSql}`, params)[0]?.count ?? 0;
-    const rows = this.selectRows<EventRow>(`select envelope_json from events ${whereSql} order by timestamp_ms desc, sequence desc limit ? offset ?`, [...params, limit, offset]);
+    const orderSql = catalogOrderSql(query.sortBy, query.sortDir, { timestamp: 'timestamp_ms' }, 'timestamp_ms');
+    const rows = this.selectRows<EventRow>(`select envelope_json from events ${whereSql} ${orderSql} limit ? offset ?`, [...params, limit, offset]);
     return { items: rows.map((row) => businessCatalogItemFromEvent(JSON.parse(row.envelope_json) as MonitorEvent)), total, limit, offset };
   }
 
@@ -238,7 +243,8 @@ export class SqliteMonitorStore implements MonitorStore {
     const offset = clampOffset(query.offset);
     const { whereSql, params } = whereFromErrorCatalogQuery(query);
     const total = this.selectRows<CountRow>(`select count(*) as count from events ${whereSql}`, params)[0]?.count ?? 0;
-    const rows = this.selectRows<EventRow>(`select envelope_json from events ${whereSql} order by timestamp_ms desc, sequence desc limit ? offset ?`, [...params, limit, offset]);
+    const orderSql = catalogOrderSql(query.sortBy, query.sortDir, { timestamp: 'timestamp_ms' }, 'timestamp_ms');
+    const rows = this.selectRows<EventRow>(`select envelope_json from events ${whereSql} ${orderSql} limit ? offset ?`, [...params, limit, offset]);
     return { items: rows.map((row) => errorCatalogItemFromEvent(JSON.parse(row.envelope_json) as MonitorEvent)), total, limit, offset };
   }
 
@@ -414,6 +420,7 @@ export class SqliteMonitorStore implements MonitorStore {
 
   dimensions(filters: EventFilters, options: { q?: string; limit?: number } = {}): DimensionSummary {
     const dimensionFilters = withoutPaging(filters);
+    const httpDimensionFilters: EventFilters = { ...dimensionFilters, name: 'http.client' };
     const appFilters = { ...dimensionFilters, appKey: undefined };
     const { whereSql: appWhereSql, params: appParams } = whereFromFilters(appFilters);
     const apps = this.selectRows<AppDimensionRow>(
@@ -472,7 +479,11 @@ export class SqliteMonitorStore implements MonitorStore {
       signalTypes: this.dimensionOptions('signal_type', dimensionFilters, 'signalType'),
       userIds: this.suggestOptions('user_id', { ...dimensionFilters, userId: undefined }, options),
       sessionIds: this.suggestOptions('session_id', { ...dimensionFilters, sessionId: undefined }, options),
-      requestIds: this.suggestOptions('http_request_id', dimensionFilters, options),
+      requestIds: this.suggestOptions('http_request_id', httpDimensionFilters, options),
+      httpMethods: this.dimensionOptions('http_method', httpDimensionFilters),
+      httpStatusCodes: this.dimensionOptions('http_status_code', httpDimensionFilters),
+      httpBusinessCodes: this.dimensionOptions('http_business_code', httpDimensionFilters),
+      httpHosts: this.dimensionOptions('http_host', httpDimensionFilters),
     };
   }
 
@@ -962,21 +973,23 @@ export class SqliteMonitorStore implements MonitorStore {
   private dimensionOptions(
     columnName: string,
     filters: EventFilters,
-    ownFilterKey: keyof EventFilters,
+    ownFilterKey?: keyof EventFilters,
   ): DimensionOption[] {
-    const { whereSql, params } = whereFromFilters({ ...filters, [ownFilterKey]: undefined });
+    const scoped = ownFilterKey ? { ...filters, [ownFilterKey]: undefined } : filters;
+    const { whereSql, params } = whereFromFilters(scoped);
     return this.selectRows<DimensionRow>(
       `
-        select ${columnName} as value, count(*) as count
+        select cast(${columnName} as text) as value, count(*) as count
         from events
         ${whereSql}
           ${whereSql ? 'and' : 'where'} ${columnName} is not null
+          and cast(${columnName} as text) <> ''
         group by ${columnName}
         order by count desc, value asc
         limit 200
       `,
       params,
-    ).map((row) => ({ value: row.value, count: row.count }));
+    ).map((row) => ({ value: String(row.value), count: row.count }));
   }
 
   private suggestOptions(
@@ -1054,18 +1067,33 @@ function whereFromHttpCatalogQuery(query: HttpCatalogQuery, slowThresholdMs: num
   clauses.push('http_completed = 1');
   addLikeFilter(clauses, params, 'http_url', query.url);
   addEqualityFilter(clauses, params, 'http_method', query.method);
-  addLikeFilter(clauses, params, 'http_request_id', query.requestId);
+  addEqualityFilter(clauses, params, 'http_request_id', query.requestId);
   addNumericListFilter(clauses, params, 'http_status_code', query.statusCode);
   addEqualityFilter(clauses, params, 'http_business_code', query.businessCode);
-  addLikeFilter(clauses, params, 'http_host', query.host);
-  if (query.result === 'success') clauses.push('http_success = 1');
-  if (query.result === 'failed') clauses.push('(http_success = 0 or status = \'error\')');
-  if (query.result === 'unknown') clauses.push("http_success is null and status != 'error'");
+  addEqualityFilter(clauses, params, 'http_host', query.host);
+  addHttpResultFilter(clauses, query.result);
   if (query.slowOnly) {
     clauses.push('http_duration_ms >= ?');
     params.push(slowThresholdMs);
   }
   return { whereSql: `where ${clauses.join(' and ')}`, params };
+}
+
+function addHttpResultFilter(
+  clauses: string[],
+  result: HttpCatalogQuery['result'],
+): void {
+  const values = (Array.isArray(result) ? result : result ? [result] : [])
+    .filter((value): value is 'success' | 'failed' | 'unknown' => (
+      value === 'success' || value === 'failed' || value === 'unknown'
+    ));
+  if (values.length === 0) return;
+  const parts = values.map((value) => {
+    if (value === 'success') return 'http_success = 1';
+    if (value === 'failed') return "(http_success = 0 or status = 'error')";
+    return "http_success is null and status != 'error'";
+  });
+  clauses.push(`(${parts.join(' or ')})`);
 }
 
 function whereFromBusinessCatalogQuery(query: BusinessCatalogQuery): { whereSql: string; params: SqlParam[] } {
@@ -1148,6 +1176,18 @@ function addEqualityFilter(
   if (!value) return;
   clauses.push(`${columnName} = ?`);
   params.push(value);
+}
+
+function catalogOrderSql(
+  sortBy: string | undefined,
+  sortDir: 'asc' | 'desc' | undefined,
+  columns: Record<string, string>,
+  defaultColumn: string,
+): string {
+  const column = (sortBy && columns[sortBy]) || defaultColumn;
+  const direction = sortDir === 'asc' ? 'asc' : 'desc';
+  const nulls = direction === 'asc' ? `${column} is null,` : `${column} is not null,`;
+  return `order by ${nulls} ${column} ${direction}, sequence ${direction}`;
 }
 
 function addLikeFilter(

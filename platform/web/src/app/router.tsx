@@ -19,12 +19,15 @@ export type HttpSearch = RootSearch & {
   route?: string;
   url?: string;
   method?: string;
-  result?: 'success' | 'failed' | 'unknown';
+  result?: string;
   requestId?: string;
   statusCode?: string;
   businessCode?: string;
   host?: string;
   slowOnly?: boolean;
+  slowThresholdMs?: number;
+  sortBy?: 'timestamp' | 'durationMs';
+  sortDir?: 'asc' | 'desc';
   page?: number;
   pageSize?: 25 | 50 | 100;
   eventId?: string;
@@ -41,6 +44,8 @@ export type DomainSearch = RootSearch & {
   fatal?: boolean;
   handled?: boolean;
   businessOnly?: boolean;
+  sortBy?: 'timestamp';
+  sortDir?: 'asc' | 'desc';
   page?: number;
   pageSize?: 25 | 50 | 100;
   eventId?: string;
@@ -107,12 +112,15 @@ const httpRoute = createRoute({
     route: stringListSearchParam(search.route),
     url: stringSearch(search.url),
     method: stringListSearchParam(search.method),
-    result: enumSearch(search.result, ['success', 'failed', 'unknown']),
-    requestId: stringSearch(search.requestId),
+    result: stringListSearchParam(search.result),
+    requestId: stringListSearchParam(search.requestId),
     statusCode: numericListSearchParam(search.statusCode),
     businessCode: stringListSearchParam(search.businessCode),
-    host: stringSearch(search.host),
+    host: stringListSearchParam(search.host),
     slowOnly: booleanSearch(search.slowOnly),
+    slowThresholdMs: enumNumberSearch(search.slowThresholdMs, [500, 1000, 2000, 3000, 5000]),
+    sortBy: enumSearch(search.sortBy, ['timestamp', 'durationMs']),
+    sortDir: enumSearch(search.sortDir, ['asc', 'desc']),
     page: integerSearch(search.page, 1),
     pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined,
     eventId: stringSearch(search.eventId),
@@ -266,7 +274,7 @@ function numericListSearchParam(value: unknown): string | undefined {
 function domainSearch(search: Record<string, unknown>): DomainSearch {
   return cleanSearch({
     appKey: stringListSearchParam(search.appKey), packageName: stringListSearchParam(search.packageName), environment: stringListSearchParam(search.environment), appVersion: stringListSearchParam(search.appVersion), devicePlatform: stringListSearchParam(search.devicePlatform), from: stringSearch(search.from), to: stringSearch(search.to), userId: stringListSearchParam(search.userId), sessionId: stringListSearchParam(search.sessionId), route: stringListSearchParam(search.route),
-    action: stringSearch(search.action), result: stringListSearchParam(search.result), errorType: stringSearch(search.errorType), mechanism: stringListSearchParam(search.mechanism), fatal: booleanSearch(search.fatal), handled: booleanSearch(search.handled), businessOnly: booleanSearch(search.businessOnly), page: integerSearch(search.page, 1), pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined, eventId: stringSearch(search.eventId), detail: stringSearch(search.detail),
+    action: stringSearch(search.action), result: stringListSearchParam(search.result), errorType: stringSearch(search.errorType), mechanism: stringListSearchParam(search.mechanism), fatal: booleanSearch(search.fatal), handled: booleanSearch(search.handled), businessOnly: booleanSearch(search.businessOnly), sortBy: enumSearch(search.sortBy, ['timestamp']), sortDir: enumSearch(search.sortDir, ['asc', 'desc']), page: integerSearch(search.page, 1), pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined, eventId: stringSearch(search.eventId), detail: stringSearch(search.detail),
   });
 }
 

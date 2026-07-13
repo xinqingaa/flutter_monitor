@@ -34,9 +34,9 @@ export function RecordShell({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="bottom"
+        side="right"
         className={cn(
-          'flex h-[85vh] max-h-[90vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-none',
+          'flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl',
         )}
         onOpenAutoFocus={(event) => {
           if (!initialFocusRef?.current) return;

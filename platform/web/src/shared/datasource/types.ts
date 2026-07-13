@@ -332,13 +332,15 @@ export type HttpBusinessCodeState = 'value' | 'absent' | 'detail_unavailable' | 
 export interface HttpCatalogQuery extends SessionFilters {
   url?: string;
   method?: string[];
-  result?: 'success' | 'failed' | 'unknown';
-  requestId?: string;
+  result?: Array<'success' | 'failed' | 'unknown'>;
+  requestId?: string | string[];
   statusCode?: number[];
   businessCode?: string[];
-  host?: string;
+  host?: string | string[];
   slowOnly?: boolean;
   slowThresholdMs?: number;
+  sortBy?: 'timestamp' | 'durationMs';
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface HttpCatalogItem {
@@ -369,10 +371,23 @@ export interface HttpCatalogResult {
   slowThresholdMs: number;
 }
 
-export interface BusinessCatalogQuery extends SessionFilters { action?: string; result?: string[]; }
+export interface BusinessCatalogQuery extends SessionFilters {
+  action?: string;
+  result?: string[];
+  sortBy?: 'timestamp';
+  sortDir?: 'asc' | 'desc';
+}
 export interface BusinessCatalogItem { eventId: string; timestamp?: string; action: string; result?: string; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; summary: boolean; }
 export interface BusinessCatalogResult { items: BusinessCatalogItem[]; total: number; limit: number; offset: number; }
-export interface ErrorCatalogQuery extends SessionFilters { errorType?: string; mechanism?: string[]; fatal?: boolean; handled?: boolean; businessOnly?: boolean; }
+export interface ErrorCatalogQuery extends SessionFilters {
+  errorType?: string;
+  mechanism?: string[];
+  fatal?: boolean;
+  handled?: boolean;
+  businessOnly?: boolean;
+  sortBy?: 'timestamp';
+  sortDir?: 'asc' | 'desc';
+}
 export interface ErrorCatalogItem { eventId: string; timestamp?: string; kind: 'error' | 'business_failure'; type: string; message?: string; mechanism?: string; fatal?: boolean; handled?: boolean; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; }
 export interface ErrorCatalogResult { items: ErrorCatalogItem[]; total: number; limit: number; offset: number; }
 
@@ -411,6 +426,10 @@ export interface DimensionSummary {
   userIds: DimensionOption[];
   sessionIds: DimensionOption[];
   requestIds: DimensionOption[];
+  httpMethods: DimensionOption[];
+  httpStatusCodes: DimensionOption[];
+  httpBusinessCodes: DimensionOption[];
+  httpHosts: DimensionOption[];
 }
 
 export type TimeseriesBucket = 'hour' | 'day';

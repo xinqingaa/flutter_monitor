@@ -26,6 +26,7 @@ import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { CatalogPreviewShell } from '../../features/catalog/catalog-preview-shell';
 import { CatalogRowActions } from '../../features/catalog/catalog-row-actions';
 import { CatalogTable, type CatalogState } from '../../features/catalog/catalog-table';
+import { SortableHeader } from '../../features/catalog/sortable-header';
 import { RecordShell } from '../../features/inspector/record-shell';
 import { JsonViewer } from '../../features/inspector/json-viewer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
@@ -63,6 +64,8 @@ function DomainCatalog({ mode }: { mode: Mode }) {
   const navigate = useNavigate({ from: path });
   const page = search.page ?? 1;
   const pageSize = search.pageSize ?? 50;
+  const sortBy = search.sortBy ?? 'timestamp';
+  const sortDir = search.sortDir ?? 'desc';
   const query = useMemo(
     () => mode === 'business' ? businessQuery(search, page, pageSize) : errorQuery(search, page, pageSize),
     [mode, search, page, pageSize],
@@ -103,6 +106,14 @@ function DomainCatalog({ mode }: { mode: Mode }) {
     patch({ eventId: item.eventId, detail: item.eventId });
   }
 
+  function toggleSort() {
+    const nextDir = sortBy === 'timestamp' && sortDir === 'desc' ? 'asc' : 'desc';
+    patch({
+      sortBy: nextDir === 'desc' ? undefined : 'timestamp',
+      sortDir: nextDir === 'desc' ? undefined : nextDir,
+    }, true);
+  }
+
   useEffect(() => {
     if (catalog.data && search.eventId && !items.some((item) => item.eventId === search.eventId)) {
       patch({ eventId: undefined, detail: undefined });
@@ -135,7 +146,18 @@ function DomainCatalog({ mode }: { mode: Mode }) {
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
         <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-          <DomainTable mode={mode} items={items} state={state} selectedId={search.eventId} onSelect={select} onOpen={open} onRetry={() => void catalog.refetch()} />
+          <DomainTable
+            mode={mode}
+            items={items}
+            state={state}
+            selectedId={search.eventId}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={toggleSort}
+            onSelect={select}
+            onOpen={open}
+            onRetry={() => void catalog.refetch()}
+          />
           <CatalogPagination
             page={page}
             pageSize={pageSize}
@@ -241,20 +263,34 @@ function DomainFilters({ mode, search, total, onPatch, onReset, onClearAll }: {
   );
 }
 
-function DomainTable({ mode, items, state, selectedId, onSelect, onOpen, onRetry }: {
+function DomainTable({
+  mode,
+  items,
+  state,
+  selectedId,
+  sortBy,
+  sortDir,
+  onSort,
+  onSelect,
+  onOpen,
+  onRetry,
+}: {
   mode: Mode;
   items: Item[];
   state: CatalogState;
   selectedId?: string;
+  sortBy: 'timestamp';
+  sortDir: 'asc' | 'desc';
+  onSort: () => void;
   onSelect: (item: Item) => void;
   onOpen: (item: Item) => void;
   onRetry: () => void;
 }) {
   const columns = useMemo<ColumnDef<Item>[]>(
     () => mode === 'business'
-      ? businessColumns(onOpen) as ColumnDef<Item>[]
-      : errorColumns(onOpen) as ColumnDef<Item>[],
-    [mode, onOpen],
+      ? businessColumns(onOpen, sortBy, sortDir, onSort) as ColumnDef<Item>[]
+      : errorColumns(onOpen, sortBy, sortDir, onSort) as ColumnDef<Item>[],
+    [mode, onOpen, onSort, sortBy, sortDir],
   );
 
   return (
@@ -286,11 +322,23 @@ function DomainTable({ mode, items, state, selectedId, onSelect, onOpen, onRetry
   );
 }
 
-function businessColumns(onOpen: (item: Item) => void): ColumnDef<BusinessCatalogItem>[] {
+function businessColumns(
+  onOpen: (item: Item) => void,
+  sortBy: 'timestamp',
+  sortDir: 'asc' | 'desc',
+  onSort: () => void,
+): ColumnDef<BusinessCatalogItem>[] {
   return [
     {
       accessorKey: 'timestamp',
-      header: '时间',
+      header: () => (
+        <SortableHeader
+          label="时间"
+          active={sortBy === 'timestamp'}
+          direction={sortDir}
+          onClick={onSort}
+        />
+      ),
       cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">{formatTime(row.original.timestamp)}</span>,
     },
     {
@@ -324,11 +372,23 @@ function businessColumns(onOpen: (item: Item) => void): ColumnDef<BusinessCatalo
   ];
 }
 
-function errorColumns(onOpen: (item: Item) => void): ColumnDef<ErrorCatalogItem>[] {
+function errorColumns(
+  onOpen: (item: Item) => void,
+  sortBy: 'timestamp',
+  sortDir: 'asc' | 'desc',
+  onSort: () => void,
+): ColumnDef<ErrorCatalogItem>[] {
   return [
     {
       accessorKey: 'timestamp',
-      header: '时间',
+      header: () => (
+        <SortableHeader
+          label="时间"
+          active={sortBy === 'timestamp'}
+          direction={sortDir}
+          onClick={onSort}
+        />
+      ),
       cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">{formatTime(row.original.timestamp)}</span>,
     },
     {
@@ -586,11 +646,30 @@ function TriSelect({ label, value, onChange }: { label: string; value?: boolean;
 }
 
 function businessQuery(search: DomainSearch, page: number, size: number): BusinessCatalogQuery {
-  return clean({ ...scopeQuery(search), action: search.action, result: list(search.result), limit: size, offset: (page - 1) * size });
+  return clean({
+    ...scopeQuery(search),
+    action: search.action,
+    result: list(search.result),
+    sortBy: search.sortBy,
+    sortDir: search.sortDir,
+    limit: size,
+    offset: (page - 1) * size,
+  });
 }
 
 function errorQuery(search: DomainSearch, page: number, size: number): ErrorCatalogQuery {
-  return clean({ ...scopeQuery(search), errorType: search.errorType, mechanism: list(search.mechanism), fatal: search.fatal, handled: search.handled, businessOnly: search.businessOnly, limit: size, offset: (page - 1) * size });
+  return clean({
+    ...scopeQuery(search),
+    errorType: search.errorType,
+    mechanism: list(search.mechanism),
+    fatal: search.fatal,
+    handled: search.handled,
+    businessOnly: search.businessOnly,
+    sortBy: search.sortBy,
+    sortDir: search.sortDir,
+    limit: size,
+    offset: (page - 1) * size,
+  });
 }
 
 function scopeQuery(search: DomainSearch): SessionFilters {

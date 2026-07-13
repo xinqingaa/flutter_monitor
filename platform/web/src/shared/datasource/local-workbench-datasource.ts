@@ -77,6 +77,10 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
       userIds: Array.isArray(data.userIds) ? data.userIds : [],
       sessionIds: Array.isArray(data.sessionIds) ? data.sessionIds : [],
       requestIds: Array.isArray(data.requestIds) ? data.requestIds : [],
+      httpMethods: Array.isArray(data.httpMethods) ? data.httpMethods : [],
+      httpStatusCodes: Array.isArray(data.httpStatusCodes) ? data.httpStatusCodes : [],
+      httpBusinessCodes: Array.isArray(data.httpBusinessCodes) ? data.httpBusinessCodes : [],
+      httpHosts: Array.isArray(data.httpHosts) ? data.httpHosts : [],
     };
   }
 

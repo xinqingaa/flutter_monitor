@@ -52,13 +52,15 @@ export type HttpBusinessCodeState = 'value' | 'absent' | 'detail_unavailable' | 
 export interface HttpCatalogQuery extends EventFilters {
   url?: string;
   method?: string[];
-  result?: 'success' | 'failed' | 'unknown';
-  requestId?: string;
+  result?: Array<'success' | 'failed' | 'unknown'> | 'success' | 'failed' | 'unknown';
+  requestId?: string | string[];
   statusCode?: number[];
   businessCode?: string[];
-  host?: string;
+  host?: string | string[];
   slowOnly?: boolean;
   slowThresholdMs?: number;
+  sortBy?: 'timestamp' | 'durationMs';
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface HttpCatalogItem {
@@ -92,6 +94,8 @@ export interface HttpCatalogResult {
 export interface BusinessCatalogQuery extends EventFilters {
   action?: string;
   result?: string[];
+  sortBy?: 'timestamp';
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface BusinessCatalogItem {
@@ -120,6 +124,8 @@ export interface ErrorCatalogQuery extends EventFilters {
   fatal?: boolean;
   handled?: boolean;
   businessOnly?: boolean;
+  sortBy?: 'timestamp';
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface ErrorCatalogItem {
@@ -456,6 +462,10 @@ export interface DimensionSummary {
   userIds: DimensionOption[];
   sessionIds: DimensionOption[];
   requestIds: DimensionOption[];
+  httpMethods: DimensionOption[];
+  httpStatusCodes: DimensionOption[];
+  httpBusinessCodes: DimensionOption[];
+  httpHosts: DimensionOption[];
 }
 
 export type TimeseriesBucket = 'hour' | 'day';
