@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { AlertCircle, AlertTriangle, Filter, MoreHorizontal, MousePointerClick, RotateCcw, SearchX, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Filter, MoreHorizontal, MousePointerClick, RotateCcw, SearchX, X } from 'lucide-react';
 import type { DomainSearch } from '../../app/router';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { Badge } from '../../components/ui/badge';
@@ -45,7 +45,7 @@ import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
 type Mode = 'business' | 'errors';
 type Item = BusinessCatalogItem | ErrorCatalogItem;
 
-const SCOPE_KEYS: Array<keyof DomainSearch> = ['appKey', 'environment', 'appVersion', 'devicePlatform', 'from', 'to', 'userId', 'sessionId', 'route'];
+const SCOPE_KEYS: Array<keyof DomainSearch> = ['appKey', 'packageName', 'environment', 'appVersion', 'devicePlatform', 'from', 'to', 'userId', 'sessionId', 'route'];
 const BUSINESS_KEYS: Array<keyof DomainSearch> = ['action', 'result'];
 const ERROR_KEYS: Array<keyof DomainSearch> = ['errorType', 'mechanism', 'fatal', 'handled', 'businessOnly'];
 
@@ -148,7 +148,17 @@ function DomainCatalog({ mode }: { mode: Mode }) {
           <DomainPreview mode={mode} item={selected} onOpen={() => selected && open(selected)} />
         </aside>
       </div>
-      <DomainRecord mode={mode} open={Boolean(search.detail)} item={detailItem} event={detail.data} loading={detail.isLoading} error={detail.isError} onClose={() => patch({ detail: undefined })} />
+      <DomainRecord
+        mode={mode}
+        open={Boolean(search.detail)}
+        item={detailItem}
+        event={detail.data}
+        loading={detail.isLoading}
+        error={detail.isError}
+        items={items}
+        onClose={() => patch({ detail: undefined })}
+        onNavigate={(next) => patch({ eventId: next.eventId, detail: next.eventId })}
+      />
     </div>
   );
 }
@@ -253,7 +263,7 @@ function DomainTable({ mode, items, state, selectedId, onSelect, onOpen, onRetry
       columns={columns}
       state={state}
       selectedId={selectedId}
-      minWidthClass="min-w-[840px]"
+      minWidthClass="min-w-[880px]"
       message={mode === 'business' ? {
         emptyTitle: '暂无埋点数据',
         emptyDescription: '等待应用产生业务动作。',
@@ -281,7 +291,7 @@ function businessColumns(onOpen: (item: Item) => void): ColumnDef<BusinessCatalo
     {
       accessorKey: 'timestamp',
       header: '时间',
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{formatTime(row.original.timestamp)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">{formatTime(row.original.timestamp)}</span>,
     },
     {
       accessorKey: 'action',
@@ -319,7 +329,7 @@ function errorColumns(onOpen: (item: Item) => void): ColumnDef<ErrorCatalogItem>
     {
       accessorKey: 'timestamp',
       header: '时间',
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{formatTime(row.original.timestamp)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">{formatTime(row.original.timestamp)}</span>,
     },
     {
       id: 'kind',
@@ -390,19 +400,24 @@ function DomainPreview({ mode, item, onOpen }: { mode: Mode; item?: Item; onOpen
   );
 }
 
-function DomainRecord({ mode, open, item, event, loading, error, onClose }: {
+function DomainRecord({ mode, open, item, event, loading, error, items = [], onClose, onNavigate }: {
   mode: Mode;
   open: boolean;
   item?: Item;
   event?: MonitorEvent;
   loading: boolean;
   error: boolean;
+  items?: Item[];
   onClose: () => void;
+  onNavigate?: (item: Item) => void;
 }) {
   const session = useSessionQuery(event?.sessionId);
   const related = (session.data ?? [])
     .filter((candidate) => candidate.eventId !== event?.eventId && (candidate.name === 'http.client' || readPath(candidate, ['attributes', 'business.action']) !== undefined || candidate.signalType === 'error'))
     .slice(-8);
+  const index = item ? items.findIndex((entry) => entry.eventId === item.eventId) : -1;
+  const previous = index > 0 ? items[index - 1] : undefined;
+  const next = index >= 0 && index < items.length - 1 ? items[index + 1] : undefined;
   return (
     <RecordShell
       open={open}
@@ -417,6 +432,31 @@ function DomainRecord({ mode, open, item, event, loading, error, onClose }: {
           <span className="text-xs text-muted-foreground">{formatDateTime(item.timestamp)} · {item.route ?? '-'}</span>
         </div>
       ) : undefined}
+      headerActions={(
+        <>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="上一条"
+            disabled={!previous || !onNavigate}
+            onClick={() => previous && onNavigate?.(previous)}
+          >
+            <ChevronLeft data-icon="inline-start" />
+          </Button>
+          <span className="min-w-10 text-center text-xs tabular-nums text-muted-foreground">
+            {items.length === 0 || index < 0 ? '-' : `${index + 1}/${items.length}`}
+          </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="下一条"
+            disabled={!next || !onNavigate}
+            onClick={() => next && onNavigate?.(next)}
+          >
+            <ChevronRight data-icon="inline-start" />
+          </Button>
+        </>
+      )}
     >
       {loading ? (
         <DomainRecordLoading />
@@ -556,13 +596,14 @@ function errorQuery(search: DomainSearch, page: number, size: number): ErrorCata
 function scopeQuery(search: DomainSearch): SessionFilters {
   return clean({
     appKey: list(search.appKey),
+    packageName: list(search.packageName),
     environment: list(search.environment),
     appVersion: list(search.appVersion),
     devicePlatform: list(search.devicePlatform),
     from: search.from,
     to: search.to,
-    userId: search.userId,
-    sessionId: search.sessionId,
+    userId: list(search.userId),
+    sessionId: list(search.sessionId),
     route: list(search.route),
   });
 }
@@ -607,7 +648,7 @@ function domainFilterLabel(key: keyof DomainSearch, value: unknown): string {
 
 function domainColumnClass(mode: Mode, id: string, header: boolean) {
   return cn(
-    id === 'timestamp' && 'w-[140px]',
+    id === 'timestamp' && 'w-[176px]',
     id === 'result' && 'w-[80px]',
     id === 'kind' && 'w-[88px]',
     id === 'handledState' && 'w-[90px]',

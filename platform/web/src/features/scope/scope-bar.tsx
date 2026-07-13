@@ -157,10 +157,10 @@ function ScopeBarFields({
         <input
           aria-label="用户 ID"
           className="h-8 w-full rounded-md border border-zinc-200 bg-white pl-7 pr-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-500 focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-          value={filters.userId ?? ''}
+          value={filters.userId?.join(',') ?? ''}
           placeholder="全部用户"
           onFocus={() => setOpenSelect(undefined)}
-          onChange={(event) => patchFilters({ userId: event.target.value || undefined })}
+          onChange={(event) => patchFilters({ userId: event.target.value ? event.target.value.split(',').map((item) => item.trim()).filter(Boolean) : undefined })}
         />
       </div>
       <Button
@@ -221,12 +221,15 @@ function DateTimeBox({
 export function ScopeChips({ filters, className }: { filters: ScopeFilters; className?: string }) {
   const items = [
     filters.appKey?.length ? ['应用', filters.appKey.join(', ')] : undefined,
+    filters.packageName?.length ? ['包名', filters.packageName.join(', ')] : undefined,
     filters.environment?.length ? ['环境', filters.environment.join(', ')] : undefined,
     filters.appVersion?.length ? ['版本', filters.appVersion.join(', ')] : undefined,
     filters.devicePlatform?.length ? ['平台', filters.devicePlatform.join(', ')] : undefined,
     filters.from ? ['开始', filters.from] : undefined,
     filters.to ? ['结束', filters.to] : undefined,
-    filters.userId ? ['用户', filters.userId] : undefined,
+    filters.userId?.length ? ['用户', filters.userId.join(', ')] : undefined,
+    filters.sessionId?.length ? ['Session', filters.sessionId.join(', ')] : undefined,
+    filters.route?.length ? ['路由', filters.route.join(', ')] : undefined,
   ].filter((item): item is string[] => Boolean(item));
 
   if (items.length === 0) return null;

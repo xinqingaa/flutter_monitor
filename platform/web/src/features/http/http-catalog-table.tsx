@@ -38,7 +38,7 @@ export function HttpCatalogTable({
         accessorKey: 'timestamp',
         header: '时间',
         cell: ({ row }) => (
-          <span className="font-mono text-xs text-muted-foreground" title={row.original.timestamp}>
+          <span className="whitespace-nowrap font-mono text-xs text-muted-foreground" title={row.original.timestamp}>
             {formatTime(row.original.timestamp)}
           </span>
         ),
@@ -125,7 +125,7 @@ export function HttpCatalogTable({
       columns={columns}
       state={state}
       selectedId={selectedId}
-      minWidthClass="min-w-[880px]"
+      minWidthClass="min-w-[920px]"
       message={{
         emptyTitle: '暂无 HTTP 请求',
         emptyDescription: '等待应用产生网络请求。',
@@ -151,7 +151,7 @@ export function HttpCatalogTable({
 
 function columnClass(id: string, header: boolean) {
   return cn(
-    id === 'timestamp' && 'w-[152px]',
+    id === 'timestamp' && 'w-[176px]',
     id === 'method' && 'w-[76px]',
     id === 'statusCode' && 'w-[88px] text-right',
     id === 'businessCode' && 'w-[96px] text-right',

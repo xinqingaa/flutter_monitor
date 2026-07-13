@@ -11,7 +11,7 @@ import { useDimensionsQuery, useEventQuery, useHttpCatalogQuery } from '../../sh
 import type { HttpCatalogItem, HttpCatalogQuery, SessionFilters } from '../../shared/datasource/types';
 
 const HTTP_KEYS: Array<keyof HttpSearch> = ['url', 'method', 'result', 'requestId', 'statusCode', 'businessCode', 'host', 'slowOnly'];
-const ALL_FILTER_KEYS: Array<keyof HttpSearch> = ['appKey', 'environment', 'appVersion', 'devicePlatform', 'from', 'to', 'userId', 'sessionId', 'route', ...HTTP_KEYS];
+const ALL_FILTER_KEYS: Array<keyof HttpSearch> = ['appKey', 'packageName', 'environment', 'appVersion', 'devicePlatform', 'from', 'to', 'userId', 'sessionId', 'route', ...HTTP_KEYS];
 
 export function HttpFoundationRoute() {
   const search = useSearch({ from: '/http' });
@@ -65,19 +65,28 @@ export function HttpFoundationRoute() {
             <CatalogPreviewPane item={selected} loading={Boolean(search.eventId && catalog.isLoading)} error={Boolean(search.eventId && catalog.isError)} onOpen={() => selected && open(selected)} />
           </aside>
       </div>
-      <HttpRecord open={Boolean(search.detail)} item={detailItem} event={detail.data} loading={detail.isLoading} error={detail.isError} onOpenChange={(openValue) => { if (!openValue) patch({ detail: undefined }); }} />
+      <HttpRecord
+        open={Boolean(search.detail)}
+        item={detailItem}
+        event={detail.data}
+        loading={detail.isLoading}
+        error={detail.isError}
+        items={items}
+        onOpenChange={(openValue) => { if (!openValue) patch({ detail: undefined }); }}
+        onNavigate={(next) => patch({ eventId: next.eventId, detail: next.eventId })}
+      />
     </div>
   );
 }
 
 function toQuery(search: HttpSearch, page: number, pageSize: number): HttpCatalogQuery {
   return clean({
-    appKey: list(search.appKey), environment: list(search.environment), appVersion: list(search.appVersion), devicePlatform: list(search.devicePlatform), from: search.from, to: search.to, userId: search.userId, sessionId: search.sessionId, route: list(search.route),
+    appKey: list(search.appKey), packageName: list(search.packageName), environment: list(search.environment), appVersion: list(search.appVersion), devicePlatform: list(search.devicePlatform), from: search.from, to: search.to, userId: list(search.userId), sessionId: list(search.sessionId), route: list(search.route),
     url: search.url, method: list(search.method), result: search.result, requestId: search.requestId, statusCode: numberList(search.statusCode), businessCode: list(search.businessCode), host: search.host, slowOnly: search.slowOnly,
     limit: pageSize, offset: (page - 1) * pageSize,
   });
 }
-function toScope(search: HttpSearch): SessionFilters { return clean({ appKey: list(search.appKey), environment: list(search.environment), appVersion: list(search.appVersion), devicePlatform: list(search.devicePlatform), from: search.from, to: search.to, userId: search.userId, sessionId: search.sessionId, route: list(search.route) }); }
+function toScope(search: HttpSearch): SessionFilters { return clean({ appKey: list(search.appKey), packageName: list(search.packageName), environment: list(search.environment), appVersion: list(search.appVersion), devicePlatform: list(search.devicePlatform), from: search.from, to: search.to, userId: list(search.userId), sessionId: list(search.sessionId), route: list(search.route) }); }
 function list(value?: string) { return value ? value.split(',').map((item) => item.trim()).filter(Boolean) : undefined; }
 function numberList(value?: string) { return list(value)?.map(Number).filter(Number.isFinite); }
 function clean<T extends Record<string, unknown>>(value: T): T { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== '' && (!Array.isArray(item) || item.length))) as T; }

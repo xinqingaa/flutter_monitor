@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertCircle, AlertTriangle, Copy, FileJson, Network } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, FileJson, Network, Terminal } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -10,16 +10,19 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '../../components/ui/empty';
+import { Label } from '../../components/ui/label';
 import { ScrollArea } from '../../components/ui/scroll-area';
 import { Separator } from '../../components/ui/separator';
 import { Skeleton } from '../../components/ui/skeleton';
+import { Switch } from '../../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { CopyableId } from '../../components/common/copyable-id';
 import { useToast } from '../../components/common/toast';
-import type { HttpCatalogItem, MonitorEvent } from '../../shared/datasource/types';
+import type { HttpCatalogItem, JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import { readPath } from '../../shared/event-model/accessors';
 import { copyText } from '../../shared/formatting/download';
 import { formatDuration } from '../../shared/formatting/format';
+import { buildCurlCommand } from '../../shared/formatting/http-curl';
 import { JsonViewer } from './json-viewer';
 import { RecordShell } from './record-shell';
 
@@ -29,17 +32,51 @@ export function HttpRecord({
   event,
   loading,
   error,
+  items = [],
   onOpenChange,
+  onNavigate,
 }: {
   open: boolean;
   item?: HttpCatalogItem;
   event?: MonitorEvent;
   loading: boolean;
   error: boolean;
+  items?: HttpCatalogItem[];
   onOpenChange: (open: boolean) => void;
+  onNavigate?: (item: HttpCatalogItem) => void;
 }) {
+  const { showToast } = useToast();
   const failed = item?.success === false || event?.status === 'error';
   const state = loading ? 'loading' : error ? 'error' : !event ? 'notFound' : item?.detailDropped ? 'partial' : 'ready';
+  const index = item ? items.findIndex((entry) => entry.eventId === item.eventId) : -1;
+  const previous = index > 0 ? items[index - 1] : undefined;
+  const next = index >= 0 && index < items.length - 1 ? items[index + 1] : undefined;
+
+  async function copyCurl() {
+    if (!event && !item) return;
+    try {
+      const detail = event
+        ? (readPath(event, ['payload', 'http.detail']) ?? readPath(event, ['payload', 'http', 'detail'])) as
+          | { request?: { headers?: JsonObject; body?: unknown } }
+          | undefined
+        : undefined;
+      const query = event
+        ? readPath(event, ['payload', 'http.query']) ?? readPath(event, ['payload', 'http', 'query'])
+        : undefined;
+      const curl = buildCurlCommand({
+        method: item?.method,
+        url: item?.url,
+        query,
+        headers: detail?.request?.headers,
+        body: detail?.request?.body,
+      });
+      await copyText(curl);
+      showToast({ tone: 'success', title: '已复制 cURL' });
+    } catch {
+      showToast({ tone: 'danger', title: '复制失败', description: '当前 HTTP 事件缺少 URL，无法生成 cURL。' });
+    }
+  }
+
   return (
     <RecordShell
       open={open}
@@ -48,6 +85,35 @@ export function HttpRecord({
       description={item?.url}
       state={state}
       summary={item ? <RecordSummary item={item} /> : undefined}
+      headerActions={(
+        <>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="上一条"
+            disabled={!previous || !onNavigate}
+            onClick={() => previous && onNavigate?.(previous)}
+          >
+            <ChevronLeft data-icon="inline-start" />
+          </Button>
+          <span className="min-w-10 text-center text-xs tabular-nums text-muted-foreground">
+            {items.length === 0 || index < 0 ? '-' : `${index + 1}/${items.length}`}
+          </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="下一条"
+            disabled={!next || !onNavigate}
+            onClick={() => next && onNavigate?.(next)}
+          >
+            <ChevronRight data-icon="inline-start" />
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void copyCurl()} disabled={!item?.url}>
+            <Terminal data-icon="inline-start" />
+            复制 cURL
+          </Button>
+        </>
+      )}
     >
       {loading ? (
         <RecordLoading />
@@ -139,13 +205,13 @@ function HttpSide({ event, side }: { event: MonitorEvent; side: 'request' | 'res
 }
 
 function BodySection({ body, truncated, format }: { body: unknown; truncated: boolean; format?: string }) {
-  const { showToast } = useToast();
-  const [formatted, setFormatted] = useState(true);
+  const [raw, setRaw] = useState(false);
   const parsed = useMemo(() => parseJson(body), [body]);
   if (body === undefined || body === null || body === '') {
     return <RecordState icon={FileJson} title="没有 Body" description="可能是空响应，或未开启对应详情采集。" compact />;
   }
-  const shown = formatted && parsed.ok ? parsed.value : typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+  const formatted = !raw && parsed.ok;
+  const shown = formatted ? parsed.value : typeof body === 'string' ? body : JSON.stringify(body, null, 2);
   return (
     <section className="flex flex-col gap-3">
       <header className="flex items-center justify-between gap-3">
@@ -156,20 +222,14 @@ function BodySection({ body, truncated, format }: { body: unknown; truncated: bo
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setFormatted((value) => !value)} disabled={!parsed.ok}>
-            {formatted ? '查看原文' : '格式化'}
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="复制 body"
-            onClick={() => void copyText(typeof shown === 'string' ? shown : JSON.stringify(shown)).then(
-              () => showToast({ tone: 'success', title: '已复制 body' }),
-              () => showToast({ tone: 'danger', title: 'body 复制失败' }),
-            )}
-          >
-            <Copy data-icon="inline-start" />
-          </Button>
+          <Label htmlFor="http-body-raw" className="text-sm text-muted-foreground">原文</Label>
+          <Switch
+            id="http-body-raw"
+            checked={raw}
+            onCheckedChange={setRaw}
+            disabled={!parsed.ok}
+            aria-label="查看原文"
+          />
         </div>
       </header>
       {truncated ? (

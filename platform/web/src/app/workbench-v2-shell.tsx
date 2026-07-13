@@ -32,6 +32,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { useLiveInvalidation, useSessionsQuery } from '../shared/datasource/queries';
 import { formatDateTime } from '../shared/formatting/format';
+import { pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
 const nav = [
@@ -91,7 +92,7 @@ export function WorkbenchV2Shell() {
                       isActive={to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)}
                       tooltip={label}
                     >
-                      <Link to={to}>
+                      <Link to={to} search={(current) => pickScopeSearch(current)}>
                         <Icon />
                         <span>{label}</span>
                       </Link>

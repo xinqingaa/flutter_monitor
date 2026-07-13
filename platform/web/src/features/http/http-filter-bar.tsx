@@ -31,7 +31,7 @@ export function HttpFilterBar({ search, total, slowThresholdMs, fullUrl, onFullU
   const [moreOpen, setMoreOpen] = useState(false);
   const debouncedUrl = useDebouncedValue(url, 300);
   const debouncedRequest = useDebouncedValue(requestQuery, 250);
-  const suggestions = useDimensionsQuery({ appKey: list(search.appKey), environment: list(search.environment), appVersion: list(search.appVersion), from: search.from, to: search.to, userId: search.userId, sessionId: search.sessionId, route: list(search.route) }, debouncedRequest);
+  const suggestions = useDimensionsQuery({ appKey: list(search.appKey), packageName: list(search.packageName), environment: list(search.environment), appVersion: list(search.appVersion), from: search.from, to: search.to, userId: list(search.userId), sessionId: list(search.sessionId), route: list(search.route) }, debouncedRequest);
   useEffect(() => setUrl(search.url ?? ''), [search.url]);
   useEffect(() => setRequestQuery(search.requestId ?? ''), [search.requestId]);
   useEffect(() => { const next = debouncedUrl.trim() || undefined; if (next !== search.url) onPatch({ url: next }, true); }, [debouncedUrl]);

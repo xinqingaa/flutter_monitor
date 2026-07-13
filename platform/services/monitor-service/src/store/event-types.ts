@@ -20,14 +20,14 @@ export type MonitorEvent = Record<string, unknown> & {
 };
 
 export interface EventFilters {
-  sessionId?: string;
+  sessionId?: string | string[];
   appKey?: string | string[];
   appName?: string | string[];
   packageName?: string | string[];
   channel?: string | string[];
   flavor?: string | string[];
   buildNumber?: string | string[];
-  userId?: string;
+  userId?: string | string[];
   from?: string;
   to?: string;
   appVersion?: string | string[];

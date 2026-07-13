@@ -3,6 +3,7 @@ import { WorkbenchShell } from './workbench-shell';
 
 type RootSearch = {
   appKey?: string;
+  packageName?: string;
   environment?: string;
   appVersion?: string;
   devicePlatform?: string;
@@ -49,13 +50,14 @@ export type DomainSearch = RootSearch & {
 const rootRoute = createRootRoute({
   validateSearch: (search: Record<string, unknown>): RootSearch => cleanSearch({
     appKey: stringListSearchParam(search.appKey),
+    packageName: stringListSearchParam(search.packageName),
     environment: stringListSearchParam(search.environment),
     appVersion: stringListSearchParam(search.appVersion),
     devicePlatform: stringListSearchParam(search.devicePlatform),
     from: stringSearch(search.from),
     to: stringSearch(search.to),
-    userId: stringSearch(search.userId),
-    sessionId: stringSearch(search.sessionId),
+    userId: stringListSearchParam(search.userId),
+    sessionId: stringListSearchParam(search.sessionId),
     route: stringListSearchParam(search.route),
   }),
   component: WorkbenchShell,
@@ -94,13 +96,14 @@ const httpRoute = createRoute({
   path: '/http',
   validateSearch: (search: Record<string, unknown>): HttpSearch => cleanSearch({
     appKey: stringListSearchParam(search.appKey),
+    packageName: stringListSearchParam(search.packageName),
     environment: stringListSearchParam(search.environment),
     appVersion: stringListSearchParam(search.appVersion),
     devicePlatform: stringListSearchParam(search.devicePlatform),
     from: stringSearch(search.from),
     to: stringSearch(search.to),
-    userId: stringSearch(search.userId),
-    sessionId: stringSearch(search.sessionId),
+    userId: stringListSearchParam(search.userId),
+    sessionId: stringListSearchParam(search.sessionId),
     route: stringListSearchParam(search.route),
     url: stringSearch(search.url),
     method: stringListSearchParam(search.method),
@@ -262,7 +265,7 @@ function numericListSearchParam(value: unknown): string | undefined {
 
 function domainSearch(search: Record<string, unknown>): DomainSearch {
   return cleanSearch({
-    appKey: stringListSearchParam(search.appKey), environment: stringListSearchParam(search.environment), appVersion: stringListSearchParam(search.appVersion), devicePlatform: stringListSearchParam(search.devicePlatform), from: stringSearch(search.from), to: stringSearch(search.to), userId: stringSearch(search.userId), sessionId: stringSearch(search.sessionId), route: stringListSearchParam(search.route),
+    appKey: stringListSearchParam(search.appKey), packageName: stringListSearchParam(search.packageName), environment: stringListSearchParam(search.environment), appVersion: stringListSearchParam(search.appVersion), devicePlatform: stringListSearchParam(search.devicePlatform), from: stringSearch(search.from), to: stringSearch(search.to), userId: stringListSearchParam(search.userId), sessionId: stringListSearchParam(search.sessionId), route: stringListSearchParam(search.route),
     action: stringSearch(search.action), result: stringListSearchParam(search.result), errorType: stringSearch(search.errorType), mechanism: stringListSearchParam(search.mechanism), fatal: booleanSearch(search.fatal), handled: booleanSearch(search.handled), businessOnly: booleanSearch(search.businessOnly), page: integerSearch(search.page, 1), pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined, eventId: stringSearch(search.eventId), detail: stringSearch(search.detail),
   });
 }

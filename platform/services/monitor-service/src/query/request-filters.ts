@@ -4,14 +4,14 @@ type QueryValue = string | string[] | undefined;
 
 export function filtersFromQuery(query: Record<string, QueryValue>): EventFilters {
   return {
-    sessionId: readQueryString(query, 'sessionId'),
+    sessionId: readQueryStringList(query, 'sessionId'),
     appKey: readQueryStringList(query, 'appKey'),
     appName: readQueryStringList(query, 'appName'),
     packageName: readQueryStringList(query, 'packageName'),
     channel: readQueryStringList(query, 'channel'),
     flavor: readQueryStringList(query, 'flavor'),
     buildNumber: readQueryStringList(query, 'buildNumber'),
-    userId: readQueryString(query, 'userId'),
+    userId: readQueryStringList(query, 'userId'),
     from: readQueryString(query, 'from'),
     to: readQueryString(query, 'to'),
     appVersion: readQueryStringList(query, 'appVersion'),

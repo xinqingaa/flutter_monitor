@@ -1010,7 +1010,7 @@ export class SqliteMonitorStore implements MonitorStore {
 function whereFromFilters(filters: EventFilters): { whereSql: string; params: SqlParam[] } {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
-  addLikeFilter(clauses, params, 'session_id', filters.sessionId);
+  addEqualityFilter(clauses, params, 'session_id', filters.sessionId);
   addEqualityFilter(clauses, params, 'app_key', filters.appKey);
   addEqualityFilter(clauses, params, 'app_name', filters.appName);
   addEqualityFilter(clauses, params, 'package_name', filters.packageName);

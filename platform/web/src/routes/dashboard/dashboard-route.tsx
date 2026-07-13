@@ -421,13 +421,14 @@ function scopeQuery(search: Record<string, unknown>): SessionFilters {
   const list = (value: unknown) => typeof value === 'string' ? value.split(',').filter(Boolean) : undefined;
   return {
     appKey: list(search.appKey),
+    packageName: list(search.packageName),
     environment: list(search.environment),
     appVersion: list(search.appVersion),
     devicePlatform: list(search.devicePlatform),
     from: typeof search.from === 'string' ? search.from : undefined,
     to: typeof search.to === 'string' ? search.to : undefined,
-    userId: typeof search.userId === 'string' ? search.userId : undefined,
-    sessionId: typeof search.sessionId === 'string' ? search.sessionId : undefined,
+    userId: list(search.userId),
+    sessionId: list(search.sessionId),
     route: list(search.route),
   };
 }
