@@ -7,6 +7,7 @@
 - **默认推倒页面与视觉**；不以现有 `platform/web` 布局为约束。
 - **优先保留数据层与交互通性**，不优先保留组件皮肤。
 - **克制复用**：即使相对可用的组件，也不整包锁定；能抽逻辑就抽逻辑，UI 仍可按 DESIGN 重做。
+- shadcn 官方组件和官方 blocks 是新的视觉与交互基线；现有自定义视觉系统不构成保留理由。
 
 状态：`active`（与 `FEATURES.md`、`DESIGN.md` 共同约束 HTTP 样板页实施）
 
@@ -70,6 +71,8 @@
 | --- | --- |
 | 现有一级导航 | Overview + Sessions + Startup/Pages/Network/Jank/Errors 与 FEATURES「大屏 / HTTP / 埋点 / 异常」不一致 |
 | 现有页面视觉与布局 | 卡片堆叠、密度与筛选体验整体不满意 |
+| 当前 Dashboard / HTTP 页面组合 | 不以现有卡片、Toolbar、ChartPanel 或空间安排为样板 |
+| `--fm-*` 主题与旧视觉 token | 不作为新 Workbench 的设计基线 |
 | Session 作为唯一主入口的产品叙事 | 新主路径是信号类型列表；Session 降为二级链路组装 |
 | 默认主路径上的 jank / memory / native | FEATURES 明确不做；旧 chip/卡会干扰核心证据 |
 | 用通用事件流冒充 HTTP Catalog | `/events` + `recent` 无法满足海量请求列表 |
@@ -169,5 +172,5 @@ HTTP 已验证该结构（请求/响应分 Tab）。埋点、异常共用同一�
 | --- | --- |
 | [`FEATURES.md`](FEATURES.md) | 要有什么能力（功能边界） |
 | **本文** | 旧实现怎么取舍（Keep / Kill / Steal） |
-| [`DESIGN.md`](DESIGN.md) | 气质、Token、交互契约、页面 Task/Layout、样板页与验收门禁 |
+| [`DESIGN.md`](DESIGN.md) | 产品气质、信息架构、官方 shadcn 基线与宽松验收原则 |
 | `product_plan.md` | 历史参考；与 FEATURES 冲突时以 FEATURES 为准 |

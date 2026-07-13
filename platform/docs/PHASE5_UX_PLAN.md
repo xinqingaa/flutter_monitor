@@ -2,9 +2,9 @@
 
 ## Meta
 
-- status: in_progress
+- status: proposed
 - last_updated: 2026-07-11
-- baseline: Phase 1–4 已由用户验收；本阶段只做体验升级，不否认或重做四入口与二级 Session 闭环
+- baseline: 四入口与二级 Session 数据闭环可复用；现有页面视觉和组合不作为基线
 - decision order: [`FEATURES.md`](FEATURES.md) → [`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md) → [`DESIGN.md`](DESIGN.md) → 工程惯例
 - implementation order: docs → 必要 service → datasource/web → 验证与人工验收
 
@@ -12,19 +12,18 @@
 
 当前工作区存在一轮未验收的 Phase 5 尝试。该尝试只能作为问题样本，不能作为新基线，也不能因已经写入代码或通过构建而被视为完成。
 
-正式实施前必须先完成基线恢复：
+正式实施前必须先完成现有改动审计：
 
-1. 以 Git 中已验收的 Phase 1–4 状态为代码基线，逐文件识别当前未提交改动。
-2. 只撤回上一轮未验收的 Phase 5 改动；不得覆盖用户无关改动。
-3. 恢复后运行 `typecheck`、`build`、`smoke`，确认四入口、Catalog → Record → Session 深链仍成立。
-4. `FEATURES.md`、`DESIGN.md` 和本计划完成用户确认前，不开始第二轮 UI 实现。
+1. 逐文件识别当前未提交改动，不覆盖用户无关改动。
+2. 以当前数据层、路由和 EventEnvelope 链路为复用基础，页面视觉按官方 shadcn 基线重建。
+3. `FEATURES.md`、`DESIGN.md` 和本计划完成用户确认前，不开始大规模页面实现。
 
 `status` 只能按 `proposed → in_progress → review → complete` 推进。构建通过不等于用户验收，未验收时禁止写 `complete`。
 
 ## 目标
 
 1. 用 shadcn 官方组件与 Dashboard Blocks 的结构重建 Workbench App Shell、Sidebar、Breadcrumb、Catalog Table 和筛选控件。
-2. 保留现有 semantic tokens、四入口信息架构、Catalog/Preview/Record 模式和 Session 二级深链。
+2. 保留四入口信息架构、数据查询、URL 状态和 Session 二级深链；不保留现有自定义 semantic tokens 的视觉约束。
 3. 补齐全站时间、Select、文本筛选与 ID 候选选择体验。
 4. 用 Tremor 实现五张可 drilldown 的大屏图表，并彻底移除 echarts 与旧 performance 页面残留。
 5. 所有 service 摘要和图表点击目标都能通过 `eventId` 回查原始 `EventEnvelope`；不改 SDK/core，不建立第二套模型。
@@ -38,6 +37,7 @@
 - 不改 SDK/core 事件模型，不给 `EventEnvelope` 回写 service 派生字段。
 - 不引入第二套图表引擎，不保留“暂时还可能用到”的 echarts 死代码。
 - 不借本轮做无关视觉翻新或数据层重构。
+- 本轮优先完成 PC；移动端不作为首轮阻塞条件。
 
 ## 已锁定的产品结果
 
@@ -69,7 +69,7 @@
 
 ## 组件策略
 
-shadcn 是复制进仓库维护的组件源码，不是运行时 UI 包。本轮以官方 registry 源码和官方 Dashboard Blocks 的组合方式为来源，再映射本项目 token。
+shadcn 是复制进仓库维护的组件源码。本轮以官方 registry 源码、官方文档示例和官方 Dashboard Blocks 为最高基线，不再把现有项目 token 映射作为前提。
 
 ### 必须落地的官方能力
 
@@ -155,11 +155,11 @@ shadcn 是复制进仓库维护的组件源码，不是运行时 UI 包。本轮
 
 ### 第 0 轮：恢复基线与锁定文档
 
-步骤 0.1：恢复已验收基线
+步骤 0.1：审计现有改动
 
 - 审计当前未提交改动，分离上一轮 Phase 5 尝试与用户其它改动。
 - 撤回失败尝试，恢复 Phase 1–4 的四入口、Catalog/Record 和 Session 深链。
-- 记录恢复前后文件清单，避免误删已验收成果。
+- 记录审计结果，避免误删用户改动或数据层资产。
 
 步骤 0.2：文档收口
 
@@ -174,7 +174,7 @@ shadcn 是复制进仓库维护的组件源码，不是运行时 UI 包。本轮
 步骤 1.1：shadcn 基础能力
 
 - 建立 `components.json`，按官方 registry 引入 Sidebar、Breadcrumb、Table、Command/Popover、Select、Dropdown Menu、Pagination、Skeleton、Separator。
-- 将现有 token 映射到这些 primitives，覆盖 hover、focus、disabled、loading 和移动端状态。
+- 先使用官方 theme 和组件默认状态，覆盖 hover、focus、disabled、loading 等官方行为。
 - 用官方 Dashboard Block 的组合关系重建 App Shell；保留 live、刷新、折叠和四入口。
 
 步骤 1.2：四入口迁移
@@ -182,9 +182,9 @@ shadcn 是复制进仓库维护的组件源码，不是运行时 UI 包。本轮
 - 大屏、HTTP、埋点、异常迁入统一 Page Header / Breadcrumb / 主滚动容器。
 - 三类 Catalog 使用统一 Table/Data Table 组合，但保留各领域列和 Preview/Record 语义。
 - Session 路由使用同一二级 Header，保持 `sessionId + eventId + traceId` 深链。
-- 验证 `<1024px` Catalog 收起 Preview、`<900px` Record Sheet/full page，以及 390px 移动 Sidebar。
+- 首轮验证 1440px、1280px 和 1024px PC 视口；移动端另行规划。
 
-验收物：1440px、1024px、390px 的四入口与 Session 截图；Sidebar 桌面折叠/移动开合；HTTP 表格键盘与 Record 返回链路。此轮不以五张图作为验收重点。
+验收物：1440px、1280px、1024px 的四入口与 Session PC 截图；Sidebar 桌面行为；HTTP 表格键盘与 Record 返回链路。此轮不以移动端或五张图作为验收重点。
 
 ### 第 2 轮：筛选体验与 service 候选
 
@@ -235,7 +235,7 @@ git diff --check
 
 步骤 4.2：人工验收
 
-- 视口：1440px、1024px、390px。
+- 视口：1440px、1280px、1024px；移动端另行验收。
 - 页面：大屏、HTTP、埋点、异常、Session。
 - 状态：正常、loading、empty、noResults、error、后台刷新。
 - 交互：Sidebar、Breadcrumb、Table 键盘、Date Picker、Select、debounce、Combobox、分页、Session 切换、Record、浏览器返回、五图 drilldown。
