@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { AlertTriangle, LayoutDashboard, MousePointerClick, Network, Pause, Play, RefreshCw } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, MousePointerClick, Network, RefreshCw } from 'lucide-react';
 import type * as React from 'react';
 import { useState } from 'react';
 import {
@@ -10,11 +10,11 @@ import {
   BreadcrumbSeparator,
 } from '../components/ui/breadcrumb';
 import { Button } from '../components/ui/button';
+import { Label } from '../components/ui/label';
 import { Separator } from '../components/ui/separator';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -29,6 +29,7 @@ import {
   SidebarSeparator,
   SidebarTrigger,
 } from '../components/ui/sidebar';
+import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { useLiveInvalidation, useSessionsQuery } from '../shared/datasource/queries';
 import { formatDateTime } from '../shared/formatting/format';
@@ -133,26 +134,6 @@ export function WorkbenchV2Shell() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip={live ? '暂停实时更新' : '恢复实时更新'}
-                onClick={() => setLive((value) => !value)}
-              >
-                {live ? <Pause /> : <Play />}
-                <span>{live ? '暂停实时更新' : '恢复实时更新'}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton tooltip="刷新数据" onClick={() => void router.invalidate()}>
-                <RefreshCw />
-                <span>刷新数据</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
 
@@ -179,10 +160,17 @@ export function WorkbenchV2Shell() {
               ) : null}
             </BreadcrumbList>
           </Breadcrumb>
-          <span className="hidden items-center gap-2 text-sm text-muted-foreground sm:inline-flex">
-            <span className={live ? 'size-2 rounded-full bg-emerald-500' : 'size-2 rounded-full bg-muted-foreground'} />
-            {live ? 'Live' : 'Paused'}
-          </span>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="workbench-live" className="min-w-12 text-sm text-muted-foreground">
+              {live ? 'Live' : 'Paused'}
+            </Label>
+            <Switch
+              id="workbench-live"
+              checked={live}
+              onCheckedChange={setLive}
+              aria-label={live ? '暂停实时更新' : '恢复实时更新'}
+            />
+          </div>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="icon" variant="ghost" aria-label="刷新数据" onClick={() => void router.invalidate()}>

@@ -40,11 +40,15 @@ export function MultiSelect({
   const committed = values ?? [];
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
-  const [draft, setDraft] = useState<string[]>(committed);
+  const [draft, setDraft] = useState<string[]>(() => values ?? []);
 
+  // Sync draft from props only when closed. Compare by value so `values ?? []`
+  // (new [] each render when unset) does not trigger Maximum update depth.
   useEffect(() => {
-    if (!open) setDraft(committed);
-  }, [committed, open]);
+    if (open) return;
+    const next = values ?? [];
+    setDraft((current) => (sameValues(current, next) ? current : next));
+  }, [values, open]);
 
   const selected = open ? draft : committed;
   const selectedSet = new Set(selected);

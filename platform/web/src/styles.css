@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -10,6 +11,16 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/*
+ * Hardcode enter/exit durations. Tailwind's property reset sets `--tw-duration` /
+ * `--tw-animation-duration` to `initial` on *, so `var(--tw-duration, 150ms)`
+ * resolves to 0s and shadcn Sheet/Select/Dropdown animations look instant.
+ */
+@theme inline {
+  --animate-in: enter 300ms ease 0s 1 normal both;
+  --animate-out: exit 200ms ease 0s 1 normal both;
 }
 
 @theme inline {
@@ -162,15 +173,6 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
 
 .dark {
   --background: oklch(0.141 0.005 285.823);

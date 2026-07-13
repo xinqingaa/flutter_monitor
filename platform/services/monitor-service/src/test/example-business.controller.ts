@@ -1,14 +1,20 @@
 import {
   Body,
+  CallHandler,
   Controller,
+  ExecutionContext,
   Get,
   Headers,
+  Injectable,
+  NestInterceptor,
   Param,
   Post,
   Put,
   Query,
   Res,
+  UseInterceptors,
 } from '@nestjs/common';
+import { Observable, tap } from 'rxjs';
 import { ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -150,7 +156,23 @@ const coaches: Record<string, Json> = {
 const checkins = new Set<string>();
 const sessions = new Map<string, { userId: string; token: string }>();
 
+@Injectable()
+class MirrorRequestIdHeaderInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    return next.handle().pipe(
+      tap((data) => {
+        if (!data || typeof data !== 'object') return;
+        const requestId = (data as { requestId?: unknown }).requestId;
+        if (typeof requestId !== 'string' || requestId.length === 0) return;
+        const res = context.switchToHttp().getResponse<Response>();
+        if (!res.headersSent) res.setHeader('x-request-id', requestId);
+      }),
+    );
+  }
+}
+
 @ApiTags('example-v1')
+@UseInterceptors(MirrorRequestIdHeaderInterceptor)
 @Controller('api/example/v1')
 export class ExampleBusinessController {
   @Get('bootstrap')
@@ -210,8 +232,7 @@ export class ExampleBusinessController {
     if (!auth) return;
     await delay(180);
     const steps = 4200 + (Number(auth.userId) % 50) * 37;
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         greeting: greeting(),
         user: userCard(auth.userId),
         today: {
@@ -224,8 +245,7 @@ export class ExampleBusinessController {
         },
         streakDays: 3 + (Number(auth.userId) % 10),
         nextWorkoutId: workouts[Number(auth.userId) % workouts.length].id,
-      }),
-    );
+      }));
   }
 
   @Get('home/recommendations')
@@ -234,8 +254,7 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(140);
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         items: [
           ...workouts.slice(0, 2).map((w) => ({
             type: 'workout',
@@ -252,8 +271,7 @@ export class ExampleBusinessController {
             tone: c.coverTone,
           })),
         ],
-      }),
-    );
+      }));
   }
 
   @Get('workouts')
@@ -262,7 +280,7 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(160);
-    res.send(envelope({ items: workouts, total: workouts.length }));
+    sendJson(res, envelope({ items: workouts, total: workouts.length }));
   }
 
   @Get('workouts/:id')
@@ -278,11 +296,10 @@ export class ExampleBusinessController {
     await delay(150);
     const workout = workouts.find((item) => item.id === id);
     if (!workout) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '训练不存在'), 404);
       return;
     }
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         ...workout,
         segments: [
           { name: '热身', minutes: 5 },
@@ -290,8 +307,7 @@ export class ExampleBusinessController {
           { name: '拉伸', minutes: 5 },
         ],
         checkedInToday: checkins.has(`${auth.userId}:${id}:${dayKey()}`),
-      }),
-    );
+      }));
   }
 
   @Post('workouts/:id/start')
@@ -307,17 +323,15 @@ export class ExampleBusinessController {
     await delay(200);
     const workout = workouts.find((item) => item.id === id);
     if (!workout) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '训练不存在'), 404);
       return;
     }
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         sessionId: `ws_${Date.now()}`,
         workoutId: id,
         startedAt: new Date().toISOString(),
         title: workout.title,
-      }),
-    );
+      }));
   }
 
   @Post('workouts/:id/complete')
@@ -334,24 +348,22 @@ export class ExampleBusinessController {
     await delay(260);
     const workout = workouts.find((item) => item.id === id);
     if (!workout) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '训练不存在'), 404);
       return;
     }
     const sessionId = str(body.sessionId);
     if (!sessionId) {
-      res.send(envelope(null, BizCode.INVALID_PARAM, '缺少 sessionId'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '缺少 sessionId'));
       return;
     }
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         workoutId: id,
         sessionId,
         completedAt: new Date().toISOString(),
         kcal: workout.kcal,
         durationMin: workout.durationMin,
         badge: '今日训练完成',
-      }),
-    );
+      }));
   }
 
   @Post('workouts/:id/checkin')
@@ -366,16 +378,16 @@ export class ExampleBusinessController {
     if (!auth) return;
     await delay(180);
     if (!workouts.some((item) => item.id === id)) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '训练不存在'), 404);
       return;
     }
     const key = `${auth.userId}:${id}:${dayKey()}`;
     if (checkins.has(key)) {
-      res.send(envelope(null, BizCode.DUPLICATE_CHECKIN, '今日已打卡，请勿重复提交'));
+      sendJson(res, envelope(null, BizCode.DUPLICATE_CHECKIN, '今日已打卡，请勿重复提交'));
       return;
     }
     checkins.add(key);
-    res.send(envelope({ workoutId: id, checkedInAt: new Date().toISOString(), streakDays: 1 }));
+    sendJson(res, envelope({ workoutId: id, checkedInAt: new Date().toISOString(), streakDays: 1 }));
   }
 
   @Get('courses')
@@ -389,7 +401,7 @@ export class ExampleBusinessController {
     if (!auth) return;
     await delay(170);
     const items = category ? courses.filter((c) => c.category === category) : courses;
-    res.send(envelope({ items, categories: [...new Set(courses.map((c) => c.category))] }));
+    sendJson(res, envelope({ items, categories: [...new Set(courses.map((c) => c.category))] }));
   }
 
   @Get('courses/:id')
@@ -405,10 +417,10 @@ export class ExampleBusinessController {
     await delay(150);
     const course = courses.find((item) => item.id === id);
     if (!course) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '课程不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '课程不存在'), 404);
       return;
     }
-    res.send(envelope({ ...course, coach: coaches[course.coachId] }));
+    sendJson(res, envelope({ ...course, coach: coaches[course.coachId] }));
   }
 
   @Get('coaches/:id')
@@ -424,15 +436,13 @@ export class ExampleBusinessController {
     await delay(120);
     const coach = coaches[id];
     if (!coach) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '教练不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '教练不存在'), 404);
       return;
     }
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         ...coach,
         courses: courses.filter((c) => c.coachId === id).map((c) => ({ id: c.id, title: c.title })),
-      }),
-    );
+      }));
   }
 
   @Post('courses/:id/book')
@@ -448,23 +458,21 @@ export class ExampleBusinessController {
     await delay(320);
     const course = courses.find((item) => item.id === id);
     if (!course) {
-      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '课程不存在'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '课程不存在'), 404);
       return;
     }
     if (course.seatsLeft <= 0) {
-      res.send(envelope(null, BizCode.COURSE_FULL, '课程已满员，请选择其他场次'));
+      sendJson(res, envelope(null, BizCode.COURSE_FULL, '课程已满员，请选择其他场次'));
       return;
     }
     course.seatsLeft -= 1;
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         bookingId: `bk_${Date.now()}`,
         courseId: id,
         userId: auth.userId,
         startAt: course.startAt,
         status: 'confirmed',
-      }),
-    );
+      }));
   }
 
   @Get('vitals/latest')
@@ -473,15 +481,13 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(130);
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         measuredAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
         weightKg: 62.5 + (Number(auth.userId) % 10) * 0.3,
         restingHr: 58 + (Number(auth.userId) % 8),
         sleepHours: 6.5 + (Number(auth.userId) % 5) * 0.2,
         mood: Number(auth.userId) % 2 === 0 ? 'good' : 'ok',
-      }),
-    );
+      }));
   }
 
   @Get('vitals/history')
@@ -500,7 +506,7 @@ export class ExampleBusinessController {
         sleepHours: 7 - index * 0.1,
       };
     });
-    res.send(envelope({ items }));
+    sendJson(res, envelope({ items }));
   }
 
   @Post('vitals')
@@ -511,19 +517,17 @@ export class ExampleBusinessController {
     await delay(200);
     const weightKg = Number(body.weightKg);
     if (!Number.isFinite(weightKg) || weightKg < 30 || weightKg > 200) {
-      res.send(envelope(null, BizCode.INVALID_PARAM, '体重数值不合法'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '体重数值不合法'));
       return;
     }
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         id: `vt_${Date.now()}`,
         userId: auth.userId,
         weightKg,
         restingHr: Number(body.restingHr) || null,
         sleepHours: Number(body.sleepHours) || null,
         recordedAt: new Date().toISOString(),
-      }),
-    );
+      }));
   }
 
   @Get('membership')
@@ -533,8 +537,7 @@ export class ExampleBusinessController {
     if (!auth) return;
     await delay(140);
     const premium = Number(auth.userId) % 2 === 0;
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         tier: premium ? 'premium' : 'free',
         expiresAt: premium ? daysFromNow(30, 0) : null,
         benefits: premium
@@ -545,8 +548,7 @@ export class ExampleBusinessController {
           { id: 'plan_year', name: '年度会员', price: 598, period: 'year' },
           { id: 'plan_fail', name: '体验开通（演示失败）', price: 1, period: 'trial' },
         ],
-      }),
-    );
+      }));
   }
 
   @Post('membership/orders')
@@ -561,22 +563,20 @@ export class ExampleBusinessController {
     await delay(380);
     const planId = str(body.planId);
     if (!planId) {
-      res.send(envelope(null, BizCode.INVALID_PARAM, '缺少 planId'));
+      sendJson(res, envelope(null, BizCode.INVALID_PARAM, '缺少 planId'));
       return;
     }
     if (planId === 'plan_fail') {
-      res.send(envelope(null, BizCode.PAYMENT_FAILED, '支付未完成，请更换支付方式后重试'));
+      sendJson(res, envelope(null, BizCode.PAYMENT_FAILED, '支付未完成，请更换支付方式后重试'));
       return;
     }
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         orderId: `mo_${Date.now()}`,
         planId,
         userId: auth.userId,
         status: 'paid',
         paidAt: new Date().toISOString(),
-      }),
-    );
+      }));
   }
 
   @Get('me')
@@ -585,8 +585,7 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(120);
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         user: userCard(auth.userId),
         goals: {
           steps: 8000,
@@ -597,8 +596,7 @@ export class ExampleBusinessController {
           reminderHour: 8,
           units: 'metric',
         },
-      }),
-    );
+      }));
   }
 
   @Put('me/profile')
@@ -611,16 +609,14 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(160);
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         user: {
           ...userCard(auth.userId),
           name: str(body.name) ?? userCard(auth.userId).name,
           city: str(body.city) ?? '上海',
         },
         updatedAt: new Date().toISOString(),
-      }),
-    );
+      }));
   }
 
   @Put('me/goals')
@@ -633,16 +629,14 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(140);
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         goals: {
           steps: Number(body.steps) || 8000,
           activeMin: Number(body.activeMin) || 45,
           workoutsPerWeek: Number(body.workoutsPerWeek) || 4,
         },
         updatedAt: new Date().toISOString(),
-      }),
-    );
+      }));
   }
 
   @Get('notices')
@@ -651,8 +645,7 @@ export class ExampleBusinessController {
     const auth = requireAuth(authorization, res);
     if (!auth) return;
     await delay(110);
-    res.send(
-      envelope({
+    sendJson(res, envelope({
         items: [
           {
             id: 'nt_1',
@@ -669,8 +662,7 @@ export class ExampleBusinessController {
             read: true,
           },
         ],
-      }),
-    );
+      }));
   }
 
   @Get('lab/slow')
@@ -683,23 +675,34 @@ export class ExampleBusinessController {
   @Get('lab/not-found')
   @ApiOperation({ summary: '404 演练' })
   labNotFound(@Res() res: Response) {
-    res.status(404).send(envelope(null, BizCode.INVALID_PARAM, 'lab resource not found'));
+    sendJson(res, envelope(null, BizCode.INVALID_PARAM, 'lab resource not found'), 404);
   }
 
   @Get('lab/unavailable')
   @ApiOperation({ summary: '503 演练' })
   labUnavailable(@Res() res: Response) {
-    res.status(503).send(envelope(null, 50300, 'lab service unavailable'));
+    sendJson(res, envelope(null, 50300, 'lab service unavailable'), 503);
   }
 }
 
 function envelope(data: unknown, code: number = BizCode.OK, message = 'ok') {
+  const requestId = `req_${randomUUID().slice(0, 12)}`;
   return {
     code,
     message,
     data,
-    requestId: `req_${randomUUID().slice(0, 12)}`,
+    requestId,
   };
+}
+
+/** Same requestId in JSON body and x-request-id header. */
+function sendJson(res: Response, body: ReturnType<typeof envelope>, statusCode?: number) {
+  res.setHeader('x-request-id', body.requestId);
+  if (statusCode !== undefined) {
+    res.status(statusCode).json(body);
+  } else {
+    res.json(body);
+  }
 }
 
 function requireAuth(
@@ -708,7 +711,7 @@ function requireAuth(
 ): { userId: string; token: string } | null {
   const token = bearer(authorization);
   if (!token) {
-    res.status(401).send(envelope(null, 40100, '未登录或 token 无效'));
+    sendJson(res, envelope(null, 40100, '未登录或 token 无效'), 401);
     return null;
   }
   const session = sessions.get(token);
@@ -720,7 +723,7 @@ function requireAuth(
       sessions.set(token, restored);
       return restored;
     }
-    res.status(401).send(envelope(null, 40100, '未登录或 token 无效'));
+    sendJson(res, envelope(null, 40100, '未登录或 token 无效'), 401);
     return null;
   }
   return session;
