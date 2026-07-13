@@ -8,6 +8,7 @@
 - [Workbench 功能清单](FEATURES.md)：当前期望的一级模块与能力边界（大屏 / HTTP / 埋点 / 异常）；与 `product_plan.md` 冲突时以本清单为准。
 - [Workbench DESIGN](DESIGN.md)：active 的视觉、交互与页面设计事实源；HTTP 样板已确认并用于全站实现。
 - [Workbench UI 审计](UI_AUDIT.md)：相对 shadcn 官方与 DESIGN 的组件对齐表；P0 筛选控件优先修复。
+- [Example Demo](EXAMPLE_DEMO.md)：体育健康 example App + `/api/example/v1` mock 契约、埋点白名单与验收闸门。
 - [Workbench 前端重构计划](FRONTEND_REFACTOR_PLAN.md)：4 个验收阶段、8 个实施步骤，以及每阶段的范围、产物、验证和停止条件。
 - [Workbench Phase 5 体验升级计划](PHASE5_UX_PLAN.md)：shadcn 官方能力、筛选体验、Tremor 大屏与逐轮验收约束。
 - [Workbench Keep / Kill / Steal](KEEP_KILL_STEAL.md)：推倒重来时的取舍；数据层可留，页面默认作废，JsonViewer 仅克制复用。

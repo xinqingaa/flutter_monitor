@@ -1,44 +1,42 @@
-import 'package:example/models/monitor_event_models.dart';
 import 'package:example/router/app_routes.dart';
 import 'package:flutter/material.dart';
 
 class AppNavigation {
   const AppNavigation._();
 
-  static Future<void> replaceToLogin(BuildContext context) {
-    return Navigator.of(context).pushReplacementNamed(AppRoutes.login);
-  }
-
-  static Future<void> replaceToApp(BuildContext context) {
-    return Navigator.of(context).pushReplacementNamed(AppRoutes.app);
-  }
-
-  static Future<void> openEventDetail(
-    BuildContext context,
-    MonitorEventItem item,
-  ) {
+  static Future<void> openWorkout(BuildContext context, String id) {
     return Navigator.of(
       context,
-    ).pushNamed(AppRoutes.eventDetail, arguments: item);
+    ).pushNamed(AppRoutes.workoutDetail, arguments: id);
   }
 
-  static Future<void> openApiLab(BuildContext context) {
-    return Navigator.of(context).pushNamed(AppRoutes.apiLab);
+  static Future<void> openCourse(BuildContext context, String id) {
+    return Navigator.of(
+      context,
+    ).pushNamed(AppRoutes.courseDetail, arguments: id);
   }
 
-  static Future<void> openCheckout(BuildContext context) {
-    return Navigator.of(context).pushNamed(AppRoutes.checkout);
+  static Future<void> openCoach(BuildContext context, String id) {
+    return Navigator.of(context).pushNamed(AppRoutes.coach, arguments: id);
   }
 
-  static Future<void> openPerformanceGallery(BuildContext context) {
-    return Navigator.of(context).pushNamed(AppRoutes.performanceGallery);
+  static Future<void> openMembership(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.membership);
   }
 
-  static Future<void> openLogin(BuildContext context) {
-    return Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+  static Future<void> openVitals(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.vitals);
   }
 
-  static Future<void> openVideo(BuildContext context) {
-    return Navigator.of(context).pushNamed(AppRoutes.video);
+  static Future<void> openNotices(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.notices);
+  }
+
+  static Future<void> openSettings(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.settings);
+  }
+
+  static Future<void> openLab(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.lab);
   }
 }

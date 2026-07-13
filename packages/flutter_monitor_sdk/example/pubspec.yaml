@@ -1,5 +1,5 @@
 name: example
-description: Demonstrates how to use the Flutter Monitor runtime SDK package.
+description: PulseFit demo app for Flutter Monitor SDK.
 publish_to: 'none'
 
 environment:
@@ -11,12 +11,9 @@ dependencies:
     sdk: flutter
 
   logger: ^2.6.1
-  http: ^1.2.1
   dio: ^5.4.3+1
   device_info_plus: ^11.2.0
   package_info_plus: ^8.2.0
-  video_player: ^2.10.0
-  # 使用 path 依赖本地的 SDK
   flutter_monitor_sdk:
     path: ..
   flutter_monitor_native:

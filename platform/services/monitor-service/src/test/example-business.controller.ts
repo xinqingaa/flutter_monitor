@@ -1,305 +1,771 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { randomUUID } from 'node:crypto';
 
-type RecordValue = Record<string, unknown>;
+type Json = Record<string, unknown>;
 
-const products = [
-  { id: 'sku_report', name: '离线性能报告', price: 36, quantity: 1 },
-  { id: 'sku_course', name: 'Flutter 专题内容包', price: 128, quantity: 1 },
-  { id: 'sku_qa', name: 'QA 复现资料包', price: 18, quantity: 2 },
+const BizCode = {
+  OK: 0,
+  DUPLICATE_CHECKIN: 40001,
+  COURSE_FULL: 40002,
+  PAYMENT_FAILED: 40003,
+  INVALID_PARAM: 40004,
+} as const;
+
+const workouts = [
+  {
+    id: 'wo_hiit_20',
+    title: '燃脂 HIIT 20 分钟',
+    level: '中级',
+    durationMin: 20,
+    kcal: 220,
+    coverTone: 'orange',
+    focus: ['心肺', '核心'],
+    description: '高强度间歇，适合午休快速燃脂。跟练时可分段打卡。',
+  },
+  {
+    id: 'wo_yoga_flow',
+    title: '晨间瑜伽流',
+    level: '初级',
+    durationMin: 30,
+    kcal: 110,
+    coverTone: 'teal',
+    focus: ['柔韧', '呼吸'],
+    description: '唤醒肩颈与髋部，适合每日开练。',
+  },
+  {
+    id: 'wo_strength_full',
+    title: '全身力量循环',
+    level: '进阶',
+    durationMin: 45,
+    kcal: 320,
+    coverTone: 'indigo',
+    focus: ['力量', '稳定'],
+    description: '哑铃/自重循环，完成后可记录体征。',
+  },
+  {
+    id: 'wo_run_easy',
+    title: '轻松有氧跑',
+    level: '初级',
+    durationMin: 35,
+    kcal: 280,
+    coverTone: 'green',
+    focus: ['有氧'],
+    description: '配速可控的户外或跑步机方案。',
+  },
 ];
 
-@ApiTags('example')
-@Controller('api/example')
+const courses = [
+  {
+    id: 'cs_spin_live',
+    title: '动感单车 Live',
+    category: '有氧',
+    seatsLeft: 0,
+    price: 49,
+    coachId: 'coach_lin',
+    startAt: daysFromNow(1, 19),
+    durationMin: 45,
+    coverTone: 'rose',
+    summary: '晚间直播团课，名额有限。',
+  },
+  {
+    id: 'cs_pilates',
+    title: '器械普拉提入门',
+    category: '塑形',
+    seatsLeft: 6,
+    price: 79,
+    coachId: 'coach_mei',
+    startAt: daysFromNow(2, 10),
+    durationMin: 50,
+    coverTone: 'violet',
+    summary: '小班教学，强调核心与体态。',
+  },
+  {
+    id: 'cs_box_basics',
+    title: '拳击基础步伐',
+    category: '搏击',
+    seatsLeft: 12,
+    price: 59,
+    coachId: 'coach_kai',
+    startAt: daysFromNow(3, 18),
+    durationMin: 40,
+    coverTone: 'amber',
+    summary: '步伐与防守组合，适合零基础。',
+  },
+  {
+    id: 'cs_swim_tech',
+    title: '自由泳技术课',
+    category: '游泳',
+    seatsLeft: 4,
+    price: 99,
+    coachId: 'coach_lin',
+    startAt: daysFromNow(4, 9),
+    durationMin: 60,
+    coverTone: 'sky',
+    summary: '水感与划水效率专项。',
+  },
+];
+
+const coaches: Record<string, Json> = {
+  coach_lin: {
+    id: 'coach_lin',
+    name: '林澈',
+    title: '国家一级游泳教练',
+    years: 8,
+    rating: 4.9,
+    tags: ['游泳', '单车', '康复'],
+    bio: '专注技术纠正与循序渐进训练计划。',
+  },
+  coach_mei: {
+    id: 'coach_mei',
+    name: '美咲',
+    title: '普拉提认证教练',
+    years: 6,
+    rating: 4.8,
+    tags: ['普拉提', '体态'],
+    bio: '帮助久坐人群重建核心与呼吸模式。',
+  },
+  coach_kai: {
+    id: 'coach_kai',
+    name: '凯恩',
+    title: '搏击体能教练',
+    years: 10,
+    rating: 4.7,
+    tags: ['拳击', '力量'],
+    bio: '从步伐到组合打击的系统课表。',
+  },
+};
+
+const checkins = new Set<string>();
+const sessions = new Map<string, { userId: string; token: string }>();
+
+@ApiTags('example-v1')
+@Controller('api/example/v1')
 export class ExampleBusinessController {
-  @Get('app/bootstrap')
-  @ApiOperation({ summary: 'example 启动配置 mock' })
+  @Get('bootstrap')
+  @ApiOperation({ summary: '启动配置' })
   bootstrap(@Query('scene') scene = 'launch') {
-    return {
-      ok: true,
+    return envelope({
       scene,
-      featureFlags: ['home_feed', 'checkout_coupon', 'profile_preferences'],
-      release: 'example-2026.06',
+      appName: 'PulseFit',
+      release: 'pulsefit-2026.07',
+      featureFlags: ['workouts', 'courses', 'membership', 'vitals'],
+      minSupportedBuild: 1,
       serverTime: new Date().toISOString(),
-    };
+    });
   }
 
   @Get('auth/options')
-  @ApiOperation({ summary: 'example 登录页配置 mock' })
+  @ApiOperation({ summary: '登录页配置' })
   authOptions() {
-    return {
-      ok: true,
-      methods: ['user_id', 'guest'],
-      notice: 'QA 环境允许 2-3 位数字 userId 登录',
-      supportContact: 'qa@example.local',
-    };
+    return envelope({
+      methods: ['user_id'],
+      notice: '演示账号请输入 2–3 位数字 userId',
+      supportContact: 'support@pulsefit.demo',
+      agreements: ['用户协议', '隐私政策'],
+    });
   }
 
   @Post('auth/login')
-  @ApiOperation({ summary: 'example 登录 mock' })
-  async login(@Body() body: RecordValue, @Res() res: Response): Promise<void> {
-    await delay(180);
-    const userId = stringValue(body.userId);
+  @ApiOperation({ summary: '登录；非法 userId 为业务失败 200' })
+  async login(@Body() body: Json) {
+    await delay(200);
+    const userId = str(body.userId);
     if (!userId || !/^\d{2,3}$/.test(userId)) {
-      res.status(422).send({
-        ok: false,
-        code: 'INVALID_USER_ID',
-        message: 'userId must be 2-3 digits',
-      });
-      return;
+      return envelope(null, BizCode.INVALID_PARAM, 'userId 须为 2–3 位数字');
     }
-    res.send({
-      ok: true,
-      user: {
-        userId,
-        name: `QA 用户 ${userId}`,
-        tier: Number(userId) % 2 === 0 ? 'premium' : 'free',
-      },
-      token: `mock-token-${userId}`,
-      expiresIn: 3600,
+    const token = `pf_${userId}_${randomUUID().slice(0, 8)}`;
+    sessions.set(token, { userId, token });
+    return envelope({
+      token,
+      expiresIn: 86400,
+      user: userCard(userId),
     });
   }
 
-  @Get('home/feed')
-  @ApiOperation({ summary: 'example 首页 feed mock' })
-  async homeFeed(@Query('userId') userId = 'guest') {
-    await delay(220);
-    return {
-      ok: true,
-      userId,
-      unreadCount: 3,
-      items: [
-        {
-          id: 'feed_launch',
-          title: '启动链路体检',
-          subtitle: '冷启动、首帧、页面进入',
-          description: '进入详情可查看本次 session 的启动 trace 和页面节点。',
-          source: 'monitor',
-          metricLabel: '耗时',
-          metricValue: '812ms',
+  @Post('auth/logout')
+  @ApiOperation({ summary: '退出登录' })
+  @ApiHeader({ name: 'authorization', required: false })
+  logout(@Headers('authorization') authorization?: string) {
+    const token = bearer(authorization);
+    if (token) sessions.delete(token);
+    return envelope({ loggedOut: true });
+  }
+
+  @Get('home/dashboard')
+  @ApiOperation({ summary: '首页今日概览' })
+  async dashboard(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(180);
+    const steps = 4200 + (Number(auth.userId) % 50) * 37;
+    res.send(
+      envelope({
+        greeting: greeting(),
+        user: userCard(auth.userId),
+        today: {
+          steps,
+          stepsGoal: 8000,
+          activeMin: 28 + (Number(auth.userId) % 20),
+          activeGoal: 45,
+          kcal: 310 + (Number(auth.userId) % 40),
+          workoutsDone: Number(auth.userId) % 3,
         },
-        {
-          id: 'feed_http',
-          title: 'HTTP 详情采集',
-          subtitle: 'headers / query / body',
-          description: '本地 Workbench 可查看完整请求上下文和 cURL。',
-          source: 'network',
-          metricLabel: '接口',
-          metricValue: '8',
-        },
-      ],
-    };
+        streakDays: 3 + (Number(auth.userId) % 10),
+        nextWorkoutId: workouts[Number(auth.userId) % workouts.length].id,
+      }),
+    );
   }
 
   @Get('home/recommendations')
-  @ApiOperation({ summary: 'example 首页推荐 mock' })
-  async recommendations(@Query('userId') userId = 'guest') {
-    await delay(160);
-    return {
-      ok: true,
-      userId,
-      items: [
-        {
-          id: 'rec_checkout',
-          title: '订单结算演练',
-          subtitle: '业务失败不会自动算异常',
-          description: '优惠券过期会返回 HTTP 200 + 业务 code，需要业务埋点表达失败。',
-          source: 'commerce',
-          metricLabel: '状态',
-          metricValue: '可用',
-        },
-        {
-          id: 'rec_profile',
-          title: '用户画像更新',
-          subtitle: 'PUT 偏好设置',
-          description: '切换会员和弱网会更新 context，同时发起资料偏好请求。',
-          source: 'profile',
-          metricLabel: '偏好',
-          metricValue: '2',
-        },
-      ],
-    };
-  }
-
-  @Get('users/:userId/profile')
-  @ApiOperation({ summary: 'example 用户资料 mock' })
-  @ApiParam({ name: 'userId' })
-  async profile(@Param('userId') userId: string) {
-    await delay(180);
-    return {
-      ok: true,
-      user: {
-        userId,
-        name: `QA 用户 ${userId}`,
-        tier: Number(userId) % 2 === 0 ? 'premium' : 'free',
-        tags: Number(userId) % 2 === 0 ? ['vip', 'qa'] : ['qa'],
-      },
-      preferences: {
-        weakNetwork: false,
-        notifications: true,
-      },
-    };
-  }
-
-  @Put('users/:userId/preferences')
-  @ApiOperation({ summary: 'example 用户偏好更新 mock' })
-  @ApiParam({ name: 'userId' })
-  async updatePreferences(@Param('userId') userId: string, @Body() body: RecordValue) {
+  @ApiOperation({ summary: '首页推荐' })
+  async recommendations(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
     await delay(140);
-    return {
-      ok: true,
-      userId,
-      preferences: body,
-      updatedAt: new Date().toISOString(),
-    };
+    res.send(
+      envelope({
+        items: [
+          ...workouts.slice(0, 2).map((w) => ({
+            type: 'workout',
+            id: w.id,
+            title: w.title,
+            subtitle: `${w.durationMin} 分钟 · ${w.level}`,
+            tone: w.coverTone,
+          })),
+          ...courses.slice(0, 2).map((c) => ({
+            type: 'course',
+            id: c.id,
+            title: c.title,
+            subtitle: c.seatsLeft > 0 ? `剩余 ${c.seatsLeft} 席` : '已满员',
+            tone: c.coverTone,
+          })),
+        ],
+      }),
+    );
   }
 
-  @Get('checkout/cart')
-  @ApiOperation({ summary: 'example 购物车 mock' })
-  async cart(@Query('userId') userId = 'guest') {
-    await delay(210);
-    return cartPayload(userId, 'DEMO_EXPIRED');
+  @Get('workouts')
+  @ApiOperation({ summary: '训练计划列表' })
+  async listWorkouts(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(160);
+    res.send(envelope({ items: workouts, total: workouts.length }));
   }
 
-  @Post('checkout/coupons/validate')
-  @ApiOperation({ summary: 'example 优惠券校验 mock，业务失败使用 HTTP 200' })
-  async validateCoupon(@Body() body: RecordValue) {
-    await delay(260);
-    const coupon = stringValue(body.coupon) ?? '';
-    if (coupon === 'DEMO_EXPIRED') {
-      return {
-        ok: false,
-        code: 'COUPON_EXPIRED',
-        message: '优惠券已过期，请更换后重试',
-      };
-    }
-    return {
-      ok: true,
-      code: 'COUPON_ACCEPTED',
-      message: '优惠券可用',
-      discount: 20,
-    };
-  }
-
-  @Post('checkout/orders')
-  @ApiOperation({ summary: 'example 订单提交 mock' })
-  async submitOrder(@Body() body: RecordValue, @Res() res: Response): Promise<void> {
-    await delay(420);
-    const coupon = stringValue(body.coupon);
-    if (coupon === 'DEMO_EXPIRED') {
-      res.send({
-        ok: false,
-        code: 'COUPON_EXPIRED',
-        message: '优惠券已过期，请更换后重试',
-      });
-      return;
-    }
-    res.send({
-      ok: true,
-      orderId: `ord_${Date.now()}`,
-      status: 'created',
-      payable: 162,
-    });
-  }
-
-  @Delete('checkout/cart/items/:itemId')
-  @ApiOperation({ summary: 'example 删除购物车商品 mock' })
-  @ApiParam({ name: 'itemId' })
-  async deleteCartItem(@Param('itemId') itemId: string) {
-    await delay(130);
-    return {
-      ok: true,
-      deletedItemId: itemId,
-      remainingCount: Math.max(0, products.length - 1),
-    };
-  }
-
-  @Get('ops/sync/summary')
-  @ApiOperation({ summary: 'example 运营同步摘要 mock' })
-  async syncSummary() {
+  @Get('workouts/:id')
+  @ApiOperation({ summary: '训练详情' })
+  @ApiParam({ name: 'id' })
+  async workoutDetail(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
     await delay(150);
-    return {
-      ok: true,
-      pendingOrders: 7,
-      inventoryTasks: 3,
-      lastSyncAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    };
-  }
-
-  @Post('ops/sync/orders')
-  @ApiOperation({ summary: 'example 慢订单同步 mock' })
-  async syncOrders() {
-    await delay(1250);
-    return {
-      ok: true,
-      synced: 7,
-      skipped: 1,
-    };
-  }
-
-  @Put('ops/pricing/rules/:ruleId')
-  @ApiOperation({ summary: 'example 价格规则更新 mock' })
-  @ApiParam({ name: 'ruleId' })
-  async updatePricingRule(@Param('ruleId') ruleId: string, @Body() body: RecordValue) {
-    await delay(240);
-    return {
-      ok: true,
-      ruleId,
-      body,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  @Delete('ops/drafts/:draftId')
-  @ApiOperation({ summary: 'example 删除草稿 mock' })
-  @ApiParam({ name: 'draftId' })
-  async deleteDraft(@Param('draftId') draftId: string) {
-    await delay(190);
-    return {
-      ok: true,
-      draftId,
-      deleted: true,
-    };
-  }
-
-  @Get('ops/reports/daily')
-  @ApiOperation({ summary: 'example 报表异常 mock' })
-  @ApiQuery({ name: 'fail', required: false })
-  async dailyReport(@Query('fail') fail: string | undefined, @Res() res: Response): Promise<void> {
-    await delay(280);
-    if (fail === 'true') {
-      res.status(503).send({
-        ok: false,
-        code: 'REPORT_SERVICE_UNAVAILABLE',
-        message: '日报服务暂不可用',
-      });
+    const workout = workouts.find((item) => item.id === id);
+    if (!workout) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
       return;
     }
-    res.send({
-      ok: true,
-      date: new Date().toISOString().slice(0, 10),
-      orders: 42,
-      revenue: 8536,
+    res.send(
+      envelope({
+        ...workout,
+        segments: [
+          { name: '热身', minutes: 5 },
+          { name: '主课', minutes: Math.max(10, workout.durationMin - 10) },
+          { name: '拉伸', minutes: 5 },
+        ],
+        checkedInToday: checkins.has(`${auth.userId}:${id}:${dayKey()}`),
+      }),
+    );
+  }
+
+  @Post('workouts/:id/start')
+  @ApiOperation({ summary: '开始训练' })
+  @ApiParam({ name: 'id' })
+  async startWorkout(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(200);
+    const workout = workouts.find((item) => item.id === id);
+    if (!workout) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      return;
+    }
+    res.send(
+      envelope({
+        sessionId: `ws_${Date.now()}`,
+        workoutId: id,
+        startedAt: new Date().toISOString(),
+        title: workout.title,
+      }),
+    );
+  }
+
+  @Post('workouts/:id/complete')
+  @ApiOperation({ summary: '完成训练' })
+  @ApiParam({ name: 'id' })
+  async completeWorkout(
+    @Param('id') id: string,
+    @Body() body: Json,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(260);
+    const workout = workouts.find((item) => item.id === id);
+    if (!workout) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      return;
+    }
+    const sessionId = str(body.sessionId);
+    if (!sessionId) {
+      res.send(envelope(null, BizCode.INVALID_PARAM, '缺少 sessionId'));
+      return;
+    }
+    res.send(
+      envelope({
+        workoutId: id,
+        sessionId,
+        completedAt: new Date().toISOString(),
+        kcal: workout.kcal,
+        durationMin: workout.durationMin,
+        badge: '今日训练完成',
+      }),
+    );
+  }
+
+  @Post('workouts/:id/checkin')
+  @ApiOperation({ summary: '训练打卡；重复打卡为业务失败 200' })
+  @ApiParam({ name: 'id' })
+  async checkin(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(180);
+    if (!workouts.some((item) => item.id === id)) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '训练不存在'));
+      return;
+    }
+    const key = `${auth.userId}:${id}:${dayKey()}`;
+    if (checkins.has(key)) {
+      res.send(envelope(null, BizCode.DUPLICATE_CHECKIN, '今日已打卡，请勿重复提交'));
+      return;
+    }
+    checkins.add(key);
+    res.send(envelope({ workoutId: id, checkedInAt: new Date().toISOString(), streakDays: 1 }));
+  }
+
+  @Get('courses')
+  @ApiOperation({ summary: '课程列表' })
+  async listCourses(
+    @Headers('authorization') authorization: string | undefined,
+    @Query('category') category: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(170);
+    const items = category ? courses.filter((c) => c.category === category) : courses;
+    res.send(envelope({ items, categories: [...new Set(courses.map((c) => c.category))] }));
+  }
+
+  @Get('courses/:id')
+  @ApiOperation({ summary: '课程详情' })
+  @ApiParam({ name: 'id' })
+  async courseDetail(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(150);
+    const course = courses.find((item) => item.id === id);
+    if (!course) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '课程不存在'));
+      return;
+    }
+    res.send(envelope({ ...course, coach: coaches[course.coachId] }));
+  }
+
+  @Get('coaches/:id')
+  @ApiOperation({ summary: '教练详情' })
+  @ApiParam({ name: 'id' })
+  async coachDetail(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(120);
+    const coach = coaches[id];
+    if (!coach) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '教练不存在'));
+      return;
+    }
+    res.send(
+      envelope({
+        ...coach,
+        courses: courses.filter((c) => c.coachId === id).map((c) => ({ id: c.id, title: c.title })),
+      }),
+    );
+  }
+
+  @Post('courses/:id/book')
+  @ApiOperation({ summary: '预约课程；满员为业务失败 200' })
+  @ApiParam({ name: 'id' })
+  async bookCourse(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(320);
+    const course = courses.find((item) => item.id === id);
+    if (!course) {
+      res.status(404).send(envelope(null, BizCode.INVALID_PARAM, '课程不存在'));
+      return;
+    }
+    if (course.seatsLeft <= 0) {
+      res.send(envelope(null, BizCode.COURSE_FULL, '课程已满员，请选择其他场次'));
+      return;
+    }
+    course.seatsLeft -= 1;
+    res.send(
+      envelope({
+        bookingId: `bk_${Date.now()}`,
+        courseId: id,
+        userId: auth.userId,
+        startAt: course.startAt,
+        status: 'confirmed',
+      }),
+    );
+  }
+
+  @Get('vitals/latest')
+  @ApiOperation({ summary: '最新体征' })
+  async vitalsLatest(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(130);
+    res.send(
+      envelope({
+        measuredAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+        weightKg: 62.5 + (Number(auth.userId) % 10) * 0.3,
+        restingHr: 58 + (Number(auth.userId) % 8),
+        sleepHours: 6.5 + (Number(auth.userId) % 5) * 0.2,
+        mood: Number(auth.userId) % 2 === 0 ? 'good' : 'ok',
+      }),
+    );
+  }
+
+  @Get('vitals/history')
+  @ApiOperation({ summary: '体征历史' })
+  async vitalsHistory(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(160);
+    const items = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date();
+      day.setDate(day.getDate() - index);
+      return {
+        date: day.toISOString().slice(0, 10),
+        weightKg: 62 + index * 0.1,
+        restingHr: 60 + index,
+        sleepHours: 7 - index * 0.1,
+      };
     });
+    res.send(envelope({ items }));
+  }
+
+  @Post('vitals')
+  @ApiOperation({ summary: '上报体征' })
+  async submitVital(@Body() body: Json, @Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(200);
+    const weightKg = Number(body.weightKg);
+    if (!Number.isFinite(weightKg) || weightKg < 30 || weightKg > 200) {
+      res.send(envelope(null, BizCode.INVALID_PARAM, '体重数值不合法'));
+      return;
+    }
+    res.send(
+      envelope({
+        id: `vt_${Date.now()}`,
+        userId: auth.userId,
+        weightKg,
+        restingHr: Number(body.restingHr) || null,
+        sleepHours: Number(body.sleepHours) || null,
+        recordedAt: new Date().toISOString(),
+      }),
+    );
+  }
+
+  @Get('membership')
+  @ApiOperation({ summary: '会员信息' })
+  async membership(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(140);
+    const premium = Number(auth.userId) % 2 === 0;
+    res.send(
+      envelope({
+        tier: premium ? 'premium' : 'free',
+        expiresAt: premium ? daysFromNow(30, 0) : null,
+        benefits: premium
+          ? ['全部课程预约', '专属训练计划', '体征周报']
+          : ['基础训练', '部分公开课'],
+        plans: [
+          { id: 'plan_month', name: '月度会员', price: 68, period: 'month' },
+          { id: 'plan_year', name: '年度会员', price: 598, period: 'year' },
+          { id: 'plan_fail', name: '体验开通（演示失败）', price: 1, period: 'trial' },
+        ],
+      }),
+    );
+  }
+
+  @Post('membership/orders')
+  @ApiOperation({ summary: '会员下单；plan_fail 业务失败 200' })
+  async membershipOrder(
+    @Body() body: Json,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(380);
+    const planId = str(body.planId);
+    if (!planId) {
+      res.send(envelope(null, BizCode.INVALID_PARAM, '缺少 planId'));
+      return;
+    }
+    if (planId === 'plan_fail') {
+      res.send(envelope(null, BizCode.PAYMENT_FAILED, '支付未完成，请更换支付方式后重试'));
+      return;
+    }
+    res.send(
+      envelope({
+        orderId: `mo_${Date.now()}`,
+        planId,
+        userId: auth.userId,
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+      }),
+    );
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: '当前用户资料' })
+  async me(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(120);
+    res.send(
+      envelope({
+        user: userCard(auth.userId),
+        goals: {
+          steps: 8000,
+          activeMin: 45,
+          workoutsPerWeek: 4,
+        },
+        preferences: {
+          reminderHour: 8,
+          units: 'metric',
+        },
+      }),
+    );
+  }
+
+  @Put('me/profile')
+  @ApiOperation({ summary: '更新资料' })
+  async updateProfile(
+    @Body() body: Json,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(160);
+    res.send(
+      envelope({
+        user: {
+          ...userCard(auth.userId),
+          name: str(body.name) ?? userCard(auth.userId).name,
+          city: str(body.city) ?? '上海',
+        },
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  }
+
+  @Put('me/goals')
+  @ApiOperation({ summary: '更新目标' })
+  async updateGoals(
+    @Body() body: Json,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(140);
+    res.send(
+      envelope({
+        goals: {
+          steps: Number(body.steps) || 8000,
+          activeMin: Number(body.activeMin) || 45,
+          workoutsPerWeek: Number(body.workoutsPerWeek) || 4,
+        },
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  }
+
+  @Get('notices')
+  @ApiOperation({ summary: '消息通知' })
+  async notices(@Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+    const auth = requireAuth(authorization, res);
+    if (!auth) return;
+    await delay(110);
+    res.send(
+      envelope({
+        items: [
+          {
+            id: 'nt_1',
+            title: '本周训练提醒',
+            body: '你已连续打卡，今晚 19:00 有单车 Live。',
+            createdAt: new Date(Date.now() - 3600_000).toISOString(),
+            read: false,
+          },
+          {
+            id: 'nt_2',
+            title: '会员权益更新',
+            body: '高级会员可解锁普拉提小班预约。',
+            createdAt: new Date(Date.now() - 86400_000).toISOString(),
+            read: true,
+          },
+        ],
+      }),
+    );
+  }
+
+  @Get('lab/slow')
+  @ApiOperation({ summary: '慢请求演练' })
+  async labSlow() {
+    await delay(1800);
+    return envelope({ ok: true, latencyMs: 1800 });
+  }
+
+  @Get('lab/not-found')
+  @ApiOperation({ summary: '404 演练' })
+  labNotFound(@Res() res: Response) {
+    res.status(404).send(envelope(null, BizCode.INVALID_PARAM, 'lab resource not found'));
+  }
+
+  @Get('lab/unavailable')
+  @ApiOperation({ summary: '503 演练' })
+  labUnavailable(@Res() res: Response) {
+    res.status(503).send(envelope(null, 50300, 'lab service unavailable'));
   }
 }
 
-function cartPayload(userId: string, coupon: string) {
-  const total = products.reduce((sum, item) => sum + item.price * item.quantity, 0);
+function envelope(data: unknown, code: number = BizCode.OK, message = 'ok') {
   return {
-    ok: true,
-    userId,
-    coupon,
-    items: products,
-    total,
+    code,
+    message,
+    data,
+    requestId: `req_${randomUUID().slice(0, 12)}`,
   };
 }
 
-function delay(ms: number): Promise<void> {
+function requireAuth(
+  authorization: string | undefined,
+  res: Response,
+): { userId: string; token: string } | null {
+  const token = bearer(authorization);
+  if (!token) {
+    res.status(401).send(envelope(null, 40100, '未登录或 token 无效'));
+    return null;
+  }
+  const session = sessions.get(token);
+  if (!session) {
+    // Demo convenience: accept pf_<userId>_... even after restart
+    const match = /^pf_(\d{2,3})_/.exec(token);
+    if (match) {
+      const restored = { userId: match[1], token };
+      sessions.set(token, restored);
+      return restored;
+    }
+    res.status(401).send(envelope(null, 40100, '未登录或 token 无效'));
+    return null;
+  }
+  return session;
+}
+
+function bearer(authorization?: string): string | undefined {
+  if (!authorization) return undefined;
+  const [scheme, token] = authorization.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return undefined;
+  return token;
+}
+
+function userCard(userId: string) {
+  const premium = Number(userId) % 2 === 0;
+  return {
+    userId,
+    name: `运动达人 ${userId}`,
+    tier: premium ? 'premium' : 'free',
+    city: '上海',
+    avatarTone: premium ? 'amber' : 'teal',
+  };
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return '早上好，准备开练了吗？';
+  if (hour < 18) return '下午好，保持活力！';
+  return '晚上好，拉伸放松一下吧';
+}
+
+function dayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysFromNow(days: number, hour: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  date.setHours(hour, 0, 0, 0);
+  return date.toISOString();
+}
+
+function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function stringValue(value: unknown): string | undefined {
+function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }

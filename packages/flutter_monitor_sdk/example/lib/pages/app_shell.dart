@@ -1,113 +1,62 @@
-import 'package:dio/dio.dart';
 import 'package:example/data/demo_api.dart';
-import 'package:example/data/workbench_api.dart';
+import 'package:example/pages/discover_tab.dart';
 import 'package:example/pages/home_tab.dart';
-import 'package:example/pages/profile_tab.dart';
+import 'package:example/pages/me_tab.dart';
+import 'package:example/pages/train_tab.dart';
 import 'package:example/router/app_routes.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
-
-enum _TabSwitchSource { tap, swipe }
 
 class AppShell extends StatefulWidget {
-  const AppShell({
-    super.key,
-    required this.monitoredDio,
-    required this.workbenchDio,
-  });
+  const AppShell({super.key, required this.api});
 
-  final Dio monitoredDio;
-  final Dio workbenchDio;
+  final DemoApi api;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  late final WorkbenchApi _workbenchApi;
-  late final DemoApi _demoApi;
-  late final PageController _pageController;
-  var _currentIndex = 0;
-  var _animatingToIndex = -1;
-
-  @override
-  void initState() {
-    super.initState();
-    _workbenchApi = WorkbenchApi(dio: widget.workbenchDio);
-    _demoApi = DemoApi(
-      dio: widget.monitoredDio,
-      httpClient: FlutterMonitorSDK.createHttpClient(),
-    );
-    _pageController = PageController();
-  }
-
-  @override
-  void dispose() {
-    _demoApi.close();
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  void _selectTab(int index, {required _TabSwitchSource source}) {
-    if (_currentIndex == index && _animatingToIndex != index) return;
-
-    if (source == _TabSwitchSource.tap) {
-      _animatingToIndex = index;
-      _pageController
-          .animateToPage(
-            index,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
-          )
-          .whenComplete(() {
-            if (mounted) _animatingToIndex = -1;
-          });
-      if (_currentIndex != index) {
-        setState(() => _currentIndex = index);
-        _updateModuleContext(index);
-      }
-      return;
-    }
-
-    if (_currentIndex != index) {
-      setState(() => _currentIndex = index);
-      _updateModuleContext(index);
-    }
-  }
-
-  void _updateModuleContext(int index) {
-    FlutterMonitorSDK.setContext(
-      moduleName: index == 0 ? 'home' : 'profile',
-      moduleScene: index == 0 ? 'feed' : 'dashboard',
-    );
-  }
+  var _index = 0;
 
   @override
   Widget build(BuildContext context) {
     return AppPage(
       routeName: AppRoutes.app,
-      moduleName: _currentIndex == 0 ? 'home' : 'profile',
-      moduleScene: _currentIndex == 0 ? 'feed' : 'dashboard',
+      moduleName: 'home',
+      moduleScene: 'tabs',
       child: Scaffold(
-        body: PageView(
-          controller: _pageController,
-          physics: const BouncingScrollPhysics(),
-          onPageChanged: (index) =>
-              _selectTab(index, source: _TabSwitchSource.swipe),
+        body: IndexedStack(
+          index: _index,
           children: [
-            HomeTab(workbenchApi: _workbenchApi, demoApi: _demoApi),
-            ProfileTab(api: _demoApi),
+            HomeTab(api: widget.api),
+            TrainTab(api: widget.api),
+            DiscoverTab(api: widget.api),
+            MeTab(api: widget.api),
           ],
         ),
         bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) =>
-              _selectTab(index, source: _TabSwitchSource.tap),
+          selectedIndex: _index,
+          onDestinationSelected: (value) => setState(() => _index = value),
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), label: '首页'),
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: '首页',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.fitness_center_outlined),
+              selectedIcon: Icon(Icons.fitness_center),
+              label: '训练',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.explore_outlined),
+              selectedIcon: Icon(Icons.explore),
+              label: '发现',
+            ),
             NavigationDestination(
               icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
               label: '我的',
             ),
           ],

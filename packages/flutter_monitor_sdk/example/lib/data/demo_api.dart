@@ -1,197 +1,260 @@
-import 'dart:convert';
-
-import 'package:dio/dio.dart';
-import 'package:example/models/demo_models.dart';
-import 'package:http/http.dart' as http;
+import 'package:example/data/api_client.dart';
+import 'package:example/models/pulse_models.dart';
 
 class DemoApi {
-  DemoApi({required Dio dio, required http.Client httpClient})
-    : _dio = dio,
-      _httpClient = httpClient;
+  DemoApi(this._client);
 
-  final Dio _dio;
-  final http.Client _httpClient;
+  final ApiClient _client;
 
-  static const serviceBaseUrl = String.fromEnvironment(
-    'FM_EXAMPLE_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:3700',
-  );
+  static const _v1 = '/api/example/v1';
 
-  Future<AppBootstrap> fetchBootstrap({String scene = 'launch'}) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/app/bootstrap',
-      queryParameters: <String, Object?>{'scene': scene},
+  void setToken(String? token) => _client.setToken(token);
+
+  Future<BootstrapInfo> bootstrap() {
+    return _client.get(
+      '$_v1/bootstrap',
+      parse: (data) => BootstrapInfo.fromJson(_asMap(data)),
     );
-    return AppBootstrap.fromJson(_requireMap(response.data));
   }
 
-  Future<AuthOptions> fetchAuthOptions() async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/auth/options',
+  Future<AuthOptions> authOptions() {
+    return _client.get(
+      '$_v1/auth/options',
+      parse: (data) => AuthOptions.fromJson(_asMap(data)),
     );
-    return AuthOptions.fromJson(_requireMap(response.data));
   }
 
-  Future<LoginResult> login({required String userId}) async {
-    final response = await _dio.post<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/auth/login',
-      data: <String, Object?>{
-        'userId': userId,
-        'device': 'example_flutter_app',
-      },
+  Future<LoginResult> login(String userId) {
+    return _client.post(
+      '$_v1/auth/login',
+      body: <String, Object?>{'userId': userId, 'device': 'pulsefit_flutter'},
+      parse: (data) => LoginResult.fromJson(_asMap(data)),
     );
-    return LoginResult.fromJson(_requireMap(response.data));
   }
 
-  Future<HomeFeedState> loadHomeFeed({String? userId}) async {
-    final feedUri = _uri(
-      '/api/example/home/feed',
-      queryParameters: <String, String>{'userId': userId ?? 'guest'},
-    );
-    final recommendationsUri = _uri(
-      '/api/example/home/recommendations',
-      queryParameters: <String, String>{'userId': userId ?? 'guest'},
-    );
-    final results = await Future.wait<Map<String, dynamic>>([
-      _getJsonWithHttp(feedUri),
-      _getJsonWithHttp(recommendationsUri),
-    ]);
-    return HomeFeedState.fromJson(results[0], results[1]);
+  Future<void> logout() {
+    return _client.post('$_v1/auth/logout', parse: (_) {});
   }
 
-  Future<UserProfile> fetchUserProfile(String userId) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/users/$userId/profile',
+  Future<HomeDashboard> dashboard() {
+    return _client.get(
+      '$_v1/home/dashboard',
+      parse: (data) => HomeDashboard.fromJson(_asMap(data)),
     );
-    return UserProfile.fromJson(_requireMap(response.data));
   }
 
-  Future<void> updatePreferences(
-    String userId, {
-    required bool premium,
-    required bool weakNetwork,
-  }) async {
-    await _dio.put<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/users/$userId/preferences',
-      data: <String, Object?>{
-        'premium': premium,
-        'weakNetwork': weakNetwork,
-        'updatedFrom': 'profile_tab',
+  Future<List<RecommendItem>> recommendations() {
+    return _client.get(
+      '$_v1/home/recommendations',
+      parse: (data) {
+        final map = _asMap(data);
+        final items = map['items'];
+        if (items is! List) return const <RecommendItem>[];
+        return items
+            .whereType<Map<String, dynamic>>()
+            .map(RecommendItem.fromJson)
+            .toList(growable: false);
       },
     );
   }
 
-  Future<CartState> fetchCart({String? userId}) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/checkout/cart',
-      queryParameters: <String, Object?>{'userId': userId ?? 'guest'},
-    );
-    return CartState.fromJson(_requireMap(response.data));
-  }
-
-  Future<CouponResult> validateCoupon(String coupon) async {
-    final response = await _httpClient.post(
-      _uri('/api/example/checkout/coupons/validate'),
-      headers: const {'content-type': 'application/json'},
-      body: jsonEncode(<String, Object?>{'coupon': coupon}),
-    );
-    _throwForStatus(response.statusCode);
-    return CouponResult.fromJson(_decodeMap(response.body));
-  }
-
-  Future<OrderResult> submitOrder({
-    required String userId,
-    required String coupon,
-    required List<String> itemIds,
-  }) async {
-    final response = await _dio.post<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/checkout/orders',
-      data: <String, Object?>{
-        'userId': userId,
-        'coupon': coupon,
-        'itemIds': itemIds,
+  Future<List<WorkoutSummary>> workouts() {
+    return _client.get(
+      '$_v1/workouts',
+      parse: (data) {
+        final items = _asMap(data)['items'];
+        if (items is! List) return const <WorkoutSummary>[];
+        return items
+            .whereType<Map<String, dynamic>>()
+            .map(WorkoutSummary.fromJson)
+            .toList(growable: false);
       },
     );
-    return OrderResult.fromJson(_requireMap(response.data));
   }
 
-  Future<void> deleteCartItem(String itemId) async {
-    final response = await _httpClient.delete(
-      _uri('/api/example/checkout/cart/items/$itemId'),
-    );
-    _throwForStatus(response.statusCode);
-  }
-
-  Future<SyncSummary> fetchSyncSummary() async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/ops/sync/summary',
-    );
-    return SyncSummary.fromJson(_requireMap(response.data));
-  }
-
-  Future<void> syncOrders() async {
-    final response = await _httpClient.post(
-      _uri('/api/example/ops/sync/orders'),
-      headers: const {'content-type': 'application/json'},
-      body: jsonEncode(<String, Object?>{'source': 'ops_page'}),
-    );
-    _throwForStatus(response.statusCode);
-  }
-
-  Future<void> updatePricingRule() async {
-    await _dio.put<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/ops/pricing/rules/default_discount',
-      data: <String, Object?>{'discount': 0.9, 'scope': 'qa'},
+  Future<WorkoutDetail> workoutDetail(String id) {
+    return _client.get(
+      '$_v1/workouts/$id',
+      parse: (data) => WorkoutDetail.fromJson(_asMap(data)),
     );
   }
 
-  Future<void> deleteDraft() async {
-    final response = await _httpClient.delete(
-      _uri('/api/example/ops/drafts/draft_legacy_001'),
+  Future<WorkoutSession> startWorkout(String id) {
+    return _client.post(
+      '$_v1/workouts/$id/start',
+      parse: (data) => WorkoutSession.fromJson(_asMap(data)),
     );
-    _throwForStatus(response.statusCode);
   }
 
-  Future<void> fetchDailyReport({bool fail = false}) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '$serviceBaseUrl/api/example/ops/reports/daily',
-      queryParameters: <String, Object?>{'fail': fail},
+  Future<WorkoutCompleteResult> completeWorkout({
+    required String id,
+    required String sessionId,
+  }) {
+    return _client.post(
+      '$_v1/workouts/$id/complete',
+      body: <String, Object?>{'sessionId': sessionId},
+      parse: (data) => WorkoutCompleteResult.fromJson(_asMap(data)),
     );
-    if ((response.statusCode ?? 0) >= 400) {
-      throw StateError('HTTP ${response.statusCode}');
-    }
   }
 
-  void close() {
-    _httpClient.close();
+  Future<void> checkin(String id) {
+    return _client.post('$_v1/workouts/$id/checkin', parse: (_) {});
   }
 
-  Uri _uri(String path, {Map<String, String>? queryParameters}) {
-    return Uri.parse(
-      '$serviceBaseUrl$path',
-    ).replace(queryParameters: queryParameters);
+  Future<({List<CourseSummary> items, List<String> categories})> courses({
+    String? category,
+  }) {
+    return _client.get(
+      '$_v1/courses',
+      query: category == null ? null : <String, dynamic>{'category': category},
+      parse: (data) {
+        final map = _asMap(data);
+        final items = map['items'];
+        final list = items is List
+            ? items
+                  .whereType<Map<String, dynamic>>()
+                  .map(CourseSummary.fromJson)
+                  .toList(growable: false)
+            : const <CourseSummary>[];
+        final categories = map['categories'];
+        return (
+          items: list,
+          categories: categories is List
+              ? categories.whereType<String>().toList(growable: false)
+              : const <String>[],
+        );
+      },
+    );
   }
 
-  Future<Map<String, dynamic>> _getJsonWithHttp(Uri uri) async {
-    final response = await _httpClient.get(uri);
-    _throwForStatus(response.statusCode);
-    return _decodeMap(response.body);
+  Future<CourseDetail> courseDetail(String id) {
+    return _client.get(
+      '$_v1/courses/$id',
+      parse: (data) => CourseDetail.fromJson(_asMap(data)),
+    );
   }
 
-  Map<String, dynamic> _decodeMap(String body) {
-    final decoded = jsonDecode(body);
-    if (decoded is Map<String, dynamic>) return decoded;
-    throw StateError('Example API response is not an object');
+  Future<CoachProfile> coach(String id) {
+    return _client.get(
+      '$_v1/coaches/$id',
+      parse: (data) => CoachProfile.fromJson(_asMap(data)),
+    );
   }
 
-  Map<String, dynamic> _requireMap(Map<String, dynamic>? data) {
-    if (data == null) throw StateError('Example API response is empty');
-    return data;
+  Future<BookingResult> bookCourse(String id) {
+    return _client.post(
+      '$_v1/courses/$id/book',
+      parse: (data) => BookingResult.fromJson(_asMap(data)),
+    );
   }
 
-  void _throwForStatus(int statusCode) {
-    if (statusCode >= 400) {
-      throw StateError('HTTP $statusCode');
-    }
+  Future<VitalLatest> vitalsLatest() {
+    return _client.get(
+      '$_v1/vitals/latest',
+      parse: (data) => VitalLatest.fromJson(_asMap(data)),
+    );
   }
+
+  Future<List<VitalHistoryItem>> vitalsHistory() {
+    return _client.get(
+      '$_v1/vitals/history',
+      parse: (data) {
+        final items = _asMap(data)['items'];
+        if (items is! List) return const <VitalHistoryItem>[];
+        return items
+            .whereType<Map<String, dynamic>>()
+            .map(VitalHistoryItem.fromJson)
+            .toList(growable: false);
+      },
+    );
+  }
+
+  Future<void> submitVital({
+    required double weightKg,
+    int? restingHr,
+    double? sleepHours,
+  }) {
+    return _client.post(
+      '$_v1/vitals',
+      body: <String, Object?>{
+        'weightKg': weightKg,
+        'restingHr': restingHr,
+        'sleepHours': sleepHours,
+      },
+      parse: (_) {},
+    );
+  }
+
+  Future<MembershipInfo> membership() {
+    return _client.get(
+      '$_v1/membership',
+      parse: (data) => MembershipInfo.fromJson(_asMap(data)),
+    );
+  }
+
+  Future<void> orderMembership(String planId) {
+    return _client.post(
+      '$_v1/membership/orders',
+      body: <String, Object?>{'planId': planId},
+      parse: (_) {},
+    );
+  }
+
+  Future<MeProfile> me() {
+    return _client.get(
+      '$_v1/me',
+      parse: (data) => MeProfile.fromJson(_asMap(data)),
+    );
+  }
+
+  Future<void> updateProfile({required String name, required String city}) {
+    return _client.put(
+      '$_v1/me/profile',
+      body: <String, Object?>{'name': name, 'city': city},
+      parse: (_) {},
+    );
+  }
+
+  Future<void> updateGoals({
+    required int steps,
+    required int activeMin,
+    required int workoutsPerWeek,
+  }) {
+    return _client.put(
+      '$_v1/me/goals',
+      body: <String, Object?>{
+        'steps': steps,
+        'activeMin': activeMin,
+        'workoutsPerWeek': workoutsPerWeek,
+      },
+      parse: (_) {},
+    );
+  }
+
+  Future<List<NoticeItem>> notices() {
+    return _client.get(
+      '$_v1/notices',
+      parse: (data) {
+        final items = _asMap(data)['items'];
+        if (items is! List) return const <NoticeItem>[];
+        return items
+            .whereType<Map<String, dynamic>>()
+            .map(NoticeItem.fromJson)
+            .toList(growable: false);
+      },
+    );
+  }
+
+  Future<void> labSlow() => _client.get('$_v1/lab/slow', parse: (_) {});
+
+  Future<void> labNotFound() =>
+      _client.get('$_v1/lab/not-found', parse: (_) {});
+
+  Future<void> labUnavailable() =>
+      _client.get('$_v1/lab/unavailable', parse: (_) {});
+}
+
+Map<String, dynamic> _asMap(Object? data) {
+  if (data is Map<String, dynamic>) return data;
+  throw ApiEnvelopeException(code: -1, message: 'data 不是对象');
 }

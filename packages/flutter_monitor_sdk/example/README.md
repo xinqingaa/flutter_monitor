@@ -1,88 +1,56 @@
-# Flutter Monitor SDK Example
+# PulseFit Example（Flutter Monitor SDK）
 
-这个 example 是一个模拟真实业务的 Flutter App，用来验证 SDK 在启动、页面、网络、业务动作、交互性能、卡顿、内存和错误场景下的事件链路。
+体育健康演示 App：**像真实产品一样只调业务 Mock**，不调用 Monitor 查询 API。
 
-## 启动流程
+契约见 [`platform/docs/EXAMPLE_DEMO.md`](../../../../platform/docs/EXAMPLE_DEMO.md)。
 
-```text
-Splash → Login（输入 2-3 位 userId 或随机生成）→ 首页 Tab App
-```
+## 依赖
 
-登录成功后会写入 `context.user.userId`，首页默认展示「我的事件」，可切换到「全部事件」。
-
-## Workbench 依赖
-
-首页从本地 Workbench service 读取原始 envelope：
-
-- `GET http://127.0.0.1:3700/api/monitor/v1/health`
-- `GET http://127.0.0.1:3700/api/monitor/v1/recent?limit=50`
-
-请先启动 Platform：
+先启动 Platform（托管 `/api/example/v1` mock + 可选 ingest）：
 
 ```sh
 ./scripts/platform.sh
 ```
 
-若 platform 已在运行但刚插入手机，可补配 adb reverse：
+真机可补：
 
 ```sh
 ./scripts/platform.sh adb-reverse
 ```
 
-或使用一键脚本（自动注入 dart-define）：
-
-```sh
-./scripts/run_example.sh
-```
-
-- Web 入口：`http://localhost:4700`
-- API 入口：`http://localhost:3700/api/monitor/v1/*`
-
-## Output 模式
-
-输出模式集中在 `lib/main.dart` 的 `buildMonitorMode()` 中。
-
-每次只保留一个 `final monitorMode = ...`，切换注释后重新运行 App：
-
-- `MonitorMode.consoleOnly()`
-- `MonitorMode.localLive(endpoint: Uri.parse(monitorServerUrl))`
-- `MonitorMode.production(...)`
-
-`production` 示例中保留了默认策略、灰度策略、鉴权策略和压测策略，按需要取消注释即可。
-
-## 页面结构
-
-- 路由集中在 `lib/router/app_routes.dart`。
-- 页面跳转集中在 `lib/router/app_navigation.dart`。
-- 页面监控封装在 `lib/widgets/app_page.dart`。
-- 业务埋点反馈使用 `lib/widgets/app_track.dart` 的 `appTrack(...)`。
-- 启动页：SDK 冷启动后进入登录。
-- 登录页：userId 输入 / 随机，写入用户上下文后进入首页。
-- 首页：Workbench health + recent 事件列表，点击进入事件详情。
-- 我的：上下文模拟、监控场景入口、切换账号 / 退出登录。
-- 订单结算：校验失败、替换优惠券、重试成功（measure）。
-- 数据同步中心：Dio/http 成功、404、timeout 和本地慢请求。
-- 视频频道：横滑 PageView、播放暂停、评论（appTrack）。
-- 内容创作中心：图表交互、故意卡顿、retained memory。
-
 ## 运行
 
 ```sh
+./scripts/run_example.sh
+# 或
 fvm flutter run packages/flutter_monitor_sdk/example
 ```
 
-本地 Workbench live 模式默认写入：
+- Mock / Service：`http://127.0.0.1:3700`
+- Workbench Web：`http://localhost:4700`（人工查看链路，App 不调用）
+
+Dart defines：
+
+- `FM_EXAMPLE_API_BASE_URL`：业务 mock 根地址（默认 `http://127.0.0.1:3700`）
+- `FM_SERVER_URL`：SDK ingest（默认 `.../api/monitor/v1/events`）
+
+## 产品结构
 
 ```text
-http://127.0.0.1:3700/api/monitor/v1/events
+Splash → Login
+→ 首页 | 训练 | 发现 | 我的
+二级：训练详情/进行中、课程/教练、会员、体征、消息、设置、网络演练
 ```
 
-如需替换地址：
+HTTP：**仅 Dio** + SDK interceptor。响应：`{ code, message, data }`，成功 `code=0`；业务失败 HTTP 200。
 
-```sh
-fvm flutter run packages/flutter_monitor_sdk/example \
-  --dart-define=FM_SERVER_URL=http://127.0.0.1:3700/api/monitor/v1/events
-```
+## 埋点
+
+仅关键业务：`auth.login`、`workout.*`、`course.book`、`membership.order`、`vital.submit`。
+
+## Output 模式
+
+在 `lib/main.dart` 的 `buildMonitorMode()` 中切换 `localLive` / `consoleOnly` / `production`。
 
 ## 测试
 

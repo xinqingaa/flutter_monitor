@@ -1,102 +1,79 @@
-import 'package:dio/dio.dart';
 import 'package:example/data/demo_api.dart';
-import 'package:example/router/app_navigation.dart';
 import 'package:example/router/app_routes.dart';
+import 'package:example/session/app_session.dart';
 import 'package:example/widgets/app_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_monitor_sdk/flutter_monitor_sdk.dart';
 
 class SplashPage extends StatefulWidget {
-  const SplashPage({super.key, required this.dio});
+  const SplashPage({super.key, required this.api});
 
-  final Dio dio;
+  final DemoApi api;
 
   @override
   State<SplashPage> createState() => _SplashPageState();
 }
 
 class _SplashPageState extends State<SplashPage> {
-  late final DemoApi _api;
-  String _status = '正在启动监控 SDK';
-
   @override
   void initState() {
     super.initState();
-    _api = DemoApi(
-      dio: widget.dio,
-      httpClient: FlutterMonitorSDK.createHttpClient(),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _enterLogin();
-    });
+    _boot();
   }
 
-  @override
-  void dispose() {
-    _api.close();
-    super.dispose();
-  }
-
-  Future<void> _enterLogin() async {
+  Future<void> _boot() async {
     try {
-      final bootstrap = await _api.fetchBootstrap();
-      if (!mounted) return;
-      setState(() {
-        _status = '已加载 ${bootstrap.release} 配置';
-      });
+      final info = await widget.api.bootstrap();
+      FlutterMonitorSDK.setContext(
+        releaseId: info.release,
+        featureFlags: info.featureFlags,
+      );
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _status = '启动配置暂不可用，继续进入登录';
-      });
+      // bootstrap 失败仍进入登录，避免卡死启动。
     }
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
-    AppNavigation.replaceToLogin(context);
+    final next = AppSession.isLoggedIn ? AppRoutes.app : AppRoutes.login;
+    Navigator.of(context).pushReplacementNamed(next);
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return AppPage(
       routeName: AppRoutes.splash,
       moduleName: 'launch',
       moduleScene: 'splash',
       child: Scaffold(
-        backgroundColor: colorScheme.surface,
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Icon(
-                      Icons.monitor_heart,
-                      size: 64,
-                      color: colorScheme.primary,
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Flutter Monitor Shop',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _status,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 28),
-                    const LinearProgressIndicator(),
-                  ],
+        body: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0F766E), Color(0xFF134E4A)],
+            ),
+          ),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.favorite, color: Colors.white, size: 64),
+              SizedBox(height: 16),
+              Text(
+                'PulseFit',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 36,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            ),
+              SizedBox(height: 8),
+              Text(
+                '训练 · 课程 · 健康',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              SizedBox(height: 40),
+              CircularProgressIndicator(color: Colors.white),
+            ],
           ),
         ),
       ),
