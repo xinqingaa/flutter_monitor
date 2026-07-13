@@ -3,129 +3,177 @@
 ## Meta
 
 - status: active
-- last_updated: 2026-07-11
+- last_updated: 2026-07-13
 - 功能事实源：[`FEATURES.md`](FEATURES.md)
 - 旧实现取舍：[`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)
 - Phase 5 计划：[`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)
 - 当前样板：HTTP 列表 Catalog + Split
-- 样板确认：2026-07-11，HTTP Catalog / Preview / Record 桌面与窄屏验收通过，作为全站实现基线
-- Phase 5：官方 shadcn 组件/Blocks 提供布局骨架；Tremor 是唯一图表引擎；本轮不迁 MUI
+- 样板确认：2026-07-11，HTTP Catalog / Preview / Record 桌面与窄屏验收通过，作为交互基线
+- 组件策略：shadcn 官方 Primitive / 官方示例组合件为默认基线；本轮不迁 MUI
+- 图表：Tremor 为唯一图表引擎
 
-本文是 Workbench 前端重构的设计与交互事实源。它必须能独立指导实现，不依赖仓库外设计文档。功能冲突时以 `FEATURES.md` 为准；旧代码是否保留以 `KEEP_KILL_STEAL.md` 为准。
+本文是 Workbench 的**信息架构与交互事实源**，附带精简视觉指引。  
+它必须能独立指导实现；功能冲突时以 `FEATURES.md` 为准；旧代码是否保留以 `KEEP_KILL_STEAL.md` 为准。
+
+**本文不再充当像素级视觉宪法。** 过死的灰白 / 禁阴影 / 「颜色不作装饰」规则已被收窄：Catalog 保持克制，大屏允许更强的状态色与图表色板；官方控件交互不得为了服从旧视觉细则而改坏。
+
+## 文档职责分层
+
+| 层级 | 本文是否硬约束 | 内容 |
+| --- | --- | --- |
+| A. 产品与信息架构 | 是 | 四入口、Session 二级、Catalog / Preview / Record、URL 状态 |
+| B. 交互契约 | 是 | 一层浮层、状态机、筛选提交、回查 envelope、官方控件核心交互 |
+| C. 组件来源 | 是 | Primitive / 官方示例组合默认对齐 shadcn；业务只外挂 |
+| D. 视觉与密度 | 部分 | token 入口、Catalog 与大屏分层；细节以官方组件默认为准 |
+| E. 实现栈 | 是 | React / Router / Query / Tremor 等工程约定 |
+
+Agent 与实现者优先守住 A–C；D 不得反向破坏 B–C。
 
 ## 产品方向
 
 - 主气质：排查工作台
-- 辅助气质：运营管理台
+- 辅助气质：运营管理台（大屏可略偏仪表盘，但仍服务于 drilldown）
 - 目标用户：Flutter 开发者、QA、做端侧排查的技术负责人
 - 使用频率：本地调试高频；QA 交接按需
 - 信息密度：compact
-- 导航模型：侧边栏；一级为大屏、HTTP、埋点、异常，详情与 Session 为二级
+- 导航模型：侧边栏；一级为大屏、HTTP、埋点、异常；详情与 Session 为二级
 - 主任务：浏览集合、深读记录、组装 Session 链路
-- 数据形态：表格/列表、JSON、Session 时间线
+- 数据形态：表格/列表、JSON、Session 时间线、可下钻图表
 - 用户专业度：专家
 
-### Visual Direction
+### Visual Direction（分层，不再一刀切灰白）
 
-- 视觉调性：technical
-- 表面语言：border-first
-- 品牌强度：utility
-- 颜色主要表达状态、选中和操作，不作装饰
-- 桌面优先高密度扫描；窄屏重组任务，不等比压缩桌面布局
+| 表面 | 目标 | 允许 |
+| --- | --- | --- |
+| Catalog / Record / 筛选条 | 高密度扫描、克制 | 中性底、清晰边框、问题态着色；控件跟 shadcn 默认观感 |
+| 大屏 Hub | 一眼看出是否变差 | 状态色块、图表系列色、轻 elevation；仍禁止营销大标题与不可点装饰图 |
+| Shell（Sidebar / Header） | 清晰导航 | 可用官方 Sidebar 默认表面语言，不必强行削成纯线框 |
+
+- 视觉调性：technical，但**不是**「全站只许黑白」
+- 颜色用途：状态、选中、操作、**图表可读性**；大屏允许用色区分系列与严重度
+- Catalog 正常行仍不整行上色；问题态才用 status 色
+- 桌面优先高密度；窄屏重组任务，不等比压缩桌面布局
 
 ### 明确避免
 
-- 营销式大标题、低密度大卡片墙和装饰性图表
+- 营销式大标题、低密度大卡片墙、不可点击的装饰图
 - 默认主路径展示内存、帧数、jank、native
 - raw JSON 作为第一视觉入口
 - 用图表替代可排查列表与链路
-- 把现有 `platform/web` 页面视觉当规范
+- 把「曾经手搓的灰白工具条」当全站规范
 - 一级导航沿用旧 Overview/Sessions/Startup/Pages/Jank 拆分
 - 用通用事件流假装海量 HTTP Catalog
+- **为了服从灰白规范而砍掉官方控件的核心交互**（例如 Date Range 必须选满才生效、选一半丢弃、立刻关闭导致无法改范围）
+
+## 官方组件基线（强制）
+
+shadcn 是复制进仓库的源码，不是运行时黑盒。本项目约定：
+
+### 1. Primitive 与官方示例组合
+
+以下默认以 **shadcn 官方 registry 源码 + 官方文档示例的交互与观感** 为基线：
+
+- Button、Input、Select、Combobox/Command、Popover、Dropdown Menu
+- Calendar / Date Range Picker、Sidebar、Breadcrumb、Table、Pagination
+- Tabs、Sheet/Drawer、Tooltip、Skeleton、Empty、Separator、Resizable、ScrollArea
+
+验收时对照官方示例，而不是对照旧手搓 UI。
+
+### 2. 业务只外挂，不改核心交互
+
+允许在官方组合外包一层业务适配：
+
+- 中文文案、URL `from`/`to` 同步、debounce、service 候选数据
+- 产品级 Toolbar 布局、范围 Badge、清除条件
+
+**不允许**为了业务或旧 DESIGN 细则改掉官方示例的核心交互，例如：
+
+| 控件 | 必须保留的官方行为 | 禁止 |
+| --- | --- | --- |
+| Date Range Picker | 可先选 from 再选 to；Popover 保持打开直到用户确认或明确关闭；双月历（桌面）可选范围高亮正常 | 未选满 to 就丢弃；一选完立刻关导致无法调整；拆成两个 `datetime-local` 冒充完成 |
+| Combobox | 输入过滤、键盘选择、清空、空态 | 退化成「回车才提交的裸 Input」且无候选 |
+| Select | 未选中显示稳定 placeholder（如「全部环境」） | trigger 空白 |
+| Sidebar | 官方折叠 / 移动 Sheet 语义 | 业务页再手写第二套侧栏 |
+
+业务提交到 URL 的推荐模式：**控件内部保持官方受控中间态 → 显式「应用」或确认后再写入 search params**；不要把「每次 click 都立刻改 URL」写成必须破坏中间态的理由。
+
+### 3. Token 映射最小化
+
+- 主题入口仍是 `platform/web/src/styles.css` 的 `@theme` / CSS 变量
+- 允许把 shadcn 的 `background` / `primary` / `muted-foreground` 等映射到项目 token
+- **禁止**在业务页用自定义 class 把官方控件削成另一套皮肤，导致与文档示例「大相径庭」
+- Catalog 工具条可以更紧凑，但不得删除官方控件的选中态、focus ring、Popover 结构
+
+### 4. 换库不能替代本规则
+
+即使用 MUI / Material Web，同样适用：「官方默认交互是基线，业务只外挂」。换库解决不了「被改坏的组合件」问题。
 
 ## 信息架构与页面模式
 
 | 页面 | Task | Layout | 变体 | 窄屏降级 |
 | --- | --- | --- | --- | --- |
-| 大屏 | Hub | Dashboard Grid | 紧凑范围工具栏 + 不超过 4 个可点指标 + 5 张可点 Tremor 图 + 最近问题 | 单列 Stack |
-| HTTP 列表 | Catalog | Split | 主表 + 右侧摘要预览；URL 默认无域名 | `<1024px` 收起常驻预览，点行进入 Sheet/详情 |
-| HTTP 详情 | Record | Drawer | 摘要 → 请求/响应 → 上下文 → Raw | `<900px` 全高 Sheet 或 full page |
-| 埋点列表 | Catalog | Split | 主表 + 右侧摘要预览 | 同 HTTP |
+| 大屏 | Hub | Dashboard Grid | 范围工具栏 + ≤4 可点指标 + 可点 Tremor 图 + 最近问题 | 单列 Stack |
+| HTTP 列表 | Catalog | Split | 主表 + 右侧摘要预览；URL 默认无域名 | `<1024px` 收起常驻预览 |
+| HTTP 详情 | Record | Drawer | 摘要 → 请求/响应 → 上下文 → Raw | `<900px` Sheet / full page |
+| 埋点列表 | Catalog | Split | 同 HTTP | 同 HTTP |
 | 埋点详情 | Record | Drawer | 摘要 → properties → 关联 → 上下文 → Raw | 同 HTTP 详情 |
-| 异常列表 | Catalog | Split | 主表 + 右侧摘要预览 | 同 HTTP |
+| 异常列表 | Catalog | Split | 同 HTTP | 同 HTTP |
 | 异常详情 | Record | Drawer | 摘要 → stack/breadcrumbs → 关联 → 上下文 → Raw | 同 HTTP 详情 |
-| Session 链路 | Workspace | Resizable master-detail | Session 切换 + 摘要 + Tabs 事件流 + 右侧 Record | `<900px` Stack + Sheet |
+| Session 链路 | Workspace | Resizable master-detail | 摘要 + 事件流 + 右侧 Record | `<900px` Stack + Sheet |
 
-Session 是跨模块链路组装层，不占一级导航。HTTP、埋点、异常的列表和详情必须能带 `eventId` 进入对应 Session。
+Session 是跨模块链路组装层，不占一级导航。HTTP、埋点、异常必须能带 `eventId` 进入对应 Session。
 
-## 视觉系统
+图表数量与口径以 [`FEATURES.md`](FEATURES.md) / [`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md) 为准；本文只约束「可 drilldown、诚实空态、人话标题」。
+
+## 视觉系统（精简）
 
 ### 密度与字体
 
-- 默认表格/列表行高：36px；触控窄屏不得低于 44px
-- panel padding：12px；页面主区块间距：16px 或 24px
-- 正文：13px/20px；辅助信息：12px/18px；面板标题：15px/24px
+- 表格/列表默认行高约 36px；触控窄屏不低于 44px
+- 正文约 13px；辅助约 12px；面板标题约 15px——**以官方组件默认为主**，不必为对齐旧手搓值反复覆盖
 - `font.sans`：系统栈 + PingFang SC / Microsoft YaHei
-- `font.mono`：SF Mono / Consolas / Menlo
-- ID、JSON、URL path 使用等宽字体；耗时、状态码使用 `tabular-nums`
-- 首批不做全站暗色；Raw/JSON 阅读区允许局部深色，但仍消费统一 token
+- `font.mono`：SF Mono / Consolas / Menlo；ID、JSON、URL path 用等宽；耗时、状态码用 `tabular-nums`
+- 首批不做全站暗色；Raw/JSON 区允许局部深色
 
-### Primitive
+### Token
 
-- accent：`#0d9488`；hover：`#0f766e`；active：`#115e59`
-- success：`#059669`
-- warning：`#d97706`
-- danger：`#dc2626`
-- info：`#2563eb`
-- neutral：`#71717a`
-- gray scale：zinc 50-950
-- radius：4px（控件）、6px（面板）、8px（浮层）；除 badge/chip 外禁止过度圆角
-- motion：hover/focus 120ms；Drawer/Sheet 180ms；遵守 reduced motion
+保留语义 token 入口（实现落在 `styles.css`）：
 
-### Semantic Token 最小集
+| 类别 | 用途 |
+| --- | --- |
+| background / surface / canvas | 页面与面板底 |
+| border / ring | 分割与 focus |
+| text / muted / link | 阅读层级 |
+| primary / accent | 主操作与选中 |
+| status.* | success / warning / danger / info |
+| chart.*（建议） | 大屏与 Tremor 系列色，可与 status 对齐但独立于 Catalog 行色 |
 
-| 类别 | Token | 映射/用途 |
-| --- | --- | --- |
-| background | `canvas` / `surface` / `subtle` / `selected` | zinc.100 / white / zinc.50 / teal.50 |
-| border | `default` / `muted` / `focus` / `selected` | zinc.200 / zinc.100 / teal.600 / teal.600 |
-| text | `primary` / `secondary` / `muted` / `link` / `code` / `inverse` | zinc.950 / zinc.600 / zinc.400 / teal.700 / zinc.800 / white |
-| accent | `default` / `hover` / `active` / `subtle` | teal.600 / teal.700 / teal.800 / teal.50 |
-| status | `success` / `warning` / `danger` / `info` / `neutral` | 使用上方 primitive；同时提供对应 subtle background |
-| interactive | `focusRing` / `overlay` | teal focus ring / 半透明 zinc.950 遮罩 |
+业务代码消费 semantic token，不写散落 hex。  
+**大屏**可使用 chart 色与轻阴影；**Catalog 主表**仍以 border 分区为主，避免卡片墙。
 
-主题统一收敛到 `platform/web/src/styles.css` 的 `@theme` / CSS 变量。业务组件只消费 semantic/component token，不直接写 hex。表头 sticky 使用 `z-index: 10`；Drawer/Sheet 使用 100；toast 使用 300。普通面板使用 border，不使用浮动卡片阴影；popover 和 Drawer 才使用 elevation。
+z-index：表头 sticky 10；Drawer/Sheet 100；toast 300。
 
 ## 响应式布局
 
-- 展开侧边栏宽 216px；折叠态宽 56px
-- 桌面使用 shadcn Sidebar 的展开/折叠状态；窄屏使用其移动 Sheet，不保留占据内容宽度的 56px 图标栏
-- 页面 Header 统一承载 Sidebar trigger、Breadcrumb、live 状态和页面操作，业务页不重复手写 Header 壳
-- Catalog 主表最小宽 640px，并占据剩余空间
-- 摘要预览默认宽 360px，最小 320px，最大 480px
-- Split 可拖动；宽度只存本地，不进入 URL；必须提供恢复默认宽度能力
-- Record Drawer 宽 `min(720px, 72vw)`
-- `>=1024px`：Catalog 主表 + 常驻预览
-- `<1024px`：取消常驻预览；点行打开 Sheet 或进入完整详情
-- `<900px`：Record 使用全高 Sheet/full page；Session 改为 Stack + Sheet
-- 小屏 HTTP 列表优先隐藏业务码、路由等低优先级列，保留时间、方法、URL、结果和耗时；不改造成装饰性卡片墙
-- 表头保持 sticky；筛选条可 sticky；页面只保留一个主滚动容器，避免表格、页面和预览三重滚动
-- URL、ID 和 message 必须截断但可查看完整值，不得撑破列宽
+- Sidebar：桌面折叠；窄屏用官方移动 Sheet，不把 56px 图标栏硬塞进手机主栏
+- 页面 Header 统一承载 Sidebar trigger、Breadcrumb、live 与页面操作；业务页不重复第二套 Header 壳
+- Catalog：`>=1024` 主表 + 预览；`<1024` 收起常驻预览
+- Record：`min(720px, 72vw)`；`<900` 全高 Sheet
+- Split 宽度本地持久化，不进 URL；提供恢复默认
+- 单一主滚动容器；长 URL / ID / message 截断可查看完整值
 
 ## 共享交互契约
 
 ### Catalog、Preview 与 Record
 
-- 桌面点击行只改变选中项并更新右侧 Preview；双击或显式“打开详情”进入 Record
-- Preview 只展示关键字段、问题状态、链路 ID 和跳转入口，不加载 body、stack 或 Raw
-- Preview 无选中时显示“选择一行”；其 loading/empty/error 与主表独立
-- Record 最多一层 Drawer/Sheet，不允许 Drawer 中再开 Modal/Drawer
-- 关闭 Record 后回到原列表选中项并恢复键盘焦点和滚动位置
-- 行内操作提供打开详情、查看 Session、复制必要 ID；次要操作使用菜单或图标按钮
-- 类型使用稳定文字/图标编码；仅问题状态使用 status 色，正常行不整行上色
+- 单击行：选中 + Preview；双击或「打开详情」：Record
+- Preview 不加载 body / stack / Raw
+- Record 最多一层浮层；关闭后恢复选中、焦点与滚动
+- 类型稳定编码；问题态才上色
 
 ### URL 与导航状态
 
-URL 是可分享、可刷新恢复的已提交状态事实源。输入框编辑中的临时字符可以留在组件内，提交后必须进入 URL。
+URL 是已提交状态的事实源；控件编辑中的临时值可留在组件内。
 
 ```text
 /http?...&eventId=<preview-event>&detail=<record-event>
@@ -134,208 +182,115 @@ URL 是可分享、可刷新恢复的已提交状态事实源。输入框编辑�
 /sessions/<sessionId>?eventId=<selected-event>&traceId=<optional-trace>
 ```
 
-- `eventId` 表示列表选中与 Preview；`detail` 表示当前打开的完整 Record
-- 刷新恢复筛选、选中项和 Record；浏览器返回优先关闭 Record，再恢复上一个选择/筛选
-- 关闭 Record 只清除 `detail`，保留 `eventId`
-- 筛选、分页后选中项不再属于结果集时，同时清除 `eventId` 和 `detail`
-- SSE 更新不得抢占选择、自动打开 Preview 或在用户离开列表顶部时强制重排；只提示有新数据或在合适时刷新
-- Session 跳转必须带目标 `eventId`；Session 页面负责选中并滚动到对应节点
-- Split 宽度、折叠状态等设备偏好不进入 URL
+- 刷新恢复筛选与阅读状态；返回优先关 Record
+- SSE 不抢选择、不强迫重排
+- Session 深链必须带目标 `eventId`
 
-### 数据与控件状态
+### 数据与筛选控件
 
-- 主数据区必须覆盖 loading、empty、error；Catalog 另含 noResults、partial；Record 另含 notFound、partial
-- `empty` 表示当前数据源无数据；`noResults` 表示筛选无匹配，二者文案与下一步不同
-- error 必须提供重试；partial 必须说明缺失范围，不能伪装完整
-- `detail_dropped`、body 截断、无 body、业务码解析失败必须诚实说明原因
-- 所有交互控件覆盖 default、hover、focus、disabled、loading；危险操作另有 danger
-- focus 可见；图标按钮有 tooltip 和可访问名称；表格行可以用键盘选择和打开
-- loading 不阻断已经可用的筛选输入；后台刷新尽量保留现有内容
-- 可见时间统一为本地时区 `YYYY-MM-DD HH:mm:ss`；原始 ISO/毫秒放 tooltip，不改变原始值
-- Select 未选中时显示“全部环境”“全部方法”等稳定空态；对应 URL 参数应删除而不是写入空字符串
-- 文本筛有内容时约 300ms debounce 并使用 history replace；清空立即重置，Enter 只作为立即提交捷径
-- `userId`、`sessionId`、`requestId` 使用真实 service 候选 Combobox，支持异步 loading/empty/error、清除和键盘选择
+- 主数据区：loading / empty / error；Catalog 另含 noResults / partial；Record 另含 notFound / partial
+- 时间展示：`YYYY-MM-DD HH:mm:ss`（本地时区）；毫秒可 tooltip
+- 文本筛：约 300ms debounce；清空即重置该条件
+- ID 类：真实候选 Combobox（模糊 substring）
+- **日期范围**：官方 Date Range 交互基线 + 确认后写入 `from`/`to`；不要用双 `datetime-local` 冒充完成
 
-### 大屏图表
+### 大屏
 
-- 第一屏固定五图：质量趋势、HTTP 健康、埋点结果趋势、业务动作排行、启动趋势；指标卡、图表和最近问题共享同一范围
-- 质量趋势由 service 时间分桶，点击系列点进入对应 Catalog，并携带该桶 `from` / `to` 和类型筛选
-- HTTP 健康使用请求量柱 + 失败率线；点击时间桶进入 HTTP Catalog
-- 埋点结果趋势使用 success / failed / cancelled 堆叠柱；点击进入对应结果与时间桶
-- 业务动作排行使用 Bar List / 横向 Bar；每行携带可回查代表事件，并按 Action 下钻
-- 启动趋势展示冷启动平均与慢启动次数；点击只在存在可回查的 `eventId + sessionId` 时进入 Session
-- 图表覆盖 loading、empty、error 和禁用下钻原因；无数据不能伪装为正常零值
-- 主标题使用人话；p50/p95 只能作为 tooltip/口径说明
-- 图表使用 Tremor 并消费 semantic tokens；禁止装饰性不可点击图和 echarts 双引擎
+- 指标与图表必须可 drilldown；禁止装饰性不可点图
+- 覆盖 loading / empty / error；无数据不得伪装成健康零值
+- 主标题用人话；p50/p95 仅 tooltip / 口径
+- 仅 Tremor；不保留 echarts
+- 视觉上允许比 Catalog 更强的色彩与层次，仍服务于排查而非营销
 
 ### 范围工具栏
 
-- 大屏与 Catalog 顶部使用单行 Toolbar，不在每个控件上方重复显示 Label
-- 时间使用 shadcn 官方 Date Range Picker；一个 trigger 展示预设或日期范围，Popover 内选择日期并按需补开始/结束时间
-- 用户 ID、Session ID 使用官方 Combobox；版本、环境、路由使用官方 Select；低频范围项进入 Dropdown Menu 或移动 Sheet
-- 选中条件以紧凑 Badge 表达并可单独清除；窄屏只保留日期与“筛选”按钮
-- 空数据统一使用官方 Empty；加载使用 Skeleton；分页使用官方 Pagination
-
-### Session 二级工作区
-
-- Session 不占一级导航；Sidebar 在主导航下方用 Separator + `SidebarMenuSub` 展示最近 3–5 个 Session
-- Breadcrumb 为 `Workbench > Session > <short sessionId>`，并支持从最近 Session 或工作区切换器进入
-- 工作区顶部展示 Session Combobox、用户、时间、版本和问题计数
-- 主区使用官方 Resizable；左侧用 Tabs + ScrollArea + Item + Collapsible 组成事件流，右侧 Record 使用 Tabs
-- 不手绘竖线圆点 Timeline；时间顺序、类型 Badge、问题状态和分组标题表达链路
-- 移动端事件详情使用官方 Sheet/Drawer；切换 Session 后清除不属于新 Session 的 `eventId` / `traceId`
+- 单行 Toolbar；官方 Date Range、Combobox、Select
+- 选中条件用可清除 Badge 表达
+- Empty / Skeleton / Pagination 用官方能力
 
 ## HTTP 样板页
 
 ### 用户任务
 
-在海量 `http.client` 中按范围和 HTTP 维度定位请求，扫描关键列，查看摘要或完整请求/响应，并进入关联 Session。
+在海量 `http.client` 中按范围与 HTTP 维度定位请求，扫描关键列，查看摘要或完整请求/响应，并进入 Session。
 
 ### 页面结构
 
 ```text
-页面标题 + Live/数据源状态
-共享范围筛选
-HTTP 常驻筛选 + 更多筛选 + 清除/结果数量
-Catalog Split
-  主区：HTTP 表格 + 分页
-  右侧：选中请求摘要 Preview
+Header（标题 / Live）
+共享范围工具栏
+HTTP 常驻筛选 + 更多筛选 + 结果数量
+Catalog Split：主表 + Preview
 Record Drawer/Sheet（按需）
 ```
-
-共享范围筛选属于样板页，不得后置。首批范围项为时间、用户 ID、Session ID、版本、环境和关联路由。
 
 ### 筛选分层
 
 | 层级 | 筛选项 | 交互 |
 | --- | --- | --- |
-| 共享范围 | `from`、`to`、`userId`、`sessionId`、`appVersion`、`environment`、`route` | 时间显式应用；选择项立即提交；文本 Enter 提交 |
-| HTTP 常驻 | URL 模糊、method、结果 | URL Enter 或 300ms debounce；select/toggle 立即提交 |
-| HTTP 更多 | request ID、HTTP 状态码、业务码、Host、慢请求 | Popover/Sheet；应用后以 filter chip 展示 |
+| 共享范围 | `from`、`to`、`userId`、`sessionId`、`appVersion`、`environment`、`route` | 日期按官方 Range 确认后提交；Select/Combobox 选中即提交或确认后提交（保持官方中间态） |
+| HTTP 常驻 | URL、method、结果 | URL debounce；select 立即提交 |
+| HTTP 更多 | request ID、状态码、业务码、Host、慢请求 | Popover；应用后以 chip 展示 |
 
-- URL 参数使用上表 camelCase 名称；多选统一使用逗号分隔，解析时去重并稳定排序
-- “重置 HTTP 筛选”保留共享范围；“清除全部”同时清除范围和 HTTP 筛选
-- 慢请求阈值由 service 返回或统一配置提供，前端不得自行发明
-- 完整 URL 开关只影响展示，不发起新查询；默认关闭并可作为本地偏好保存
-- 筛选提交后回到第一页；无效 URL 参数应忽略并给出非阻断提示，不得导致白屏
-
-### 表格
-
-默认列顺序：时间、方法、URL path、HTTP 状态码、业务码、耗时、关联路由、操作。
-
-- 默认按时间倒序
-- 方法保持中性稳定编码；失败和慢请求才使用问题色
-- URL 默认不显示 Host；允许切换完整 URL
-- 状态码、业务码、耗时使用 `tabular-nums`
-- 首批采用服务端分页，不在前端加载全量事件后伪分页
-- 默认每页 50 条，可选 25/50/100；分页和 page size 写入 URL
-- 行不内联 headers/body；复制操作至少覆盖 event ID、session ID、trace ID、request ID
-
-### Preview
-
-展示 method、URL、HTTP 状态、业务码、耗时、size、route、时间、问题状态，以及 event/session/trace/request ID。主操作为“打开详情”，次操作为“查看 Session”。详情被剥离时只说明，不在 Preview 请求 body。
-
-### Record
-
-- 顶部摘要：method、URL、HTTP 状态、业务码、耗时、size、route
-- 内容 Tab：请求、响应、上下文、Raw
-- 请求：url/query/headers/body；响应：status/headers/body
-- 失败请求默认进入响应 Tab；否则默认进入请求 Tab
-- body 区分 JSON 和文本，支持格式化/原文、折叠与复制
-- Raw 永远置后，展示完整 `EventEnvelope`
-- 上下文包含 user/device/app 和完整链路 ID
-
-## 查询前置契约
-
-正式实现 HTTP Catalog 前，Monitor Service 与 datasource 必须提供等价的专用查询契约；不得长期用通用 `recent` 或客户端过滤代替。
-
-```text
-HttpCatalogQuery
-  scope filters
-  http filters
-  sort = timestamp.desc
-  limit + offset
-
-HttpCatalogResult
-  items: HttpCatalogItem[]
-  total
-  limit
-  offset
-
-HttpCatalogItem
-  Catalog/Preview 所需摘要
-  eventId + sessionId + traceId + requestId
-```
-
-- 首批沿用 `limit + offset`，不额外引入 cursor；海量数据验证后再升级
-- query 字段必须与 URL 筛选一一映射，避免前端维护第二套筛选语义
-- `HttpCatalogItem` 是可回查 envelope 的只读摘要，不是新的事件模型
-- 完整详情通过 `getEvent(eventId)` 获取原始 `EventEnvelope`
-- Host、业务码可作为 service 派生索引和查询摘要，但不得写回或冒充 SDK/core 字段
-- 业务码必须区分：有值、响应无该字段、详情不可用、解析失败
-- API endpoint、DTO 和 Swagger 细节在 service 实现时同步维护到对应 API 文档
+其余列、Preview、Record、查询契约要求与既有 HTTP 样板一致：服务端分页、摘要可回查 envelope、业务码四种语义、Host/业务码不写回 SDK。
 
 ## 实现约束
 
 - 框架：React 19 + Vite + TypeScript
-- 布局与 primitive：使用 shadcn 官方 registry 组件和 Dashboard Blocks 的组合方式；至少覆盖 Sidebar、Breadcrumb、Data Table、Command/Popover、Select、Dropdown Menu、Pagination、Skeleton、Separator、Date Picker/Calendar、Empty、Resizable、ScrollArea、Collapsible、Item、Sheet/Drawer、Tabs、Tooltip
-- shadcn 源码进入 `components/ui/` 并由仓库维护；只做最小 token 映射，不在业务页重写临时 Sidebar、Breadcrumb、Table 或 Popover
-- 组件底座：Radix + CVA + Tailwind v4 + lucide-react；`components.json` 记录配置，业务组合仍归 `features/` / `app/`
-- 图表：Tremor 是唯一图表引擎；禁止保留 echarts 依赖、封装和废弃页面消费者
-- 路由：TanStack Router；筛选和阅读状态使用 search params
-- 查询：TanStack Query；live 使用 `useLiveInvalidation`
-- Overlay：基于 Radix Dialog 扩展 Drawer/Sheet
-- 目录：`features/`、`routes/`、`components/`、`shared/`；kebab-case；文案中文
-- 页面 greenfield；复用 datasource、查询、envelope accessor、字段词典、格式化和 URL 序列化思路
-- JsonViewer 只克制复用行为能力，必须按本文件 token 包装或重做，不得成为全站视觉样板
-- UI view model 只存在于 web 内，并且每个摘要都能回查原始 envelope
+- UI：shadcn（Radix + CVA + Tailwind v4 + lucide）源码在 `components/ui/`；业务组合在 `features/` / `app/` / `routes/`
+- 图表：仅 Tremor
+- 路由：TanStack Router + search params
+- 查询：TanStack Query；live 用既有 invalidation
+- 文案中文；kebab-case 目录
+- 不引入第二套事件模型；摘要必须能回查 `EventEnvelope`
 
-### 目标组件
+### 目标业务组件（可包官方，不可取代官方）
 
-| 组件 | 目标路径 | 最低能力 |
+| 组件 | 路径 | 说明 |
 | --- | --- | --- |
-| ScopeFilterBar | `features/scope/` | 范围筛进入 URL；可应用、分组清除；loading 不挡输入 |
-| HttpFilterBar | `features/http/` | 常驻/更多筛选；chip；URL 同步；分组重置 |
-| HttpCatalogTable | `features/http/` | 固定列、服务端分页、行选中、键盘操作、完整状态 |
-| CatalogPreviewPane | `features/catalog/` | 摘要、链路 ID、详情/Session 入口、独立状态 |
-| RecordShell | `features/inspector/` | 摘要、领域 Tab、上下文、Raw；一层浮层；焦点恢复 |
-| HttpRecord | `features/inspector/` | 请求/响应；缺失说明；JSON/文本 body |
-| SplitPane | `components/layout/` | 可调宽、min/max、恢复默认、窄屏降级 |
-| CopyableId | `components/common/` | 短显、复制、反馈、可访问名称 |
+| ScopeFilterBar | `features/scope/` | 组装官方 Date/Combobox/Select；写入 URL |
+| HttpFilterBar | `features/http/` | 领域筛 + chip |
+| HttpCatalogTable | `features/http/` | 基于官方 Table 的领域列与选择 |
+| CatalogPreviewPane | `features/catalog/` | 摘要与跳转 |
+| RecordShell / HttpRecord | `features/inspector/` | 一层浮层 + 领域 Tab |
+| CopyableId | `components/common/` | 短显与复制 |
 
-## 样板验收
+## 验收门禁
 
-HTTP 样板完成后进行一次人工截图与交互验收。该门禁用于阻止视觉和交互分叉，不要求建立像素级截图基线。
+### 官方控件对照（新增，优先于「看起来像旧工具条」）
 
-### 最低验收矩阵
+对 Date Range、Combobox、Select、Sidebar，人工对照 shadcn 文档示例：
 
-- viewport：宽桌面（1440px）、Split 临界附近（1024px）、窄屏（390px）
-- 数据：正常列表、loading、empty、noResults、error、partial/detail dropped
-- 边界内容：长 URL、空 route、缺失业务码、大 body、失败与慢请求并存
-- 交互：筛选写入 URL、刷新恢复、浏览器返回关闭 Record、焦点恢复、分页清除失效选中项、Session 定位
-- 视觉：密度、列对齐、sticky、Preview 宽度、Drawer、窄屏无重叠或文字溢出
-- 可访问性：键盘选择/打开、可见 focus、图标按钮名称、基础对比度、reduced motion
+1. 核心交互是否一致（含中间态）
+2. 是否仍可完成业务（写入 URL、中文、候选数据）
+3. 是否被项目 class 削到「完全不像官方」
 
-验收通过后在本文 Meta 追加样板确认日期和结论，才允许按同一壳扩展埋点、异常和大屏。若未通过，只迭代样板页，不并行铺第二页。
+未通过则先修包装层，不继续铺新页面皮肤。
+
+### Catalog / 响应式（保留）
+
+- viewport：1440 / 1024 / 390
+- 状态：loading / empty / noResults / error / partial
+- URL 分享、返回关 Record、Session 定位
+- 可访问性：可见 focus、键盘操作、图标按钮名称
 
 ## 硬约束
 
-1. 决策优先级：`FEATURES.md` > `KEEP_KILL_STEAL.md` > `DESIGN.md` > 目标工程惯例 > 组件库惯例
-2. 主数据区必须有 loading/empty/error，并按页面补 noResults/partial/notFound
-3. 最多一层浮层；关闭后恢复原选中项、焦点和滚动位置
-4. 颜色、间距、字号、圆角和层级走 token，禁止页内硬编码
-5. 单一视觉系统与唯一主题入口：`styles.css` / `@theme`
-6. Split/Workspace 必须有窄屏任务重组，不做桌面布局等比缩放
-7. 筛选和阅读状态可分享、可刷新、可前进后退恢复
-8. 样板页未验收通过前，禁止铺开第二个业务页面
-9. 类型编码与问题着色分离；无问题不强行上色
-10. Raw/JSON 置后；摘要优先；Preview 不替代完整 Record
-11. JsonViewer 仅克制复用，不得反向约束 Catalog 和筛选布局
-12. 不新增第二套事件模型；派生摘要必须能回查原始 envelope
+1. 决策优先级：`FEATURES.md` > `KEEP_KILL_STEAL.md` > 本文 **A–C 层** > shadcn 官方示例（Primitive）> 本文 D 层视觉偏好 > 工程惯例  
+2. 主数据区必须有 loading / empty / error，并按页面补 noResults / partial / notFound  
+3. 最多一层浮层；关闭后恢复选中、焦点与滚动  
+4. 单一主题入口：`styles.css`；业务不散落 hex  
+5. 筛选与阅读状态可分享、可刷新、可前进后退  
+6. 类型编码与问题着色分离；Catalog 无问题不强行整行上色  
+7. Raw/JSON 置后；Preview 不替代 Record  
+8. 不新增第二套事件模型；派生摘要必须能回查 envelope  
+9. **官方 Primitive / 官方示例组合的核心交互不可为灰白规范或 URL 便利而破坏**  
+10. 图表必须可 drilldown；禁止装饰性不可点图与 echarts 双引擎  
 
 ## 演进规则
 
-- 结构性 UI 变化，包括气质、信息架构、页面模式、主题入口、组件库和导航，必须先更新本文
-- 功能增删先更新 `FEATURES.md`；旧实现取舍变化先更新 `KEEP_KILL_STEAL.md`
-- 与代码冲突时以事实源文档为准，或在本文显式记录临时技术债和退出条件
-- HTTP 样板验收后，在 Meta 记录确认日期，再扩展埋点、异常和大屏
+- 改信息架构、页面模式、组件库策略或导航：先更新本文  
+- 功能增删：先更新 `FEATURES.md`  
+- 旧实现取舍：先更新 `KEEP_KILL_STEAL.md`  
+- 与代码冲突时以事实源为准，或在本文记录临时债与退出条件  
+- 视觉微调（间距、阴影、图表色）可跟官方组件迭代，不必每次升格为「全站宪法」修改；但破坏 A–C 层必须先改文档  
