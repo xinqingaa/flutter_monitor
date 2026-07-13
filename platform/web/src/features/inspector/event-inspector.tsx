@@ -3,12 +3,12 @@ import { AlertTriangle, Braces, ChevronDown, ChevronRight, Clipboard, ExternalLi
 import { useState } from 'react';
 import { CopyableId } from '../../components/common/copyable-id';
 import { EmptyState } from '../../components/common/empty-state';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
-import { useToast } from '../../components/ui/toast';
+import { useToast } from '../../components/common/toast';
 import type { JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import {
   appVersionOf,

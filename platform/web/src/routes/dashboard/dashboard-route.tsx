@@ -1,14 +1,37 @@
-import { AreaChart, BarChart, BarList, LineChart } from '@tremor/react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { AlertTriangle, MousePointerClick, Network, Rocket } from 'lucide-react';
-import { Badge } from '../../components/ui/badge';
+import { AlertTriangle, ArrowUpRight, MousePointerClick, Network, Rocket } from 'lucide-react';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import { Badge } from '../../components/common/status-badge';
 import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card';
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '../../components/ui/chart';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemSeparator, ItemTitle } from '../../components/ui/item';
 import { Skeleton } from '../../components/ui/skeleton';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { useBusinessActionSummaryQuery, useBusinessCatalogQuery, useDimensionsQuery, useErrorCatalogQuery, useFailureTimeseriesQuery, useHttpCatalogQuery, usePerformanceQuery } from '../../shared/datasource/queries';
 import type { BusinessActionSummaryItem, FailureTimeseriesPoint, SessionFilters } from '../../shared/datasource/types';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
+
+const qualityConfig = {
+  failedHttp: { label: '失败 HTTP', color: 'var(--chart-1)' },
+  errors: { label: '稳定性错误', color: 'var(--chart-4)' },
+  businessFailures: { label: '业务失败', color: 'var(--chart-2)' },
+} satisfies ChartConfig;
+const httpConfig = {
+  httpTotal: { label: '请求量', color: 'var(--chart-2)' },
+  failedHttp: { label: '失败请求', color: 'var(--destructive)' },
+} satisfies ChartConfig;
+const businessConfig = {
+  businessSuccess: { label: '成功', color: 'var(--chart-2)' },
+  businessFailures: { label: '失败', color: 'var(--destructive)' },
+  businessCancelled: { label: '取消', color: 'var(--chart-3)' },
+} satisfies ChartConfig;
+const startupConfig = { averageMs: { label: '平均耗时', color: 'var(--chart-1)' } } satisfies ChartConfig;
+const actionConfig = {
+  total: { label: '总量', color: 'var(--chart-2)' },
+  failed: { label: '失败', color: 'var(--destructive)' },
+} satisfies ChartConfig;
 
 export function DashboardRoute() {
   const search = useSearch({ from: '/' });
@@ -25,49 +48,89 @@ export function DashboardRoute() {
   const overview = performance.data;
   const startupTarget = overview?.startup.events.find((event) => event.sessionId && event.eventId);
   const points = trend.data?.points ?? [];
-  const rangeText = trend.data ? `${formatDateTime(trend.data.from)} 至 ${formatDateTime(trend.data.to)}` : '未选择范围时趋势默认近 24 小时';
+  const rangeText = trend.data ? `${formatDateTime(trend.data.from)} 至 ${formatDateTime(trend.data.to)}` : '未选择范围时默认近 24 小时';
   const patchScope = (patch: Record<string, unknown>) => void navigate({ search: (current) => clean({ ...current, ...patch }), replace: true });
+  const problems = [
+    ...(failedHttp.data?.items ?? []).map((item) => ({ id: item.eventId, title: `${item.method ?? 'HTTP'} ${pathOnly(item.url)}`, meta: `失败 HTTP · ${formatDateTime(item.timestamp)}`, href: `/http?eventId=${encodeURIComponent(item.eventId)}&detail=${encodeURIComponent(item.eventId)}` })),
+    ...(errors.data?.items ?? []).map((item) => ({ id: item.eventId, title: item.message ?? item.type, meta: `${item.kind === 'business_failure' ? '业务失败' : '稳定性错误'} · ${formatDateTime(item.timestamp)}`, href: `/errors?eventId=${encodeURIComponent(item.eventId)}&detail=${encodeURIComponent(item.eventId)}` })),
+  ].slice(0, 8);
 
-  return <div className="h-full overflow-auto bg-canvas">
+  return <div className="h-full overflow-auto bg-muted/30">
     <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patchScope} />
-    <div className="mx-auto grid max-w-[1520px] gap-4 p-4">
-      <section aria-label="核心指标" className="grid overflow-hidden rounded-lg border border-border bg-background md:grid-cols-2 xl:grid-cols-4">
-        <Metric href={startupTarget ? `/sessions/${encodeURIComponent(startupTarget.sessionId!)}?eventId=${encodeURIComponent(startupTarget.eventId!)}` : undefined} icon={Rocket} label="启动" value={overview?.startup.count ?? 0} detail={`冷启动平均 ${formatDuration(overview?.startup.coldStart.averageMs)} · 最慢 ${formatDuration(overview?.startup.coldStart.maxMs)}`} />
-        <Metric href={href('/http', search, { result: 'failed' })} icon={Network} label="HTTP" value={overview?.http.count ?? 0} detail={`${overview?.http.failedCount ?? 0} 失败 · ${overview?.http.slowCount ?? 0} 慢请求`} danger={Boolean(overview?.http.failedCount)} />
-        <Metric href={href('/business', search, { result: 'failed' })} icon={MousePointerClick} label="埋点" value={business.data?.total ?? 0} detail={`${businessFailed.data?.total ?? 0} 个失败动作`} danger={Boolean(businessFailed.data?.total)} />
-        <Metric href={href('/errors', search)} icon={AlertTriangle} label="异常" value={errors.data?.total ?? 0} detail={`${overview?.errors.affectedSessionCount ?? 0} 个受影响 Session`} danger={Boolean(errors.data?.total)} />
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6">
+      <section aria-label="核心指标" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard href={startupTarget ? `/sessions/${encodeURIComponent(startupTarget.sessionId!)}?eventId=${encodeURIComponent(startupTarget.eventId!)}` : undefined} icon={Rocket} label="启动" value={overview?.startup.count ?? 0} detail={`冷启动平均 ${formatDuration(overview?.startup.coldStart.averageMs)} · 最慢 ${formatDuration(overview?.startup.coldStart.maxMs)}`} />
+        <MetricCard href={href('/http', search, { result: 'failed' })} icon={Network} label="HTTP" value={overview?.http.count ?? 0} detail={`${overview?.http.failedCount ?? 0} 失败 · ${overview?.http.slowCount ?? 0} 慢请求`} danger={Boolean(overview?.http.failedCount)} />
+        <MetricCard href={href('/business', search, { result: 'failed' })} icon={MousePointerClick} label="埋点" value={business.data?.total ?? 0} detail={`${businessFailed.data?.total ?? 0} 个失败动作`} danger={Boolean(businessFailed.data?.total)} />
+        <MetricCard href={href('/errors', search)} icon={AlertTriangle} label="异常" value={errors.data?.total ?? 0} detail={`${overview?.errors.affectedSessionCount ?? 0} 个受影响 Session`} danger={Boolean(errors.data?.total)} />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <ChartPanel title="质量趋势" description={rangeText} className="xl:col-span-8"><QualityTrend query={trend} points={points} search={search} /></ChartPanel>
-        <ChartPanel title="HTTP 健康" description="请求量与失败请求" className="xl:col-span-4"><HttpHealth query={trend} points={points} search={search} /></ChartPanel>
-        <ChartPanel title="埋点结果趋势" description="成功、失败与取消动作" className="xl:col-span-8"><BusinessTrend query={trend} points={points} search={search} /></ChartPanel>
-        <ChartPanel title="业务动作排行" description="按当前范围统计 Top Action" className="xl:col-span-4"><ActionRanking query={actions} items={actions.data?.items ?? []} search={search} /></ChartPanel>
-        <ChartPanel title="启动趋势" description="冷启动平均耗时与慢启动次数" className="xl:col-span-8"><StartupTrend query={trend} points={points} /></ChartPanel>
-        <ProblemList title="最近问题" className="xl:col-span-4" items={[...(failedHttp.data?.items ?? []).map((item) => ({ id: item.eventId, title: `${item.method ?? 'HTTP'} ${pathOnly(item.url)}`, meta: `失败 HTTP · ${formatDateTime(item.timestamp)}`, href: `/http?eventId=${encodeURIComponent(item.eventId)}&detail=${encodeURIComponent(item.eventId)}` })), ...(errors.data?.items ?? []).map((item) => ({ id: item.eventId, title: item.message ?? item.type, meta: `${item.kind === 'business_failure' ? '业务失败' : '稳定性错误'} · ${formatDateTime(item.timestamp)}`, href: `/errors?eventId=${encodeURIComponent(item.eventId)}&detail=${encodeURIComponent(item.eventId)}` }))].slice(0, 8)} />
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <ChartCard title="质量趋势" description={rangeText} className="xl:col-span-8"><QualityTrend query={trend} points={points} search={search} /></ChartCard>
+        <ChartCard title="HTTP 健康" description="请求量与失败请求" className="xl:col-span-4"><HttpHealth query={trend} points={points} search={search} /></ChartCard>
+        <ChartCard title="埋点结果趋势" description="成功、失败与取消动作" className="xl:col-span-8"><BusinessTrend query={trend} points={points} search={search} /></ChartCard>
+        <ChartCard title="业务动作排行" description="按当前范围统计 Top Action" className="xl:col-span-4"><ActionRanking query={actions} items={actions.data?.items ?? []} search={search} /></ChartCard>
+        <ChartCard title="启动趋势" description="冷启动平均耗时与慢启动次数" className="xl:col-span-8"><StartupTrend query={trend} points={points} /></ChartCard>
+        <ProblemCard items={problems} className="xl:col-span-4" />
       </section>
     </div>
   </div>;
 }
 
-function Metric({ href: target, icon: Icon, label, value, detail, danger }: { href?: string; icon: typeof Rocket; label: string; value: number; detail: string; danger?: boolean }) { const content = <div className="grid min-h-28 content-between gap-3 border-b border-r border-border p-4 last:border-r-0 xl:border-b-0"><div className="flex items-center justify-between"><span className="text-sm font-medium text-muted-foreground">{label}</span><Icon className={danger ? 'size-4 text-status-danger' : 'size-4 text-muted-foreground'} /></div><div><div className={danger ? 'text-2xl font-semibold tabular-nums text-status-danger' : 'text-2xl font-semibold tabular-nums'}>{value}</div><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div></div>; return target ? <a href={target} className="outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">{content}</a> : <div aria-disabled="true">{content}</div>; }
-function ChartPanel({ title, description, children, className }: { title: string; description: string; children: React.ReactNode; className?: string }) { return <section className={`min-w-0 overflow-hidden rounded-lg border border-border bg-background ${className ?? ''}`}><header className="border-b border-border px-4 py-3"><h2 className="text-sm font-semibold">{title}</h2><p className="mt-0.5 text-xs text-muted-foreground">{description}</p></header><div className="min-h-72 p-4">{children}</div></section>; }
+function MetricCard({ href: target, icon: Icon, label, value, detail, danger }: { href?: string; icon: typeof Rocket; label: string; value: number; detail: string; danger?: boolean }) {
+  const card = <Card className="h-full transition-colors hover:bg-muted/50"><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">{label}</CardTitle><Icon className="text-muted-foreground" /></CardHeader><CardContent><div className={danger ? 'text-2xl font-bold tabular-nums text-destructive' : 'text-2xl font-bold tabular-nums'}>{value}</div><p className="mt-1 text-xs text-muted-foreground">{detail}</p></CardContent></Card>;
+  return target ? <a href={target} className="rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">{card}</a> : <div aria-disabled="true">{card}</div>;
+}
 
-function QualityTrend({ query, points, search }: ChartProps) { const data = points.map((point) => ({ bucket: bucketLabel(point), '失败 HTTP': point.failedHttp, '稳定性错误': point.errors, '业务失败': point.businessFailures })); if (!hasAny(data, ['失败 HTTP', '稳定性错误', '业务失败'])) return <ChartState query={query} />; return <div><AreaChart className="h-56" data={data} index="bucket" categories={['失败 HTTP', '稳定性错误', '业务失败']} colors={['rose', 'amber', 'blue']} showAnimation={false} /><DrillButtons buttons={[['失败 HTTP', '/http', { result: 'failed' }], ['稳定性错误', '/errors', {}], ['业务失败', '/errors', { businessOnly: true }]]} search={search} points={points} /></div>; }
-function HttpHealth({ query, points, search }: ChartProps) { const data = points.map((point) => ({ bucket: bucketLabel(point), '请求量': point.httpTotal, '失败请求': point.failedHttp })); if (!hasAny(data, ['请求量'])) return <ChartState query={query} />; return <div><BarChart className="h-56" data={data} index="bucket" categories={['请求量', '失败请求']} colors={['blue', 'rose']} showLegend valueFormatter={(value) => `${value} 条`} onValueChange={(row) => { const point = points.find((item) => bucketLabel(item) === row?.bucket); if (point) window.location.assign(href('/http', search, { from: point.from, to: point.to })); }} /></div>; }
-function BusinessTrend({ query, points, search }: ChartProps) { const data = points.map((point) => ({ bucket: bucketLabel(point), '成功': point.businessSuccess, '失败': point.businessFailures, '取消': point.businessCancelled })); if (!hasAny(data, ['成功', '失败', '取消'])) return <ChartState query={query} />; return <div><BarChart className="h-56" data={data} index="bucket" categories={['成功', '失败', '取消']} colors={['emerald', 'rose', 'slate']} stack showAnimation={false} /><DrillButtons buttons={[['成功', '/business', { result: 'success' }], ['失败', '/business', { result: 'failed' }], ['取消', '/business', { result: 'cancelled' }]]} search={search} points={points} /></div>; }
-function ActionRanking({ query, items, search }: { query: QueryLike; items: BusinessActionSummaryItem[]; search: Record<string, unknown> }) { if (query.isLoading) return <ChartLoading />; if (query.isError) return <ChartEmpty title="排行加载失败" description="请稍后重试" danger />; if (!items.length) return <ChartEmpty title="没有业务动作" description="当前范围没有可排行的埋点" />; const data = items.map((item) => ({ name: item.action, value: item.total, href: href('/business', search, { action: item.action }) })); return <div><BarList data={data} className="mt-2" valueFormatter={(value: number) => `${value} 次`} /><div className="mt-4 space-y-1 border-t border-border pt-3">{items.slice(0, 5).map((item) => <a key={item.action} href={href('/business', search, { action: item.action, ...(item.failed ? { result: 'failed' } : {}) })} className="flex items-center justify-between rounded-md px-2 py-1 text-xs hover:bg-accent"><span className="truncate">{item.action}</span><span className={item.failed ? 'text-status-danger' : 'text-muted-foreground'}>{item.failed} 失败</span></a>)}</div></div>; }
-function StartupTrend({ query, points }: Omit<ChartProps, 'search'>) { const data = points.map((point) => ({ bucket: bucketLabel(point), '平均耗时': point.coldStartCount ? Math.round(point.coldStartTotalMs / point.coldStartCount) : 0, '慢启动': point.coldStartSlowCount, _point: point })); if (!hasAny(data, ['平均耗时'])) return <ChartState query={query} />; return <div><LineChart className="h-56" data={data} index="bucket" categories={['平均耗时']} colors={['blue']} valueFormatter={(value) => formatDuration(value)} onValueChange={(row) => { const point = points.find((item) => bucketLabel(item) === row?.bucket); if (point?.startupEventId && point.startupSessionId) window.location.assign(`/sessions/${encodeURIComponent(point.startupSessionId)}?eventId=${encodeURIComponent(point.startupEventId)}`); }} /><div className="mt-3 flex flex-wrap gap-2">{points.filter((point) => point.coldStartSlowCount > 0).slice(-6).map((point) => <Button key={point.from} size="sm" variant="outline" className="shadow-none" disabled={!point.startupEventId || !point.startupSessionId} onClick={() => point.startupEventId && point.startupSessionId && window.location.assign(`/sessions/${encodeURIComponent(point.startupSessionId)}?eventId=${encodeURIComponent(point.startupEventId)}`)}>{bucketLabel(point)} · {point.coldStartSlowCount} 次慢启动</Button>)}</div></div>; }
+function ChartCard({ title, description, children, className }: { title: string; description: string; children: React.ReactNode; className?: string }) {
+  return <Card className={className}><CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent>{children}</CardContent></Card>;
+}
 
-function DrillButtons({ buttons, search, points }: { buttons: Array<[string, string, Record<string, unknown>]>; search: Record<string, unknown>; points: FailureTimeseriesPoint[] }) { return <div className="mt-2 grid gap-1 sm:grid-cols-3">{buttons.map(([label, path, extra]) => <Button key={label} size="sm" variant="ghost" onClick={() => { const point = [...points].reverse().find((item) => label === '失败 HTTP' ? item.failedHttp : label === '稳定性错误' ? item.errors : label === '业务失败' || label === '失败' ? item.businessFailures : label === '成功' ? item.businessSuccess : item.businessCancelled); if (point) window.location.assign(href(path, search, { ...extra, from: point.from, to: point.to })); }}>{`查看${label}`}</Button>)}</div>; }
+function QualityTrend({ query, points, search }: ChartProps) {
+  const data = chartData(points);
+  if (!hasPoint(points, (point) => point.failedHttp + point.errors + point.businessFailures)) return <ChartState query={query} />;
+  return <><ChartContainer config={qualityConfig} className="h-64 w-full"><AreaChart accessibilityLayer data={data} onClick={(state) => drillBucket(state?.activeLabel, points, '/errors', search)}><CartesianGrid vertical={false} /><XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} /><ChartTooltip content={<ChartTooltipContent />} /><ChartLegend content={<ChartLegendContent />} /><Area dataKey="failedHttp" type="natural" fill="var(--color-failedHttp)" fillOpacity={0.25} stroke="var(--color-failedHttp)" stackId="quality" /><Area dataKey="errors" type="natural" fill="var(--color-errors)" fillOpacity={0.25} stroke="var(--color-errors)" stackId="quality" /><Area dataKey="businessFailures" type="natural" fill="var(--color-businessFailures)" fillOpacity={0.25} stroke="var(--color-businessFailures)" stackId="quality" /></AreaChart></ChartContainer><CardFooter className="gap-2 p-0 pt-4"><Button size="sm" variant="outline" asChild><a href={href('/http', search, { result: 'failed' })}>失败 HTTP</a></Button><Button size="sm" variant="outline" asChild><a href={href('/errors', search)}>查看异常</a></Button></CardFooter></>;
+}
+
+function HttpHealth({ query, points, search }: ChartProps) {
+  const data = chartData(points);
+  if (!hasPoint(points, (point) => point.httpTotal)) return <ChartState query={query} />;
+  return <ChartContainer config={httpConfig} className="h-64 w-full"><BarChart accessibilityLayer data={data} onClick={(state) => drillBucket(state?.activeLabel, points, '/http', search)}><CartesianGrid vertical={false} /><XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} /><ChartTooltip content={<ChartTooltipContent />} /><ChartLegend content={<ChartLegendContent />} /><Bar dataKey="httpTotal" fill="var(--color-httpTotal)" radius={4} /><Bar dataKey="failedHttp" fill="var(--color-failedHttp)" radius={4} /></BarChart></ChartContainer>;
+}
+
+function BusinessTrend({ query, points, search }: ChartProps) {
+  const data = chartData(points);
+  if (!hasPoint(points, (point) => point.businessSuccess + point.businessFailures + point.businessCancelled)) return <ChartState query={query} />;
+  return <ChartContainer config={businessConfig} className="h-64 w-full"><BarChart accessibilityLayer data={data} onClick={(state) => drillBucket(state?.activeLabel, points, '/business', search)}><CartesianGrid vertical={false} /><XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} /><ChartTooltip content={<ChartTooltipContent />} /><ChartLegend content={<ChartLegendContent />} /><Bar dataKey="businessSuccess" stackId="business" fill="var(--color-businessSuccess)" radius={[0, 0, 4, 4]} /><Bar dataKey="businessFailures" stackId="business" fill="var(--color-businessFailures)" /><Bar dataKey="businessCancelled" stackId="business" fill="var(--color-businessCancelled)" radius={[4, 4, 0, 0]} /></BarChart></ChartContainer>;
+}
+
+function ActionRanking({ query, items, search }: { query: QueryLike; items: BusinessActionSummaryItem[]; search: Record<string, unknown> }) {
+  if (query.isLoading) return <ChartLoading />;
+  if (query.isError) return <ChartEmpty title="排行加载失败" description="请稍后重试" danger />;
+  if (!items.length) return <ChartEmpty title="没有业务动作" description="当前范围没有可排行的埋点" />;
+  const data = items.slice(0, 6).map((item) => ({ action: item.action, total: item.total, failed: item.failed }));
+  return <><ChartContainer config={actionConfig} className="h-52 w-full"><BarChart accessibilityLayer data={data} layout="vertical" margin={{ left: 8 }}><CartesianGrid horizontal={false} /><YAxis dataKey="action" type="category" tickLine={false} axisLine={false} width={110} tickFormatter={(value) => String(value).slice(0, 16)} /><XAxis type="number" hide /><ChartTooltip content={<ChartTooltipContent />} /><Bar dataKey="total" fill="var(--color-total)" radius={4} /><Bar dataKey="failed" fill="var(--color-failed)" radius={4} /></BarChart></ChartContainer><ItemGroup>{items.slice(0, 4).map((item, index) => <div key={item.action}><Item asChild size="sm"><a href={href('/business', search, { action: item.action })}><ItemContent><ItemTitle>{item.action}</ItemTitle><ItemDescription>{item.total} 次</ItemDescription></ItemContent><ItemActions><Badge tone={item.failed ? 'danger' : 'neutral'}>{item.failed} 失败</Badge></ItemActions></a></Item>{index < Math.min(items.length, 4) - 1 ? <ItemSeparator /> : null}</div>)}</ItemGroup></>;
+}
+
+function StartupTrend({ query, points }: Omit<ChartProps, 'search'>) {
+  const data = chartData(points).map((row, index) => ({ ...row, averageMs: points[index].coldStartCount ? Math.round(points[index].coldStartTotalMs / points[index].coldStartCount) : 0 }));
+  if (!hasPoint(points, (point) => point.coldStartCount)) return <ChartState query={query} />;
+  return <><ChartContainer config={startupConfig} className="h-64 w-full"><LineChart accessibilityLayer data={data} onClick={(state) => { const point = points.find((item) => bucketLabel(item) === state?.activeLabel); if (point?.startupEventId && point.startupSessionId) window.location.assign(`/sessions/${encodeURIComponent(point.startupSessionId)}?eventId=${encodeURIComponent(point.startupEventId)}`); }}><CartesianGrid vertical={false} /><XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} /><ChartTooltip content={<ChartTooltipContent formatter={(value) => <span className="font-mono font-medium">{formatDuration(Number(value))}</span>} />} /><Line dataKey="averageMs" type="natural" stroke="var(--color-averageMs)" strokeWidth={2} dot={false} /></LineChart></ChartContainer><CardFooter className="flex-wrap gap-2 p-0 pt-4">{points.filter((point) => point.coldStartSlowCount > 0).slice(-4).map((point) => <Button key={point.from} size="sm" variant="outline" disabled={!point.startupEventId || !point.startupSessionId} onClick={() => point.startupEventId && point.startupSessionId && window.location.assign(`/sessions/${encodeURIComponent(point.startupSessionId)}?eventId=${encodeURIComponent(point.startupEventId)}`)}>{bucketLabel(point)} · {point.coldStartSlowCount} 次慢启动</Button>)}</CardFooter></>;
+}
+
+function ProblemCard({ items, className }: { items: Array<{ id: string; title: string; meta: string; href: string }>; className?: string }) {
+  return <Card className={className}><CardHeader className="flex flex-row items-center justify-between space-y-0"><div><CardTitle>最近问题</CardTitle><CardDescription>失败 HTTP、业务失败与稳定性错误</CardDescription></div><Badge tone={items.length ? 'danger' : 'neutral'}>{items.length}</Badge></CardHeader><CardContent>{items.length ? <ItemGroup>{items.map((item, index) => <div key={item.id}><Item asChild size="sm"><a href={item.href}><ItemMedia variant="icon"><AlertTriangle /></ItemMedia><ItemContent><ItemTitle className="line-clamp-1">{item.title}</ItemTitle><ItemDescription>{item.meta}</ItemDescription></ItemContent><ItemActions><ArrowUpRight /></ItemActions></a></Item>{index < items.length - 1 ? <ItemSeparator /> : null}</div>)}</ItemGroup> : <ChartEmpty title="当前没有问题" description="范围内没有失败 HTTP 或异常" />}</CardContent></Card>;
+}
+
 function ChartState({ query }: { query: QueryLike }) { return query.isLoading ? <ChartLoading /> : query.isError ? <ChartEmpty title="图表加载失败" description="请检查服务后重试" danger /> : <ChartEmpty title="当前范围没有数据" description="调整日期或其它范围条件" />; }
-function ChartLoading() { return <div className="space-y-3"><Skeleton className="h-4 w-32" /><Skeleton className="h-52 w-full" /></div>; }
-function ChartEmpty({ title, description, danger }: { title: string; description: string; danger?: boolean }) { return <Empty className="h-60 border-0 p-4"><EmptyHeader><EmptyMedia variant="icon">{danger ? <AlertTriangle className="text-status-danger" /> : <Network />}</EmptyMedia><EmptyTitle className="text-sm">{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader></Empty>; }
-function ProblemList({ title, items, className }: { title: string; items: Array<{ id: string; title: string; meta: string; href: string }>; className?: string }) { return <section className={`min-w-0 overflow-hidden rounded-lg border border-border bg-background ${className ?? ''}`}><header className="flex h-[61px] items-center gap-2 border-b border-border px-4"><h2 className="text-sm font-semibold">{title}</h2><Badge tone={items.length ? 'danger' : 'neutral'}>{items.length}</Badge></header>{items.length ? <div>{items.map((item) => <a key={item.id} href={item.href} className="block border-b border-border px-4 py-2.5 last:border-0 hover:bg-accent/50"><div className="truncate text-sm font-medium">{item.title}</div><div className="mt-1 text-xs text-muted-foreground">{item.meta}</div></a>)}</div> : <ChartEmpty title="当前没有问题" description="范围内没有失败 HTTP 或异常" />}</section>; }
+function ChartLoading() { return <div className="flex h-64 flex-col gap-4"><Skeleton className="h-4 w-32" /><Skeleton className="flex-1 w-full" /></div>; }
+function ChartEmpty({ title, description, danger }: { title: string; description: string; danger?: boolean }) { return <Empty className="h-64 border-0"><EmptyHeader><EmptyMedia variant="icon">{danger ? <AlertTriangle className="text-destructive" /> : <Network />}</EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader></Empty>; }
 
 type QueryLike = { isLoading: boolean; isError: boolean };
 type ChartProps = { query: QueryLike; points: FailureTimeseriesPoint[]; search: Record<string, unknown> };
-function hasAny(data: Array<Record<string, unknown>>, keys: string[]) { return data.some((row) => keys.some((key) => Number(row[key] ?? 0) > 0)); }
+function chartData(points: FailureTimeseriesPoint[]) { return points.map((point) => ({ ...point, bucket: bucketLabel(point) })); }
+function hasPoint(points: FailureTimeseriesPoint[], read: (point: FailureTimeseriesPoint) => number) { return points.some((point) => read(point) > 0); }
+function drillBucket(label: unknown, points: FailureTimeseriesPoint[], path: string, search: Record<string, unknown>) { if (typeof label !== 'string') return; const point = points.find((item) => bucketLabel(item) === label); if (point) window.location.assign(href(path, search, { from: point.from, to: point.to })); }
 function bucketLabel(point: FailureTimeseriesPoint) { return formatDateTime(point.from).slice(5, 16); }
 function scopeQuery(search: Record<string, unknown>): SessionFilters { const list = (value: unknown) => typeof value === 'string' ? value.split(',').filter(Boolean) : undefined; return { appKey: list(search.appKey), environment: list(search.environment), appVersion: list(search.appVersion), devicePlatform: list(search.devicePlatform), from: typeof search.from === 'string' ? search.from : undefined, to: typeof search.to === 'string' ? search.to : undefined, userId: typeof search.userId === 'string' ? search.userId : undefined, sessionId: typeof search.sessionId === 'string' ? search.sessionId : undefined, route: list(search.route) }; }
 function bucketFor(scope: SessionFilters) { const span = (Date.parse(scope.to ?? '') || Date.now()) - (Date.parse(scope.from ?? '') || Date.now() - 86400000); return span > 7 * 86400000 ? 'day' : 'hour'; }

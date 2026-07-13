@@ -1,7 +1,7 @@
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, type LucideIcon } from 'lucide-react';
 import type * as React from 'react';
 import { useEffect, useState } from 'react';
-import { IconTooltipButton } from '../ui/icon-tooltip-button';
+import { IconTooltipButton } from '../common/icon-tooltip-button';
 import { cn } from '../../shared/formatting/cn';
 
 type PanelSide = 'left' | 'right';

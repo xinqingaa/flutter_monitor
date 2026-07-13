@@ -1,6 +1,6 @@
 import { Copy } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useToast } from '../ui/toast';
+import { useToast } from './toast';
 import { copyText } from '../../shared/formatting/download';
 
 export function CopyableId({ value, short = true }: { value?: string; short?: boolean }) {

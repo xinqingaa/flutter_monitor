@@ -71,8 +71,9 @@
 | --- | --- |
 | 现有一级导航 | Overview + Sessions + Startup/Pages/Network/Jank/Errors 与 FEATURES「大屏 / HTTP / 埋点 / 异常」不一致 |
 | 现有页面视觉与布局 | 卡片堆叠、密度与筛选体验整体不满意 |
-| 当前 Dashboard / HTTP 页面组合 | 不以现有卡片、Toolbar、ChartPanel 或空间安排为样板 |
-| `--fm-*` 主题与旧视觉 token | 不作为新 Workbench 的设计基线 |
+| 当前 Dashboard / HTTP 页面组合 | 包括当前未验收样板；不以现有卡片、Toolbar、MetricCard、ChartPanel 或空间安排为基线 |
+| `--fm-*`、兼容 alias 与业务视觉 token | 只允许作为迁移兼容层，不构成新 Workbench 的设计系统或页面用色来源 |
+| 业务化 `components/ui` API | Kill 把 options、查询状态或领域语义塞进官方 primitive；业务适配必须位于 `features` 或 `components/common` |
 | Session 作为唯一主入口的产品叙事 | 新主路径是信号类型列表；Session 降为二级链路组装 |
 | 默认主路径上的 jank / memory / native | FEATURES 明确不做；旧 chip/卡会干扰核心证据 |
 | 用通用事件流冒充 HTTP Catalog | `/events` + `recent` 无法满足海量请求列表 |
@@ -163,6 +164,7 @@ HTTP 已验证该结构（请求/响应分 Tab）。埋点、异常共用同一�
 3. JsonViewer：**克制复用**——过渡期可用，DESIGN 锁定后按规范替换或包一层，不以其视觉定全站。  
 4. Session 首批只做打开 + 选中 event + 简单时间线。  
 5. 功能边界变更先改 `FEATURES.md`，结构性 UI 变更先改 `DESIGN.md`，再改代码；禁止「先美化旧页」。
+6. 当前未验收的 Dashboard、HTTP、Session 截图和 JSX 都属于问题样本；只有通过阶段验收的官方基线样板才能成为后续页面参考。
 
 ---
 

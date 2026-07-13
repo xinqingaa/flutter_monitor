@@ -1,4 +1,4 @@
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { fieldDefinitions } from '../../shared/field-dictionary/fields';
 import type { MonitorEvent } from '../../shared/datasource/types';
 import { readCanonicalPath } from '../../shared/event-model/field-path';

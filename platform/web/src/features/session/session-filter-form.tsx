@@ -1,6 +1,6 @@
 import { FilterX } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import { Select } from '../../components/ui/select';
+import { FilterSelect } from '../../components/common/filter-select';
 import { dimensionOptions, problemOptions } from '../../features/scope/filter-options';
 import { isoToLocalInput, localInputToIso } from '../../shared/formatting/format';
 import type { DimensionSummary, SessionFilters } from '../../shared/datasource/types';
@@ -26,14 +26,14 @@ export function SessionFilterForm({
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_140px_auto]">
       <DateTimeBox ariaLabel="起始时间" value={filters.from} onChange={(from) => patch({ from })} />
       <DateTimeBox ariaLabel="结束时间" value={filters.to} onChange={(to) => patch({ to })} />
-      <Select
+      <FilterSelect
         ariaLabel="会话状态"
         placeholder="全部状态"
         value={stringFilterValue(filters.status)}
         onChange={(status) => patch({ status })}
         options={dimensionOptions(dimensions?.statuses)}
       />
-      <Select
+      <FilterSelect
         ariaLabel="问题类型"
         placeholder="全部问题"
         value={stringFilterValue(filters.problemType)}

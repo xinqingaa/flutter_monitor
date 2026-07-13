@@ -11,10 +11,10 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { EmptyState } from '../../components/common/empty-state';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 import { Input } from '../../components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type {

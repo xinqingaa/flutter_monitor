@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { AlertTriangle, BadgeAlert, Gauge, Globe2 } from 'lucide-react';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import type { SessionSummary } from '../../shared/datasource/types';
 import { formatDateTime } from '../../shared/formatting/format';
 import { statusLabel } from '../../shared/event-model/status';

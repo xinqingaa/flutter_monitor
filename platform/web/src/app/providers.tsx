@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { useState } from 'react';
 import { TooltipProvider } from '../components/ui/tooltip';
-import { ToastProvider } from '../components/ui/toast';
+import { ToastProvider } from '../components/common/toast';
 import { router } from './router';
 
 export function AppProviders() {

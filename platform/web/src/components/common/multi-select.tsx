@@ -2,7 +2,7 @@ import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown } from 'lucide-react';
 import type * as React from 'react';
 import { cn } from '../../shared/formatting/cn';
-import type { SelectOption } from './select';
+import type { FilterSelectOption } from './filter-select';
 
 export function MultiSelect({
   values,
@@ -16,7 +16,7 @@ export function MultiSelect({
 }: {
   values?: string[];
   placeholder: string;
-  options: SelectOption[];
+  options: FilterSelectOption[];
   onChange: (values?: string[]) => void;
   className?: string;
   ariaLabel?: string;

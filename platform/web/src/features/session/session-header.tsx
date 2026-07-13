@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Cpu, Download, HardDrive, Info, ListTree, Route, Send, Smartphone, User } from 'lucide-react';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Card, CardContent } from '../../components/ui/card';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
-import { Dialog } from '../../components/ui/dialog';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
+import { Dialog } from '../../components/common/legacy-dialog';
 import type { JsonObject, MonitorEvent, SessionConsoleResult, SessionSummary } from '../../shared/datasource/types';
 import { appVersionOf, environmentOf, readPath, routeOf, stringPath, userIdOf } from '../../shared/event-model/accessors';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';

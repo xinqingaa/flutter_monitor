@@ -1,10 +1,10 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { Clipboard, PanelRightOpen } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Button } from '../../components/ui/button';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
-import { useToast } from '../../components/ui/toast';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
+import { useToast } from '../../components/common/toast';
 import type { SessionConsoleRow } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
 import { formatDuration } from '../../shared/formatting/format';

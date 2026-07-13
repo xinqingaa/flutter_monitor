@@ -1,5 +1,8 @@
-import { ExternalLink, MoreHorizontal } from 'lucide-react';
+import { ExternalLink, GitBranch, MoreHorizontal } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { Button } from '../../components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import type { HttpCatalogItem } from '../../shared/datasource/types';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
@@ -21,12 +24,12 @@ export function HttpCatalogTable({ items, state, selectedId, fullUrl, slowThresh
     return <CatalogMessage state={state} onRetry={onRetry} />;
   }
   return (
-    <div className="h-full overflow-auto bg-surface">
-      {state === 'partial' ? <div className="sticky top-0 z-20 border-b border-status-warning bg-status-warning-subtle px-3 py-1 text-xs text-status-warning">部分 HTTP 详情已被剥离，列表事实字段仍可查询。</div> : null}
-      <Table className="min-w-[760px] table-fixed text-left text-xs">
-        <TableHeader className="sticky top-0 z-10 bg-subtle text-text-secondary">
-          <TableRow className="h-9 border-border-default hover:bg-subtle">
-            <TableHead className="w-[150px] px-2">时间</TableHead><TableHead className="w-[70px] px-2">方法</TableHead><TableHead className="px-2">URL</TableHead><TableHead className="w-[72px] px-2 text-right">状态码</TableHead><TableHead className="w-[88px] px-2 text-right max-[1180px]:hidden">业务码</TableHead><TableHead className="w-[82px] px-2 text-right">耗时</TableHead><TableHead className="w-[120px] px-2 max-[1180px]:hidden">关联路由</TableHead><TableHead className="w-[54px] px-2" />
+    <div className="h-full overflow-auto">
+      {state === 'partial' ? <div className="border-b bg-muted px-4 py-2 text-sm text-muted-foreground">部分 HTTP 详情已被剥离，列表事实字段仍可查询。</div> : null}
+      <Table className="min-w-[860px] table-fixed">
+        <TableHeader className="sticky top-0 bg-background">
+          <TableRow>
+            <TableHead className="w-[160px]">时间</TableHead><TableHead className="w-[76px]">方法</TableHead><TableHead>URL</TableHead><TableHead className="w-[88px] text-right">状态码</TableHead><TableHead className="w-[96px] text-right">业务码</TableHead><TableHead className="w-[92px] text-right">耗时</TableHead><TableHead className="w-[140px]">关联路由</TableHead><TableHead className="w-[52px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -37,8 +40,8 @@ export function HttpCatalogTable({ items, state, selectedId, fullUrl, slowThresh
               <TableRow
                 key={item.eventId}
                 tabIndex={0}
-                aria-selected={item.eventId === selectedId}
-                className={cn('h-9 cursor-default border-b border-border-muted text-text-primary outline-none hover:bg-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-interactive-focusRing', item.eventId === selectedId && 'bg-selected')}
+                data-state={item.eventId === selectedId ? 'selected' : undefined}
+                className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 onClick={() => onSelect(item)}
                 onDoubleClick={() => onOpen(item)}
                 onKeyDown={(event) => {
@@ -46,14 +49,19 @@ export function HttpCatalogTable({ items, state, selectedId, fullUrl, slowThresh
                   if (event.key === ' ') { event.preventDefault(); onSelect(item); }
                 }}
               >
-                <TableCell className="overflow-hidden px-2 font-mono text-[11px] text-text-secondary" title={item.timestamp}>{formatTime(item.timestamp)}</TableCell>
-                <TableCell className="overflow-hidden px-2"><span className="font-mono font-semibold">{item.method ?? '-'}</span></TableCell>
-                <TableCell className="overflow-hidden px-2"><span title={item.url} className="block truncate font-mono">{displayUrl(item.url, fullUrl)}</span></TableCell>
-                <TableCell className={cn('overflow-hidden px-2 text-right font-mono tabular-nums', failed && 'font-semibold text-status-danger')}>{item.statusCode ?? '-'}</TableCell>
-                <TableCell className="overflow-hidden px-2 text-right font-mono tabular-nums max-[1180px]:hidden"><span title={businessCodeTitle(item)}>{item.businessCode ?? stateMark(item.businessCodeState)}</span></TableCell>
-                <TableCell className={cn('overflow-hidden px-2 text-right font-mono tabular-nums', slow && 'font-semibold text-status-warning')}>{formatDuration(item.durationMs)}</TableCell>
-                <TableCell className="overflow-hidden px-2 max-[1180px]:hidden"><span className="block truncate" title={item.route}>{item.route ?? '-'}</span></TableCell>
-                <TableCell className="overflow-hidden px-2"><Button size="icon" variant="ghost" className="size-7" aria-label="打开 HTTP 详情" onClick={(event) => { event.stopPropagation(); onOpen(item); }}><ExternalLink /></Button></TableCell>
+                <TableCell className="overflow-hidden font-mono text-xs text-muted-foreground" title={item.timestamp}>{formatTime(item.timestamp)}</TableCell>
+                <TableCell className="overflow-hidden font-mono font-medium">{item.method ?? '-'}</TableCell>
+                <TableCell className="overflow-hidden"><span title={item.url} className="block truncate font-mono text-xs">{displayUrl(item.url, fullUrl)}</span></TableCell>
+                <TableCell className={cn('overflow-hidden text-right font-mono tabular-nums', failed && 'font-medium text-destructive')}>{item.statusCode ?? '-'}</TableCell>
+                <TableCell className="overflow-hidden text-right font-mono tabular-nums"><span title={businessCodeTitle(item)}>{item.businessCode ?? stateMark(item.businessCodeState)}</span></TableCell>
+                <TableCell className={cn('overflow-hidden text-right font-mono tabular-nums', slow && 'font-medium')}>{formatDuration(item.durationMs)}</TableCell>
+                <TableCell className="overflow-hidden"><span className="block truncate" title={item.route}>{item.route ?? '-'}</span></TableCell>
+                <TableCell onClick={(event) => event.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label="HTTP 行操作"><MoreHorizontal /></Button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuItem onSelect={() => onOpen(item)}><ExternalLink />打开详情</DropdownMenuItem>{item.sessionId ? <DropdownMenuItem asChild><Link to="/sessions/$sessionId" params={{ sessionId: item.sessionId }} search={{ eventId: item.eventId }}><GitBranch />查看 Session</Link></DropdownMenuItem> : null}</DropdownMenuGroup></DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
               </TableRow>
             );
           })}
@@ -65,7 +73,7 @@ export function HttpCatalogTable({ items, state, selectedId, fullUrl, slowThresh
 
 function CatalogMessage({ state, onRetry }: { state: Exclude<CatalogState, 'ready' | 'partial'>; onRetry: () => void }) {
   const content = state === 'loading' ? ['正在加载 HTTP 请求', ''] : state === 'empty' ? ['暂无 HTTP 请求', '等待应用产生网络请求。'] : state === 'noResults' ? ['没有匹配结果', '调整或清除筛选条件。'] : ['HTTP 请求加载失败', '请检查 Monitor Service 后重试。'];
-  return <div className="grid h-full place-items-center p-6 text-center"><div><MoreHorizontal className="mx-auto mb-2 size-5 text-text-muted" /><p className="text-sm font-medium text-text-primary">{content[0]}</p><p className="mt-1 text-xs text-text-secondary">{content[1]}</p>{state === 'error' ? <Button className="mt-3" size="sm" onClick={onRetry}>重试</Button> : null}</div></div>;
+  return <Empty className="h-full border-0"><EmptyHeader><EmptyMedia variant="icon"><MoreHorizontal /></EmptyMedia><EmptyTitle>{content[0]}</EmptyTitle><EmptyDescription>{content[1]}</EmptyDescription>{state === 'error' ? <Button size="sm" onClick={onRetry}>重试</Button> : null}</EmptyHeader></Empty>;
 }
 
 function displayUrl(url: string | undefined, full: boolean): string {

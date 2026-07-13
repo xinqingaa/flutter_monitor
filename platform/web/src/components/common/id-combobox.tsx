@@ -1,8 +1,8 @@
 import { Check, ChevronsUpDown, X } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from './button';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './command';
-import { Popover, PopoverContent, PopoverTrigger } from './popover';
+import { Button } from '../ui/button';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '../ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import type { DimensionOption } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';
 

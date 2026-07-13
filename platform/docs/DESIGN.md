@@ -2,12 +2,12 @@
 
 ## Meta
 
-- status: draft
+- status: active
 - last_updated: 2026-07-13
 - 功能事实源：[`FEATURES.md`](FEATURES.md)
 - 旧实现取舍：[`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)
 - 实施计划：[`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)
-- 当前状态：现有 Workbench 视觉不作为基线，新的 PC 基线尚未验收
+- 当前状态：阶段 0–2 已完成；HTTP Catalog 是下一个官方基线样板
 
 本文只定义 Workbench 的产品气质、信息架构和实现原则。它不定义一套独立于 shadcn 的视觉系统，也不规定组件的像素尺寸、颜色、圆角、阴影、z-index 或具体页面排版。
 
@@ -76,6 +76,7 @@ pnpm dlx shadcn@latest add <component> --dry-run
 - 不为一个页面另造一套 spacing、颜色、圆角、阴影或 overlay 规则。
 - 需要领域组合时，采用官方组件的直接组合，并尽量保持官方示例的 DOM 层次和交互行为。
 - `components/ui` 不放业务字段和领域判断；业务组合不复制官方 primitive 的实现。
+- `components/ui` 保持官方导出粒度和 API。`options`、URL sentinel、查询状态、领域文案等适配必须放在 `features` 或 `components/common`，不得改写官方 primitive API。
 
 推荐的官方能力映射：
 
@@ -94,7 +95,7 @@ pnpm dlx shadcn@latest add <component> --dry-run
 
 ## 主题与颜色
 
-主题以 shadcn 官方 CSS variables 和当前 preset 为基准。第一轮不建立 `--fm-*` 设计系统，不要求业务页面消费自定义颜色 token。
+主题以 shadcn 官方 CSS variables 和当前配置为基准。第一轮不建立 `--fm-*` 设计系统，不要求业务页面消费自定义颜色 token。旧页面所需 alias 只能作为迁移兼容层，并在阶段 7 删除。
 
 业务代码优先使用官方语义类名和组件 variants，例如 `bg-background`、`text-muted-foreground`、`border-border`、`variant="outline"` 和 `variant="secondary"`。状态色只用于表达真实状态，不能把普通数据行装饰成彩色列表。
 

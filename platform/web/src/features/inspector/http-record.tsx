@@ -3,14 +3,14 @@ import { AlertTriangle, Copy } from 'lucide-react';
 import { RecordShell } from './record-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Button } from '../../components/ui/button';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { CopyableId } from '../../components/common/copyable-id';
 import { JsonViewer } from './json-viewer';
 import type { HttpCatalogItem, MonitorEvent } from '../../shared/datasource/types';
 import { readPath } from '../../shared/event-model/accessors';
 import { formatDuration } from '../../shared/formatting/format';
 import { copyText } from '../../shared/formatting/download';
-import { useToast } from '../../components/ui/toast';
+import { useToast } from '../../components/common/toast';
 
 export function HttpRecord({ open, item, event, loading, error, onOpenChange }: {
   open: boolean;

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Key
 import { EmptyState } from '../../components/common/empty-state';
 import { CollapsiblePanel, CollapsiblePanelAction, FloatingPanelToggle, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
 import { Button } from '../../components/ui/button';
-import { Dialog } from '../../components/ui/dialog';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { Dialog } from '../../components/common/legacy-dialog';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 import { Input } from '../../components/ui/input';
 import { EventInspector } from '../../features/inspector/event-inspector';
 import { HttpInspectorDialog } from '../../features/inspector/http-inspector';

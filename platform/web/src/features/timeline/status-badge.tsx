@@ -1,4 +1,4 @@
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventDisplay } from '../../shared/event-model/display';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';

@@ -1,7 +1,7 @@
 import { FilterX, Search } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Select } from '../../components/ui/select';
+import { FilterSelect } from '../../components/common/filter-select';
 import { dimensionOptions, problemOptions } from '../scope/filter-options';
 import type { DimensionSummary } from '../../shared/datasource/types';
 import type { SessionListFilters } from './session-list-filters';
@@ -31,21 +31,21 @@ export function SessionListFilterForm({
           onChange={(event) => onChange({ sessionId: event.target.value || undefined })}
         />
       </div>
-      <Select
+      <FilterSelect
         ariaLabel="页面"
         placeholder="全部页面"
         value={filters.route}
         onChange={(route) => onChange({ route })}
         options={dimensionOptions(dimensions?.routes)}
       />
-      <Select
+      <FilterSelect
         ariaLabel="会话状态"
         placeholder="全部状态"
         value={filters.status}
         onChange={(status) => onChange({ status })}
         options={dimensionOptions(dimensions?.statuses)}
       />
-      <Select
+      <FilterSelect
         ariaLabel="问题类型"
         placeholder="全部问题"
         value={filters.problemType}

@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { PanelLeftOpen, PanelRightOpen, Search, X } from 'lucide-react';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type { SessionSummary } from '../../shared/datasource/types';
 import { cn } from '../../shared/formatting/cn';

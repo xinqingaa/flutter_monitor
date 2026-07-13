@@ -1,4 +1,4 @@
-import type { BadgeProps } from '../../components/ui/badge';
+import type { BadgeProps } from '../../components/common/status-badge';
 import type { MonitorEvent } from '../datasource/types';
 import { fieldDefinitionFor } from '../field-dictionary/fields';
 import { formatDuration } from '../formatting/format';

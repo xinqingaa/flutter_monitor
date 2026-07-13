@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { Activity, AlertTriangle, BadgeAlert, CalendarClock, Cpu, Gauge, Globe2, Radio, Smartphone, UserRound } from 'lucide-react';
 import type * as React from 'react';
 import { EmptyState } from '../../components/common/empty-state';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import { pickScopeSearch } from '../scope/scope-filters';

@@ -5,9 +5,9 @@
 与 `product_plan.md` 的关系：`product_plan.md` 可作历史参考；**本文件是当前期望的功能事实源**。二者冲突时以本文件为准，再回写产品文档。
 
 现有实现取舍见 [`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)（页面默认推倒；数据层可留；JsonViewer 克制复用）。
-视觉、交互与页面模式见 [`DESIGN.md`](DESIGN.md)（active；HTTP 样板页实施门禁已开放）。
+视觉与实现原则见 [`DESIGN.md`](DESIGN.md)。
 
-状态：`active`（Phase 1–4 四入口已验收；Phase 5 体验升级见 [`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)）
+状态：`active`（功能事实源；前端重构进度见 [`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)）
 
 ---
 
@@ -74,7 +74,7 @@
 - 默认不展示内存、帧数、jank、native
 - 不做不可点击的装饰性指标卡或图表
 - 主标签不直接使用 `p50` / `p95` 等术语（口径可放说明）
-- 第一屏使用 4–5 张分析图；图表只使用 Tremor，不保留 echarts 双引擎
+- 第一屏使用 4–5 张分析图；同一页面不并存多套图表引擎
 
 ---
 
@@ -190,9 +190,9 @@
 | 5.2 | Session 时间线 | 启动 / 页面 / HTTP / 埋点 / 错误；默认不强调 memory / jank | 已有 console；展示口径收口 |
 | 5.3 | 按 `traceId` 查看同流程 | 详情或 Session 内高亮 / 过滤 | 服务端 `getTrace` 已有 |
 | 5.4 | ID 复制 | `eventId` / `sessionId` / `traceId` / `http.request_id` | 前端 |
-| 5.5 | 最近 Session | Sidebar 二级分组展示最近 3–5 个 Session；不提升为一级入口 | service sessions + 前端 |
+| 5.5 | 最近 Session | 在导航的二级分组展示最近 3–5 个 Session；不提升为一级入口 | service sessions + 前端 |
 | 5.6 | Session 切换 | 在 Session 工作区按 sessionId / userId / 时间搜索并切换；切换后清除无效 eventId | dimensions/suggest + 前端 |
-| 5.7 | Session 事件流 | 启动 / 页面 / HTTP / 埋点 / 问题 Tabs；主从布局、分组、问题定位和移动 Sheet | 前端官方组件组合 |
+| 5.7 | Session 事件流 | 按启动 / 页面 / HTTP / 埋点 / 问题分类浏览；支持主从定位、分组和窄屏详情访问 | 前端 |
 
 ---
 
@@ -220,10 +220,10 @@
 
 ### 前端
 
-- 四大模块页面与详情壳（官方 shadcn Sidebar / Breadcrumb / Table / Command 等作为布局基础）
+- 四大模块页面与详情壳
 - 共享筛选条、URL 默认不展示域名、链路跳转与 ID 复制
 - 列表 / 详情必备状态
-- Tremor 三图、完整状态和 drilldown
+- 分析图表、完整状态和 drilldown
 
 ### 暂缓 / 不改 SDK
 

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { CheckCircle2, Info, X } from 'lucide-react';
-import { Button } from './button';
+import { Button } from '../ui/button';
 import { cn } from '../../shared/formatting/cn';
 
 type ToastTone = 'success' | 'info' | 'danger';

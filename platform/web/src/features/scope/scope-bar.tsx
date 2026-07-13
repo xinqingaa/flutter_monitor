@@ -1,8 +1,8 @@
 import { FilterX, UserRound } from 'lucide-react';
 import { useState } from 'react';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Button } from '../../components/ui/button';
-import { MultiSelect } from '../../components/ui/multi-select';
+import { MultiSelect } from '../../components/common/multi-select';
 import { useDimensionsQuery } from '../../shared/datasource/queries';
 import { cn } from '../../shared/formatting/cn';
 import { isoToLocalInput, localInputToIso } from '../../shared/formatting/format';

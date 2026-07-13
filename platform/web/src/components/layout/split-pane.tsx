@@ -1,7 +1,7 @@
 import { GripVertical, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as React from 'react';
-import { IconTooltipButton } from '../ui/icon-tooltip-button';
+import { IconTooltipButton } from '../common/icon-tooltip-button';
 import { cn } from '../../shared/formatting/cn';
 
 const DEFAULT_STORAGE_KEY = 'flutter-monitor.split-pane.preview-width';

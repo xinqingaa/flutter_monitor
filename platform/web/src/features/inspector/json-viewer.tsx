@@ -4,7 +4,7 @@ import { vscodeTheme } from '@uiw/react-json-view/vscode';
 import { Clipboard } from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Button } from '../../components/ui/button';
-import { useToast } from '../../components/ui/toast';
+import { useToast } from '../../components/common/toast';
 import { cn } from '../../shared/formatting/cn';
 import { copyJson, copyText } from '../../shared/formatting/download';
 

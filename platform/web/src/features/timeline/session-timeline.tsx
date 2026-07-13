@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, AppWindow, ChevronDown, ChevronRight, Clock3, Rocket, ShieldCheck } from 'lucide-react';
 import { EmptyState } from '../../components/common/empty-state';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventKind, issueLabels } from '../../shared/event-model/accessors';
@@ -10,7 +10,7 @@ import { cn } from '../../shared/formatting/cn';
 import { buildTimelineSegments, type TimelineSegment } from './session-segments';
 import type * as React from 'react';
 import { timelineDisplay } from '../../shared/event-model/display';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 
 type CollapseMode = 'collapsed' | 'expanded' | 'mixed';
 

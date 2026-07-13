@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Select } from '../../components/ui/select';
+import { FilterSelect } from '../../components/common/filter-select';
 import { EmptyState } from '../../components/common/empty-state';
 import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
 import { EventKindBadge } from '../../features/timeline/status-badge';
@@ -110,7 +110,7 @@ function ListFooter({ isFetching, hasMore, label }: { isFetching: boolean; hasMo
 
 function PageSizeSelect({ value, onChange }: { value: PageSize; onChange: (value: PageSize) => void }) {
   return (
-    <Select
+    <FilterSelect
       ariaLabel="每页数量"
       placeholder="每页"
       value={String(value)}

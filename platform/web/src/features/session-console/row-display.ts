@@ -11,7 +11,7 @@ import {
   ServerCog,
   Timer,
 } from 'lucide-react';
-import type { BadgeProps } from '../../components/ui/badge';
+import type { BadgeProps } from '../../components/common/status-badge';
 import type { SessionConsoleRow } from '../../shared/datasource/types';
 
 export function rowIcon(row: SessionConsoleRow) {

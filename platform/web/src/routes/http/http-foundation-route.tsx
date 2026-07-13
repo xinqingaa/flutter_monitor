@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { HttpSearch } from '../../app/router';
-import { SplitPane } from '../../components/layout/split-pane';
 import { Button } from '../../components/ui/button';
-import { Select } from '../../components/ui/select';
+import { Pagination, PaginationContent, PaginationItem } from '../../components/ui/pagination';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../components/ui/resizable';
+import { FilterSelect } from '../../components/common/filter-select';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { HttpFilterBar } from '../../features/http/http-filter-bar';
 import { HttpCatalogTable, type CatalogState } from '../../features/http/http-catalog-table';
@@ -50,20 +51,34 @@ export function HttpFoundationRoute() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-canvas">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
       <HttpFilterBar search={search} total={total} slowThresholdMs={catalog.data?.slowThresholdMs} fullUrl={fullUrl} onFullUrlChange={(value) => { setFullUrl(value); localStorage.setItem('flutter-monitor.http.full-url', String(value)); }} onPatch={patch} onResetHttp={() => clearKeys(HTTP_KEYS)} onClearAll={() => clearKeys(ALL_FILTER_KEYS)} />
-      <SplitPane
-        primary={(
-          <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_44px]">
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0">
+        <ResizablePanel defaultSize={76} minSize={55}>
+          <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
             <HttpCatalogTable items={items} state={state} selectedId={search.eventId} fullUrl={fullUrl} slowThresholdMs={catalog.data?.slowThresholdMs ?? 1000} onSelect={select} onOpen={open} onRetry={() => void catalog.refetch()} />
-            <footer className="flex items-center justify-between gap-3 border-t border-border-default bg-surface px-3 text-xs text-text-secondary">
-              <span className="tabular-nums">第 {page} / {totalPages} 页</span><div className="flex items-center gap-2"><Select value={String(pageSize)} placeholder="每页" options={[25, 50, 100].map((value) => ({ value: String(value), label: `${value} 条/页` }))} onChange={(value) => patch({ pageSize: Number(value) as 25 | 50 | 100, page: undefined, eventId: undefined, detail: undefined })} className="w-28" /><Button size="sm" disabled={page <= 1} onClick={() => patch({ page: page - 1, eventId: undefined, detail: undefined })}>上一页</Button><Button size="sm" disabled={page >= totalPages} onClick={() => patch({ page: page + 1, eventId: undefined, detail: undefined })}>下一页</Button></div>
+            <footer className="flex items-center justify-between gap-4 border-t px-4 py-2 text-sm text-muted-foreground">
+              <span className="tabular-nums">共 {total} 条，第 {page} / {totalPages} 页</span>
+              <div className="flex items-center gap-4">
+                <FilterSelect value={String(pageSize)} placeholder="每页" options={[25, 50, 100].map((value) => ({ value: String(value), label: `${value} 条/页` }))} onChange={(value) => patch({ pageSize: Number(value) as 25 | 50 | 100, page: undefined, eventId: undefined, detail: undefined })} className="w-28" />
+                <Pagination className="w-auto">
+                  <PaginationContent>
+                    <PaginationItem><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => patch({ page: page - 1, eventId: undefined, detail: undefined })}>上一页</Button></PaginationItem>
+                    <PaginationItem><Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => patch({ page: page + 1, eventId: undefined, detail: undefined })}>下一页</Button></PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
             </footer>
           </div>
-        )}
-        secondary={<CatalogPreviewPane item={selected} loading={Boolean(search.eventId && catalog.isLoading)} error={Boolean(search.eventId && catalog.isError)} onOpen={() => selected && open(selected)} />}
-      />
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+        <ResizablePanel defaultSize={24} minSize={20}>
+          <aside className="h-full min-h-0 overflow-auto bg-muted/20">
+            <CatalogPreviewPane item={selected} loading={Boolean(search.eventId && catalog.isLoading)} error={Boolean(search.eventId && catalog.isError)} onOpen={() => selected && open(selected)} />
+          </aside>
+        </ResizablePanel>
+      </ResizablePanelGroup>
       <HttpRecord open={Boolean(search.detail)} item={detailItem} event={detail.data} loading={detail.isLoading} error={detail.isError} onOpenChange={(openValue) => { if (!openValue) patch({ detail: undefined }); }} />
     </div>
   );

@@ -1,14 +1,14 @@
 import { Braces, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, GitBranch, Info, Maximize2, MessageSquare, Search, Send, Terminal, Unlock } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CopyableId } from '../../components/common/copyable-id';
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../components/common/status-badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { Dialog } from '../../components/ui/dialog';
-import { IconTooltipButton } from '../../components/ui/icon-tooltip-button';
+import { Dialog } from '../../components/common/legacy-dialog';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 import { Input } from '../../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { useToast } from '../../components/ui/toast';
+import { useToast } from '../../components/common/toast';
 import type { JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import { routeOf, userIdOf } from '../../shared/event-model/accessors';
 import { eventDisplay, timelineDisplay } from '../../shared/event-model/display';
