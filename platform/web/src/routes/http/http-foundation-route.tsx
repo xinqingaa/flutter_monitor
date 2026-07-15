@@ -7,6 +7,7 @@ import { HttpCatalogTable, type CatalogState } from '../../features/http/http-ca
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { CatalogPreviewPane } from '../../features/catalog/catalog-preview-pane';
 import { HttpRecord } from '../../features/inspector/http-record';
+import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDimensionsQuery, useEventQuery, useHttpCatalogQuery } from '../../shared/datasource/queries';
 import type { HttpCatalogItem, HttpCatalogQuery, SessionFilters } from '../../shared/datasource/types';
 
@@ -67,11 +68,17 @@ export function HttpFoundationRoute() {
     patch(Object.fromEntries(keys.map((key) => [key, undefined])) as Partial<HttpSearch>, true);
   }
   function select(item: HttpCatalogItem) {
-    const narrow = window.matchMedia('(max-width: 1399px)').matches;
-    patch({ eventId: item.eventId, detail: narrow ? item.eventId : undefined });
+    patch({ eventId: item.eventId, detail: undefined });
+  }
+  function peek(item: HttpCatalogItem) {
+    patch({ eventId: item.eventId, detail: item.eventId });
   }
   function open(item: HttpCatalogItem) {
-    patch({ eventId: item.eventId, detail: item.eventId });
+    void navigate({
+      to: '/http/$eventId',
+      params: { eventId: item.eventId },
+      search: (current) => pickScopeSearch(current),
+    });
   }
   function toggleSort(nextSortBy: 'timestamp' | 'durationMs') {
     const nextDir = sortBy === nextSortBy && sortDir === 'desc' ? 'asc' : 'desc';
@@ -122,6 +129,7 @@ export function HttpFoundationRoute() {
             onSort={toggleSort}
             onSelect={select}
             onOpen={open}
+            onPeek={peek}
             onRetry={() => void catalog.refetch()}
           />
           <CatalogPagination
@@ -143,6 +151,7 @@ export function HttpFoundationRoute() {
             loading={Boolean(search.eventId && catalog.isLoading)}
             error={Boolean(search.eventId && catalog.isError)}
             onOpen={() => selected && open(selected)}
+            onPeek={() => selected && peek(selected)}
           />
         </aside>
       </div>
@@ -157,6 +166,14 @@ export function HttpFoundationRoute() {
           if (!openValue) patch({ detail: undefined });
         }}
         onNavigate={(next) => patch({ eventId: next.eventId, detail: next.eventId })}
+        onExpand={(id) => {
+          patch({ detail: undefined });
+          void navigate({
+            to: '/http/$eventId',
+            params: { eventId: id },
+            search: (current) => pickScopeSearch(current),
+          });
+        }}
       />
     </div>
   );

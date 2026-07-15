@@ -35,11 +35,12 @@ export interface CatalogMessageContent {
   errorDescription: string;
 }
 
-export function CatalogTable<T extends { eventId: string }>({
+export function CatalogTable<T>({
   items,
   columns,
   state,
   selectedId,
+  getRowId,
   minWidthClass,
   message,
   notice,
@@ -53,6 +54,7 @@ export function CatalogTable<T extends { eventId: string }>({
   columns: ColumnDef<T>[];
   state: CatalogState;
   selectedId?: string;
+  getRowId: (item: T) => string;
   minWidthClass: string;
   message: CatalogMessageContent;
   notice?: ReactNode;
@@ -66,7 +68,7 @@ export function CatalogTable<T extends { eventId: string }>({
     data: items,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getRowId: (item) => item.eventId,
+    getRowId: (item) => getRowId(item),
   });
   const leafColumns = table.getAllLeafColumns();
 
@@ -106,7 +108,7 @@ export function CatalogTable<T extends { eventId: string }>({
                 <TableRow
                   key={row.id}
                   tabIndex={0}
-                  data-state={row.original.eventId === selectedId ? 'selected' : undefined}
+                  data-state={getRowId(row.original) === selectedId ? 'selected' : undefined}
                   className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   onClick={() => onSelect(row.original)}
                   onDoubleClick={() => onOpen(row.original)}

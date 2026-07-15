@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, FileJson, Network, Terminal } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FileJson, Network, Terminal } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -20,6 +20,7 @@ import { CopyableId } from '../../components/common/copyable-id';
 import { useToast } from '../../components/common/toast';
 import type { HttpCatalogItem, JsonObject, MonitorEvent } from '../../shared/datasource/types';
 import { readPath } from '../../shared/event-model/accessors';
+import { cn } from '../../shared/formatting/cn';
 import { copyText } from '../../shared/formatting/download';
 import { formatDuration } from '../../shared/formatting/format';
 import { buildCurlCommand } from '../../shared/formatting/http-curl';
@@ -35,6 +36,7 @@ export function HttpRecord({
   items = [],
   onOpenChange,
   onNavigate,
+  onExpand,
 }: {
   open: boolean;
   item?: HttpCatalogItem;
@@ -44,6 +46,7 @@ export function HttpRecord({
   items?: HttpCatalogItem[];
   onOpenChange: (open: boolean) => void;
   onNavigate?: (item: HttpCatalogItem) => void;
+  onExpand?: (eventId: string) => void;
 }) {
   const { showToast } = useToast();
   const failed = item?.success === false || event?.status === 'error';
@@ -53,24 +56,8 @@ export function HttpRecord({
   const next = index >= 0 && index < items.length - 1 ? items[index + 1] : undefined;
 
   async function copyCurl() {
-    if (!event && !item) return;
     try {
-      const detail = event
-        ? (readPath(event, ['payload', 'http.detail']) ?? readPath(event, ['payload', 'http', 'detail'])) as
-          | { request?: { headers?: JsonObject; body?: unknown } }
-          | undefined
-        : undefined;
-      const query = event
-        ? readPath(event, ['payload', 'http.query']) ?? readPath(event, ['payload', 'http', 'query'])
-        : undefined;
-      const curl = buildCurlCommand({
-        method: item?.method,
-        url: item?.url,
-        query,
-        headers: detail?.request?.headers,
-        body: detail?.request?.body,
-      });
-      await copyText(curl);
+      await copyHttpCurl({ item, event });
       showToast({ tone: 'success', title: '已复制 cURL' });
     } catch {
       showToast({ tone: 'danger', title: '复制失败', description: '当前 HTTP 事件缺少 URL，无法生成 cURL。' });
@@ -84,7 +71,7 @@ export function HttpRecord({
       title={item ? `${item.method ?? 'HTTP'} ${pathOnly(item.url)}` : 'HTTP 详情'}
       description={item?.url}
       state={state}
-      summary={item ? <RecordSummary item={item} /> : undefined}
+      summary={item ? <HttpRecordSummary item={item} /> : undefined}
       headerActions={(
         <>
           <Button
@@ -108,6 +95,12 @@ export function HttpRecord({
           >
             <ChevronRight data-icon="inline-start" />
           </Button>
+          {onExpand && item?.eventId ? (
+            <Button size="sm" variant="outline" onClick={() => onExpand(item.eventId)}>
+              <ExternalLink data-icon="inline-start" />
+              全屏
+            </Button>
+          ) : null}
           <Button size="sm" variant="outline" onClick={() => void copyCurl()} disabled={!item?.url}>
             <Terminal data-icon="inline-start" />
             复制 cURL
@@ -115,35 +108,60 @@ export function HttpRecord({
         </>
       )}
     >
-      {loading ? (
-        <RecordLoading />
-      ) : error ? (
-        <RecordState icon={AlertCircle} title="HTTP 详情加载失败" description="请检查 Monitor Service 后重试。" />
-      ) : !event ? (
-        <RecordState icon={Network} title="找不到该事件" description="事件可能已超过本地保留上限。" />
-      ) : (
-        <Tabs
-          key={event.eventId}
-          defaultValue={failed ? 'response' : 'request'}
-          className="flex h-full min-h-0 flex-col gap-4 p-6"
-        >
-          <TabsList className="w-fit shrink-0">
-            <TabsTrigger value="request">请求</TabsTrigger>
-            <TabsTrigger value="response">响应</TabsTrigger>
-            <TabsTrigger value="context">上下文</TabsTrigger>
-            <TabsTrigger value="raw">Raw</TabsTrigger>
-          </TabsList>
-          <RecordTab value="request"><HttpSide event={event} side="request" /></RecordTab>
-          <RecordTab value="response"><HttpSide event={event} side="response" /></RecordTab>
-          <RecordTab value="context"><Context event={event} /></RecordTab>
-          <RecordTab value="raw"><JsonViewer value={event} collapsed={2} /></RecordTab>
-        </Tabs>
-      )}
+      <HttpRecordContent event={event} loading={loading} error={error} failed={failed} />
     </RecordShell>
   );
 }
 
-function RecordSummary({ item }: { item: HttpCatalogItem }) {
+export function HttpRecordContent({
+  event,
+  loading,
+  error,
+  failed = false,
+  className,
+}: {
+  event?: MonitorEvent;
+  loading: boolean;
+  error: boolean;
+  failed?: boolean;
+  className?: string;
+}) {
+  if (loading) return <RecordLoading />;
+  if (error) return <RecordState icon={AlertCircle} title="HTTP 详情加载失败" description="请检查 Monitor Service 后重试。" />;
+  if (!event) return <RecordState icon={Network} title="找不到该事件" description="事件可能已超过本地保留上限。" />;
+
+  return (
+    <Tabs
+      key={event.eventId}
+      defaultValue={failed ? 'response' : 'request'}
+      className={cn('flex h-full min-h-0 flex-col gap-4 p-6', className)}
+    >
+      <TabsList className="w-fit shrink-0">
+        <TabsTrigger value="request">请求</TabsTrigger>
+        <TabsTrigger value="response">响应</TabsTrigger>
+        <TabsTrigger value="context">上下文</TabsTrigger>
+        <TabsTrigger value="raw">Raw</TabsTrigger>
+      </TabsList>
+      <RecordTab value="request"><HttpSide event={event} side="request" /></RecordTab>
+      <RecordTab value="response"><HttpSide event={event} side="response" /></RecordTab>
+      <RecordTab value="context"><Context event={event} /></RecordTab>
+      <RecordTab value="raw"><JsonViewer value={event} collapsed={2} /></RecordTab>
+    </Tabs>
+  );
+}
+
+export function HttpRecordSummary({ item }: {
+  item: {
+    success?: boolean;
+    statusCode?: number;
+    businessCode?: string;
+    businessCodeState?: HttpCatalogItem['businessCodeState'];
+    method?: string;
+    durationMs?: number;
+    route?: string;
+    detailDropped?: boolean;
+  };
+}) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -164,6 +182,66 @@ function RecordSummary({ item }: { item: HttpCatalogItem }) {
       ) : null}
     </div>
   );
+}
+
+export async function copyHttpCurl({ item, event }: { item?: Pick<HttpCatalogItem, 'method' | 'url'>; event?: MonitorEvent }) {
+  if (!event && !item) throw new Error('missing http event');
+  const detail = event
+    ? (readPath(event, ['payload', 'http.detail']) ?? readPath(event, ['payload', 'http', 'detail'])) as
+      | { request?: { headers?: JsonObject; body?: unknown } }
+      | undefined
+    : undefined;
+  const query = event
+    ? readPath(event, ['payload', 'http.query']) ?? readPath(event, ['payload', 'http', 'query'])
+    : undefined;
+  const url = item?.url ?? stringValue(readPath(event!, ['payload', 'url'])) ?? stringValue(readPath(event!, ['attributes', 'http.url']));
+  if (!url) throw new Error('missing url');
+  const curl = buildCurlCommand({
+    method: item?.method ?? stringValue(readPath(event!, ['attributes', 'http.method'])),
+    url,
+    query,
+    headers: detail?.request?.headers,
+    body: detail?.request?.body,
+  });
+  await copyText(curl);
+}
+
+export function httpSummaryFromEvent(event: MonitorEvent): {
+  method?: string;
+  url?: string;
+  statusCode?: number;
+  businessCode?: string;
+  businessCodeState?: HttpCatalogItem['businessCodeState'];
+  success?: boolean;
+  durationMs?: number;
+  route?: string;
+  detailDropped?: boolean;
+  sessionId?: string;
+  traceId?: string;
+  requestId?: string;
+} {
+  const statusCode = numberValue(readPath(event, ['attributes', 'http.status_code']));
+  const successAttr = readPath(event, ['attributes', 'http.success']);
+  return {
+    method: stringValue(readPath(event, ['attributes', 'http.method'])),
+    url: stringValue(readPath(event, ['payload', 'url'])) ?? stringValue(readPath(event, ['attributes', 'http.url'])),
+    statusCode,
+    businessCode: stringValue(readPath(event, ['attributes', 'http.business_code'])),
+    success: typeof successAttr === 'boolean' ? successAttr : event.status !== 'error',
+    durationMs: event.durationMs,
+    route: stringValue(readPath(event, ['context', 'route', 'name']))
+      ?? stringValue(readPath(event, ['context', 'route', 'fullName'])),
+    detailDropped: readPath(event, ['payload', 'http.detail_dropped']) === true
+      || readPath(event, ['payload', 'http', 'detail_dropped']) === true,
+    sessionId: event.sessionId,
+    traceId: event.traceId,
+    requestId: stringValue(readPath(event, ['attributes', 'http.request_id'])),
+  };
+}
+
+export function pathOnly(url?: string) {
+  if (!url) return '请求';
+  try { return new URL(url).pathname; } catch { return url; }
 }
 
 function RecordTab({ value, children }: { value: string; children: React.ReactNode }) {
@@ -321,12 +399,7 @@ function RecordState({
   );
 }
 
-function pathOnly(url?: string) {
-  if (!url) return '请求';
-  try { return new URL(url).pathname; } catch { return url; }
-}
-
-function businessCodeLabel(item: HttpCatalogItem) {
+function businessCodeLabel(item: { businessCodeState?: HttpCatalogItem['businessCodeState'] }) {
   return item.businessCodeState === 'parse_failed'
     ? '业务码解析失败'
     : item.businessCodeState === 'detail_unavailable'
@@ -340,6 +413,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown) {
   return typeof value === 'string' ? value : undefined;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function parseJson(value: unknown): { ok: true; value: unknown } | { ok: false } {

@@ -25,6 +25,7 @@ export function HttpCatalogTable({
   onSort,
   onSelect,
   onOpen,
+  onPeek,
   onRetry,
 }: {
   items: HttpCatalogItem[];
@@ -37,6 +38,7 @@ export function HttpCatalogTable({
   onSort: (sortBy: 'timestamp' | 'durationMs') => void;
   onSelect: (item: HttpCatalogItem) => void;
   onOpen: (item: HttpCatalogItem) => void;
+  onPeek: (item: HttpCatalogItem) => void;
   onRetry: () => void;
 }) {
   const columns = useMemo<ColumnDef<HttpCatalogItem>[]>(
@@ -151,14 +153,15 @@ export function HttpCatalogTable({
         cell: ({ row }) => (
           <CatalogRowActions
             item={row.original}
-            label="HTTP "
+            label="HTTP"
             copyItems={[{ label: 'Request ID', value: row.original.requestId }]}
             onOpen={onOpen}
+            onPeek={onPeek}
           />
         ),
       },
     ],
-    [fullUrl, onOpen, onSort, slowThresholdMs, sortBy, sortDir],
+    [fullUrl, onOpen, onPeek, onSort, slowThresholdMs, sortBy, sortDir],
   );
 
   return (
@@ -167,7 +170,8 @@ export function HttpCatalogTable({
       columns={columns}
       state={state}
       selectedId={selectedId}
-      minWidthClass="min-w-[1120px]"
+      getRowId={(item) => item.eventId}
+      minWidthClass="min-w-[1160px]"
       message={{
         emptyTitle: '暂无 HTTP 请求',
         emptyDescription: '等待应用产生网络请求。',
@@ -201,7 +205,7 @@ function columnClass(id: string, header: boolean) {
     id === 'route' && 'w-[140px]',
     id === 'userId' && 'w-[100px]',
     id === 'requestId' && 'w-[140px]',
-    id === 'actions' && 'w-[52px]',
+    id === 'actions' && 'w-[88px]',
     !header && 'overflow-hidden',
   );
 }

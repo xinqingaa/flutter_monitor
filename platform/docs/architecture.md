@@ -124,7 +124,7 @@ curl 'http://localhost:3700/api/monitor/v1/sessions/<sessionId>'
 curl 'http://localhost:3700/api/monitor/v1/traces/<traceId>'
 ```
 
-Workbench：侧栏最近 Session，或从 Catalog 带 `eventId` 进入 Session 工作区。
+Workbench：一级导航 Session 列表，或从 Catalog / HTTP 详情带 `eventId` 进入 Session 工作区。
 
 ---
 

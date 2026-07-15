@@ -11,7 +11,17 @@ import { WorkbenchV2Shell } from './workbench-v2-shell';
 
 export function WorkbenchShell() {
   const location = useLocation();
-  return location.pathname === '/' || ['/http', '/business', '/errors'].includes(location.pathname) || location.pathname.startsWith('/sessions/') ? <WorkbenchV2Shell /> : <LegacyWorkbenchShell />;
+  const path = location.pathname;
+  const useV2 = path === '/'
+    || path === '/sessions'
+    || path.startsWith('/sessions/')
+    || path === '/http'
+    || path.startsWith('/http/')
+    || path === '/business'
+    || path.startsWith('/business/')
+    || path === '/errors'
+    || path.startsWith('/errors/');
+  return useV2 ? <WorkbenchV2Shell /> : <LegacyWorkbenchShell />;
 }
 
 function LegacyWorkbenchShell() {

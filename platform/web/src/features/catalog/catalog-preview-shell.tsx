@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ExternalLink, GitBranch } from 'lucide-react';
+import { ExternalLink, GitBranch, PanelRight } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../../components/ui/empty';
 import { Separator } from '../../components/ui/separator';
@@ -27,7 +27,9 @@ export function CatalogPreviewShell({
   ids,
   eventId,
   sessionId,
+  showSessionLink = true,
   onOpen,
+  onPeek,
 }: {
   selected: boolean;
   loading?: boolean;
@@ -39,7 +41,9 @@ export function CatalogPreviewShell({
   ids?: CatalogPreviewId[];
   eventId?: string;
   sessionId?: string;
+  showSessionLink?: boolean;
   onOpen: () => void;
+  onPeek: () => void;
 }) {
   if (loading) return <PreviewMessage title="正在加载摘要" description={emptyDescription} />;
   if (error) return <PreviewMessage title="摘要加载失败" description="请检查数据查询状态后重试。" />;
@@ -72,7 +76,10 @@ export function CatalogPreviewShell({
       ) : null}
       <div className="grid gap-2">
         <Button onClick={onOpen}><ExternalLink data-icon="inline-start" />打开详情</Button>
-        {sessionId && eventId ? (
+        <Button variant="outline" onClick={onPeek}>
+          <PanelRight data-icon="inline-start" />展开预览
+        </Button>
+        {showSessionLink && sessionId && eventId ? (
           <Button variant="outline" asChild>
             <Link to="/sessions/$sessionId" params={{ sessionId }} search={{ eventId }}>
               <GitBranch data-icon="inline-start" />查看 Session

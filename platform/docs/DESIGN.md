@@ -36,14 +36,15 @@ Workbench 是面向 Flutter 开发者、QA 和技术负责人的排查工作台�
 
 ## 信息架构
 
-一级入口固定为：
+一级入口固定为（侧栏仅文字，无 Icon）：
 
 1. 大屏
-2. HTTP
-3. 埋点
-4. 异常
+2. Session
+3. HTTP
+4. 埋点
+5. 异常
 
-Session 是二级链路工作区，可从大屏、列表和详情进入。详情、筛选、分页、选中事件和 Session 定位应使用现有路由与 URL 状态能力，并继续回查统一 `EventEnvelope`。
+Session 列表为一级入口；`/sessions/$sessionId` 是二级链路工作区。四域 Catalog 交互一致：单击选中、展开预览开 Sheet、打开详情/双击进独立页。详情、筛选、分页、选中事件和 Session 定位应使用现有路由与 URL 状态能力，并继续回查统一 `EventEnvelope`。
 
 ## 官方 shadcn 基线
 

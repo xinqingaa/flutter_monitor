@@ -10,11 +10,13 @@ export function CatalogPreviewPane({
   loading,
   error,
   onOpen,
+  onPeek,
 }: {
   item?: HttpCatalogItem;
   loading?: boolean;
   error?: boolean;
   onOpen: () => void;
+  onPeek: () => void;
 }) {
   const failed = item?.success === false;
 
@@ -58,6 +60,7 @@ export function CatalogPreviewPane({
       eventId={item?.eventId}
       sessionId={item?.sessionId}
       onOpen={onOpen}
+      onPeek={onPeek}
     />
   );
 }

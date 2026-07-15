@@ -9,21 +9,22 @@ Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用�
 ## 信息架构
 
 ```text
-一级导航
+一级导航（仅文字，无 Icon）
   大屏        /
+  Session     /sessions
   HTTP        /http
   埋点        /business
   异常        /errors
 
 二级
-  Catalog 详情（Sheet Record）
-  Session 工作区  /sessions/$sessionId?eventId=
-
-侧栏附属
-  最近 Session（Top 5，角标为错误 + 失败 HTTP + 业务失败）
+  Session 工作区     /sessions/$sessionId?eventId=&traceId=
+  HTTP 独立详情页    /http/$eventId
+  埋点独立详情页     /business/$eventId
+  异常独立详情页     /errors/$eventId
+  Catalog Sheet      展开预览（行内按钮 / Preview 次按钮）
 ```
 
-Session 不占一级导航。`/sessions` 列表入口重定向到大屏。旧 Overview / Startup / Pages / Network / Jank 等路径只做兼容重定向。
+Session 为一级入口：列表在 `/sessions`，链路工作区在 `/sessions/$sessionId`。旧 Overview / Startup / Pages / Network / Jank 等路径只做兼容重定向。侧栏不再展示「最近 Session」。
 
 壳层：侧栏、面包屑、Live 开关、刷新。Live 开启时通过 SSE 失效查询缓存，不抢走当前选中行。
 
@@ -33,7 +34,7 @@ Session 不占一级导航。`/sessions` 列表入口重定向到大屏。旧 Ov
 
 ### 范围筛选（Scope）
 
-大屏、HTTP、埋点、异常顶部共用 Scope：
+大屏、Session 列表、HTTP、埋点、异常顶部共用 Scope：
 
 - 时间 `from` / `to`
 - `userId`、`sessionId`（真实候选 Combobox）
@@ -43,12 +44,14 @@ Session 不占一级导航。`/sessions` 列表入口重定向到大屏。旧 Ov
 
 ### Catalog 模式
 
-HTTP / 埋点 / 异常共用同一套工作流：
+HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
-1. **列表**：分页、排序、loading / empty / error / noResults
+1. **列表**：分页、排序、loading / empty / error / noResults（通用表格）
 2. **Preview**（宽屏）：选中行摘要与操作
-3. **Record**：右侧 Sheet，按领域拆 Tab，末尾 Raw
-4. **查看 Session**：跳转 `/sessions/$sessionId?eventId=…`，在会话内选中对应事件
+3. **单击行**：只选中 Preview，不自动开 Sheet
+4. **展开预览**：行内 `PanelRight` 按钮，或 Preview「展开预览」→ Sheet
+5. **打开详情 / 双击行**：进入独立详情页（HTTP `/http/$id`、埋点 `/business/$id`、异常 `/errors/$id`、Session `/sessions/$id`）
+6. **查看 Session**：仅事件域（HTTP / 埋点 / 异常）保留
 
 时间统一展示为 `YYYY-MM-DD HH:mm:ss`。可复制 `eventId` / `sessionId` / `traceId`（HTTP 另含 `requestId`）。
 
@@ -67,13 +70,16 @@ HTTP / 埋点 / 异常共用同一套工作流：
 ### 列表与选中
 
 - 按时间或耗时排序；分页 25 / 50 / 100
-- 点击行：宽屏只选中 Preview；窄屏同时打开 Record（`eventId` / `detail` 写入 URL）
-- 行菜单：打开详情、查看 Session、复制 ID
+- 单击行：只选中 Preview
+- 行内展开 / Preview「展开预览」：打开 Sheet
+- 打开详情 / 双击：进 `/http/$eventId`
+- 行菜单：打开详情、展开预览、查看 Session、复制 ID
 
-### Preview 与 Record
+### Preview、Sheet 与独立详情页
 
-- Preview：状态、关键事实、打开详情、查看 Session
-- Record Tab：请求 / 响应 / 上下文 / Raw；支持当前页上一条 / 下一条；可复制 cURL
+- Preview：状态、关键事实、「打开详情」进独立页、「展开预览」开 Sheet、查看 Session
+- Sheet：请求 / 响应 / 上下文 / Raw；上一条 / 下一条；全屏进独立页；可复制 cURL
+- 独立详情页：同 Sheet 深读内容，可回列表、查看 Session
 - 详情被剥离或截断时如实展示（如 `detailDropped`），不伪造 body
 
 ### 明确不做
@@ -101,9 +107,10 @@ HTTP / 埋点 / 异常共用同一套工作流：
 
 - 筛：action、result（success / failed / cancelled）
 - 列：时间、action、result、路由、用户、session、版本
+- 交互与 HTTP 一致：展开 Sheet / 打开详情进 `/business/$eventId`
 - Record：属性 / 关联 / 上下文 / Raw；关联区展示同 session 近期 HTTP / 埋点 / error 摘要卡
 
-**当前局限：** 深度与交互弱于 HTTP（无 cURL 级请求检视）；关联区偏展示，导航回 Catalog / Session 的闭环不如 HTTP Preview。
+**当前局限：** 关联区偏展示；详情页深度仍弱于 HTTP（无 cURL 级检视）。
 
 ---
 
@@ -113,22 +120,31 @@ HTTP / 埋点 / 异常共用同一套工作流：
 
 - 筛：errorType、mechanism、fatal / handled、仅业务失败
 - 列：类型徽标、message、handled、路由、session、版本等
+- 交互与 HTTP 一致：展开 Sheet / 打开详情进 `/errors/$eventId`
 - Record：错误信息 / stack / breadcrumbs，以及上下文与 Raw
 
 不做告警规则引擎或订阅推送。
 
-**当前局限：** 与埋点同属 Domain Catalog 壳，精修程度低于 HTTP；与大屏「最近问题」、Session 的联动仍浅。
+**当前局限：** 详情页精修程度低于 HTTP；与大屏「最近问题」的联动仍浅。
 
 ---
 
-## Session（二级工作区）
+## Session
 
-路径：`/sessions/$sessionId`，常用 query：`eventId`（可选 `traceId`）。
+### 列表（一级）
+
+路径：`/sessions`。与 HTTP / 埋点 / 异常同一套 Catalog：表格、Preview、展开 Sheet、打开详情进工作区。
+
+列：时间、Session ID、用户、路由、版本、状态、问题数、事件数。
+
+### 工作区（二级）
+
+路径：`/sessions/$sessionId`，常用 query：`eventId`（可选 `traceId`）。由列表「打开详情 / 双击 / Sheet 全屏」进入。
 
 ### 如何进入
 
+- 一级导航 Session → 列表 → 工作区
 - 各 Catalog 的 Preview / 行菜单「查看 Session」
-- 侧栏「最近 Session」
 - 大屏启动类下钻（携带可回查 `eventId`）
 
 ### 当前界面
@@ -140,16 +156,15 @@ HTTP / 埋点 / 异常共用同一套工作流：
 
 ### 当前局限
 
-- 无独立 Session 列表页（`/sessions` → 大屏）
-- 不挂载 Scope 筛选条，与一级页 Scope 未打通
-- 相对旧版 Console / 分段 Timeline / EventInspector，能力已简化
-- 从 Session 回到来源 Catalog 的路径弱；Record「关联」多为展示
+- Session 列表尚无服务端 total 计数（分页用 hasMore 近似）
+- 相对旧版 Console / 分段 Timeline / EventInspector，工作区能力已简化
+- Session 内按 `traceId` 高亮 / 过滤仍弱；从工作区回来源 Catalog 的路径弱
 
 ---
 
 ## 明确不做
 
-- 一级导航不恢复旧 Overview / Sessions / Startup / Pages / Problems 拆分
+- 一级导航不恢复旧 Overview / Startup / Pages / Problems 拆分（Session 列表除外）
 - 默认主路径不展示内存 / 帧数 / jank / native
 - 列表行不内联 headers / body；Raw 不作首页装饰
 - 不为业务码或设备 ID 改 SDK（业务码 service 派生；设备 ID 暂不做）

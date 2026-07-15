@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { AlertTriangle, LayoutDashboard, MousePointerClick, Network, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type * as React from 'react';
 import { useState } from 'react';
 import {
@@ -21,26 +21,24 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
   SidebarRail,
-  SidebarSeparator,
   SidebarTrigger,
 } from '../components/ui/sidebar';
 import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
-import { useLiveInvalidation, useSessionsQuery } from '../shared/datasource/queries';
-import { formatDateTime } from '../shared/formatting/format';
+import { useLiveInvalidation } from '../shared/datasource/queries';
 import { pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
 const nav = [
-  { to: '/', label: '大屏', icon: LayoutDashboard },
-  { to: '/http', label: 'HTTP', icon: Network },
-  { to: '/business', label: '埋点', icon: MousePointerClick },
-  { to: '/errors', label: '异常', icon: AlertTriangle },
+  { to: '/', label: '大屏', match: (pathname: string) => pathname === '/' },
+  { to: '/sessions', label: 'Session', match: (pathname: string) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
+  { to: '/http', label: 'HTTP', match: (pathname: string) => pathname === '/http' || pathname.startsWith('/http/') },
+  { to: '/business', label: '埋点', match: (pathname: string) => pathname === '/business' || pathname.startsWith('/business/') },
+  { to: '/errors', label: '异常', match: (pathname: string) => pathname === '/errors' || pathname.startsWith('/errors/') },
 ] as const;
 
 export function WorkbenchV2Shell() {
@@ -48,7 +46,6 @@ export function WorkbenchV2Shell() {
   const location = useLocation();
   const [live, setLive] = useState(true);
   useLiveInvalidation(live);
-  const recentSessions = useSessionsQuery({ limit: 5 });
   const page = pageMeta(location.pathname);
 
   return (
@@ -57,12 +54,12 @@ export function WorkbenchV2Shell() {
       defaultOpen={window.matchMedia('(min-width: 1280px)').matches}
       style={
         {
-          '--sidebar-width': '16rem',
+          '--sidebar-width': '12rem',
           '--header-height': '3rem',
         } as React.CSSProperties
       }
     >
-      <Sidebar collapsible="icon" variant="inset">
+      <Sidebar collapsible="offcanvas" variant="inset">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -86,46 +83,15 @@ export function WorkbenchV2Shell() {
             <SidebarGroupLabel>工作台</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {nav.map(({ to, label, icon: Icon }) => (
+                {nav.map(({ to, label, match }) => (
                   <SidebarMenuItem key={to}>
                     <SidebarMenuButton
                       asChild
-                      isActive={to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)}
+                      isActive={match(location.pathname)}
                       tooltip={label}
                     >
                       <Link to={to} search={(current) => pickScopeSearch(current)}>
-                        <Icon />
                         <span>{label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          <SidebarSeparator className="mx-0" />
-
-          <SidebarGroup>
-            <SidebarGroupLabel>最近 Session</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {(recentSessions.data?.sessions ?? []).map((session) => (
-                  <SidebarMenuItem key={session.sessionId}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location.pathname === `/sessions/${session.sessionId}`}
-                      tooltip={`${session.sessionId} · ${formatDateTime(session.lastTimestamp)}`}
-                    >
-                      <Link
-                        to="/sessions/$sessionId"
-                        params={{ sessionId: session.sessionId }}
-                        search={{ eventId: session.lastEventId }}
-                      >
-                        <span className="truncate font-mono">{shortId(session.sessionId)}</span>
-                        <SidebarMenuBadge className="tabular-nums">
-                          {session.errorCount + session.failedHttpCount + (session.businessFailureCount ?? 0)}
-                        </SidebarMenuBadge>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -190,17 +156,23 @@ export function WorkbenchV2Shell() {
   );
 }
 
-function shortId(value: string) {
-  return value.length <= 18 ? value : `${value.slice(0, 9)}...${value.slice(-6)}`;
-}
-
 function pageMeta(pathname: string): { title: string; detail?: string } {
   if (pathname === '/') return { title: '大屏' };
-  if (pathname.startsWith('/http')) return { title: 'HTTP' };
-  if (pathname.startsWith('/business')) return { title: '埋点' };
-  if (pathname.startsWith('/errors')) return { title: '异常' };
+  if (pathname === '/sessions') return { title: 'Session' };
   if (pathname.startsWith('/sessions/')) {
     return { title: 'Session 链路', detail: decodeURIComponent(pathname.slice('/sessions/'.length)) };
   }
+  if (pathname.startsWith('/http/')) {
+    return { title: 'HTTP 详情', detail: decodeURIComponent(pathname.slice('/http/'.length)) };
+  }
+  if (pathname.startsWith('/http')) return { title: 'HTTP' };
+  if (pathname.startsWith('/business/')) {
+    return { title: '埋点详情', detail: decodeURIComponent(pathname.slice('/business/'.length)) };
+  }
+  if (pathname.startsWith('/business')) return { title: '埋点' };
+  if (pathname.startsWith('/errors/')) {
+    return { title: '异常详情', detail: decodeURIComponent(pathname.slice('/errors/'.length)) };
+  }
+  if (pathname.startsWith('/errors')) return { title: '异常' };
   return { title: 'Workbench' };
 }

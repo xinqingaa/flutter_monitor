@@ -74,10 +74,33 @@ const dashboardRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/dashboard/dashboard-route'), 'DashboardRoute'),
 });
 
+export type SessionsSearch = RootSearch & {
+  selected?: string;
+  detail?: string;
+  page?: number;
+  pageSize?: 25 | 50 | 100;
+};
+
 const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sessions',
-  beforeLoad: () => { throw redirect({ to: '/' }); },
+  validateSearch: (search: Record<string, unknown>): SessionsSearch => cleanSearch({
+    appKey: stringListSearchParam(search.appKey),
+    packageName: stringListSearchParam(search.packageName),
+    environment: stringListSearchParam(search.environment),
+    appVersion: stringListSearchParam(search.appVersion),
+    devicePlatform: stringListSearchParam(search.devicePlatform),
+    from: stringSearch(search.from),
+    to: stringSearch(search.to),
+    userId: stringListSearchParam(search.userId),
+    sessionId: stringListSearchParam(search.sessionId),
+    route: stringListSearchParam(search.route),
+    selected: stringSearch(search.selected),
+    detail: stringSearch(search.detail),
+    page: integerSearch(search.page, 1),
+    pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined,
+  }),
+  component: lazyRouteComponent(() => import('../routes/sessions/sessions-route'), 'SessionsRoute'),
 });
 
 const sessionRoute = createRoute({
@@ -129,6 +152,12 @@ const httpRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/http/http-foundation-route'), 'HttpFoundationRoute'),
 });
 
+const httpDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/http/$eventId',
+  component: lazyRouteComponent(() => import('../routes/http/http-detail-route'), 'HttpDetailRoute'),
+});
+
 const businessRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/business',
@@ -136,11 +165,23 @@ const businessRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/domain/domain-catalog-route'), 'BusinessCatalogRoute'),
 });
 
+const businessDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/business/$eventId',
+  component: lazyRouteComponent(() => import('../routes/domain/domain-detail-route'), 'BusinessDetailRoute'),
+});
+
 const errorCatalogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/errors',
   validateSearch: domainSearch,
   component: lazyRouteComponent(() => import('../routes/domain/domain-catalog-route'), 'ErrorCatalogRoute'),
+});
+
+const errorDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/errors/$eventId',
+  component: lazyRouteComponent(() => import('../routes/domain/domain-detail-route'), 'ErrorDetailRoute'),
 });
 
 const eventRoute = createRoute({
@@ -191,8 +232,11 @@ const routeTree = rootRoute.addChildren([
   sessionRoute,
   eventsRoute,
   httpRoute,
+  httpDetailRoute,
   businessRoute,
+  businessDetailRoute,
   errorCatalogRoute,
+  errorDetailRoute,
   eventRoute,
   startupRoute,
   pagesRoute,

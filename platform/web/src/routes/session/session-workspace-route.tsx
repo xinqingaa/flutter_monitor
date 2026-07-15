@@ -1,7 +1,8 @@
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { AlertTriangle, AppWindow, GitBranch, MousePointerClick, Network, Rocket } from 'lucide-react';
+import { AlertTriangle, AppWindow, ArrowLeft, GitBranch, MousePointerClick, Network, Rocket } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
 import { IdCombobox } from '../../components/common/id-combobox';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '../../components/ui/item';
@@ -11,6 +12,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { CopyableId } from '../../components/common/copyable-id';
 import { JsonViewer } from '../../features/inspector/json-viewer';
+import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
 import { useDimensionsQuery, useEventQuery, useSessionQuery } from '../../shared/datasource/queries';
 import type { MonitorEvent } from '../../shared/datasource/types';
@@ -64,6 +66,12 @@ export function SessionWorkspaceRoute() {
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-background">
       <section className="flex min-w-0 flex-wrap items-center gap-3 border-b bg-background px-4 py-3">
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/sessions" search={(current) => pickScopeSearch(current)}>
+            <ArrowLeft data-icon="inline-start" />
+            Session 列表
+          </Link>
+        </Button>
         <IdCombobox
           value={sessionId}
           label="Session ID"

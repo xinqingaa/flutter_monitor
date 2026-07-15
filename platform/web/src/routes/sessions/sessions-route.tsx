@@ -1,138 +1,159 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { FilterSelect } from '../../components/common/filter-select';
+import { useEffect, useMemo } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import type { SessionsSearch } from '../../app/router';
+import { CatalogPagination } from '../../features/catalog/catalog-pagination';
+import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
+import { readScopeFilters, scopeToSessionFilters } from '../../features/scope/scope-filters';
+import { SessionCatalogTable, SessionPreviewPane } from '../../features/session/session-catalog-table';
 import { SessionListFilterForm } from '../../features/session/session-list-filter-form';
 import { sessionListToSessionFilters, useSessionListFilters } from '../../features/session/session-list-filters';
-import { SessionRows } from '../../features/session/session-list';
-import { scopeToSessionFilters, useScopeFilters } from '../../features/scope/scope-filters';
+import { SessionRecord } from '../../features/session/session-record';
 import { useDimensionsQuery, useSessionsQuery } from '../../shared/datasource/queries';
 import type { SessionSummary } from '../../shared/datasource/types';
-
-type PageSize = 30 | 50 | 100;
-const DEFAULT_PAGE_SIZE: PageSize = 50;
-const PAGE_SIZES: PageSize[] = [30, 50, 100];
+import type { CatalogState } from '../../features/catalog/catalog-table';
 
 export function SessionsRoute() {
-  const { filters: scopeFilters } = useScopeFilters();
+  const search = useSearch({ from: '/sessions' });
+  const navigate = useNavigate({ from: '/sessions' });
+  const page = search.page ?? 1;
+  const pageSize = search.pageSize ?? 50;
   const { filters: listFilters, patchFilters: patchListFilters, clearFilters: clearListFilters } = useSessionListFilters();
-  const scopeQueryFilters = useMemo(() => scopeToSessionFilters(scopeFilters), [scopeFilters]);
+  const scopeQueryFilters = useMemo(() => scopeToSessionFilters(readScopeFilters(search)), [search]);
   const localQueryFilters = useMemo(() => sessionListToSessionFilters(listFilters), [listFilters]);
-  const queryFilters = useMemo(() => ({ ...scopeQueryFilters, ...localQueryFilters }), [scopeQueryFilters, localQueryFilters]);
-  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
-  const [offset, setOffset] = useState(0);
-  const [loadedSessions, setLoadedSessions] = useState<SessionSummary[]>([]);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const dimensionsQuery = useDimensionsQuery(scopeQueryFilters);
-  const filters = useMemo(() => cleanFilters({ ...queryFilters, limit: pageSize, offset }), [queryFilters, pageSize, offset]);
-  const sessionsQuery = useSessionsQuery(filters);
-  const pageSessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data?.sessions]);
-  const visibleSessions = loadedSessions.length > 0 ? loadedSessions : pageSessions;
+  const queryFilters = useMemo(
+    () => clean({ ...scopeQueryFilters, ...localQueryFilters, limit: pageSize, offset: (page - 1) * pageSize }),
+    [scopeQueryFilters, localQueryFilters, page, pageSize],
+  );
+  const dimensions = useDimensionsQuery(scopeQueryFilters);
+  const sessionsQuery = useSessionsQuery(queryFilters);
+  const items = sessionsQuery.data?.sessions ?? [];
+  const selected = items.find((item) => item.sessionId === search.selected);
+  const detailItem = items.find((item) => item.sessionId === search.detail)
+    ?? (search.detail === selected?.sessionId ? selected : undefined);
+  const hasFilters = Boolean(
+    search.appKey || search.packageName || search.environment || search.appVersion || search.devicePlatform
+    || search.from || search.to || search.userId || search.sessionId || search.route
+    || Object.values(listFilters).some((value) => value !== undefined && value !== ''),
+  );
 
-  useEffect(() => {
-    setOffset(0);
-    setLoadedSessions([]);
-  }, [queryFilters, pageSize]);
-
-  function loadMore() {
-    setOffset(visibleSessions.length);
-  }
-
-  function changePageSize(nextSize: PageSize) {
-    setPageSize(nextSize);
-    setOffset(0);
-    setLoadedSessions([]);
-  }
-
-  useEffect(() => {
-    if (!sessionsQuery.data) return;
-    if (offset === 0) {
-      setLoadedSessions(pageSessions);
-      return;
-    }
-    setLoadedSessions((current) => {
-      const seen = new Set(current.map((session) => session.sessionId));
-      const next = pageSessions.filter((session) => !seen.has(session.sessionId));
-      return next.length > 0 ? [...current, ...next] : current;
+  function patch(patchValue: Partial<SessionsSearch>, resetPage = false) {
+    void navigate({
+      search: (current) => clean({
+        ...current,
+        ...patchValue,
+        ...(resetPage ? { page: undefined, selected: undefined, detail: undefined } : {}),
+      }),
+      replace: resetPage,
     });
-  }, [offset, pageSessions, sessionsQuery.data]);
+  }
+
+  function select(item: SessionSummary) {
+    patch({ selected: item.sessionId, detail: undefined });
+  }
+
+  function peek(item: SessionSummary) {
+    patch({ selected: item.sessionId, detail: item.sessionId });
+  }
+
+  function open(item: SessionSummary) {
+    void navigate({
+      to: '/sessions/$sessionId',
+      params: { sessionId: item.sessionId },
+      search: { eventId: item.lastEventId },
+    });
+  }
 
   useEffect(() => {
-    const node = sentinelRef.current;
-    if (!node) return undefined;
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      if (!sessionsQuery.data?.hasMore || sessionsQuery.isFetching) return;
-      loadMore();
-    }, { rootMargin: '160px' });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [visibleSessions.length, sessionsQuery.data?.hasMore, sessionsQuery.isFetching]);
+    if (!sessionsQuery.data || !search.selected) return;
+    if (!items.some((item) => item.sessionId === search.selected)) {
+      patch({ selected: undefined, detail: undefined });
+    }
+  }, [sessionsQuery.data, items, search.selected]);
+
+  const state: CatalogState = sessionsQuery.isLoading && !sessionsQuery.data
+    ? 'loading'
+    : sessionsQuery.isError
+      ? 'error'
+      : items.length === 0
+        ? (hasFilters ? 'noResults' : 'empty')
+        : 'ready';
+
+  const total = sessionsQuery.data?.hasMore
+    ? (page - 1) * pageSize + items.length + 1
+    : (page - 1) * pageSize + items.length;
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-auto p-2 xl:overflow-hidden">
-      <section className="grid min-h-[620px] gap-2 xl:min-h-0 xl:grid-rows-[auto_minmax(0,1fr)]">
-        <Card>
-          <CardHeader className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <CardTitle>Session 检索</CardTitle>
-              <CardDescription>在顶部全局范围内按会话 ID、页面、状态或问题类型缩小会话列表。</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <SessionListFilterForm
-              filters={listFilters}
-              dimensions={dimensionsQuery.data}
-              onChange={patchListFilters}
-              onClear={clearListFilters}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-          <CardHeader className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <CardTitle>全部 Session</CardTitle>
-              <CardDescription>使用顶部全局范围筛选数据源；进入详情后按 sessionId 查看完整链路和原始 JSON。</CardDescription>
-            </div>
-            <PageSizeSelect value={pageSize} onChange={changePageSize} />
-          </CardHeader>
-          <CardContent className="min-h-0 overflow-auto p-0">
-            {sessionsQuery.data?.userIdQueryAvailable === false && scopeFilters.userId ? (
-              <p className="m-3 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
-                当前数据没有 `context.user.userId`，不能按用户检索；请改用时间、版本、应用或平台。
-              </p>
-            ) : null}
-            <SessionRows sessions={visibleSessions} variant="row" />
-            <ListFooter isFetching={sessionsQuery.isFetching} hasMore={sessionsQuery.data?.hasMore} label="Session" />
-            <div ref={sentinelRef} className="h-1" />
-          </CardContent>
-        </Card>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
+      <section className="flex flex-wrap items-end gap-2 border-b px-4 py-2">
+        <SessionListFilterForm
+          filters={listFilters}
+          dimensions={dimensions.data}
+          onChange={(next) => {
+            patchListFilters(next);
+            patch({ page: undefined, selected: undefined, detail: undefined }, true);
+          }}
+          onClear={() => {
+            clearListFilters();
+            patch({ page: undefined, selected: undefined, detail: undefined }, true);
+          }}
+        />
       </section>
+      <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
+        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+          <SessionCatalogTable
+            items={items}
+            state={state}
+            selectedId={search.selected}
+            onSelect={select}
+            onOpen={open}
+            onPeek={peek}
+            onRetry={() => void sessionsQuery.refetch()}
+          />
+          <CatalogPagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
+            onPageSizeChange={(nextPageSize) => patch({
+              pageSize: nextPageSize,
+              page: undefined,
+              selected: undefined,
+              detail: undefined,
+            })}
+          />
+        </div>
+        <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
+          <SessionPreviewPane
+            item={selected}
+            loading={Boolean(search.selected && sessionsQuery.isLoading)}
+            error={Boolean(search.selected && sessionsQuery.isError)}
+            onOpen={() => selected && open(selected)}
+            onPeek={() => selected && peek(selected)}
+          />
+        </aside>
+      </div>
+      <SessionRecord
+        open={Boolean(search.detail)}
+        item={detailItem}
+        onOpenChange={(openValue) => {
+          if (!openValue) patch({ detail: undefined });
+        }}
+        onExpand={(sessionId) => {
+          patch({ detail: undefined });
+          void navigate({
+            to: '/sessions/$sessionId',
+            params: { sessionId },
+            search: { eventId: detailItem?.lastEventId },
+          });
+        }}
+      />
     </div>
   );
 }
 
-function ListFooter({ isFetching, hasMore, label }: { isFetching: boolean; hasMore?: boolean; label: string }) {
-  if (isFetching) return <div className="px-3 py-3 text-center text-xs text-zinc-500">加载中...</div>;
-  if (hasMore) return null;
-  return <div className="px-3 py-3 text-center text-xs text-zinc-500">已加载全部 {label}</div>;
-}
-
-function PageSizeSelect({ value, onChange }: { value: PageSize; onChange: (value: PageSize) => void }) {
-  return (
-    <FilterSelect
-      ariaLabel="每页数量"
-      placeholder="每页"
-      value={String(value)}
-      className="min-w-[92px]"
-      onChange={(next) => onChange(Number(next ?? value) as PageSize)}
-      options={PAGE_SIZES.map((size) => ({ value: String(size), label: `每页 ${size}` }))}
-    />
-  );
-}
-
-function cleanFilters<T extends Record<string, unknown>>(filters: T): T {
+function clean<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(
-    Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
+    Object.entries(value).filter(([, item]) => item !== undefined && item !== '' && (!Array.isArray(item) || item.length)),
   ) as T;
 }

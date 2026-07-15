@@ -16,13 +16,15 @@
 ```text
 一级
   1. 大屏
-  2. HTTP
-  3. 埋点
-  4. 异常（error + 业务失败）
+  2. Session（列表 /sessions）
+  3. HTTP
+  4. 埋点
+  5. 异常（error + 业务失败）
 
 二级
-  HTTP / 埋点 / 异常 详情
-  Session 链路组装（sessionId / traceId / eventId；不占一级导航）
+  Session 工作区（/sessions/$sessionId）
+  HTTP / 埋点 / 异常独立详情页（/$domain/$eventId）
+  Catalog Sheet 展开预览（行内按钮 / Preview 次按钮）
 ```
 
 ---
@@ -101,7 +103,8 @@
 | 2.1.13 | 列：业务码 | 同 2.1.5 | 同 2.1.5（服务端派生） |
 | 2.1.14 | 列：耗时 | `durationMs` | 已有 |
 | 2.1.15 | 列：关联路由 | `context.route.*` | 已有 |
-| 2.1.16 | 行操作 | 打开详情；进入 Session；复制 ID / `request_id` | 前端 |
+| 2.1.16 | 行操作 | 展开预览（Sheet）；打开详情（独立页）；进入 Session；复制 ID / `request_id` | 前端 |
+| 2.1.17 | 点行 vs 打开详情 | 单击只选中 Preview；展开预览开 Sheet；打开详情 / 双击进 `/http/$eventId` | 前端 |
 
 ### 2.2 详情
 
@@ -113,6 +116,7 @@
 | 2.2.4 | 上下文 + 链路条 | user / device / app / sessionId / traceId / eventId / request_id | 前端 |
 | 2.2.5 | Raw | 完整 EventEnvelope，置后 | 已有 |
 | 2.2.6 | 详情缺失说明 | `detail_dropped` / 无 body 等 | 已有字段 |
+| 2.2.7 | 独立详情页 | `/http/$eventId`；可回列表、查看 Session、复制 cURL | 前端 |
 
 **明确不做**
 
@@ -191,7 +195,7 @@
 | 5.2 | Session 时间线 | 启动 / 页面 / HTTP / 埋点 / 错误；默认不强调 memory / jank | 已有 console；展示口径收口 |
 | 5.3 | 按 `traceId` 查看同流程 | 详情或 Session 内高亮 / 过滤 | 服务端 `getTrace` 已有 |
 | 5.4 | ID 复制 | `eventId` / `sessionId` / `traceId` / `http.request_id` | 前端 |
-| 5.5 | 最近 Session | 在导航的二级分组展示最近 3–5 个 Session；不提升为一级入口 | service sessions + 前端 |
+| 5.5 | Session 一级列表 | `/sessions` 检索会话；一级导航入口；不再使用侧栏「最近 Session」 | service sessions + 前端 |
 | 5.6 | Session 切换 | 在 Session 工作区按 sessionId / userId / 时间搜索并切换；切换后清除无效 eventId | dimensions/suggest + 前端 |
 | 5.7 | Session 事件流 | 按启动 / 页面 / HTTP / 埋点 / 问题分类浏览；支持主从定位、分组和窄屏详情访问 | 前端 |
 
@@ -199,7 +203,7 @@
 
 ## 整站明确不做
 
-- 一级导航不沿用旧的独立 Pages / Problems / Startup 拆分（相关能力并入大屏或列表）
+- 一级导航不沿用旧的独立 Pages / Problems / Startup 拆分（相关能力并入大屏或列表；Session 列表为一级入口）
 - 默认主路径不展示内存 / 帧数 / jank / native
 - 列表行不内联 headers / body
 - raw JSON 不作为第一视觉入口

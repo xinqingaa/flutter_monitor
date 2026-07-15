@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Filter, MoreHorizontal, MousePointerClick, RotateCcw, SearchX, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, Filter, MoreHorizontal, MousePointerClick, RotateCcw, SearchX, X } from 'lucide-react';
 import type { DomainSearch } from '../../app/router';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { Badge } from '../../components/ui/badge';
@@ -41,6 +41,7 @@ import {
   errorMechanismFilterOptions,
   resultFilterLabel,
 } from '../../shared/formatting/filter-labels';
+import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
 
 type Mode = 'business' | 'errors';
@@ -99,11 +100,19 @@ function DomainCatalog({ mode }: { mode: Mode }) {
   }
 
   function select(item: Item) {
-    patch({ eventId: item.eventId, detail: window.matchMedia('(max-width: 1399px)').matches ? item.eventId : undefined });
+    patch({ eventId: item.eventId, detail: undefined });
+  }
+
+  function peek(item: Item) {
+    patch({ eventId: item.eventId, detail: item.eventId });
   }
 
   function open(item: Item) {
-    patch({ eventId: item.eventId, detail: item.eventId });
+    void navigate({
+      to: mode === 'business' ? '/business/$eventId' : '/errors/$eventId',
+      params: { eventId: item.eventId },
+      search: (current) => pickScopeSearch(current),
+    });
   }
 
   function toggleSort() {
@@ -156,6 +165,7 @@ function DomainCatalog({ mode }: { mode: Mode }) {
             onSort={toggleSort}
             onSelect={select}
             onOpen={open}
+            onPeek={peek}
             onRetry={() => void catalog.refetch()}
           />
           <CatalogPagination
@@ -167,7 +177,12 @@ function DomainCatalog({ mode }: { mode: Mode }) {
           />
         </div>
         <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
-          <DomainPreview mode={mode} item={selected} onOpen={() => selected && open(selected)} />
+          <DomainPreview
+            mode={mode}
+            item={selected}
+            onOpen={() => selected && open(selected)}
+            onPeek={() => selected && peek(selected)}
+          />
         </aside>
       </div>
       <DomainRecord
@@ -180,6 +195,14 @@ function DomainCatalog({ mode }: { mode: Mode }) {
         items={items}
         onClose={() => patch({ detail: undefined })}
         onNavigate={(next) => patch({ eventId: next.eventId, detail: next.eventId })}
+        onExpand={(id) => {
+          patch({ detail: undefined });
+          void navigate({
+            to: mode === 'business' ? '/business/$eventId' : '/errors/$eventId',
+            params: { eventId: id },
+            search: (current) => pickScopeSearch(current),
+          });
+        }}
       />
     </div>
   );
@@ -273,6 +296,7 @@ function DomainTable({
   onSort,
   onSelect,
   onOpen,
+  onPeek,
   onRetry,
 }: {
   mode: Mode;
@@ -284,13 +308,14 @@ function DomainTable({
   onSort: () => void;
   onSelect: (item: Item) => void;
   onOpen: (item: Item) => void;
+  onPeek: (item: Item) => void;
   onRetry: () => void;
 }) {
   const columns = useMemo<ColumnDef<Item>[]>(
     () => mode === 'business'
-      ? businessColumns(onOpen, sortBy, sortDir, onSort) as ColumnDef<Item>[]
-      : errorColumns(onOpen, sortBy, sortDir, onSort) as ColumnDef<Item>[],
-    [mode, onOpen, onSort, sortBy, sortDir],
+      ? businessColumns(onOpen, onPeek, sortBy, sortDir, onSort) as ColumnDef<Item>[]
+      : errorColumns(onOpen, onPeek, sortBy, sortDir, onSort) as ColumnDef<Item>[],
+    [mode, onOpen, onPeek, onSort, sortBy, sortDir],
   );
 
   return (
@@ -299,7 +324,8 @@ function DomainTable({
       columns={columns}
       state={state}
       selectedId={selectedId}
-      minWidthClass="min-w-[880px]"
+      getRowId={(item) => item.eventId}
+      minWidthClass="min-w-[920px]"
       message={mode === 'business' ? {
         emptyTitle: '暂无埋点数据',
         emptyDescription: '等待应用产生业务动作。',
@@ -324,6 +350,7 @@ function DomainTable({
 
 function businessColumns(
   onOpen: (item: Item) => void,
+  onPeek: (item: Item) => void,
   sortBy: 'timestamp',
   sortDir: 'asc' | 'desc',
   onSort: () => void,
@@ -367,13 +394,14 @@ function businessColumns(
     {
       id: 'actions',
       enableHiding: false,
-      cell: ({ row }) => <CatalogRowActions item={row.original} label="埋点" onOpen={(item) => onOpen(item)} />,
+      cell: ({ row }) => <CatalogRowActions item={row.original} label="埋点" onOpen={onOpen} onPeek={onPeek} />,
     },
   ];
 }
 
 function errorColumns(
   onOpen: (item: Item) => void,
+  onPeek: (item: Item) => void,
   sortBy: 'timestamp',
   sortDir: 'asc' | 'desc',
   onSort: () => void,
@@ -433,12 +461,17 @@ function errorColumns(
     {
       id: 'actions',
       enableHiding: false,
-      cell: ({ row }) => <CatalogRowActions item={row.original} label="异常" onOpen={(item) => onOpen(item)} />,
+      cell: ({ row }) => <CatalogRowActions item={row.original} label="异常" onOpen={onOpen} onPeek={onPeek} />,
     },
   ];
 }
 
-function DomainPreview({ mode, item, onOpen }: { mode: Mode; item?: Item; onOpen: () => void }) {
+function DomainPreview({ mode, item, onOpen, onPeek }: {
+  mode: Mode;
+  item?: Item;
+  onOpen: () => void;
+  onPeek: () => void;
+}) {
   const business = mode === 'business' ? item as BusinessCatalogItem : undefined;
   const error = mode === 'errors' ? item as ErrorCatalogItem : undefined;
 
@@ -479,11 +512,12 @@ function DomainPreview({ mode, item, onOpen }: { mode: Mode; item?: Item; onOpen
       eventId={item?.eventId}
       sessionId={item?.sessionId}
       onOpen={onOpen}
+      onPeek={onPeek}
     />
   );
 }
 
-function DomainRecord({ mode, open, item, event, loading, error, items = [], onClose, onNavigate }: {
+function DomainRecord({ mode, open, item, event, loading, error, items = [], onClose, onNavigate, onExpand }: {
   mode: Mode;
   open: boolean;
   item?: Item;
@@ -493,11 +527,8 @@ function DomainRecord({ mode, open, item, event, loading, error, items = [], onC
   items?: Item[];
   onClose: () => void;
   onNavigate?: (item: Item) => void;
+  onExpand?: (eventId: string) => void;
 }) {
-  const session = useSessionQuery(event?.sessionId);
-  const related = (session.data ?? [])
-    .filter((candidate) => candidate.eventId !== event?.eventId && (candidate.name === 'http.client' || readPath(candidate, ['attributes', 'business.action']) !== undefined || candidate.signalType === 'error'))
-    .slice(-8);
   const index = item ? items.findIndex((entry) => entry.eventId === item.eventId) : -1;
   const previous = index > 0 ? items[index - 1] : undefined;
   const next = index >= 0 && index < items.length - 1 ? items[index + 1] : undefined;
@@ -538,30 +569,53 @@ function DomainRecord({ mode, open, item, event, loading, error, items = [], onC
           >
             <ChevronRight data-icon="inline-start" />
           </Button>
+          {onExpand && item?.eventId ? (
+            <Button size="sm" variant="outline" onClick={() => onExpand(item.eventId)}>
+              <ExternalLink data-icon="inline-start" />
+              全屏
+            </Button>
+          ) : null}
         </>
       )}
     >
-      {loading ? (
-        <DomainRecordLoading />
-      ) : error ? (
-        <DomainRecordState icon={AlertCircle} title="详情加载失败" description="请检查 Monitor Service 后重试。" />
-      ) : !event ? (
-        <DomainRecordState icon={SearchX} title="找不到该事件" description="事件可能已超过本地保留上限。" />
-      ) : (
-        <Tabs key={event.eventId} defaultValue="detail" className="flex h-full min-h-0 flex-col gap-4 p-6">
-          <TabsList className="w-fit shrink-0">
-            <TabsTrigger value="detail">{mode === 'business' ? '属性' : '错误'}</TabsTrigger>
-            <TabsTrigger value="related">关联</TabsTrigger>
-            <TabsTrigger value="context">上下文</TabsTrigger>
-            <TabsTrigger value="raw">Raw</TabsTrigger>
-          </TabsList>
-          <TabsContent value="detail" className="min-h-0 flex-1 overflow-auto"><DomainDetail mode={mode} event={event} /></TabsContent>
-          <TabsContent value="related" className="min-h-0 flex-1 overflow-auto"><Related events={related} /></TabsContent>
-          <TabsContent value="context" className="min-h-0 flex-1 overflow-auto"><JsonViewer value={{ resource: event.resource, context: event.context, ids: { eventId: event.eventId, sessionId: event.sessionId, traceId: event.traceId, spanId: event.spanId } }} collapsed={2} /></TabsContent>
-          <TabsContent value="raw" className="min-h-0 flex-1 overflow-auto"><JsonViewer value={event} collapsed={2} /></TabsContent>
-        </Tabs>
-      )}
+      <DomainRecordContent mode={mode} event={event} loading={loading} error={error} />
     </RecordShell>
+  );
+}
+
+export function DomainRecordContent({
+  mode,
+  event,
+  loading,
+  error,
+}: {
+  mode: Mode;
+  event?: MonitorEvent;
+  loading: boolean;
+  error: boolean;
+}) {
+  const session = useSessionQuery(event?.sessionId);
+  const related = (session.data ?? [])
+    .filter((candidate) => candidate.eventId !== event?.eventId && (candidate.name === 'http.client' || readPath(candidate, ['attributes', 'business.action']) !== undefined || candidate.signalType === 'error'))
+    .slice(-8);
+
+  if (loading) return <DomainRecordLoading />;
+  if (error) return <DomainRecordState icon={AlertCircle} title="详情加载失败" description="请检查 Monitor Service 后重试。" />;
+  if (!event) return <DomainRecordState icon={SearchX} title="找不到该事件" description="事件可能已超过本地保留上限。" />;
+
+  return (
+    <Tabs key={event.eventId} defaultValue="detail" className="flex h-full min-h-0 flex-col gap-4 p-6">
+      <TabsList className="w-fit shrink-0">
+        <TabsTrigger value="detail">{mode === 'business' ? '属性' : '错误'}</TabsTrigger>
+        <TabsTrigger value="related">关联</TabsTrigger>
+        <TabsTrigger value="context">上下文</TabsTrigger>
+        <TabsTrigger value="raw">Raw</TabsTrigger>
+      </TabsList>
+      <TabsContent value="detail" className="min-h-0 flex-1 overflow-auto"><DomainDetail mode={mode} event={event} /></TabsContent>
+      <TabsContent value="related" className="min-h-0 flex-1 overflow-auto"><Related events={related} /></TabsContent>
+      <TabsContent value="context" className="min-h-0 flex-1 overflow-auto"><JsonViewer value={{ resource: event.resource, context: event.context, ids: { eventId: event.eventId, sessionId: event.sessionId, traceId: event.traceId, spanId: event.spanId } }} collapsed={2} /></TabsContent>
+      <TabsContent value="raw" className="min-h-0 flex-1 overflow-auto"><JsonViewer value={event} collapsed={2} /></TabsContent>
+    </Tabs>
   );
 }
 
@@ -759,7 +813,7 @@ function domainColumnClass(mode: Mode, id: string, header: boolean) {
     id === 'userId' && 'w-[70px]',
     id === 'sessionId' && 'w-[120px]',
     id === 'appVersion' && 'w-[60px]',
-    id === 'actions' && 'w-[44px]',
+    id === 'actions' && 'w-[88px]',
     mode === 'business' && id === 'action' && 'min-w-[180px]',
     mode === 'errors' && id === 'message' && 'min-w-[128px]',
     !header && 'overflow-hidden',
