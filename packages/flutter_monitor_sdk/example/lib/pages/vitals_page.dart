@@ -135,9 +135,12 @@ class _VitalsPageState extends State<VitalsPage> {
                       decoration: const InputDecoration(labelText: '体重 (kg)'),
                     ),
                     const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: const Text('提交体征'),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _busy ? null : _submit,
+                        child: const Text('提交体征'),
+                      ),
                     ),
                   ],
                 ),

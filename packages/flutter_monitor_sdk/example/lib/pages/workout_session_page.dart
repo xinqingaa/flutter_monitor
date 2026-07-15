@@ -150,6 +150,8 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
             : SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
                   child: FilledButton(
                     onPressed: _busy
                         ? null
@@ -164,6 +166,7 @@ class _WorkoutSessionPageState extends State<WorkoutSessionPage> {
                       _step < steps.length - 1 ? '完成当前阶段' : '结束并提交',
                     ),
                   ),
+                ),
                 ),
               ),
       ),

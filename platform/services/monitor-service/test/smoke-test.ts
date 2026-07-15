@@ -53,6 +53,7 @@ async function runSmokeTests(): Promise<void> {
     assert.equal(data.total, 1);
     assert.equal(data.items.length, 1);
     assert.equal(data.items[0].requestId, 'req-smoke');
+    assert.equal(data.items[0].userId, 'user_smoke');
   });
   await assertJson('/api/monitor/v1/events/evt_smoke_http', (data) => {
     assert.equal(data.event.eventId, 'evt_smoke_http');

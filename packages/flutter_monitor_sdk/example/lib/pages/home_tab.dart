@@ -106,14 +106,17 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
                         style: TextStyle(color: Colors.white70),
                       ),
                       const SizedBox(height: 16),
-                      FilledButton.tonal(
-                        onPressed: dash.nextWorkoutId.isEmpty
-                            ? null
-                            : () => AppNavigation.openWorkout(
-                                context,
-                                dash.nextWorkoutId,
-                              ),
-                        child: const Text('继续今日训练'),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonal(
+                          onPressed: dash.nextWorkoutId.isEmpty
+                              ? null
+                              : () => AppNavigation.openWorkout(
+                                  context,
+                                  dash.nextWorkoutId,
+                                ),
+                          child: const Text('继续今日训练'),
+                        ),
                       ),
                     ],
                   ),

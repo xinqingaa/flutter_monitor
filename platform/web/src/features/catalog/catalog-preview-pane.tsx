@@ -50,9 +50,10 @@ export function CatalogPreviewPane({
       ] : undefined}
       ids={item ? [
         { label: 'Event', value: item.eventId },
+        { label: 'UserId', value: item.userId },
         { label: 'Session', value: item.sessionId },
         { label: 'Trace', value: item.traceId },
-        { label: 'Request', value: item.requestId },
+        { label: 'RequestId', value: item.requestId },
       ] : undefined}
       eventId={item?.eventId}
       sessionId={item?.sessionId}

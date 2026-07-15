@@ -26,14 +26,17 @@ class _AppShellState extends State<AppShell> {
       moduleName: 'home',
       moduleScene: 'tabs',
       child: Scaffold(
-        body: IndexedStack(
-          index: _index,
-          children: [
-            HomeTab(api: widget.api),
-            TrainTab(api: widget.api),
-            DiscoverTab(api: widget.api),
-            MeTab(api: widget.api),
-          ],
+        body: SafeArea(
+          bottom: false,
+          child: IndexedStack(
+            index: _index,
+            children: [
+              HomeTab(api: widget.api),
+              TrainTab(api: widget.api),
+              DiscoverTab(api: widget.api),
+              MeTab(api: widget.api),
+            ],
+          ),
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _index,

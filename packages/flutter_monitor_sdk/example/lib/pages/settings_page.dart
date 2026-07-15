@@ -56,9 +56,12 @@ class SettingsPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            FilledButton(
-              onPressed: () => _logout(context),
-              child: const Text('退出登录'),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => _logout(context),
+                child: const Text('退出登录'),
+              ),
             ),
           ],
         ),

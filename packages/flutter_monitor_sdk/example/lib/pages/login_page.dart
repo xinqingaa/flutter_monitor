@@ -168,14 +168,20 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ],
               const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _loading ? null : _login,
-                child: Text(_loading ? '登录中…' : '进入 App'),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _loading ? null : _login,
+                  child: Text(_loading ? '登录中…' : '进入 App'),
+                ),
               ),
               const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: _loading ? null : _randomId,
-                child: const Text('随机生成 userId'),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _loading ? null : _randomId,
+                  child: const Text('随机生成 userId'),
+                ),
               ),
               const SizedBox(height: 24),
               Text(

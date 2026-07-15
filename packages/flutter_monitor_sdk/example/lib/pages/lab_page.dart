@@ -42,19 +42,28 @@ class _LabPageState extends State<LabPage> {
           children: [
             PulseCard(child: Text(_message)),
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () => _run('慢请求', widget.api.labSlow),
-              child: const Text('慢请求 (~1.8s)'),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => _run('慢请求', widget.api.labSlow),
+                child: const Text('慢请求 (~1.8s)'),
+              ),
             ),
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: () => _run('404', widget.api.labNotFound),
-              child: const Text('HTTP 404'),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => _run('404', widget.api.labNotFound),
+                child: const Text('HTTP 404'),
+              ),
             ),
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: () => _run('503', widget.api.labUnavailable),
-              child: const Text('HTTP 503'),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => _run('503', widget.api.labUnavailable),
+                child: const Text('HTTP 503'),
+              ),
             ),
           ],
         ),

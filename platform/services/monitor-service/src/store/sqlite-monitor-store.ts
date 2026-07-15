@@ -1147,6 +1147,7 @@ function httpCatalogItemFromEvent(event: MonitorEvent): HttpCatalogItem {
     durationMs: event.durationMs,
     success: http.success,
     route: routeOf(event),
+    userId: userIdOf(event),
     sessionId: event.sessionId,
     traceId: event.traceId,
     requestId: http.requestId,

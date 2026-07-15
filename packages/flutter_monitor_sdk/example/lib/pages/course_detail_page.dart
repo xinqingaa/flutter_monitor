@@ -168,12 +168,15 @@ class _CourseDetailPageState extends State<CourseDetailPage> {
             : SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
                   child: FilledButton(
                     onPressed: _busy ? null : _book,
                     child: Text(
                       detail.seatsLeft > 0 ? '预约课程' : '已满员（可再试触发业务失败）',
                     ),
                   ),
+                ),
                 ),
               ),
       ),

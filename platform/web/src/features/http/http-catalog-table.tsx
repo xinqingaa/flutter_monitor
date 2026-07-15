@@ -128,6 +128,24 @@ export function HttpCatalogTable({
         ),
       },
       {
+        accessorKey: 'userId',
+        header: 'UserId',
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.userId}>
+            {row.original.userId ?? '-'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'requestId',
+        header: 'RequestId',
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.requestId}>
+            {row.original.requestId ?? '-'}
+          </span>
+        ),
+      },
+      {
         id: 'actions',
         enableHiding: false,
         cell: ({ row }) => (
@@ -149,7 +167,7 @@ export function HttpCatalogTable({
       columns={columns}
       state={state}
       selectedId={selectedId}
-      minWidthClass="min-w-[920px]"
+      minWidthClass="min-w-[1120px]"
       message={{
         emptyTitle: '暂无 HTTP 请求',
         emptyDescription: '等待应用产生网络请求。',
@@ -181,6 +199,8 @@ function columnClass(id: string, header: boolean) {
     id === 'businessCode' && 'w-[96px] text-right',
     id === 'durationMs' && 'w-[108px] text-right',
     id === 'route' && 'w-[140px]',
+    id === 'userId' && 'w-[100px]',
+    id === 'requestId' && 'w-[140px]',
     id === 'actions' && 'w-[52px]',
     !header && 'overflow-hidden',
   );

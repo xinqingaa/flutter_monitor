@@ -75,6 +75,7 @@ export interface HttpCatalogItem {
   durationMs?: number;
   success?: boolean;
   route?: string;
+  userId?: string;
   sessionId?: string;
   traceId?: string;
   requestId?: string;
