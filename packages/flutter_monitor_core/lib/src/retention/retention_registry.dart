@@ -54,7 +54,8 @@ class RetentionRegistry {
     if (name == EventNames.httpClient) return EventRetention.hard;
     // 聚合摘要是降级阶梯的最终产物，本身已压缩，速率结构性有界。
     if (name == EventNames.httpClientSummary ||
-        name == EventNames.businessActionSummary) {
+        name == EventNames.businessActionSummary ||
+        name == EventNames.errorGroupSummary) {
       return EventRetention.hard;
     }
     if (name == EventNames.interactionMeasure) return EventRetention.hard;

@@ -192,7 +192,7 @@ retention 是 SDK 端的本地降级策略概念，回答“资源紧张时这�
 | `hard` | `ui.jank.sequence` | 卡顿问题事件 |
 | `hard` | `memory.pressure`、`native.memory.pressure`、`memory.leak.suspect` | 内存问题事件；普通 `memory.growth` 不在 hard |
 | `hard` | `sdk.init`、`sdk.health.report` | 这两个之外的 `sdk.*` 不进 hard |
-| `hard` | `http.client.summary`、`business.action.summary` | 降级聚合产物，本身已压缩，速率结构性有界 |
+| `hard` | `http.client.summary`、`business.action.summary`、`error.group.summary` | 降级/去重聚合产物，本身已压缩，速率结构性有界 |
 | `sampleable` | `memory.sample`、`native.memory.sample` | 周期采样信号，可降采样 |
 | `sampleable` | 除 `sdk.init` / `sdk.health.report` 外的全部 `sdk.*` | 自监控边沿/失败事件 |
 | `compressible` | **其余全部事件（默认等级）** | 例如 `page.visit` / `page.load` / `page.stay`、`route.*`、`app.lifecycle`、冷/热启动非 `end` phase、`memory.growth`、`app.foreground_duration` 等 |
@@ -407,6 +407,10 @@ SDK 对业务侧只暴露三种稳定输出模式，普通接入方不需要分�
 | `error.handled` | boolean | safe | 是 | 是否已处理 |
 | `error.fatal` | boolean | safe | 是 | 是否致命 |
 | `error.thread` | string | queryable | 否 | 线程/isolate/native thread |
+| `error.fingerprint` | string | queryable | 是 | 稳定分组键，用于去重与异常列表聚合 |
+| `error.title` | string | queryable | 是 | 归一化短标题，通常取 message 首行 |
+| `error.stack_head` | string | queryable | 否 | 清洗后的前若干栈帧摘要 |
+| `error.app_frame` | string | queryable | 否 | 首个业务栈帧符号，布局类错误常为空 |
 
 ## 内存、Lifecycle 与 Native 事件契约
 
@@ -796,6 +800,7 @@ FlutterMonitorSDK.clearContext(
 | `payload.error.message` | string | sensitive | 错误消息 |
 | `payload.error.stacktrace` | string | sensitive | 错误堆栈 |
 | `payload.error.library` | string | queryable | framework/library 上下文 |
+| `payload.error.diagnostics` | string | sensitive | FlutterErrorDetails 等短诊断文本，限长脱敏 |
 | `payload.breadcrumbs` | array | mixed | recent breadcrumbs 快照 |
 | `payload.truncated` | boolean | safe | payload 是否被裁剪 |
 | `payload.truncated.reason` | string | safe | payload 被裁剪的原因 |
@@ -1155,7 +1160,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | 内存 | `metric memory.sample`、`metric memory.growth`、`metric memory.pressure`、`metric memory.leak.suspect`（显式开启）；页面/启动边界 RSS 仅在开启后合并到主 trace | `memory.sample_source`、`memory.rss_mb`、`memory.growth_mb`、`memory.growth_duration_ms`、`memory.pressure_level` |
 | 生命周期 | `breadcrumb app.lifecycle`、`metric app.foreground_duration`、`metric app.background_duration`、`trace app.hot_start`、`sdk.lifecycle.flush` | `context.lifecycle.*`、`durationMs`、`app.start.type`、`app.exit_flush.success` |
 | Native | `metric native.memory.sample`、`metric native.memory.pressure`、`breadcrumb native.lifecycle`、`breadcrumb native.warning`、`error native.oom`、`error native.anr`、`error native.crash` | `context.native.*`、`native.signal`、`memory.native_used_mb`、`memory.pressure_level`、`payload.native` |
-| 错误 | `error error.flutter`、`error error.dart`、`error native.crash`、`error native.oom`、`error native.anr` | `error.type`、`error.mechanism`、`error.handled`、`error.fatal`、`error.thread`、`payload.error.*`、`payload.breadcrumbs` |
+| 错误 | `error error.flutter`、`error error.dart`、`error native.crash`、`error native.oom`、`error native.anr`；重复时 `metric error.group.summary` | `error.type`、`error.mechanism`、`error.handled`、`error.fatal`、`error.thread`、`error.fingerprint`、`error.title`、`error.stack_head`、`error.app_frame`、`payload.error.*`、`payload.breadcrumbs`；summary 另带 `summary.count` |
 
 `http.error_type` 必须使用 SDK canonical 取值，不能直接透传 Dio、package:http 或平台异常名：
 
@@ -1221,6 +1226,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
 |---|---|---|---|---|---|
 | `http.client.summary` | `metric` | `ok` | `high` | `http.url.normalized`、`http.success`、`summary.count`、`summary.duration_p50_ms`、`summary.duration_p95_ms`、`summary.duration_max_ms`、`summary.bytes_total` | 队列压力下按 normalized URL + 成败聚合的 HTTP 摘要 |
 | `business.action.summary` | `metric` | `ok` | `high` | `business.action`、`summary.count`、`summary.duration_p50_ms`、`summary.duration_p95_ms`、`summary.duration_max_ms`、`summary.bytes_total` | track 超 `maxTrackEventsPerMinute` 或队列压力下按 action 聚合的业务动作摘要 |
+| `error.group.summary` | `metric` | `ok` | `high` | `error.fingerprint`、`error.title`、`summary.count`；条件字段 `error.type`、`error.mechanism` | 同 fingerprint 重复错误的聚合摘要；首次完整 error 仍单独上报 |
 
 公共约定：
 
@@ -1228,6 +1234,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
 - `payload["summary.durations_ms"]` 保留有界 duration 样本（上限 128），用于增量重算分位数。
 - summary 事件本身 retention 为 hard（聚合产物速率结构性有界）。
 - track 超限不再静默丢弃：超出部分按 `business.action` 聚合进 `business.action.summary`，由 pipeline 在窗口结束或 flush 时发出。
+- 同一 session 内同一 `error.fingerprint` 的重复抛出：首次完整上报；后续折叠；窗口结束/flush 时若总次数 > 1 发出 `error.group.summary`，`summary.count` 为窗口内总次数（含首次）。
 
 业务侧普通接入推荐 `FlutterMonitorSDK.track(...)`。`measure` 仍保留为显式开启的实验/诊断 API，不作为默认推荐路径；业务逻辑保持在业务代码中执行，SDK 只旁路观测。`startTrace`、`startSpan`、`addBreadcrumb`、任意自定义 attributes/payload 不作为当前公开业务 API；未来只有出现明确业务场景时才重新设计高级诊断入口。
 

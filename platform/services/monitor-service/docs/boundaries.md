@@ -52,7 +52,7 @@ Monitor Service 只接收和存储 SDK 发来的 `EventEnvelope`。
 - `businessCodeState` 区分 `value`、`absent`、`detail_unavailable`、`parse_failed`。
 - 结果固定按事件时间倒序，返回 `items + total + limit + offset + slowThresholdMs`。
 
-`/catalog/business` 只收录带 `business.action` 的单次埋点与 `business.action.summary`；`measure` 不进入主集合。`/catalog/errors` 是稳定性 error 与 `business.result=failed` 的无重复并集，明确排除 completed HTTP、jank、memory 与 native 诊断事件。两者均只返回可由 `eventId` 回查的摘要。
+`/catalog/business` 只收录带 `business.action` 的单次埋点与 `business.action.summary`；`measure` 不进入主集合。`/catalog/errors` 是稳定性 error、`error.group.summary` 与 `business.result=failed` 的无重复并集，明确排除 completed HTTP、jank、memory 与 native 诊断事件。两者均只返回可由 `eventId` 回查的摘要。
 
 ## Workbench 候选与大屏聚合
 

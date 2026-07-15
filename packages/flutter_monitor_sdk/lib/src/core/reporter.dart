@@ -14,6 +14,7 @@ import 'package:flutter_monitor_sdk/src/native/native_signal_mapper.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output_resolver.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/event_pipeline.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/error_fingerprint.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
 import 'package:flutter_monitor_sdk/src/utils/http_detail_builder.dart';
@@ -898,6 +899,14 @@ class Reporter {
     FlutterErrorDetails details, {
     DateTime? timestamp,
   }) {
+    final diagnostics = details.informationCollector == null
+        ? null
+        : ErrorFingerprint.truncateDiagnostics(
+            details.informationCollector!()
+                .map((node) => node.toDescription())
+                .where((line) => line.trim().isNotEmpty)
+                .join('\n'),
+          );
     return _recordRuntimeError(
       name: EventNames.errorFlutter,
       type: ErrorTypes.flutterError,
@@ -906,6 +915,7 @@ class Reporter {
       stackTrace: details.stack,
       library: details.library,
       context: details.context?.toString(),
+      diagnostics: diagnostics,
       timestamp: timestamp,
     );
   }
@@ -937,6 +947,19 @@ class Reporter {
     EventLevel level = EventLevel.error,
     Map<String, Object?> properties = const <String, Object?>{},
   }) {
+    final message = error.toString();
+    final resolvedType = type ?? error.runtimeType.toString();
+    final title = ErrorFingerprint.normalizeMessage(message);
+    final stackHead = ErrorFingerprint.stackHead(stackTrace);
+    final appFrame = ErrorFingerprint.appFrame(stackTrace);
+    final route = _contextManager.capture().context.route?.name;
+    final fingerprint = ErrorFingerprint.build(
+      name: EventNames.errorManual,
+      type: resolvedType,
+      message: message,
+      stackHead: stackHead,
+      route: route,
+    );
     return _pipeline.capture(
       RawSignal(
         source: SignalSources.sdkError,
@@ -949,13 +972,17 @@ class Reporter {
             ? EventPriority.critical
             : EventPriority.high,
         attributes: <String, Object?>{
-          FieldPaths.errorType: type ?? error.runtimeType.toString(),
+          FieldPaths.errorType: resolvedType,
           FieldPaths.errorMechanism: ErrorMechanisms.manual,
           FieldPaths.errorHandled: handled,
           FieldPaths.errorFatal: level == EventLevel.fatal,
+          FieldPaths.errorFingerprint: fingerprint,
+          FieldPaths.errorTitle: title,
+          if (stackHead != null) FieldPaths.errorStackHead: stackHead,
+          if (appFrame != null) FieldPaths.errorAppFrame: appFrame,
         },
         payload: <String, Object?>{
-          FieldPaths.payloadErrorMessage: error.toString(),
+          FieldPaths.payloadErrorMessage: message,
           if (stackTrace != null)
             FieldPaths.payloadErrorStacktrace: stackTrace.toString(),
           if (properties.isNotEmpty) FieldPaths.payloadProperties: properties,
@@ -1230,8 +1257,20 @@ class Reporter {
     StackTrace? stackTrace,
     String? library,
     String? context,
+    String? diagnostics,
     DateTime? timestamp,
   }) {
+    final title = ErrorFingerprint.normalizeMessage(message);
+    final stackHead = ErrorFingerprint.stackHead(stackTrace);
+    final appFrame = ErrorFingerprint.appFrame(stackTrace);
+    final route = _contextManager.capture().context.route?.name;
+    final fingerprint = ErrorFingerprint.build(
+      name: name,
+      type: type,
+      message: message,
+      stackHead: stackHead,
+      route: route,
+    );
     return _pipeline.capture(
       RawSignal(
         source: SignalSources.sdkError,
@@ -1246,6 +1285,10 @@ class Reporter {
           FieldPaths.errorMechanism: mechanism,
           FieldPaths.errorHandled: false,
           FieldPaths.errorFatal: false,
+          FieldPaths.errorFingerprint: fingerprint,
+          FieldPaths.errorTitle: title,
+          if (stackHead != null) FieldPaths.errorStackHead: stackHead,
+          if (appFrame != null) FieldPaths.errorAppFrame: appFrame,
         },
         payload: <String, Object?>{
           FieldPaths.payloadErrorMessage: message,
@@ -1253,6 +1296,8 @@ class Reporter {
             FieldPaths.payloadErrorStacktrace: stackTrace.toString(),
           if (library != null) FieldPaths.payloadErrorLibrary: library,
           if (context != null) PayloadKeys.context: context,
+          if (diagnostics != null)
+            FieldPaths.payloadErrorDiagnostics: diagnostics,
         },
       ),
     );

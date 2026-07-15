@@ -204,10 +204,15 @@ abstract final class FieldPaths {
   static const errorHandled = 'error.handled';
   static const errorFatal = 'error.fatal';
   static const errorThread = 'error.thread';
+  static const errorFingerprint = 'error.fingerprint';
+  static const errorTitle = 'error.title';
+  static const errorStackHead = 'error.stack_head';
+  static const errorAppFrame = 'error.app_frame';
 
   static const payloadErrorMessage = 'payload.error.message';
   static const payloadErrorStacktrace = 'payload.error.stacktrace';
   static const payloadErrorLibrary = 'payload.error.library';
+  static const payloadErrorDiagnostics = 'payload.error.diagnostics';
   static const payloadBreadcrumbs = 'payload.breadcrumbs';
   static const payloadTruncated = 'payload.truncated';
   static const payloadTruncatedReason = 'payload.truncated.reason';

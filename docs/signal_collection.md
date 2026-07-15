@@ -412,9 +412,11 @@ route 实例:
 
 - `error error.flutter`
 - `error error.dart`
+- `error error.manual`
 - `error native.crash`
 - `error native.oom`
 - `error native.anr`
+- `metric error.group.summary`（同 fingerprint 重复抛出时的聚合摘要）
 
 ### 链路关联
 
@@ -431,6 +433,10 @@ route 实例:
 - `error.handled`
 - `error.fatal`
 - `error.thread`
+- `error.fingerprint`（稳定分组键，用于去重与 Workbench 聚合）
+- `error.title`（归一化后的短标题，通常取 message 首行）
+- `error.stack_head`（清洗后的前若干栈帧摘要）
+- `error.app_frame`（首个业务栈帧，若存在）
 - `native.crash.type`
 - `native.oom.reason`
 - `native.anr.duration_ms`
@@ -440,8 +446,19 @@ route 实例:
 - message；
 - stack；
 - library/framework context；
+- diagnostics（FlutterErrorDetails informationCollector 等短诊断文本，限长）；
 - breadcrumbs；
 - native details，脱敏后可选。
+
+### 去重与聚合
+
+布局类 Flutter error 会在每一帧 layout 重复抛出。SDK 必须：
+
+1. 为每次错误计算稳定 `error.fingerprint`（基于 name、type、归一化 message、stack_head、当前 route）。
+2. **同一 session 内同一 fingerprint 的首次错误完整上报**。
+3. 后续重复在窗口内折叠，不重复上报完整 envelope。
+4. 窗口结束、进后台、退出或手动 flush 时，若重复次数 > 1，发出 `error.group.summary`，携带 `error.fingerprint`、`error.title`、`summary.count` 和 exemplar eventId。
+5. 不得静默丢掉首次错误；不得只按 `error.type=flutter_error` 分组。
 
 ### 限制与降级
 
@@ -449,6 +466,7 @@ route 实例:
 - 同一错误需要去重或限流，避免错误风暴。
 - crash 时异步上报不可靠，应优先写离线缓存。
 - native crash dump 可能包含敏感信息，默认不上传原始 dump。
+- `payload.error.diagnostics` 必须限长并脱敏，不得携带完整 widget 树或用户输入原文。
 
 ## 行为采集
 

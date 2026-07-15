@@ -80,8 +80,14 @@ void main() {
     expect(FieldPaths.httpRequestId, 'http.request_id');
     expect(EventNames.httpClientSummary, 'http.client.summary');
     expect(EventNames.businessActionSummary, 'business.action.summary');
+    expect(EventNames.errorGroupSummary, 'error.group.summary');
     expect(FieldPaths.summaryCount, 'summary.count');
     expect(FieldPaths.summaryBytesTotal, 'summary.bytes_total');
+    expect(FieldPaths.errorFingerprint, 'error.fingerprint');
+    expect(FieldPaths.errorTitle, 'error.title');
+    expect(FieldPaths.errorStackHead, 'error.stack_head');
+    expect(FieldPaths.errorAppFrame, 'error.app_frame');
+    expect(FieldPaths.payloadErrorDiagnostics, 'payload.error.diagnostics');
     expect(PayloadKeys.exemplarEventIds, 'exemplar.event_ids');
     expect(PayloadKeys.httpQuery, 'http.query');
     expect(PayloadKeys.httpDetail, 'http.detail');

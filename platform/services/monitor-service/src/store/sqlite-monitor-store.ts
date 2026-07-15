@@ -1121,16 +1121,45 @@ function businessCatalogItemFromEvent(event: MonitorEvent): BusinessCatalogItem 
   return { eventId: event.eventId ?? '', timestamp: event.timestamp ?? event.startTime, action: domain.businessAction ?? event.name ?? '未知动作', result: domain.businessResult, route: routeOf(event), userId: userIdOf(event), sessionId: event.sessionId, traceId: event.traceId, appVersion: appVersionOf(event), summary: event.name === 'business.action.summary' };
 }
 
-function errorCatalogItemFromEvent(event: MonitorEvent): ErrorCatalogItem {
-  const domain = domainCatalogFieldsOf(event);
-  const businessFailure = isBusinessFailureEvent(event);
-  return { eventId: event.eventId ?? '', timestamp: event.timestamp ?? event.startTime, kind: businessFailure ? 'business_failure' : 'error', type: businessFailure ? (domain.businessAction ?? '业务失败') : (domain.errorType ?? event.name ?? '未知错误'), message: businessFailure ? domain.businessResult : domain.errorMessage, mechanism: domain.errorMechanism, fatal: domain.errorFatal, handled: domain.errorHandled, route: routeOf(event), userId: userIdOf(event), sessionId: event.sessionId, traceId: event.traceId, appVersion: appVersionOf(event) };
-}
-
 function catalogProblemKind(event: MonitorEvent): string {
   if (isBusinessFailureEvent(event)) return 'business_failure';
   if (isStabilityErrorEvent(event)) return 'error';
+  if (nameOf(event) === 'error.group.summary') return 'error';
   return 'none';
+}
+
+function errorCatalogItemFromEvent(event: MonitorEvent): ErrorCatalogItem {
+  const domain = domainCatalogFieldsOf(event);
+  const businessFailure = isBusinessFailureEvent(event);
+  const summary = event.name === 'error.group.summary';
+  const title = stringAttribute(event, 'error.title');
+  const fingerprint = stringAttribute(event, 'error.fingerprint');
+  const occurrenceCount = summary
+    ? numericAttribute(event, 'summary.count')
+    : undefined;
+  return {
+    eventId: event.eventId ?? '',
+    timestamp: event.timestamp ?? event.startTime,
+    kind: businessFailure ? 'business_failure' : 'error',
+    type: businessFailure
+      ? (domain.businessAction ?? '业务失败')
+      : (title ?? domain.errorType ?? event.name ?? '未知错误'),
+    message: businessFailure
+      ? domain.businessResult
+      : (domain.errorMessage ?? title),
+    mechanism: domain.errorMechanism,
+    fatal: domain.errorFatal,
+    handled: domain.errorHandled,
+    fingerprint,
+    title,
+    occurrenceCount,
+    summary,
+    route: routeOf(event),
+    userId: userIdOf(event),
+    sessionId: event.sessionId,
+    traceId: event.traceId,
+    appVersion: appVersionOf(event),
+  };
 }
 
 function httpCatalogItemFromEvent(event: MonitorEvent): HttpCatalogItem {

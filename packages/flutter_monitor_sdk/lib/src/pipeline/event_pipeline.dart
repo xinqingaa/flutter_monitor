@@ -5,6 +5,7 @@ import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
 import 'package:flutter_monitor_sdk/src/delivery/sdk_health_monitor.dart';
 import 'package:flutter_monitor_sdk/src/outputs/monitor_output.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/envelope_builder.dart';
+import 'package:flutter_monitor_sdk/src/pipeline/error_summary_aggregator.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_result.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/pipeline_control.dart';
 import 'package:flutter_monitor_sdk/src/pipeline/raw_signal.dart';
@@ -55,6 +56,9 @@ class EventPipeline {
   final PipelineControl _control;
   final SdkHealthMonitor? _healthMonitor;
   late final TrackSummaryAggregator _trackAggregator = TrackSummaryAggregator(
+    emit: capture,
+  );
+  late final ErrorSummaryAggregator _errorAggregator = ErrorSummaryAggregator(
     emit: capture,
   );
 
@@ -146,6 +150,9 @@ class EventPipeline {
         );
         return PipelineResult.dropped(filtered, decision.reason);
       }
+      if (!_shouldEmitError(filtered)) {
+        return PipelineResult.dropped(filtered, SdkDropReasons.errorDeduped);
+      }
       _recordBreadcrumb(filtered);
       _dispatch(filtered);
       return PipelineResult.accepted(filtered);
@@ -198,6 +205,7 @@ class EventPipeline {
   /// 进入后台、退出前或业务主动调用 flush 时会走这里。
   Future<void> flush({bool isAppExiting = false}) async {
     _trackAggregator.flush();
+    _errorAggregator.flush();
     for (final output in _outputs) {
       try {
         await output.flush(isAppExiting: isAppExiting);
@@ -213,6 +221,12 @@ class EventPipeline {
         );
       }
     }
+  }
+
+  bool _shouldEmitError(EventEnvelope envelope) {
+    if (envelope.signalType != SignalType.error) return true;
+    if (envelope.name == EventNames.errorGroupSummary) return true;
+    return _errorAggregator.observe(envelope);
   }
 
   /// 根据 envelope 语义决定是否写入 recent breadcrumb store。

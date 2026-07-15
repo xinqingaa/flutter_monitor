@@ -152,7 +152,10 @@ class EventSummarizer {
       'mechanism':
           envelope.attributes[FieldPaths.errorMechanism] ??
           envelope.attributes[FieldPaths.errorType],
+      'title': envelope.attributes[FieldPaths.errorTitle],
+      'fingerprint': envelope.attributes[FieldPaths.errorFingerprint],
       'message': _errorMessage(envelope),
+      'count': envelope.attributes[FieldPaths.summaryCount],
       'route': _routeDisplay(envelope),
       'breadcrumbs': _breadcrumbCount(envelope),
     });
@@ -204,10 +207,8 @@ class EventSummarizer {
   }
 
   Object? _errorMessage(EventEnvelope envelope) {
-    final message = envelope.payload[FieldPaths.payloadErrorMessage];
-    if (message != null) return message;
-
-    return null;
+    return envelope.attributes[FieldPaths.errorTitle] ??
+        envelope.payload[FieldPaths.payloadErrorMessage];
   }
 
   String? _stringValue(Object? value) => value == null ? null : '$value';

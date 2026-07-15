@@ -2,6 +2,12 @@ import 'package:example/data/demo_api.dart';
 import 'package:example/pages/app_shell.dart';
 import 'package:example/pages/coach_page.dart';
 import 'package:example/pages/course_detail_page.dart';
+import 'package:example/pages/dev_async_error_page.dart';
+import 'package:example/pages/dev_build_error_page.dart';
+import 'package:example/pages/dev_dart_error_page.dart';
+import 'package:example/pages/dev_layout_bug_page.dart';
+import 'package:example/pages/dev_manual_error_page.dart';
+import 'package:example/pages/dev_options_page.dart';
 import 'package:example/pages/lab_page.dart';
 import 'package:example/pages/login_page.dart';
 import 'package:example/pages/membership_page.dart';
@@ -29,6 +35,12 @@ class AppRoutes {
   static const notices = '/notices';
   static const settings = '/settings';
   static const lab = '/lab';
+  static const devOptions = '/dev';
+  static const devLayoutBug = '/dev/layout_bug';
+  static const devDartError = '/dev/dart_error';
+  static const devBuildError = '/dev/build_error';
+  static const devAsyncError = '/dev/async_error';
+  static const devManualError = '/dev/manual_error';
 }
 
 class AppRouter {
@@ -126,6 +138,42 @@ class AppRouter {
         moduleName: 'debug',
         moduleScene: 'lab',
         builder: (_) => LabPage(api: api),
+      ),
+      AppRoute(
+        name: AppRoutes.devOptions,
+        moduleName: 'debug',
+        moduleScene: 'dev_options',
+        builder: (_) => const DevOptionsPage(),
+      ),
+      AppRoute(
+        name: AppRoutes.devLayoutBug,
+        moduleName: 'debug',
+        moduleScene: 'dev_layout_bug',
+        builder: (_) => const DevLayoutBugPage(),
+      ),
+      AppRoute(
+        name: AppRoutes.devDartError,
+        moduleName: 'debug',
+        moduleScene: 'dev_dart_error',
+        builder: (_) => const DevDartErrorPage(),
+      ),
+      AppRoute(
+        name: AppRoutes.devBuildError,
+        moduleName: 'debug',
+        moduleScene: 'dev_build_error',
+        builder: (_) => const DevBuildErrorPage(),
+      ),
+      AppRoute(
+        name: AppRoutes.devAsyncError,
+        moduleName: 'debug',
+        moduleScene: 'dev_async_error',
+        builder: (_) => const DevAsyncErrorPage(),
+      ),
+      AppRoute(
+        name: AppRoutes.devManualError,
+        moduleName: 'debug',
+        moduleScene: 'dev_manual_error',
+        builder: (_) => const DevManualErrorPage(),
       ),
     ];
   }

@@ -39,4 +39,28 @@ class AppNavigation {
   static Future<void> openLab(BuildContext context) {
     return Navigator.of(context).pushNamed(AppRoutes.lab);
   }
+
+  static Future<void> openDevOptions(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.devOptions);
+  }
+
+  static Future<void> openDevLayoutBug(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.devLayoutBug);
+  }
+
+  static Future<void> openDevDartError(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.devDartError);
+  }
+
+  static Future<void> openDevBuildError(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.devBuildError);
+  }
+
+  static Future<void> openDevAsyncError(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.devAsyncError);
+  }
+
+  static Future<void> openDevManualError(BuildContext context) {
+    return Navigator.of(context).pushNamed(AppRoutes.devManualError);
+  }
 }

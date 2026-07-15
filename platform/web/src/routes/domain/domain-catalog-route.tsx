@@ -403,7 +403,27 @@ function errorColumns(
     {
       accessorKey: 'message',
       header: 'Message',
-      cell: ({ row }) => <Truncated value={row.original.message ?? row.original.type} />,
+      cell: ({ row }) => (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <Truncated value={row.original.title ?? row.original.message ?? row.original.type} />
+          {row.original.summary ? (
+            <span className="text-xs text-muted-foreground">聚合 · {row.original.occurrenceCount ?? '-'} 次</span>
+          ) : row.original.fingerprint ? (
+            <span className="truncate font-mono text-[11px] text-muted-foreground" title={row.original.fingerprint}>
+              {row.original.fingerprint}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: 'occurrenceCount',
+      header: '次数',
+      cell: ({ row }) => (
+        <span className="block text-right font-mono tabular-nums">
+          {row.original.occurrenceCount ?? (row.original.summary ? '-' : '1')}
+        </span>
+      ),
     },
     { id: 'handledState', header: '处理状态', cell: ({ row }) => errorStateLabel(row.original) },
     { accessorKey: 'route', header: '关联路由', cell: ({ row }) => <Truncated value={row.original.route} /> },
@@ -447,6 +467,9 @@ function DomainPreview({ mode, item, onOpen }: { mode: Mode; item?: Item; onOpen
         { label: '用户', value: item.userId ?? '-' },
         { label: '版本', value: item.appVersion ?? '-' },
         { label: '时间', value: formatDateTime(item.timestamp) },
+        ...(error?.fingerprint ? [{ label: 'Fingerprint', value: error.fingerprint }] : []),
+        ...(error?.occurrenceCount != null ? [{ label: '次数', value: error.occurrenceCount }] : []),
+        ...(error?.summary ? [{ label: '形态', value: '聚合摘要' }] : []),
       ] : undefined}
       ids={item ? [
         { label: 'Event', value: item.eventId },
@@ -731,6 +754,7 @@ function domainColumnClass(mode: Mode, id: string, header: boolean) {
     id === 'result' && 'w-[80px]',
     id === 'kind' && 'w-[88px]',
     id === 'handledState' && 'w-[90px]',
+    id === 'occurrenceCount' && 'w-[64px] text-right',
     id === 'route' && 'w-[100px]',
     id === 'userId' && 'w-[70px]',
     id === 'sessionId' && 'w-[120px]',

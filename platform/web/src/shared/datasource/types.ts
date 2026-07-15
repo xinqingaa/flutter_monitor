@@ -389,7 +389,25 @@ export interface ErrorCatalogQuery extends SessionFilters {
   sortBy?: 'timestamp';
   sortDir?: 'asc' | 'desc';
 }
-export interface ErrorCatalogItem { eventId: string; timestamp?: string; kind: 'error' | 'business_failure'; type: string; message?: string; mechanism?: string; fatal?: boolean; handled?: boolean; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; }
+export interface ErrorCatalogItem {
+  eventId: string;
+  timestamp?: string;
+  kind: 'error' | 'business_failure';
+  type: string;
+  message?: string;
+  mechanism?: string;
+  fatal?: boolean;
+  handled?: boolean;
+  fingerprint?: string;
+  title?: string;
+  occurrenceCount?: number;
+  summary?: boolean;
+  route?: string;
+  userId?: string;
+  sessionId?: string;
+  traceId?: string;
+  appVersion?: string;
+}
 export interface ErrorCatalogResult { items: ErrorCatalogItem[]; total: number; limit: number; offset: number; }
 
 export interface DimensionAppOption {

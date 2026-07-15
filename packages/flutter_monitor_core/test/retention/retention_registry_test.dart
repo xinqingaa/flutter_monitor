@@ -47,6 +47,13 @@ void main() {
         ),
         EventRetention.hard,
       );
+      expect(
+        registry.resolve(
+          name: EventNames.errorGroupSummary,
+          signalType: SignalType.metric,
+        ),
+        EventRetention.hard,
+      );
     });
 
     test('business track breadcrumb and interaction.measure are hard', () {

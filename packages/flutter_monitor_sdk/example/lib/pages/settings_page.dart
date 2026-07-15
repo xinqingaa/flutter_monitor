@@ -56,6 +56,21 @@ class SettingsPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            PulseCard(
+              onTap: () => AppNavigation.openDevOptions(context),
+              child: const Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '开发者选项 · 异常测试',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton(

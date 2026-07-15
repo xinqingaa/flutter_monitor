@@ -60,6 +60,7 @@ abstract final class SdkConfigSources {
 abstract final class SdkDropReasons {
   static const sampledOut = 'sampled_out';
   static const rateLimited = 'rate_limited';
+  static const errorDeduped = 'error_deduped';
   static const queueFull = 'queue_full';
   static const payloadTooLarge = 'payload_too_large';
   static const nonRetryableRejected = 'non_retryable_rejected';

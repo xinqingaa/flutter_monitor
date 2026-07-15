@@ -159,8 +159,9 @@
 
 | # | 功能 | 说明 | 依赖备注 |
 | --- | --- | --- | --- |
-| 4.1.1 | 异常列表 | `signalType=error`（及等价错误事件）+ `business.result=failed` | 服务端需 list + 类型过滤 |
+| 4.1.1 | 异常列表 | `signalType=error`（及等价错误事件）+ `business.result=failed` + `error.group.summary` | 服务端需 list + 类型过滤 |
 | 4.1.2 | 筛：错误类型 / mechanism | `error.type` / `error.mechanism` | 服务端需支持（字段已有） |
+| 4.1.3 | 同错聚合 | `error.fingerprint` + 次数；summary 标注聚合 | SDK 去重 + catalog 展示 |
 | 4.1.3 | 筛：fatal / handled | | 服务端需支持（字段已有） |
 | 4.1.4 | 筛：仅业务失败 | 业务失败子集 | 服务端需支持 |
 | 4.1.5 | 列：时间 / 类型 / message 摘要 / fatal / 路由 / 用户 / session / 版本 | | 字段已有 |

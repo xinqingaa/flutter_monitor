@@ -138,6 +138,10 @@ export interface ErrorCatalogItem {
   mechanism?: string;
   fatal?: boolean;
   handled?: boolean;
+  fingerprint?: string;
+  title?: string;
+  occurrenceCount?: number;
+  summary?: boolean;
   route?: string;
   userId?: string;
   sessionId?: string;

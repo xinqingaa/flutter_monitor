@@ -1078,6 +1078,28 @@ const defaultFieldDefinitions = <FieldDefinition>[
     privacyLevel: PrivacyLevel.queryable,
   ),
   FieldDefinition(
+    path: FieldPaths.errorFingerprint,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.errorTitle,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+    indexed: true,
+  ),
+  FieldDefinition(
+    path: FieldPaths.errorStackHead,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+  ),
+  FieldDefinition(
+    path: FieldPaths.errorAppFrame,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.queryable,
+  ),
+  FieldDefinition(
     path: FieldPaths.payloadErrorMessage,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.sensitive,
@@ -1091,6 +1113,11 @@ const defaultFieldDefinitions = <FieldDefinition>[
     path: FieldPaths.payloadErrorLibrary,
     valueType: FieldValueType.string,
     privacyLevel: PrivacyLevel.queryable,
+  ),
+  FieldDefinition(
+    path: FieldPaths.payloadErrorDiagnostics,
+    valueType: FieldValueType.string,
+    privacyLevel: PrivacyLevel.sensitive,
   ),
   FieldDefinition(
     path: FieldPaths.payloadBreadcrumbs,

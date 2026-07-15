@@ -62,4 +62,7 @@ abstract final class EventNames {
   static const errorFlutter = 'error.flutter';
   static const errorDart = 'error.dart';
   static const errorManual = 'error.manual';
+
+  /// 同 fingerprint 重复错误的聚合摘要。
+  static const errorGroupSummary = 'error.group.summary';
 }
