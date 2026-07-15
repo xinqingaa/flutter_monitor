@@ -1,31 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, Filter, MoreHorizontal, MousePointerClick, RotateCcw, SearchX, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, MousePointerClick, SearchX } from 'lucide-react';
 import type { DomainSearch } from '../../app/router';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Checkbox } from '../../components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import { Field, FieldGroup, FieldLabel } from '../../components/ui/field';
-import { Input } from '../../components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
 import { Skeleton } from '../../components/ui/skeleton';
-import { FilterSelect } from '../../components/common/filter-select';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { CatalogPreviewShell } from '../../features/catalog/catalog-preview-shell';
 import { CatalogRowActions } from '../../features/catalog/catalog-row-actions';
 import { CatalogTable, type CatalogState } from '../../features/catalog/catalog-table';
+import { DomainFilterBar } from '../../features/catalog/domain-filter-bar';
 import { SortableHeader } from '../../features/catalog/sortable-header';
 import { RecordShell } from '../../features/inspector/record-shell';
 import { JsonViewer } from '../../features/inspector/json-viewer';
@@ -37,19 +25,14 @@ import { cn } from '../../shared/formatting/cn';
 import { formatDateTime, formatTime } from '../../shared/formatting/format';
 import {
   booleanFilterLabel,
-  businessResultFilterOptions,
-  errorMechanismFilterOptions,
   resultFilterLabel,
 } from '../../shared/formatting/filter-labels';
 import { pickScopeSearch } from '../../features/scope/scope-filters';
-import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
 
 type Mode = 'business' | 'errors';
 type Item = BusinessCatalogItem | ErrorCatalogItem;
 
 const SCOPE_KEYS: Array<keyof DomainSearch> = ['appKey', 'packageName', 'environment', 'appVersion', 'devicePlatform', 'from', 'to', 'userId', 'sessionId', 'route'];
-const BUSINESS_KEYS: Array<keyof DomainSearch> = ['action', 'result'];
-const ERROR_KEYS: Array<keyof DomainSearch> = ['errorType', 'mechanism', 'fatal', 'handled', 'businessOnly'];
 
 export function BusinessCatalogRoute() {
   return <DomainCatalog mode="business" />;
@@ -95,10 +78,6 @@ function DomainCatalog({ mode }: { mode: Mode }) {
     });
   }
 
-  function clearKeys(keys: Array<keyof DomainSearch>) {
-    patch(Object.fromEntries(keys.map((key) => [key, undefined])) as Partial<DomainSearch>, true);
-  }
-
   function select(item: Item) {
     patch({ eventId: item.eventId, detail: undefined });
   }
@@ -140,10 +119,9 @@ function DomainCatalog({ mode }: { mode: Mode }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
-      <DomainFilters
+      <DomainFilterBar
         mode={mode}
         search={search}
-        total={total}
         onPatch={patch}
         onReset={() => patch(
           mode === 'business'
@@ -151,7 +129,6 @@ function DomainCatalog({ mode }: { mode: Mode }) {
             : { errorType: undefined, mechanism: undefined, fatal: undefined, handled: undefined, businessOnly: undefined },
           true,
         )}
-        onClearAll={() => clearKeys([...SCOPE_KEYS, ...(mode === 'business' ? BUSINESS_KEYS : ERROR_KEYS)])}
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
         <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
@@ -205,84 +182,6 @@ function DomainCatalog({ mode }: { mode: Mode }) {
         }}
       />
     </div>
-  );
-}
-
-function DomainFilters({ mode, search, total, onPatch, onReset, onClearAll }: {
-  mode: Mode;
-  search: DomainSearch;
-  total: number;
-  onPatch: (value: Partial<DomainSearch>, reset?: boolean) => void;
-  onReset: () => void;
-  onClearAll: () => void;
-}) {
-  const [moreOpen, setMoreOpen] = useState(false);
-  const keys = mode === 'business' ? BUSINESS_KEYS : ERROR_KEYS;
-  const activeMore = mode === 'errors'
-    ? [search.fatal !== undefined, search.handled !== undefined, search.businessOnly].filter(Boolean).length
-    : 0;
-
-  return (
-    <section aria-label={`${mode === 'business' ? '埋点' : '异常'}筛选`} className="border-b px-4 py-3">
-      <div className="flex min-w-0 items-center gap-2">
-        {mode === 'business' ? (
-          <>
-            <CommitInput label="Action" value={search.action} onCommit={(action) => onPatch({ action }, true)} />
-            <FilterSelect value={search.result} placeholder="全部结果" options={businessResultFilterOptions} onChange={(result) => onPatch({ result }, true)} className="w-32" />
-          </>
-        ) : (
-          <>
-            <CommitInput label="错误类型" value={search.errorType} onCommit={(errorType) => onPatch({ errorType }, true)} />
-            <FilterSelect value={search.mechanism} placeholder="全部机制" options={errorMechanismFilterOptions} onChange={(mechanism) => onPatch({ mechanism }, true)} className="w-32" />
-            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline"><Filter data-icon="inline-start" />更多筛选{activeMore ? ` (${activeMore})` : ''}</Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-80">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>致命状态</FieldLabel>
-                    <TriSelect label="致命" value={search.fatal} onChange={(fatal) => onPatch({ fatal }, true)} />
-                  </Field>
-                  <Field>
-                    <FieldLabel>处理状态</FieldLabel>
-                    <TriSelect label="已处理" value={search.handled} onChange={(handled) => onPatch({ handled }, true)} />
-                  </Field>
-                  <Field orientation="horizontal">
-                    <Checkbox id="business-only" checked={search.businessOnly === true} onCheckedChange={(checked) => onPatch({ businessOnly: checked === true || undefined }, true)} />
-                    <FieldLabel htmlFor="business-only">仅业务失败</FieldLabel>
-                  </Field>
-                </FieldGroup>
-              </PopoverContent>
-            </Popover>
-          </>
-        )}
-        <span className="whitespace-nowrap text-sm text-muted-foreground">{total} 条</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" aria-label={`${mode === 'business' ? '埋点' : '异常'}筛选操作`}>
-              <MoreHorizontal data-icon="inline-start" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={onReset}><RotateCcw />重置领域筛选</DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={onClearAll}><X />清除全部筛选</DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      {keys.some((key) => search[key] !== undefined) ? (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {keys.flatMap((key) => search[key] !== undefined
-            ? [<Badge key={key} variant="secondary">{domainFilterLabel(key, search[key])}</Badge>]
-            : [])}
-        </div>
-      ) : null}
-    </section>
   );
 }
 
@@ -687,41 +586,6 @@ function Section({ title, value, text }: { title: string; value: unknown; text?:
   );
 }
 
-function CommitInput({ label, value, onCommit }: { label: string; value?: string; onCommit: (value?: string) => void }) {
-  const [draft, setDraft] = useState(value ?? '');
-  const debounced = useDebouncedValue(draft, 300);
-  useEffect(() => setDraft(value ?? ''), [value]);
-  useEffect(() => {
-    const next = debounced.trim() || undefined;
-    if (next !== value) onCommit(next);
-  }, [debounced]);
-  return (
-    <Input
-      aria-label={label}
-      value={draft}
-      placeholder={`${label} 模糊筛选，自动查询`}
-      onChange={(event) => {
-        setDraft(event.target.value);
-        if (!event.target.value) onCommit(undefined);
-      }}
-      onKeyDown={(event) => event.key === 'Enter' && onCommit(draft.trim() || undefined)}
-      className="min-w-[260px] flex-1"
-    />
-  );
-}
-
-function TriSelect({ label, value, onChange }: { label: string; value?: boolean; onChange: (value?: boolean) => void }) {
-  return (
-    <FilterSelect
-      value={value === undefined ? undefined : String(value)}
-      placeholder={`全部${label}`}
-      options={[{ value: 'true', label: `${label}: ${booleanFilterLabel(true)}` }, { value: 'false', label: `${label}: ${booleanFilterLabel(false)}` }]}
-      onChange={(next) => onChange(next === undefined ? undefined : next === 'true')}
-      className="w-full"
-    />
-  );
-}
-
 function businessQuery(search: DomainSearch, page: number, size: number): BusinessCatalogQuery {
   return clean({
     ...scopeQuery(search),
@@ -789,17 +653,6 @@ function errorStateLabel(item: ErrorCatalogItem) {
 function recordBadgeVariant(mode: Mode, item: Item): 'secondary' | 'destructive' {
   if (mode === 'business') return (item as BusinessCatalogItem).result === 'failed' ? 'destructive' : 'secondary';
   return (item as ErrorCatalogItem).kind === 'business_failure' ? 'secondary' : 'destructive';
-}
-
-function domainFilterLabel(key: keyof DomainSearch, value: unknown): string {
-  if (key === 'action') return `Action: ${String(value)}`;
-  if (key === 'result') return `结果: ${String(value).split(',').map(resultFilterLabel).join('、')}`;
-  if (key === 'errorType') return `错误类型: ${String(value)}`;
-  if (key === 'mechanism') return `机制: ${String(value)}`;
-  if (key === 'fatal') return `致命: ${booleanFilterLabel(Boolean(value))}`;
-  if (key === 'handled') return `已处理: ${booleanFilterLabel(Boolean(value))}`;
-  if (key === 'businessOnly') return '仅业务失败';
-  return `${String(key)}: ${String(value)}`;
 }
 
 function domainColumnClass(mode: Mode, id: string, header: boolean) {

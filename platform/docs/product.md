@@ -53,6 +53,8 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 5. **打开详情 / 双击行**：进入独立详情页（HTTP `/http/$id`、埋点 `/business/$id`、异常 `/errors/$id`、Session `/sessions/$id`）
 6. **查看 Session**：仅事件域（HTTP / 埋点 / 异常）保留
 
+领域筛选条（HTTP / Session / 埋点 / 异常）统一：同高度控件、`MultiSelect` 多选与选中态、右侧「重置筛选」、不展示条数；文本筛约 300ms debounce。
+
 时间统一展示为 `YYYY-MM-DD HH:mm:ss`。可复制 `eventId` / `sessionId` / `traceId`（HTTP 另含 `requestId`）。
 
 ---

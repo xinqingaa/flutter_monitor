@@ -187,7 +187,7 @@ export function HttpFilterBar({
           />
           <Button variant="ghost" size="sm" onClick={onResetHttp}>
             <RotateCcw data-icon="inline-start" />
-            重置
+            重置筛选
           </Button>
         </div>
       </div>

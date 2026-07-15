@@ -5,7 +5,7 @@ import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { readScopeFilters, scopeToSessionFilters } from '../../features/scope/scope-filters';
 import { SessionCatalogTable, SessionPreviewPane } from '../../features/session/session-catalog-table';
-import { SessionListFilterForm } from '../../features/session/session-list-filter-form';
+import { SessionFilterBar } from '../../features/session/session-filter-bar';
 import { sessionListToSessionFilters, useSessionListFilters } from '../../features/session/session-list-filters';
 import { SessionRecord } from '../../features/session/session-record';
 import { useDimensionsQuery, useSessionsQuery } from '../../shared/datasource/queries';
@@ -33,7 +33,7 @@ export function SessionsRoute() {
   const hasFilters = Boolean(
     search.appKey || search.packageName || search.environment || search.appVersion || search.devicePlatform
     || search.from || search.to || search.userId || search.sessionId || search.route
-    || Object.values(listFilters).some((value) => value !== undefined && value !== ''),
+    || listFilters.sessionId || listFilters.route || listFilters.status || listFilters.problemType,
   );
 
   function patch(patchValue: Partial<SessionsSearch>, resetPage = false) {
@@ -85,20 +85,18 @@ export function SessionsRoute() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={patch} />
-      <section className="flex flex-wrap items-end gap-2 border-b px-4 py-2">
-        <SessionListFilterForm
-          filters={listFilters}
-          dimensions={dimensions.data}
-          onChange={(next) => {
-            patchListFilters(next);
-            patch({ page: undefined, selected: undefined, detail: undefined }, true);
-          }}
-          onClear={() => {
-            clearListFilters();
-            patch({ page: undefined, selected: undefined, detail: undefined }, true);
-          }}
-        />
-      </section>
+      <SessionFilterBar
+        filters={listFilters}
+        dimensions={dimensions.data}
+        onChange={(next) => {
+          patchListFilters(next);
+          patch({ page: undefined, selected: undefined, detail: undefined }, true);
+        }}
+        onReset={() => {
+          clearListFilters();
+          patch({ page: undefined, selected: undefined, detail: undefined }, true);
+        }}
+      />
       <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
         <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
           <SessionCatalogTable
