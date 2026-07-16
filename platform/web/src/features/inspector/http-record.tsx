@@ -24,6 +24,7 @@ import { cn } from '../../shared/formatting/cn';
 import { copyText } from '../../shared/formatting/download';
 import { formatDuration } from '../../shared/formatting/format';
 import { buildCurlCommand } from '../../shared/formatting/http-curl';
+import { EnvironmentProfile } from './environment-profile';
 import { JsonViewer } from './json-viewer';
 import { RecordShell } from './record-shell';
 
@@ -54,6 +55,19 @@ export function HttpRecord({
   const index = item ? items.findIndex((entry) => entry.eventId === item.eventId) : -1;
   const previous = index > 0 ? items[index - 1] : undefined;
   const next = index >= 0 && index < items.length - 1 ? items[index + 1] : undefined;
+  const fromEvent = event ? httpSummaryFromEvent(event) : undefined;
+  const summaryItem = item || fromEvent
+    ? {
+        ...fromEvent,
+        ...item,
+        userId: item?.userId ?? fromEvent?.userId,
+        appVersion: item?.appVersion ?? fromEvent?.appVersion,
+        environment: item?.environment ?? fromEvent?.environment,
+        devicePlatform: item?.devicePlatform ?? fromEvent?.devicePlatform,
+        sessionId: item?.sessionId ?? fromEvent?.sessionId,
+        route: item?.route ?? fromEvent?.route,
+      }
+    : undefined;
 
   async function copyCurl() {
     try {
@@ -71,7 +85,7 @@ export function HttpRecord({
       title={item ? `${item.method ?? 'HTTP'} ${pathOnly(item.url)}` : 'HTTP 详情'}
       description={item?.url}
       state={state}
-      summary={item ? <HttpRecordSummary item={item} /> : undefined}
+      summary={summaryItem ? <HttpRecordSummary item={summaryItem} /> : undefined}
       headerActions={(
         <>
           <Button
@@ -160,8 +174,21 @@ export function HttpRecordSummary({ item }: {
     durationMs?: number;
     route?: string;
     detailDropped?: boolean;
+    userId?: string;
+    appVersion?: string;
+    environment?: string;
+    devicePlatform?: string;
+    sessionId?: string;
   };
 }) {
+  const contextParts = [
+    item.userId ? `用户 ${item.userId}` : undefined,
+    item.appVersion ? `版本 ${item.appVersion}` : undefined,
+    item.environment ? `环境 ${item.environment}` : undefined,
+    item.devicePlatform ? `平台 ${item.devicePlatform}` : undefined,
+    item.sessionId ? `Session ${shortId(item.sessionId)}` : undefined,
+  ].filter(Boolean);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -173,6 +200,11 @@ export function HttpRecordSummary({ item }: {
         <span className="text-sm tabular-nums text-muted-foreground">{formatDuration(item.durationMs)}</span>
         {item.route ? <span className="text-sm text-muted-foreground">{item.route}</span> : null}
       </div>
+      {contextParts.length ? (
+        <p className="text-sm text-muted-foreground" title={item.sessionId}>
+          {contextParts.join(' · ')}
+        </p>
+      ) : null}
       {item.detailDropped ? (
         <Alert>
           <AlertTriangle />
@@ -219,6 +251,10 @@ export function httpSummaryFromEvent(event: MonitorEvent): {
   sessionId?: string;
   traceId?: string;
   requestId?: string;
+  appVersion?: string;
+  environment?: string;
+  devicePlatform?: string;
+  userId?: string;
 } {
   const statusCode = numberValue(readPath(event, ['attributes', 'http.status_code']));
   const successAttr = readPath(event, ['attributes', 'http.success']);
@@ -236,6 +272,10 @@ export function httpSummaryFromEvent(event: MonitorEvent): {
     sessionId: event.sessionId,
     traceId: event.traceId,
     requestId: stringValue(readPath(event, ['attributes', 'http.request_id'])),
+    appVersion: stringValue(readPath(event, ['resource', 'app', 'appVersion'])),
+    environment: stringValue(readPath(event, ['resource', 'app', 'environment'])),
+    devicePlatform: stringValue(readPath(event, ['resource', 'device', 'platform'])),
+    userId: stringValue(readPath(event, ['context', 'user', 'userId'])),
   };
 }
 
@@ -329,18 +369,21 @@ function BodySection({ body, truncated, format }: { body: unknown; truncated: bo
 }
 
 function Context({ event }: { event: MonitorEvent }) {
+  const requestId = stringValue(readPath(event, ['attributes', 'http.request_id']));
   return (
     <div className="flex flex-col gap-6 pb-6">
-      <section className="flex flex-col gap-3">
-        <Id label="Event ID" value={event.eventId} />
-        <Id label="Session ID" value={event.sessionId} />
-        <Id label="Trace ID" value={event.traceId} />
-        <Id label="Span ID" value={event.spanId} />
-        <Id label="Request ID" value={stringValue(readPath(event, ['attributes', 'http.request_id']))} />
-      </section>
-      <Separator />
-      <DataSection title="Context" value={event.context} />
-      <DataSection title="Resource" value={event.resource} />
+      {requestId ? (
+        <>
+          <section className="flex flex-col gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">请求 ID</span>
+              <CopyableId value={requestId} short={false} />
+            </div>
+          </section>
+          <Separator />
+        </>
+      ) : null}
+      <EnvironmentProfile event={event} />
     </div>
   );
 }
@@ -355,15 +398,6 @@ function DataSection({ title, value }: { title: string; value: unknown }) {
         <JsonViewer value={value as Record<string, unknown>} collapsed={2} />
       )}
     </section>
-  );
-}
-
-function Id({ label, value }: { label: string; value?: string }) {
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <CopyableId value={value} short={false} />
-    </div>
   );
 }
 
@@ -405,6 +439,10 @@ function businessCodeLabel(item: { businessCodeState?: HttpCatalogItem['business
     : item.businessCodeState === 'detail_unavailable'
       ? '业务码不可用'
       : '无业务码';
+}
+
+function shortId(value: string) {
+  return value.length <= 18 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

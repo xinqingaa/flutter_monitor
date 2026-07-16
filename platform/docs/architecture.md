@@ -43,7 +43,7 @@ SDK collectors
 | `flutter_monitor_core` | 唯一 schema、字段注册、摘要与隐私规则 |
 | `flutter_monitor_sdk` | 采集、链路、pipeline、输出；`localLive` 连本地 service |
 | Monitor Service | 接收、校验、索引、查询摘要、SSE；不补写 SDK 字段进 envelope |
-| Workbench Web | 展示、筛选、联动、raw 回查；view model 不是协议 |
+| Workbench Web | 展示、筛选、联动、raw 回查；view model 不是协议；Catalog 共用展示协议与 `EnvironmentProfile` 结构化上下文 |
 
 SDK 输出模式：`consoleOnly`（仅 compact log）、`localLive`（短 batch、关键 flush，供本地 / QA）、`production`（限流、离线、重试等）。Workbench 实时性来自 service→web 的 SSE，不要求 SDK 逐条 HTTP。
 

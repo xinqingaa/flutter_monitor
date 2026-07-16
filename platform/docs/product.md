@@ -57,6 +57,32 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
 时间统一展示为 `YYYY-MM-DD HH:mm:ss`。可复制 `eventId` / `sessionId` / `traceId`（HTTP 另含 `requestId`）。
 
+### Catalog 展示协议
+
+一级 Catalog（Session / HTTP / 埋点 / 异常）共用「通用列块 + 域特有列」：
+
+- **文案**：面向用户的 label 一律中文；禁止表头出现 `UserID` / `UserId` / `Action` / `Message` 等混用。
+- **通用尾列顺序（固定）**：路由 → 用户 → 版本 → 环境。取值对应 `context.route.name`、`context.user.userId`、`resource.app.appVersion`、`resource.app.environment`。
+- **版本列**：只展示 `appVersion`；`buildNumber` 不进一级表格，仅在详情环境画像中展示。
+- **HTTP 请求 ID**：属于 HTTP 域特有列与筛选项，必须保留在列表中，不并入通用列块。HTTP 主表不加 Session（Preview / 详情摘要可展示）。
+
+推荐列序：
+
+| 域 | 列序 |
+|---|---|
+| Session | 时间 · Session · 状态 · 问题 · 事件 · 路由 · 用户 · 版本 · 环境 · 操作 |
+| HTTP | 时间 · 方法 · URL · 状态码 · 业务码 · 耗时 · 请求 ID · 路由 · 用户 · 版本 · 环境 · 操作 |
+| 埋点 | 时间 · 动作 · 结果 · 路由 · 用户 · 版本 · 环境 · Session · 操作 |
+| 异常 | 时间 · 类型 · 消息 · 次数 · 处理状态 · 路由 · 用户 · 版本 · 环境 · Session · 操作 |
+
+Preview 尾部 facts 统一：路由 · 用户 · 版本 · 环境 · 平台 · 时间；域摘要接在前面。ids 区用：事件 ID · Session · Trace ·（HTTP）请求 ID。
+
+HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时 / 路由）；第二行上下文摘要（用户 · 版本 · 环境 · 平台 · Session）。
+
+### 详情环境画像
+
+独立详情页与 Session 工作区「上下文」Tab 使用结构化环境画像，不直接 dump `resource` / `context` JSON。分组包括：用户、页面、业务上下文、发布、网络、生命周期、Native、应用、设备、运行时、SDK、链路 ID。`buildNumber`、feature flags、route stack、设备型号等只在此层展示。完整 envelope 仍放 Raw Tab。
+
 ---
 
 ## HTTP（样板）
@@ -71,6 +97,7 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
 ### 列表与选中
 
+- 列序：时间 · 方法 · URL · 状态码 · 业务码 · 耗时 · 请求 ID · 路由 · 用户 · 版本 · 环境 · 操作
 - 按时间或耗时排序；分页 25 / 50 / 100
 - 单击行：只选中 Preview
 - 行内展开 / Preview「展开预览」：打开 Sheet
@@ -108,9 +135,9 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 路径：`/business`。集合：带 `business.action` 的单次埋点与 `business.action.summary`；`measure` 不进主集合。
 
 - 筛：action、result（success / failed / cancelled）
-- 列：时间、action、result、路由、用户、session、版本
+- 列：时间 · 动作 · 结果 · 路由 · 用户 · 版本 · 环境 · Session · 操作
 - 交互与 HTTP 一致：展开 Sheet / 打开详情进 `/business/$eventId`
-- Record：属性 / 关联 / 上下文 / Raw；关联区展示同 session 近期 HTTP / 埋点 / error 摘要卡
+- Record：属性 / 关联 / 上下文（环境画像） / Raw；关联区展示同 session 近期 HTTP / 埋点 / error 摘要卡
 
 **当前局限：** 关联区偏展示；详情页深度仍弱于 HTTP（无 cURL 级检视）。
 
@@ -121,9 +148,9 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 路径：`/errors`。集合：稳定性 `error` 与 `business.result=failed` 的无重复并集；排除 completed HTTP、jank、memory、native。
 
 - 筛：errorType、mechanism、fatal / handled、仅业务失败
-- 列：类型徽标、message、handled、路由、session、版本等
+- 列：时间 · 类型 · 消息 · 次数 · 处理状态 · 路由 · 用户 · 版本 · 环境 · Session · 操作
 - 交互与 HTTP 一致：展开 Sheet / 打开详情进 `/errors/$eventId`
-- Record：错误信息 / stack / breadcrumbs，以及上下文与 Raw
+- Record：错误信息 / stack / breadcrumbs，以及环境画像与 Raw
 
 不做告警规则引擎或订阅推送。
 
@@ -137,7 +164,7 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
 路径：`/sessions`。与 HTTP / 埋点 / 异常同一套 Catalog：表格、Preview、展开 Sheet、打开详情进工作区。
 
-列：时间、Session ID、用户、路由、版本、状态、问题数、事件数。
+列：时间 · Session · 状态 · 问题 · 事件 · 路由 · 用户 · 版本 · 环境 · 操作。
 
 ### 工作区（二级）
 

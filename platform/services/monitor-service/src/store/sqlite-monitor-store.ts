@@ -1118,7 +1118,7 @@ function whereFromErrorCatalogQuery(query: ErrorCatalogQuery): { whereSql: strin
 
 function businessCatalogItemFromEvent(event: MonitorEvent): BusinessCatalogItem {
   const domain = domainCatalogFieldsOf(event);
-  return { eventId: event.eventId ?? '', timestamp: event.timestamp ?? event.startTime, action: domain.businessAction ?? event.name ?? '未知动作', result: domain.businessResult, route: routeOf(event), userId: userIdOf(event), sessionId: event.sessionId, traceId: event.traceId, appVersion: appVersionOf(event), summary: event.name === 'business.action.summary' };
+  return { eventId: event.eventId ?? '', timestamp: event.timestamp ?? event.startTime, action: domain.businessAction ?? event.name ?? '未知动作', result: domain.businessResult, route: routeOf(event), userId: userIdOf(event), sessionId: event.sessionId, traceId: event.traceId, appVersion: appVersionOf(event), environment: environmentOf(event), summary: event.name === 'business.action.summary' };
 }
 
 function catalogProblemKind(event: MonitorEvent): string {
@@ -1159,6 +1159,7 @@ function errorCatalogItemFromEvent(event: MonitorEvent): ErrorCatalogItem {
     sessionId: event.sessionId,
     traceId: event.traceId,
     appVersion: appVersionOf(event),
+    environment: environmentOf(event),
   };
 }
 
@@ -1180,6 +1181,9 @@ function httpCatalogItemFromEvent(event: MonitorEvent): HttpCatalogItem {
     sessionId: event.sessionId,
     traceId: event.traceId,
     requestId: http.requestId,
+    appVersion: appVersionOf(event),
+    environment: environmentOf(event),
+    devicePlatform: devicePlatformOf(event),
     requestSizeBytes: numericAttribute(event, 'http.request_content_length') ?? numericAttribute(event, 'http.request.size_bytes'),
     responseSizeBytes: numericAttribute(event, 'http.response_content_length') ?? numericAttribute(event, 'http.response.size_bytes'),
     detailDropped: readPayloadBoolean(event, 'http.detail_dropped'),

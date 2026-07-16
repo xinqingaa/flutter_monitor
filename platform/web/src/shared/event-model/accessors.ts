@@ -35,7 +35,7 @@ export function moduleOf(event?: MonitorEvent): string {
 }
 
 export function sceneOf(event?: MonitorEvent): string {
-  return stringPath(event, ['context', 'scene', 'name']) ?? '-';
+  return stringPath(event, ['context', 'module', 'scene']) ?? '-';
 }
 
 export function httpStatusOf(event?: MonitorEvent): string {

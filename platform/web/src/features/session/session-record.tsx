@@ -43,12 +43,12 @@ export function SessionRecord({
         <div className="flex flex-col gap-6 p-6 text-sm">
           <FactList
             facts={[
+              { label: '路由', value: item.route ?? '-' },
               { label: '用户', value: item.userId ?? '-' },
               { label: '版本', value: item.appVersion ?? '-' },
               { label: '环境', value: item.environment ?? '-' },
               { label: '平台', value: item.devicePlatform ?? '-' },
               { label: '设备', value: item.deviceModel ?? '-' },
-              { label: '路由', value: item.route ?? '-' },
               { label: '错误', value: item.errorCount },
               { label: '失败 HTTP', value: item.failedHttpCount },
               { label: '业务失败', value: item.businessFailureCount ?? 0 },
@@ -57,8 +57,8 @@ export function SessionRecord({
             ]}
           />
           <div className="grid gap-3">
-            <IdRow label="Session ID" value={item.sessionId} />
-            <IdRow label="Last Event" value={item.lastEventId} />
+            <IdRow label="Session" value={item.sessionId} />
+            <IdRow label="最近事件" value={item.lastEventId} />
           </div>
         </div>
       ) : null}

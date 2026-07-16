@@ -6,6 +6,7 @@ import { CatalogPreviewShell } from '../catalog/catalog-preview-shell';
 import { CatalogRowActions } from '../catalog/catalog-row-actions';
 import { CatalogTable, type CatalogState } from '../catalog/catalog-table';
 import type { SessionSummary } from '../../shared/datasource/types';
+import { CatalogLabels } from '../../shared/event-model/catalog-labels';
 import { statusLabel } from '../../shared/event-model/status';
 import { cn } from '../../shared/formatting/cn';
 import { formatDateTime, formatTime } from '../../shared/formatting/format';
@@ -33,7 +34,7 @@ export function SessionCatalogTable({
     () => [
       {
         accessorKey: 'lastTimestamp',
-        header: '时间',
+        header: CatalogLabels.time,
         cell: ({ row }) => (
           <span className="whitespace-nowrap font-mono text-xs text-muted-foreground" title={row.original.lastTimestamp}>
             {formatTime(row.original.lastTimestamp)}
@@ -42,7 +43,7 @@ export function SessionCatalogTable({
       },
       {
         accessorKey: 'sessionId',
-        header: 'Session',
+        header: CatalogLabels.session,
         cell: ({ row }) => (
           <span className="block truncate font-mono text-xs" title={row.original.sessionId}>
             {row.original.sessionId}
@@ -50,31 +51,8 @@ export function SessionCatalogTable({
         ),
       },
       {
-        accessorKey: 'userId',
-        header: '用户',
-        cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs" title={row.original.userId}>
-            {row.original.userId ?? '-'}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'route',
-        header: '路由',
-        cell: ({ row }) => (
-          <span className="block truncate" title={row.original.route}>
-            {row.original.route ?? '-'}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'appVersion',
-        header: '版本',
-        cell: ({ row }) => row.original.appVersion ?? '-',
-      },
-      {
         accessorKey: 'status',
-        header: '状态',
+        header: CatalogLabels.status,
         cell: ({ row }) => (
           <Badge variant={row.original.status === 'error' ? 'destructive' : 'secondary'}>
             {statusLabel(row.original.status)}
@@ -83,7 +61,7 @@ export function SessionCatalogTable({
       },
       {
         id: 'problems',
-        header: '问题',
+        header: CatalogLabels.problems,
         cell: ({ row }) => {
           const count = problemCount(row.original);
           return (
@@ -95,10 +73,38 @@ export function SessionCatalogTable({
       },
       {
         accessorKey: 'count',
-        header: '事件',
+        header: CatalogLabels.events,
         cell: ({ row }) => (
           <span className="block text-right font-mono tabular-nums">{row.original.count}</span>
         ),
+      },
+      {
+        accessorKey: 'route',
+        header: CatalogLabels.route,
+        cell: ({ row }) => (
+          <span className="block truncate" title={row.original.route}>
+            {row.original.route ?? '-'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'userId',
+        header: CatalogLabels.user,
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.userId}>
+            {row.original.userId ?? '-'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'appVersion',
+        header: CatalogLabels.version,
+        cell: ({ row }) => row.original.appVersion ?? '-',
+      },
+      {
+        accessorKey: 'environment',
+        header: CatalogLabels.environment,
+        cell: ({ row }) => row.original.environment ?? '-',
       },
       {
         id: 'actions',
@@ -124,7 +130,7 @@ export function SessionCatalogTable({
       state={state}
       selectedId={selectedId}
       getRowId={(item) => item.sessionId}
-      minWidthClass="min-w-[960px]"
+      minWidthClass="min-w-[1040px]"
       message={{
         emptyTitle: '暂无 Session',
         emptyDescription: '运行 example 后，本地会话会出现在这里。',
@@ -170,18 +176,18 @@ export function SessionPreviewPane({
         </div>
       ) : undefined}
       facts={item ? [
-        { label: '用户', value: item.userId ?? '-' },
-        { label: '版本', value: item.appVersion ?? '-' },
-        { label: '环境', value: item.environment ?? '-' },
-        { label: '平台', value: item.devicePlatform ?? '-' },
-        { label: '路由', value: item.route ?? '-' },
-        { label: '问题', value: problemCount(item) },
-        { label: '事件数', value: item.count },
+        { label: CatalogLabels.problems, value: problemCount(item) },
+        { label: CatalogLabels.events, value: item.count },
+        { label: CatalogLabels.route, value: item.route ?? '-' },
+        { label: CatalogLabels.user, value: item.userId ?? '-' },
+        { label: CatalogLabels.version, value: item.appVersion ?? '-' },
+        { label: CatalogLabels.environment, value: item.environment ?? '-' },
+        { label: CatalogLabels.platform, value: item.devicePlatform ?? '-' },
         { label: '起止', value: `${formatDateTime(item.firstTimestamp)} - ${formatDateTime(item.lastTimestamp)}` },
       ] : undefined}
       ids={item ? [
-        { label: 'Session', value: item.sessionId },
-        { label: 'Last Event', value: item.lastEventId },
+        { label: CatalogLabels.session, value: item.sessionId },
+        { label: '最近事件', value: item.lastEventId },
       ] : undefined}
       onOpen={onOpen}
       onPeek={onPeek}
@@ -196,12 +202,13 @@ export function problemCount(session: SessionSummary) {
 function columnClass(id: string, header: boolean) {
   return cn(
     id === 'lastTimestamp' && 'w-[176px]',
-    id === 'userId' && 'w-[100px]',
-    id === 'route' && 'w-[120px]',
-    id === 'appVersion' && 'w-[72px]',
     id === 'status' && 'w-[80px]',
     id === 'problems' && 'w-[64px] text-right',
     id === 'count' && 'w-[64px] text-right',
+    id === 'route' && 'w-[120px]',
+    id === 'userId' && 'w-[100px]',
+    id === 'appVersion' && 'w-[72px]',
+    id === 'environment' && 'w-[88px]',
     id === 'actions' && 'w-[88px]',
     !header && 'overflow-hidden',
   );

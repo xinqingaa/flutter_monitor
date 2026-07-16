@@ -79,6 +79,9 @@ export interface HttpCatalogItem {
   sessionId?: string;
   traceId?: string;
   requestId?: string;
+  appVersion?: string;
+  environment?: string;
+  devicePlatform?: string;
   requestSizeBytes?: number;
   responseSizeBytes?: number;
   detailDropped: boolean;
@@ -109,6 +112,7 @@ export interface BusinessCatalogItem {
   sessionId?: string;
   traceId?: string;
   appVersion?: string;
+  environment?: string;
   summary: boolean;
 }
 
@@ -147,6 +151,7 @@ export interface ErrorCatalogItem {
   sessionId?: string;
   traceId?: string;
   appVersion?: string;
+  environment?: string;
 }
 
 export interface ErrorCatalogResult {

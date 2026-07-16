@@ -9,6 +9,7 @@ import {
 } from '../catalog/catalog-table';
 import { SortableHeader } from '../catalog/sortable-header';
 import type { HttpCatalogItem } from '../../shared/datasource/types';
+import { CatalogLabels } from '../../shared/event-model/catalog-labels';
 import { cn } from '../../shared/formatting/cn';
 import { formatDuration, formatTime } from '../../shared/formatting/format';
 
@@ -47,7 +48,7 @@ export function HttpCatalogTable({
         accessorKey: 'timestamp',
         header: () => (
           <SortableHeader
-            label="时间"
+            label={CatalogLabels.time}
             active={sortBy === 'timestamp'}
             direction={sortDir}
             onClick={() => onSort('timestamp')}
@@ -61,12 +62,12 @@ export function HttpCatalogTable({
       },
       {
         accessorKey: 'method',
-        header: '方法',
+        header: CatalogLabels.method,
         cell: ({ row }) => <span className="font-mono font-medium">{row.original.method ?? '-'}</span>,
       },
       {
         accessorKey: 'url',
-        header: 'URL',
+        header: CatalogLabels.url,
         cell: ({ row }) => (
           <span className="block truncate font-mono text-xs" title={row.original.url}>
             {displayUrl(row.original.url, fullUrl)}
@@ -75,7 +76,7 @@ export function HttpCatalogTable({
       },
       {
         accessorKey: 'statusCode',
-        header: '状态码',
+        header: CatalogLabels.statusCode,
         cell: ({ row }) => (
           <span
             className={cn(
@@ -89,7 +90,7 @@ export function HttpCatalogTable({
       },
       {
         accessorKey: 'businessCode',
-        header: '业务码',
+        header: CatalogLabels.businessCode,
         cell: ({ row }) => (
           <span className="block text-right font-mono tabular-nums" title={businessCodeTitle(row.original)}>
             {row.original.businessCode ?? stateMark(row.original.businessCodeState)}
@@ -101,7 +102,7 @@ export function HttpCatalogTable({
         header: () => (
           <div className="flex justify-end">
             <SortableHeader
-              label="耗时"
+              label={CatalogLabels.duration}
               active={sortBy === 'durationMs'}
               direction={sortDir}
               align="right"
@@ -121,8 +122,17 @@ export function HttpCatalogTable({
         ),
       },
       {
+        accessorKey: 'requestId',
+        header: CatalogLabels.requestId,
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.requestId}>
+            {row.original.requestId ?? '-'}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'route',
-        header: '关联路由',
+        header: CatalogLabels.route,
         cell: ({ row }) => (
           <span className="block truncate" title={row.original.route}>
             {row.original.route ?? '-'}
@@ -131,7 +141,7 @@ export function HttpCatalogTable({
       },
       {
         accessorKey: 'userId',
-        header: 'UserId',
+        header: CatalogLabels.user,
         cell: ({ row }) => (
           <span className="block truncate font-mono text-xs" title={row.original.userId}>
             {row.original.userId ?? '-'}
@@ -139,13 +149,14 @@ export function HttpCatalogTable({
         ),
       },
       {
-        accessorKey: 'requestId',
-        header: 'RequestId',
-        cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs" title={row.original.requestId}>
-            {row.original.requestId ?? '-'}
-          </span>
-        ),
+        accessorKey: 'appVersion',
+        header: CatalogLabels.version,
+        cell: ({ row }) => row.original.appVersion ?? '-',
+      },
+      {
+        accessorKey: 'environment',
+        header: CatalogLabels.environment,
+        cell: ({ row }) => row.original.environment ?? '-',
       },
       {
         id: 'actions',
@@ -154,7 +165,7 @@ export function HttpCatalogTable({
           <CatalogRowActions
             item={row.original}
             label="HTTP"
-            copyItems={[{ label: 'Request ID', value: row.original.requestId }]}
+            copyItems={[{ label: CatalogLabels.requestId, value: row.original.requestId }]}
             onOpen={onOpen}
             onPeek={onPeek}
           />
@@ -171,7 +182,7 @@ export function HttpCatalogTable({
       state={state}
       selectedId={selectedId}
       getRowId={(item) => item.eventId}
-      minWidthClass="min-w-[1160px]"
+      minWidthClass="min-w-[1360px]"
       message={{
         emptyTitle: '暂无 HTTP 请求',
         emptyDescription: '等待应用产生网络请求。',
@@ -202,9 +213,11 @@ function columnClass(id: string, header: boolean) {
     id === 'statusCode' && 'w-[88px] text-right',
     id === 'businessCode' && 'w-[96px] text-right',
     id === 'durationMs' && 'w-[108px] text-right',
-    id === 'route' && 'w-[140px]',
-    id === 'userId' && 'w-[100px]',
     id === 'requestId' && 'w-[140px]',
+    id === 'route' && 'w-[120px]',
+    id === 'userId' && 'w-[100px]',
+    id === 'appVersion' && 'w-[72px]',
+    id === 'environment' && 'w-[88px]',
     id === 'actions' && 'w-[88px]',
     !header && 'overflow-hidden',
   );
@@ -221,14 +234,14 @@ function displayUrl(url: string | undefined, full: boolean): string {
 }
 
 function stateMark(state: HttpCatalogItem['businessCodeState']) {
-  return state === 'parse_failed' ? '解析失败' : state === 'detail_unavailable' ? '详情缺失' : '-';
+  return state === 'parse_failed' ? '?' : state === 'detail_unavailable' ? '…' : '-';
 }
 
 function businessCodeTitle(item: HttpCatalogItem) {
   return item.businessCode
     ?? (item.businessCodeState === 'parse_failed'
-      ? '响应 body 无法解析为含顶层 code 的 JSON'
+      ? '业务码解析失败'
       : item.businessCodeState === 'detail_unavailable'
-        ? '详情被剥离或 body 被截断'
-        : '响应中没有顶层 code');
+        ? '详情不可用'
+        : undefined);
 }

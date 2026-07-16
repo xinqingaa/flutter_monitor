@@ -11,6 +11,7 @@ import { ScrollArea } from '../../components/ui/scroll-area';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../../components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { CopyableId } from '../../components/common/copyable-id';
+import { EnvironmentProfile } from '../../features/inspector/environment-profile';
 import { JsonViewer } from '../../features/inspector/json-viewer';
 import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
@@ -248,7 +249,9 @@ function SessionRecord({ event, loading }: { event?: MonitorEvent; loading: bool
         </TabsContent>
         <TabsContent value="context" className="min-h-0 overflow-hidden">
           <ScrollArea className="h-full">
-            <JsonViewer value={{ resource: event.resource, context: event.context }} collapsed={2} />
+            <div className="p-1">
+              <EnvironmentProfile event={event} />
+            </div>
           </ScrollArea>
         </TabsContent>
         <TabsContent value="raw" className="min-h-0 overflow-hidden">

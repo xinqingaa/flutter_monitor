@@ -80,7 +80,6 @@ export function WorkbenchShell() {
 
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>工作台</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {nav.map(({ to, label, match }) => (

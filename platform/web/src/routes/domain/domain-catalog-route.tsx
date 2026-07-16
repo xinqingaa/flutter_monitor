@@ -15,12 +15,14 @@ import { CatalogRowActions } from '../../features/catalog/catalog-row-actions';
 import { CatalogTable, type CatalogState } from '../../features/catalog/catalog-table';
 import { DomainFilterBar } from '../../features/catalog/domain-filter-bar';
 import { SortableHeader } from '../../features/catalog/sortable-header';
+import { EnvironmentProfile } from '../../features/inspector/environment-profile';
 import { RecordShell } from '../../features/inspector/record-shell';
 import { JsonViewer } from '../../features/inspector/json-viewer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { datasource, queryKeys, useDimensionsQuery, useEventQuery, useSessionQuery } from '../../shared/datasource/queries';
 import type { BusinessCatalogItem, BusinessCatalogQuery, ErrorCatalogItem, ErrorCatalogQuery, MonitorEvent, SessionFilters } from '../../shared/datasource/types';
 import { readPath } from '../../shared/event-model/accessors';
+import { CatalogLabels } from '../../shared/event-model/catalog-labels';
 import { cn } from '../../shared/formatting/cn';
 import { formatDateTime, formatTime } from '../../shared/formatting/format';
 import {
@@ -259,7 +261,7 @@ function businessColumns(
       accessorKey: 'timestamp',
       header: () => (
         <SortableHeader
-          label="时间"
+          label={CatalogLabels.time}
           active={sortBy === 'timestamp'}
           direction={sortDir}
           onClick={onSort}
@@ -269,7 +271,7 @@ function businessColumns(
     },
     {
       accessorKey: 'action',
-      header: 'Action',
+      header: CatalogLabels.action,
       cell: ({ row }) => (
         <div className="flex min-w-0 items-center gap-2">
           <span className="block truncate font-mono text-xs" title={row.original.action}>{row.original.action}</span>
@@ -279,17 +281,18 @@ function businessColumns(
     },
     {
       accessorKey: 'result',
-      header: '结果',
+      header: CatalogLabels.result,
       cell: ({ row }) => (
         <span className={cn(row.original.result === 'failed' && 'font-medium text-destructive')}>
           {resultFilterLabel(row.original.result)}
         </span>
       ),
     },
-    { accessorKey: 'route', header: '关联路由', cell: ({ row }) => <Truncated value={row.original.route} /> },
-    { accessorKey: 'userId', header: '用户', cell: ({ row }) => <Truncated value={row.original.userId} /> },
-    { accessorKey: 'sessionId', header: 'Session', cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
-    { accessorKey: 'appVersion', header: '版本', cell: ({ row }) => row.original.appVersion ?? '-' },
+    { accessorKey: 'route', header: CatalogLabels.route, cell: ({ row }) => <Truncated value={row.original.route} /> },
+    { accessorKey: 'userId', header: CatalogLabels.user, cell: ({ row }) => <Truncated value={row.original.userId} /> },
+    { accessorKey: 'appVersion', header: CatalogLabels.version, cell: ({ row }) => row.original.appVersion ?? '-' },
+    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
+    { accessorKey: 'sessionId', header: CatalogLabels.session, cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
     {
       id: 'actions',
       enableHiding: false,
@@ -310,7 +313,7 @@ function errorColumns(
       accessorKey: 'timestamp',
       header: () => (
         <SortableHeader
-          label="时间"
+          label={CatalogLabels.time}
           active={sortBy === 'timestamp'}
           direction={sortDir}
           onClick={onSort}
@@ -320,7 +323,7 @@ function errorColumns(
     },
     {
       id: 'kind',
-      header: '类型',
+      header: CatalogLabels.kind,
       cell: ({ row }) => (
         <Badge variant={row.original.kind === 'business_failure' ? 'secondary' : 'destructive'}>
           {row.original.kind === 'business_failure' ? '业务失败' : '异常'}
@@ -329,7 +332,7 @@ function errorColumns(
     },
     {
       accessorKey: 'message',
-      header: 'Message',
+      header: CatalogLabels.message,
       cell: ({ row }) => (
         <div className="flex min-w-0 flex-col gap-0.5">
           <Truncated value={row.original.title ?? row.original.message ?? row.original.type} />
@@ -345,18 +348,19 @@ function errorColumns(
     },
     {
       id: 'occurrenceCount',
-      header: '次数',
+      header: CatalogLabels.occurrenceCount,
       cell: ({ row }) => (
         <span className="block text-right font-mono tabular-nums">
           {row.original.occurrenceCount ?? (row.original.summary ? '-' : '1')}
         </span>
       ),
     },
-    { id: 'handledState', header: '处理状态', cell: ({ row }) => errorStateLabel(row.original) },
-    { accessorKey: 'route', header: '关联路由', cell: ({ row }) => <Truncated value={row.original.route} /> },
-    { accessorKey: 'userId', header: '用户', cell: ({ row }) => <Truncated value={row.original.userId} /> },
-    { accessorKey: 'sessionId', header: 'Session', cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
-    { accessorKey: 'appVersion', header: '版本', cell: ({ row }) => row.original.appVersion ?? '-' },
+    { id: 'handledState', header: CatalogLabels.handledState, cell: ({ row }) => errorStateLabel(row.original) },
+    { accessorKey: 'route', header: CatalogLabels.route, cell: ({ row }) => <Truncated value={row.original.route} /> },
+    { accessorKey: 'userId', header: CatalogLabels.user, cell: ({ row }) => <Truncated value={row.original.userId} /> },
+    { accessorKey: 'appVersion', header: CatalogLabels.version, cell: ({ row }) => row.original.appVersion ?? '-' },
+    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
+    { accessorKey: 'sessionId', header: CatalogLabels.session, cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
     {
       id: 'actions',
       enableHiding: false,
@@ -395,18 +399,19 @@ function DomainPreview({ mode, item, onOpen, onPeek }: {
         </div>
       ) : undefined}
       facts={item ? [
-        { label: '关联路由', value: item.route ?? '-' },
-        { label: '用户', value: item.userId ?? '-' },
-        { label: '版本', value: item.appVersion ?? '-' },
-        { label: '时间', value: formatDateTime(item.timestamp) },
         ...(error?.fingerprint ? [{ label: 'Fingerprint', value: error.fingerprint }] : []),
-        ...(error?.occurrenceCount != null ? [{ label: '次数', value: error.occurrenceCount }] : []),
+        ...(error?.occurrenceCount != null ? [{ label: CatalogLabels.occurrenceCount, value: error.occurrenceCount }] : []),
         ...(error?.summary ? [{ label: '形态', value: '聚合摘要' }] : []),
+        { label: CatalogLabels.route, value: item.route ?? '-' },
+        { label: CatalogLabels.user, value: item.userId ?? '-' },
+        { label: CatalogLabels.version, value: item.appVersion ?? '-' },
+        { label: CatalogLabels.environment, value: item.environment ?? '-' },
+        { label: CatalogLabels.time, value: formatDateTime(item.timestamp) },
       ] : undefined}
       ids={item ? [
-        { label: 'Event', value: item.eventId },
-        { label: 'Session', value: item.sessionId },
-        { label: 'Trace', value: item.traceId },
+        { label: CatalogLabels.eventId, value: item.eventId },
+        { label: CatalogLabels.session, value: item.sessionId },
+        { label: CatalogLabels.trace, value: item.traceId },
       ] : undefined}
       eventId={item?.eventId}
       sessionId={item?.sessionId}
@@ -512,7 +517,7 @@ export function DomainRecordContent({
       </TabsList>
       <TabsContent value="detail" className="min-h-0 flex-1 overflow-auto"><DomainDetail mode={mode} event={event} /></TabsContent>
       <TabsContent value="related" className="min-h-0 flex-1 overflow-auto"><Related events={related} /></TabsContent>
-      <TabsContent value="context" className="min-h-0 flex-1 overflow-auto"><JsonViewer value={{ resource: event.resource, context: event.context, ids: { eventId: event.eventId, sessionId: event.sessionId, traceId: event.traceId, spanId: event.spanId } }} collapsed={2} /></TabsContent>
+      <TabsContent value="context" className="min-h-0 flex-1 overflow-auto"><EnvironmentProfile event={event} /></TabsContent>
       <TabsContent value="raw" className="min-h-0 flex-1 overflow-auto"><JsonViewer value={event} collapsed={2} /></TabsContent>
     </Tabs>
   );
@@ -553,9 +558,9 @@ function DomainDetail({ mode, event }: { mode: Mode; event: MonitorEvent }) {
   const message = readPath(event, ['payload', 'payload.error.message']) ?? (isRecord(error) ? error.message : undefined) ?? readPath(event, ['payload', 'message']) ?? event.name;
   return (
     <div className="grid gap-4">
-      <Section title="Message" value={message} text />
-      <Section title="Stack" value={stack} text />
-      <Section title="Breadcrumbs" value={breadcrumbs} />
+      <Section title="消息" value={message} text />
+      <Section title="堆栈" value={stack} text />
+      <Section title="足迹" value={breadcrumbs} />
     </div>
   );
 }
@@ -666,6 +671,7 @@ function domainColumnClass(mode: Mode, id: string, header: boolean) {
     id === 'userId' && 'w-[70px]',
     id === 'sessionId' && 'w-[120px]',
     id === 'appVersion' && 'w-[60px]',
+    id === 'environment' && 'w-[72px]',
     id === 'actions' && 'w-[88px]',
     mode === 'business' && id === 'action' && 'min-w-[180px]',
     mode === 'errors' && id === 'message' && 'min-w-[128px]',

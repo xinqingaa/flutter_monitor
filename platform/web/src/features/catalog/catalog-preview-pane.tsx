@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '../../components/ui/alert';
 import { Badge } from '../../components/common/status-badge';
 import type { HttpCatalogItem } from '../../shared/datasource/types';
+import { CatalogLabels } from '../../shared/event-model/catalog-labels';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
 import { CatalogPreviewShell } from './catalog-preview-shell';
 
@@ -44,18 +45,21 @@ export function CatalogPreviewPane({
       ) : undefined}
       facts={item ? [
         { label: 'HTTP 状态', value: item.statusCode ?? '-' },
-        { label: '业务码', value: businessCode(item) },
-        { label: '耗时', value: formatDuration(item.durationMs) },
+        { label: CatalogLabels.businessCode, value: businessCode(item) },
+        { label: CatalogLabels.duration, value: formatDuration(item.durationMs) },
         { label: '响应大小', value: bytes(item.responseSizeBytes) },
-        { label: '关联路由', value: item.route ?? '-' },
-        { label: '时间', value: formatDateTime(item.timestamp) },
+        { label: CatalogLabels.route, value: item.route ?? '-' },
+        { label: CatalogLabels.user, value: item.userId ?? '-' },
+        { label: CatalogLabels.version, value: item.appVersion ?? '-' },
+        { label: CatalogLabels.environment, value: item.environment ?? '-' },
+        { label: CatalogLabels.platform, value: item.devicePlatform ?? '-' },
+        { label: CatalogLabels.time, value: formatDateTime(item.timestamp) },
       ] : undefined}
       ids={item ? [
-        { label: 'Event', value: item.eventId },
-        { label: 'UserId', value: item.userId },
-        { label: 'Session', value: item.sessionId },
-        { label: 'Trace', value: item.traceId },
-        { label: 'RequestId', value: item.requestId },
+        { label: CatalogLabels.eventId, value: item.eventId },
+        { label: CatalogLabels.session, value: item.sessionId },
+        { label: CatalogLabels.trace, value: item.traceId },
+        { label: CatalogLabels.requestId, value: item.requestId },
       ] : undefined}
       eventId={item?.eventId}
       sessionId={item?.sessionId}

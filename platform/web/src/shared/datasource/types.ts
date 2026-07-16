@@ -359,6 +359,9 @@ export interface HttpCatalogItem {
   sessionId?: string;
   traceId?: string;
   requestId?: string;
+  appVersion?: string;
+  environment?: string;
+  devicePlatform?: string;
   requestSizeBytes?: number;
   responseSizeBytes?: number;
   detailDropped: boolean;
@@ -378,7 +381,7 @@ export interface BusinessCatalogQuery extends SessionFilters {
   sortBy?: 'timestamp';
   sortDir?: 'asc' | 'desc';
 }
-export interface BusinessCatalogItem { eventId: string; timestamp?: string; action: string; result?: string; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; summary: boolean; }
+export interface BusinessCatalogItem { eventId: string; timestamp?: string; action: string; result?: string; route?: string; userId?: string; sessionId?: string; traceId?: string; appVersion?: string; environment?: string; summary: boolean; }
 export interface BusinessCatalogResult { items: BusinessCatalogItem[]; total: number; limit: number; offset: number; }
 export interface ErrorCatalogQuery extends SessionFilters {
   errorType?: string;
@@ -407,6 +410,7 @@ export interface ErrorCatalogItem {
   sessionId?: string;
   traceId?: string;
   appVersion?: string;
+  environment?: string;
 }
 export interface ErrorCatalogResult { items: ErrorCatalogItem[]; total: number; limit: number; offset: number; }
 
