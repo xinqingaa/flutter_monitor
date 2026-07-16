@@ -117,7 +117,7 @@ export function WorkbenchShell() {
       </Sidebar>
 
       <SidebarInset className="h-full min-h-0 min-w-0 overflow-hidden">
-        <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear">
+        <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger aria-label="切换导航" />
           <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb className="min-w-0 flex-1">

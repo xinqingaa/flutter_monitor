@@ -71,10 +71,12 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
 | 域 | 列序 |
 |---|---|
-| Session | 时间 · Session · 状态 · 问题 · 事件 · 路由 · 用户 · 版本 · 环境 · 操作 |
+| Session | 时间 · Session · 状态 · 问题 · 事件 · 路由 · 涉及用户 · 版本 · 环境 · 操作 |
 | HTTP | 时间 · 方法 · URL · 环境 · 状态码 · 业务码 · 耗时 · 路由 · 用户 · 版本 · 请求 ID · 操作 |
 | 埋点 | 时间 · 动作 · 结果 · 环境 · 路由 · 用户 · 版本 · Session · 操作 |
 | 异常 | 时间 · 类型 · 消息 · 环境 · 次数 · 处理状态 · 路由 · 用户 · 版本 · Session · 操作 |
+
+Session 列表的「涉及用户」来自摘要启发式（如首个带 `context.user.userId` 的事件），仅作检索线索；同一 Session 内可能登录/切换账号，不以该列作为会话唯一归属。事件域 Catalog 的「用户」仍是该行事件当时的 `context.user.userId`。
 
 Preview 尾部 facts 统一：路由 · 用户 · 版本 · 环境 · 平台 · 时间；域摘要接在前面。ids 区用：事件 ID · Session · Trace ·（HTTP）请求 ID。
 
@@ -165,7 +167,7 @@ HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时
 
 路径：`/sessions`。与 HTTP / 埋点 / 异常同一套 Catalog：表格、Preview、展开 Sheet、打开详情进工作区。
 
-列：时间 · Session · 状态 · 问题 · 事件 · 路由 · 用户 · 版本 · 环境 · 操作。
+列：时间 · Session · 状态 · 问题 · 事件 · 路由 · 涉及用户 · 版本 · 环境 · 操作。
 
 ### 工作区（二级）
 
@@ -179,9 +181,9 @@ HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时
 
 ### 当前界面
 
-- 顶栏：Session ID Combobox 切换会话（切换后清空 eventId）、时间跨度、用户、版本、问题计数
+- 顶栏：Session ID Combobox 切换会话（切换后清空 eventId）、时间跨度、版本、问题计数（不展示用户：`userId` 是事件级上下文，同会话可切换账号）
 - 左：事件列表，Tab 为全部 / 启动 / 页面 / HTTP / 埋点 / 问题
-- 右：选中事件的摘要 / 上下文 / Raw（JsonViewer）
+- 右：选中事件的摘要 / 上下文 / Raw（JsonViewer）；用户信息在事件上下文中查看
 - 窄屏用 Sheet 看详情
 
 ### 当前局限
