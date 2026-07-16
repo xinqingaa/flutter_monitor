@@ -109,7 +109,7 @@ export function HttpFilterBar({
           values={list(search.method)}
           options={methodOptions}
           onChange={(values) => patchList('method', values)}
-          className="w-32"
+          className="w-24 shrink-0"
         />
         <MultiSelect
           ariaLabel="结果"
@@ -117,7 +117,7 @@ export function HttpFilterBar({
           values={list(search.result)}
           options={resultFilterOptions}
           onChange={(values) => patchList('result', values)}
-          className="w-32"
+          className="w-24 shrink-0"
         />
         <MultiSelect
           ariaLabel="状态码"
@@ -125,7 +125,7 @@ export function HttpFilterBar({
           values={list(search.statusCode)}
           options={dimensionOptions(dimensions?.httpStatusCodes)}
           onChange={(values) => patchList('statusCode', values)}
-          className="w-36"
+          className="w-28 shrink-0"
         />
         <MultiSelect
           ariaLabel="业务码"
@@ -133,7 +133,7 @@ export function HttpFilterBar({
           values={list(search.businessCode)}
           options={dimensionOptions(dimensions?.httpBusinessCodes)}
           onChange={(values) => patchList('businessCode', values)}
-          className="w-40"
+          className="w-28 shrink-0"
         />
         <MultiSelect
           ariaLabel="Host"
@@ -141,7 +141,7 @@ export function HttpFilterBar({
           values={list(search.host)}
           options={dimensionOptions(dimensions?.httpHosts)}
           onChange={(values) => patchList('host', values)}
-          className="w-44"
+          className="w-32 shrink-0"
         />
         <FilterSelect
           ariaLabel="慢请求阈值"
@@ -162,10 +162,10 @@ export function HttpFilterBar({
               slowThresholdMs: parsed === 1000 ? undefined : parsed,
             }, true);
           }}
-          className="w-36"
+          className="w-28 shrink-0"
         />
         <MultiCombobox
-          label="Request ID"
+          label="请求 ID"
           values={requestIds}
           query={requestQuery}
           options={suggestions.data?.requestIds ?? []}
@@ -173,7 +173,7 @@ export function HttpFilterBar({
           error={suggestions.isError}
           onQueryChange={setRequestQuery}
           onChange={(values) => patchList('requestId', values)}
-          className="w-44"
+          className="w-36 shrink-0"
         />
         <div className="ml-auto flex items-center gap-2">
           <Label htmlFor="http-full-url" className="whitespace-nowrap text-sm text-muted-foreground">
@@ -213,7 +213,7 @@ function httpFilterLabel(key: keyof HttpSearch, value: unknown, threshold: numbe
     url: 'URL',
     method: '方法',
     result: '结果',
-    requestId: 'Request ID',
+    requestId: '请求 ID',
     statusCode: '状态码',
     businessCode: '业务码',
     host: 'Host',

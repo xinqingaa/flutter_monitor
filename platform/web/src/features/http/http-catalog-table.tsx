@@ -75,6 +75,11 @@ export function HttpCatalogTable({
         ),
       },
       {
+        accessorKey: 'environment',
+        header: CatalogLabels.environment,
+        cell: ({ row }) => row.original.environment ?? '-',
+      },
+      {
         accessorKey: 'statusCode',
         header: CatalogLabels.statusCode,
         cell: ({ row }) => (
@@ -122,15 +127,6 @@ export function HttpCatalogTable({
         ),
       },
       {
-        accessorKey: 'requestId',
-        header: CatalogLabels.requestId,
-        cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs" title={row.original.requestId}>
-            {row.original.requestId ?? '-'}
-          </span>
-        ),
-      },
-      {
         accessorKey: 'route',
         header: CatalogLabels.route,
         cell: ({ row }) => (
@@ -154,9 +150,13 @@ export function HttpCatalogTable({
         cell: ({ row }) => row.original.appVersion ?? '-',
       },
       {
-        accessorKey: 'environment',
-        header: CatalogLabels.environment,
-        cell: ({ row }) => row.original.environment ?? '-',
+        accessorKey: 'requestId',
+        header: CatalogLabels.requestId,
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.requestId}>
+            {row.original.requestId ?? '-'}
+          </span>
+        ),
       },
       {
         id: 'actions',

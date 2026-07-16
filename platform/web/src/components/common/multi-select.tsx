@@ -87,7 +87,7 @@ export function MultiSelect({
           variant="outline"
           aria-label={ariaLabel ?? placeholder}
           className={cn(
-            'h-9 min-w-[128px] max-w-full justify-between font-normal focus-visible:ring-0',
+            'h-9 min-w-0 max-w-full justify-between overflow-hidden font-normal focus-visible:ring-0',
             selected.length === 0 && 'text-muted-foreground',
             className,
           )}

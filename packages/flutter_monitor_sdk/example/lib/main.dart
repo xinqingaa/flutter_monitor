@@ -33,7 +33,11 @@ Future<void> main() async {
   final appStartTime = DateTime.now();
   WidgetsFlutterBinding.ensureInitialized();
 
-  final appInfo = await AppInfo.fromPackageInfo(appKey: 'PULSEFIT_DEMO');
+  final appInfo = await AppInfo.fromPackageInfo(
+    appKey: 'PULSEFIT_DEMO',
+    channel: 'demo',
+    environment: 'development',
+  );
   await FlutterMonitorSDK.init(
     config: MonitorConfig(
       appInfo: appInfo,
@@ -47,7 +51,6 @@ Future<void> main() async {
       moduleName: 'launch',
       moduleScene: 'splash',
       releaseId: 'pulsefit-2026.07',
-      featureFlags: ['workouts', 'courses', 'membership'],
     ),
   );
 

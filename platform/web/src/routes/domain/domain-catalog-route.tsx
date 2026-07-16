@@ -12,6 +12,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { CatalogPreviewShell } from '../../features/catalog/catalog-preview-shell';
 import { CatalogRowActions } from '../../features/catalog/catalog-row-actions';
+import { CatalogSplitLayout } from '../../features/catalog/catalog-split-layout';
 import { CatalogTable, type CatalogState } from '../../features/catalog/catalog-table';
 import { DomainFilterBar } from '../../features/catalog/domain-filter-bar';
 import { SortableHeader } from '../../features/catalog/sortable-header';
@@ -132,38 +133,37 @@ function DomainCatalog({ mode }: { mode: Mode }) {
           true,
         )}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
-        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-          <DomainTable
-            mode={mode}
-            items={items}
-            state={state}
-            selectedId={search.eventId}
-            sortBy={sortBy}
-            sortDir={sortDir}
-            onSort={toggleSort}
-            onSelect={select}
-            onOpen={open}
-            onPeek={peek}
-            onRetry={() => void catalog.refetch()}
-          />
-          <CatalogPagination
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
-            onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
-          />
-        </div>
-        <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
+      <CatalogSplitLayout
+        preview={(
           <DomainPreview
             mode={mode}
             item={selected}
             onOpen={() => selected && open(selected)}
             onPeek={() => selected && peek(selected)}
           />
-        </aside>
-      </div>
+        )}
+      >
+        <DomainTable
+          mode={mode}
+          items={items}
+          state={state}
+          selectedId={search.eventId}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={toggleSort}
+          onSelect={select}
+          onOpen={open}
+          onPeek={peek}
+          onRetry={() => void catalog.refetch()}
+        />
+        <CatalogPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+          onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
+        />
+      </CatalogSplitLayout>
       <DomainRecord
         mode={mode}
         open={Boolean(search.detail)}
@@ -288,10 +288,10 @@ function businessColumns(
         </span>
       ),
     },
+    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     { accessorKey: 'route', header: CatalogLabels.route, cell: ({ row }) => <Truncated value={row.original.route} /> },
     { accessorKey: 'userId', header: CatalogLabels.user, cell: ({ row }) => <Truncated value={row.original.userId} /> },
     { accessorKey: 'appVersion', header: CatalogLabels.version, cell: ({ row }) => row.original.appVersion ?? '-' },
-    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     { accessorKey: 'sessionId', header: CatalogLabels.session, cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
     {
       id: 'actions',
@@ -346,6 +346,7 @@ function errorColumns(
         </div>
       ),
     },
+    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     {
       id: 'occurrenceCount',
       header: CatalogLabels.occurrenceCount,
@@ -359,7 +360,6 @@ function errorColumns(
     { accessorKey: 'route', header: CatalogLabels.route, cell: ({ row }) => <Truncated value={row.original.route} /> },
     { accessorKey: 'userId', header: CatalogLabels.user, cell: ({ row }) => <Truncated value={row.original.userId} /> },
     { accessorKey: 'appVersion', header: CatalogLabels.version, cell: ({ row }) => row.original.appVersion ?? '-' },
-    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     { accessorKey: 'sessionId', header: CatalogLabels.session, cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
     {
       id: 'actions',

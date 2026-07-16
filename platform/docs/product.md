@@ -47,7 +47,7 @@ Session 为一级入口：列表在 `/sessions`，链路工作区在 `/sessions/
 HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
 1. **列表**：分页、排序、loading / empty / error / noResults（通用表格）
-2. **Preview**（宽屏）：选中行摘要与操作
+2. **Preview**（宽屏）：选中行摘要与操作；右侧摘要宽度可拖拽调整，并本地持久化
 3. **单击行**：只选中 Preview，不自动开 Sheet
 4. **展开预览**：行内 `PanelRight` 按钮，或 Preview「展开预览」→ Sheet
 5. **打开详情 / 双击行**：进入独立详情页（HTTP `/http/$id`、埋点 `/business/$id`、异常 `/errors/$id`、Session `/sessions/$id`）
@@ -62,18 +62,19 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 一级 Catalog（Session / HTTP / 埋点 / 异常）共用「通用列块 + 域特有列」：
 
 - **文案**：面向用户的 label 一律中文；禁止表头出现 `UserID` / `UserId` / `Action` / `Message` 等混用。
-- **通用尾列顺序（固定）**：路由 → 用户 → 版本 → 环境。取值对应 `context.route.name`、`context.user.userId`、`resource.app.appVersion`、`resource.app.environment`。
+- **环境列**：前置到域主列之后（约第 3/4 列），便于按环境扫表；取值对应 `resource.app.environment`。
+- **通用上下文尾列**：路由 → 用户 → 版本。取值对应 `context.route.name`、`context.user.userId`、`resource.app.appVersion`。
 - **版本列**：只展示 `appVersion`；`buildNumber` 不进一级表格，仅在详情环境画像中展示。
-- **HTTP 请求 ID**：属于 HTTP 域特有列与筛选项，必须保留在列表中，不并入通用列块。HTTP 主表不加 Session（Preview / 详情摘要可展示）。
+- **HTTP 请求 ID**：属于 HTTP 域特有列，放在通用上下文尾列之后、操作之前；不并入通用列块。HTTP 主表不加 Session（Preview / 详情摘要可展示）。
 
 推荐列序：
 
 | 域 | 列序 |
 |---|---|
 | Session | 时间 · Session · 状态 · 问题 · 事件 · 路由 · 用户 · 版本 · 环境 · 操作 |
-| HTTP | 时间 · 方法 · URL · 状态码 · 业务码 · 耗时 · 请求 ID · 路由 · 用户 · 版本 · 环境 · 操作 |
-| 埋点 | 时间 · 动作 · 结果 · 路由 · 用户 · 版本 · 环境 · Session · 操作 |
-| 异常 | 时间 · 类型 · 消息 · 次数 · 处理状态 · 路由 · 用户 · 版本 · 环境 · Session · 操作 |
+| HTTP | 时间 · 方法 · URL · 环境 · 状态码 · 业务码 · 耗时 · 路由 · 用户 · 版本 · 请求 ID · 操作 |
+| 埋点 | 时间 · 动作 · 结果 · 环境 · 路由 · 用户 · 版本 · Session · 操作 |
+| 异常 | 时间 · 类型 · 消息 · 环境 · 次数 · 处理状态 · 路由 · 用户 · 版本 · Session · 操作 |
 
 Preview 尾部 facts 统一：路由 · 用户 · 版本 · 环境 · 平台 · 时间；域摘要接在前面。ids 区用：事件 ID · Session · Trace ·（HTTP）请求 ID。
 

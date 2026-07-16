@@ -41,7 +41,6 @@ export function HttpDetailRoute() {
             onClick={() => void navigate({ to: '/http', search: (current) => pickScopeSearch(current) })}
           >
             <ArrowLeft data-icon="inline-start" />
-            返回列表
           </Button>
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold">

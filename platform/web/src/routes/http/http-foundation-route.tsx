@@ -6,6 +6,7 @@ import { HttpFilterBar } from '../../features/http/http-filter-bar';
 import { HttpCatalogTable, type CatalogState } from '../../features/http/http-catalog-table';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
 import { CatalogPreviewPane } from '../../features/catalog/catalog-preview-pane';
+import { CatalogSplitLayout } from '../../features/catalog/catalog-split-layout';
 import { HttpRecord } from '../../features/inspector/http-record';
 import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDimensionsQuery, useEventQuery, useHttpCatalogQuery } from '../../shared/datasource/queries';
@@ -116,36 +117,8 @@ export function HttpFoundationRoute() {
         onPatch={patch}
         onResetHttp={() => clearKeys(HTTP_KEYS)}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
-        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-          <HttpCatalogTable
-            items={items}
-            state={state}
-            selectedId={search.eventId}
-            fullUrl={fullUrl}
-            slowThresholdMs={catalog.data?.slowThresholdMs ?? search.slowThresholdMs ?? 1000}
-            sortBy={sortBy}
-            sortDir={sortDir}
-            onSort={toggleSort}
-            onSelect={select}
-            onOpen={open}
-            onPeek={peek}
-            onRetry={() => void catalog.refetch()}
-          />
-          <CatalogPagination
-            page={page}
-            pageSize={pageSize}
-            total={catalog.data?.total ?? 0}
-            onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
-            onPageSizeChange={(nextPageSize) => patch({
-              pageSize: nextPageSize,
-              page: undefined,
-              eventId: undefined,
-              detail: undefined,
-            })}
-          />
-        </div>
-        <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
+      <CatalogSplitLayout
+        preview={(
           <CatalogPreviewPane
             item={selected}
             loading={Boolean(search.eventId && catalog.isLoading)}
@@ -153,8 +126,35 @@ export function HttpFoundationRoute() {
             onOpen={() => selected && open(selected)}
             onPeek={() => selected && peek(selected)}
           />
-        </aside>
-      </div>
+        )}
+      >
+        <HttpCatalogTable
+          items={items}
+          state={state}
+          selectedId={search.eventId}
+          fullUrl={fullUrl}
+          slowThresholdMs={catalog.data?.slowThresholdMs ?? search.slowThresholdMs ?? 1000}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={toggleSort}
+          onSelect={select}
+          onOpen={open}
+          onPeek={peek}
+          onRetry={() => void catalog.refetch()}
+        />
+        <CatalogPagination
+          page={page}
+          pageSize={pageSize}
+          total={catalog.data?.total ?? 0}
+          onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+          onPageSizeChange={(nextPageSize) => patch({
+            pageSize: nextPageSize,
+            page: undefined,
+            eventId: undefined,
+            detail: undefined,
+          })}
+        />
+      </CatalogSplitLayout>
       <HttpRecord
         open={Boolean(search.detail)}
         item={detailItem}

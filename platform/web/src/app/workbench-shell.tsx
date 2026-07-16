@@ -1,10 +1,19 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  GitBranch,
+  LayoutDashboard,
+  MousePointerClick,
+  Network,
+  RefreshCw,
+  type LucideIcon,
+} from 'lucide-react';
 import type * as React from 'react';
 import { useState } from 'react';
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -17,7 +26,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -33,13 +41,18 @@ import { useLiveInvalidation } from '../shared/datasource/queries';
 import { pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
-const nav = [
-  { to: '/', label: '大屏', match: (pathname: string) => pathname === '/' },
-  { to: '/sessions', label: 'Session', match: (pathname: string) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
-  { to: '/http', label: 'HTTP', match: (pathname: string) => pathname === '/http' || pathname.startsWith('/http/') },
-  { to: '/business', label: '埋点', match: (pathname: string) => pathname === '/business' || pathname.startsWith('/business/') },
-  { to: '/errors', label: '异常', match: (pathname: string) => pathname === '/errors' || pathname.startsWith('/errors/') },
-] as const;
+const nav: Array<{
+  to: '/' | '/sessions' | '/http' | '/business' | '/errors';
+  label: string;
+  icon: LucideIcon;
+  match: (pathname: string) => boolean;
+}> = [
+  { to: '/', label: '大屏', icon: LayoutDashboard, match: (pathname) => pathname === '/' },
+  { to: '/sessions', label: 'Session', icon: GitBranch, match: (pathname) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
+  { to: '/http', label: 'HTTP', icon: Network, match: (pathname) => pathname === '/http' || pathname.startsWith('/http/') },
+  { to: '/business', label: '埋点', icon: MousePointerClick, match: (pathname) => pathname === '/business' || pathname.startsWith('/business/') },
+  { to: '/errors', label: '异常', icon: AlertTriangle, match: (pathname) => pathname === '/errors' || pathname.startsWith('/errors/') },
+];
 
 export function WorkbenchShell() {
   const router = useRouter();
@@ -59,7 +72,7 @@ export function WorkbenchShell() {
         } as React.CSSProperties
       }
     >
-      <Sidebar collapsible="offcanvas" variant="inset">
+      <Sidebar collapsible="icon" variant="inset">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -82,7 +95,7 @@ export function WorkbenchShell() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {nav.map(({ to, label, match }) => (
+                {nav.map(({ to, label, icon: Icon, match }) => (
                   <SidebarMenuItem key={to}>
                     <SidebarMenuButton
                       asChild
@@ -90,6 +103,7 @@ export function WorkbenchShell() {
                       tooltip={label}
                     >
                       <Link to={to} search={(current) => pickScopeSearch(current)}>
+                        <Icon />
                         <span>{label}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -109,11 +123,23 @@ export function WorkbenchShell() {
           <Breadcrumb className="min-w-0 flex-1">
             <BreadcrumbList className="flex-nowrap">
               <BreadcrumbItem className="hidden md:block">
-                <span>Workbench</span>
+                <BreadcrumbLink asChild>
+                  <Link to="/" search={(current) => pickScopeSearch(current)}>
+                    Workbench
+                  </Link>
+                </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
               <BreadcrumbItem className="min-w-0">
-                <BreadcrumbPage className="truncate">{page.title}</BreadcrumbPage>
+                {page.listTo && page.detail ? (
+                  <BreadcrumbLink asChild className="truncate">
+                    <Link to={page.listTo} search={(current) => pickScopeSearch(current)}>
+                      {page.title}
+                    </Link>
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage className="truncate">{page.title}</BreadcrumbPage>
+                )}
               </BreadcrumbItem>
               {page.detail ? (
                 <>
@@ -155,22 +181,38 @@ export function WorkbenchShell() {
   );
 }
 
-function pageMeta(pathname: string): { title: string; detail?: string } {
+function pageMeta(pathname: string): { title: string; detail?: string; listTo?: '/' | '/sessions' | '/http' | '/business' | '/errors' } {
   if (pathname === '/') return { title: '大屏' };
   if (pathname === '/sessions') return { title: 'Session' };
   if (pathname.startsWith('/sessions/')) {
-    return { title: 'Session 链路', detail: decodeURIComponent(pathname.slice('/sessions/'.length)) };
+    return {
+      title: 'Session',
+      detail: decodeURIComponent(pathname.slice('/sessions/'.length)),
+      listTo: '/sessions',
+    };
   }
   if (pathname.startsWith('/http/')) {
-    return { title: 'HTTP 详情', detail: decodeURIComponent(pathname.slice('/http/'.length)) };
+    return {
+      title: 'HTTP',
+      detail: decodeURIComponent(pathname.slice('/http/'.length)),
+      listTo: '/http',
+    };
   }
   if (pathname.startsWith('/http')) return { title: 'HTTP' };
   if (pathname.startsWith('/business/')) {
-    return { title: '埋点详情', detail: decodeURIComponent(pathname.slice('/business/'.length)) };
+    return {
+      title: '埋点',
+      detail: decodeURIComponent(pathname.slice('/business/'.length)),
+      listTo: '/business',
+    };
   }
   if (pathname.startsWith('/business')) return { title: '埋点' };
   if (pathname.startsWith('/errors/')) {
-    return { title: '异常详情', detail: decodeURIComponent(pathname.slice('/errors/'.length)) };
+    return {
+      title: '异常',
+      detail: decodeURIComponent(pathname.slice('/errors/'.length)),
+      listTo: '/errors',
+    };
   }
   if (pathname.startsWith('/errors')) return { title: '异常' };
   if (pathname.startsWith('/traces/')) {

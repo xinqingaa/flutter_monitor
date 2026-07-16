@@ -89,12 +89,12 @@ export function MultiCombobox({
           aria-expanded={open}
           aria-label={label}
           className={cn(
-            'min-w-36 justify-between font-normal focus-visible:ring-0',
+            'min-w-0 max-w-full justify-between overflow-hidden font-normal focus-visible:ring-0',
             selected.length === 0 && 'text-muted-foreground',
             className,
           )}
         >
-          <span className={cn('truncate', selected.length > 0 && 'font-mono')}>
+          <span className={cn('min-w-0 truncate', selected.length > 0 && 'font-mono')}>
             {triggerLabel}
           </span>
           <ChevronsUpDown data-icon="inline-end" className="opacity-50" />
