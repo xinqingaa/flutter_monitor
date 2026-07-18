@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { SessionsSearch } from '../../app/router';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
+import { CatalogSplitLayout } from '../../features/catalog/catalog-split-layout';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { readScopeFilters, scopeToSessionFilters } from '../../features/scope/scope-filters';
 import { SessionCatalogTable, SessionPreviewPane } from '../../features/session/session-catalog-table';
@@ -97,31 +98,33 @@ export function SessionsRoute() {
           patch({ page: undefined, selected: undefined, detail: undefined }, true);
         }}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 min-[1400px]:grid-cols-[minmax(0,1fr)_17.5rem]">
-        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-          <SessionCatalogTable
-            items={items}
-            state={state}
-            selectedId={search.selected}
-            onSelect={select}
-            onOpen={open}
-            onPeek={peek}
-            onRetry={() => void sessionsQuery.refetch()}
-          />
-          <CatalogPagination
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
-            onPageSizeChange={(nextPageSize) => patch({
-              pageSize: nextPageSize,
-              page: undefined,
-              selected: undefined,
-              detail: undefined,
-            })}
-          />
-        </div>
-        <aside className="hidden min-h-0 overflow-auto border-l bg-muted/20 min-[1400px]:block">
+      <CatalogSplitLayout
+        main={(
+          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+            <SessionCatalogTable
+              items={items}
+              state={state}
+              selectedId={search.selected}
+              onSelect={select}
+              onOpen={open}
+              onPeek={peek}
+              onRetry={() => void sessionsQuery.refetch()}
+            />
+            <CatalogPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
+              onPageSizeChange={(nextPageSize) => patch({
+                pageSize: nextPageSize,
+                page: undefined,
+                selected: undefined,
+                detail: undefined,
+              })}
+            />
+          </div>
+        )}
+        preview={(
           <SessionPreviewPane
             item={selected}
             loading={Boolean(search.selected && sessionsQuery.isLoading)}
@@ -129,8 +132,8 @@ export function SessionsRoute() {
             onOpen={() => selected && open(selected)}
             onPeek={() => selected && peek(selected)}
           />
-        </aside>
-      </div>
+        )}
+      />
       <SessionRecord
         open={Boolean(search.detail)}
         item={detailItem}

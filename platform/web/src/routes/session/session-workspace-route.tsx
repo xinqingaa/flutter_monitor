@@ -67,10 +67,9 @@ export function SessionWorkspaceRoute() {
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-background">
       <section className="flex min-w-0 flex-wrap items-center gap-3 border-b bg-background px-4 py-3">
-        <Button variant="outline" size="sm" asChild>
+        <Button variant="outline" size="icon" aria-label="返回 Session 列表" asChild>
           <Link to="/sessions" search={(current) => pickScopeSearch(current)}>
-            <ArrowLeft data-icon="inline-start" />
-            Session 列表
+            <ArrowLeft />
           </Link>
         </Button>
         <IdCombobox
@@ -110,11 +109,11 @@ export function SessionWorkspaceRoute() {
         />
       ) : (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0">
-          <ResizablePanel defaultSize={58} minSize={40}>
+          <ResizablePanel id="session-events" defaultSize="58%" minSize="40%">
             <EventBrowser group={group} setGroup={setGroup} events={events} visible={visible} selectedId={search.eventId} selectedRef={selectedRef} onSelect={select} />
           </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={42} minSize={30}>
+          <ResizableHandle withHandle className="w-1.5 bg-border hover:bg-ring/40" />
+          <ResizablePanel id="session-record" defaultSize="42%" minSize="30%">
             <div className="h-full min-h-0 border-l bg-background">{record}</div>
           </ResizablePanel>
         </ResizablePanelGroup>

@@ -339,16 +339,6 @@ function BodySection({ body, truncated, format }: { body: unknown; truncated: bo
             {format ?? (parsed.ok ? 'json' : 'text')}{truncated ? ' · 已截断' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="http-body-raw" className="text-sm text-muted-foreground">原文</Label>
-          <Switch
-            id="http-body-raw"
-            checked={raw}
-            onCheckedChange={setRaw}
-            disabled={!parsed.ok}
-            aria-label="查看原文"
-          />
-        </div>
       </header>
       {truncated ? (
         <Alert>

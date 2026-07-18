@@ -87,7 +87,7 @@ Session 摘要字段（`errorCount`、`failedHttpCount`、`businessFailureCount`
 
 通用过滤参数（可单值或逗号多值）贯穿 recent / sessions / search / performance / dimensions：`sessionId`、`userId`、`from`/`to`、`appKey`、`appVersion`、`environment`、`route`、`status`、`name`、`signalType` 等。
 
-概览 Analytics 只消费维度 Scope，不消费 `from` / `to`；服务端在当前保留数据内解析 `resolvedRange`，并限制时间点与 Top N 数量。Catalog 继续消费 `from` / `to` 作为排查边界。Analytics 响应是可回查 `eventId` / `sessionId` / `traceId` 的 query view model，不进入 raw envelope。
+概览 Analytics 与 Catalog 消费同一套总 Scope，包括 `from` / `to`、用户和 Session；服务端在当前查询范围内解析 `resolvedRange`，并限制时间点与 Top N 数量。Analytics 响应是可回查 `eventId` / `sessionId` / `traceId` 的 query view model，不进入 raw envelope。
 
 Analytics 面向大量本地事件，时间分桶、去重、Top N、矩阵和分位数必须优先由 SQLite 聚合完成，不能把全部 `envelope_json` 载入 Web 或 Node 后再统计。服务端限制约 120 个时间点和矩阵规模，并按跨度选择小时、天、周或月粒度。HTTP 耗时补充 p50 / p95 / max（SQLite 无原生 percentile 时用受控排序计算）。
 
@@ -98,8 +98,8 @@ Analytics 面向大量本地事件，时间分桶、去重、Top N、矩阵和�
 - 栈：Vite + React + TypeScript、TanStack Router / Query、shadcn、Tailwind v4
 - 目录习惯：`components/ui` 官方 primitive；`features/`、`routes/`、`app/` 业务接线；`shared/datasource` 调 Monitor Service
 - Datasource：HTTP API + SSE；页面状态以 URL search 为主（筛选、分页、`eventId`、`detail`）
-- 应用、版本、环境、平台、路由等维度 Scope 跨一级导航持久化；Catalog 单独保留 `from` / `to`
-- 概览不显示时间控件，不读取持久化时间；图表第一阶段使用查询快照与手动刷新，SSE 不驱动图表动画
+- 时间、应用、版本、环境、包名、用户、平台等总 Scope 跨一级导航持久化并始终平铺展示；`sessionId` / `route` 使用同一 URL 参数，由 Catalog 领域筛选条编辑，导航时经 `pickScopeSearch` 携带
+- 概览和 Catalog 使用相同时间范围；图表第一阶段使用查询快照与手动刷新，SSE 不驱动图表动画
 
 产品交互见 [`product.md`](product.md)。
 

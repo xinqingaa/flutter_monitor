@@ -49,9 +49,9 @@ export function CatalogPreviewPane({
         { label: CatalogLabels.duration, value: formatDuration(item.durationMs) },
         { label: '响应大小', value: bytes(item.responseSizeBytes) },
         { label: CatalogLabels.route, value: item.route ?? '-' },
+        { label: CatalogLabels.environment, value: item.environment ?? '-' },
         { label: CatalogLabels.user, value: item.userId ?? '-' },
         { label: CatalogLabels.version, value: item.appVersion ?? '-' },
-        { label: CatalogLabels.environment, value: item.environment ?? '-' },
         { label: CatalogLabels.platform, value: item.devicePlatform ?? '-' },
         { label: CatalogLabels.time, value: formatDateTime(item.timestamp) },
       ] : undefined}

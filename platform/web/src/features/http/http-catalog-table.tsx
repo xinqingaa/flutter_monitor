@@ -140,6 +140,11 @@ export function HttpCatalogTable({
         ),
       },
       {
+        accessorKey: 'environment',
+        header: CatalogLabels.environment,
+        cell: ({ row }) => row.original.environment ?? '-',
+      },
+      {
         accessorKey: 'userId',
         header: CatalogLabels.user,
         cell: ({ row }) => (
@@ -154,9 +159,13 @@ export function HttpCatalogTable({
         cell: ({ row }) => row.original.appVersion ?? '-',
       },
       {
-        accessorKey: 'environment',
-        header: CatalogLabels.environment,
-        cell: ({ row }) => row.original.environment ?? '-',
+        accessorKey: 'sessionId',
+        header: CatalogLabels.session,
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.sessionId}>
+            {row.original.sessionId ?? '-'}
+          </span>
+        ),
       },
       {
         id: 'actions',
@@ -182,7 +191,7 @@ export function HttpCatalogTable({
       state={state}
       selectedId={selectedId}
       getRowId={(item) => item.eventId}
-      minWidthClass="min-w-[1360px]"
+      minWidthClass="min-w-[1480px]"
       message={{
         emptyTitle: '暂无 HTTP 请求',
         emptyDescription: '等待应用产生网络请求。',
@@ -215,9 +224,10 @@ function columnClass(id: string, header: boolean) {
     id === 'durationMs' && 'w-[108px] text-right',
     id === 'requestId' && 'w-[140px]',
     id === 'route' && 'w-[120px]',
+    id === 'environment' && 'w-[88px]',
     id === 'userId' && 'w-[100px]',
     id === 'appVersion' && 'w-[72px]',
-    id === 'environment' && 'w-[88px]',
+    id === 'sessionId' && 'w-[120px]',
     id === 'actions' && 'w-[88px]',
     !header && 'overflow-hidden',
   );

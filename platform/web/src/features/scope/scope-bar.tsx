@@ -93,7 +93,7 @@ function ScopeBarFields({
     )}>
       <MultiSelect
         ariaLabel="应用范围"
-        placeholder="全部应用"
+        placeholder="应用"
         values={filters.appKey}
         className="w-full min-w-0"
         open={openSelect === 'appKey'}
@@ -103,7 +103,7 @@ function ScopeBarFields({
       />
       <MultiSelect
         ariaLabel="环境范围"
-        placeholder="全部环境"
+        placeholder="环境"
         values={filters.environment}
         className="w-full min-w-0"
         open={openSelect === 'environment'}
@@ -113,7 +113,7 @@ function ScopeBarFields({
       />
       <MultiSelect
         ariaLabel="版本范围"
-        placeholder="全部版本"
+        placeholder="版本"
         values={filters.appVersion}
         className="w-full min-w-0"
         open={openSelect === 'appVersion'}
@@ -123,7 +123,7 @@ function ScopeBarFields({
       />
       <MultiSelect
         ariaLabel="设备平台范围"
-        placeholder="全部平台"
+        placeholder="平台"
         values={filters.devicePlatform}
         className="w-full min-w-0"
         open={openSelect === 'devicePlatform'}
@@ -158,7 +158,7 @@ function ScopeBarFields({
           aria-label="用户 ID"
           className="h-8 w-full rounded-md border border-zinc-200 bg-white pl-7 pr-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-500 focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
           value={filters.userId?.join(',') ?? ''}
-          placeholder="全部用户"
+          placeholder="用户"
           onFocus={() => setOpenSelect(undefined)}
           onChange={(event) => patchFilters({ userId: event.target.value ? event.target.value.split(',').map((item) => item.trim()).filter(Boolean) : undefined })}
         />

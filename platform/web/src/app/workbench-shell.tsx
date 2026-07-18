@@ -31,7 +31,7 @@ import {
 import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { useLiveInvalidation } from '../shared/datasource/queries';
-import { pickDimensionScopeSearch, pickScopeSearch } from '../features/scope/scope-filters';
+import { pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
 const nav = [
@@ -49,7 +49,6 @@ export function WorkbenchShell() {
   useLiveInvalidation(live);
   const page = pageMeta(location.pathname);
   const scopeSearch = pickScopeSearch(location.search);
-  const overviewSearch = pickDimensionScopeSearch(location.search);
 
   return (
     <SidebarProvider
@@ -67,7 +66,7 @@ export function WorkbenchShell() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild tooltip="Flutter Monitor">
-                <Link to="/" search={overviewSearch}>
+                <Link to="/" search={scopeSearch}>
                   <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                     <img src="/logo.png" alt="Flutter Monitor" className="size-6" />
                   </span>
@@ -92,7 +91,7 @@ export function WorkbenchShell() {
                       isActive={match(location.pathname)}
                       tooltip={label}
                     >
-                      <Link to={to} search={(current) => to === '/' ? pickDimensionScopeSearch(current) : pickScopeSearch(current)}>
+                      <Link to={to} search={(current) => pickScopeSearch(current)}>
                         <span>{label}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -113,7 +112,7 @@ export function WorkbenchShell() {
             <BreadcrumbList className="flex-nowrap">
               <BreadcrumbItem className="hidden md:block">
                 <BreadcrumbLink asChild>
-                  <Link to="/" search={overviewSearch}>Workbench</Link>
+                  <Link to="/" search={scopeSearch}>Workbench</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />

@@ -9,7 +9,8 @@ import {
   Rocket,
   ShieldAlert,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Area,
   AreaChart,
@@ -17,8 +18,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
   Line,
+  LineChart,
+  Label as RechartsLabel,
   Pie,
   PieChart,
   PolarAngleAxis,
@@ -30,7 +32,6 @@ import {
   YAxis,
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import {
   ChartContainer,
@@ -46,7 +47,7 @@ import {
   type QueryLike,
 } from '../../features/analytics/analytics-ui';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
-import { pickDimensionScopeSearch, readScopeFilters, scopeToSessionFilters } from '../../features/scope/scope-filters';
+import { pickScopeSearch, readScopeFilters, scopeToSessionFilters } from '../../features/scope/scope-filters';
 import {
   useAnalyticsBusinessQuery,
   useAnalyticsErrorsQuery,
@@ -65,26 +66,18 @@ import type {
 } from '../../shared/datasource/types';
 import { compactNumber, formatDateTime, formatDuration } from '../../shared/formatting/format';
 
-const experienceConfig = {
-  coldStarts: { label: '冷启动', color: 'var(--chart-1)' },
-  pageLoads: { label: '页面进入', color: 'var(--chart-2)' },
-  coldAverageMs: { label: '冷启动耗时', color: 'var(--chart-4)' },
-  pageAverageMs: { label: '页面加载耗时', color: 'var(--chart-3)' },
+const startupConfig = {
+  coldAverageMs: { label: '冷启动平均耗时', color: 'var(--chart-1)' },
+  hotAverageMs: { label: '热启动平均耗时', color: 'var(--chart-3)' },
 } satisfies ChartConfig;
 
-const statusColors = ['var(--chart-2)', 'var(--chart-1)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-3)'];
-
-const healthConfig = {
-  value: { label: 'Session', color: 'var(--chart-2)' },
-} satisfies ChartConfig;
-
-const rankConfig = {
-  count: { label: '总量', color: 'var(--chart-3)' },
-  failed: { label: '失败', color: 'var(--destructive)' },
+const pageConfig = {
+  loadAverageMs: { label: '页面加载平均耗时', color: 'var(--chart-2)' },
+  firstFrameAverageMs: { label: '首帧平均耗时', color: 'var(--chart-4)' },
 } satisfies ChartConfig;
 
 const radarConfig = {
-  value: { label: '质量风险', color: 'var(--chart-1)' },
+  value: { label: '风险指数', color: 'var(--chart-3)' },
 } satisfies ChartConfig;
 
 type CatalogPath = '/sessions' | '/http' | '/business' | '/errors';
@@ -93,8 +86,7 @@ export function OverviewRoute() {
   const search = useSearch({ from: '/' });
   const navigate = useNavigate({ from: '/' });
   const queryClient = useQueryClient();
-  const rawScope = scopeToSessionFilters(readScopeFilters(search));
-  const scope = { ...rawScope, from: undefined, to: undefined };
+  const scope = scopeToSessionFilters(readScopeFilters(search));
   const dimensions = useDimensionsQuery(scope);
   const overview = useAnalyticsOverviewQuery(scope);
   const performance = usePerformanceQuery(scope);
@@ -155,7 +147,7 @@ export function OverviewRoute() {
       },
     };
   }, [businessQuery.data, errorsQuery.data, httpQuery.data, overview.data, performance.data, sessionsQuery.data]);
-  const catalogSearch = pickDimensionScopeSearch(search);
+  const catalogSearch = pickScopeSearch(search);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
@@ -188,7 +180,7 @@ export function OverviewRoute() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20">
-      <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={(patch) => void navigate({ search: (current) => ({ ...current, ...patch }) })} showTime={false} />
+      <ScopeFilterBar search={search} dimensions={dimensions.data} onPatch={(patch) => void navigate({ search: (current) => ({ ...current, ...patch }) })} />
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex max-w-[1680px] flex-col gap-5 px-4 py-5 md:px-6 md:py-7 xl:px-8">
           <header className="flex flex-wrap items-end justify-between gap-4">
@@ -209,60 +201,66 @@ export function OverviewRoute() {
 
           <section aria-label="核心指标" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <DashboardKpiCard
-              tone="blue"
+              tone="slate"
               icon={Rocket}
               label="启动质量"
               value={compactNumber(data?.startup.count)}
               detail={`冷启动 ${formatDuration(data?.startup.coldStart.averageMs)} · 热启动 ${formatDuration(data?.startup.hotResume.averageMs)}`}
               trend={data?.startup.coldStart.maxMs ? `最慢 ${formatDuration(data.startup.coldStart.maxMs)}` : '等待启动数据'}
               spark={durationSpark(data?.startup.events)}
+              sparkLabel="启动耗时"
+              sparkKind="duration"
               onClick={() => openSession(data?.startup.coldStart.maxEventId ? data.startup.events.find((event) => event.eventId === data.startup.coldStart.maxEventId) : data?.startup.events[0])}
             />
             <DashboardKpiCard
-              tone="violet"
+              tone="amber"
               icon={Globe2}
               label="HTTP 请求"
               value={compactNumber(data?.http.total)}
-              detail={`${compactNumber(data?.http.failed)} 失败 · ${compactNumber(data?.http.slow)} 慢请求`}
+              detail={`失败 ${compactNumber(data?.http.failed)} · 慢请求 ${compactNumber(data?.http.slow)}`}
               trend={`P95 ${formatDuration(data?.http.p95Ms)}`}
               spark={numberSpark(data?.points, 'httpTotal')}
+              sparkLabel="请求数"
+              sparkKind="count"
               onClick={() => openCatalog('/http')}
-              issue={Boolean(data?.http.failed)}
             />
             <DashboardKpiCard
-              tone="amber"
+              tone="indigo"
               icon={Layers3}
               label="页面体验"
               value={compactNumber(data?.pages.count)}
               detail={`首帧 ${formatDuration(data?.pages.firstFrame.averageMs)} · 停留 ${formatDuration(data?.pages.stay.averageMs)}`}
               trend={`最慢 ${formatDuration(data?.pages.load.maxMs)}`}
               spark={durationSpark(data?.pages.events)}
+              sparkLabel="页面耗时"
+              sparkKind="duration"
               onClick={() => openCatalog('/sessions')}
             />
             <DashboardKpiCard
-              tone="coral"
+              tone="rose"
               icon={ShieldAlert}
               label="稳定性"
               value={compactNumber(data?.errorsSummary.total)}
-              detail={`${compactNumber(data?.errorsSummary.affectedSessions)} 个受影响 Session · ${compactNumber(data?.errorsSummary.fatal)} 致命`}
+              detail={`影响 Session ${compactNumber(data?.errorsSummary.affectedSessions)} · 致命 ${compactNumber(data?.errorsSummary.fatal)}`}
               trend={`${compactNumber(data?.business.failed)} 个业务失败`}
               spark={numberSpark(data?.points, 'errors')}
+              sparkLabel="异常数"
+              sparkKind="count"
               onClick={() => openCatalog('/errors')}
-              issue={Boolean(data?.errorsSummary.total)}
             />
           </section>
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-            <Card className="overview-panel xl:col-span-8">
+            <Card className="overview-panel xl:col-span-7">
               <CardHeader>
-                <CardTitle>启动与页面体验</CardTitle>
-                <CardDescription>冷启动、页面进入和加载耗时的同轴观察</CardDescription>
+                <CardTitle>启动耗时趋势</CardTitle>
+                <CardDescription>冷启动与热启动使用同一耗时刻度</CardDescription>
               </CardHeader>
               <CardContent>
-                <ExperienceChart query={overview} data={data} onBucket={(point) => openCatalog('/sessions', { from: point.from, to: point.to })} onSession={openSession} />
+                <StartupDurationChart query={overview} data={data} onBucket={(point) => openCatalog('/sessions', { from: point.from, to: point.to })} onSession={openSession} />
               </CardContent>
             </Card>
-            <Card className="overview-panel xl:col-span-4">
+            <Card className="overview-panel xl:col-span-5">
               <CardHeader>
                 <CardTitle>HTTP 状态分布</CardTitle>
                 <CardDescription>点击状态码直接查看请求</CardDescription>
@@ -272,16 +270,16 @@ export function OverviewRoute() {
               </CardContent>
             </Card>
 
-            <Card className="overview-panel xl:col-span-8">
+            <Card className="overview-panel xl:col-span-7">
               <CardHeader>
-                <CardTitle>HTTP 耗时分布</CardTitle>
-                <CardDescription>悬停查看数量，点击进入请求排查</CardDescription>
+                <CardTitle>页面加载耗时趋势</CardTitle>
+                <CardDescription>页面加载与首帧均以毫秒或秒展示</CardDescription>
               </CardHeader>
               <CardContent>
-                <RankBars query={overview} items={data?.http.durationDistribution ?? []} config={rankConfig} onSelect={(key) => openCatalog('/http', key.startsWith('>=') ? { slowOnly: true, slowThresholdMs: 3000 } : { sortBy: 'durationMs', sortDir: 'desc' })} />
+                <PageDurationChart query={overview} data={data} onBucket={(point) => openCatalog('/sessions', { from: point.from, to: point.to })} />
               </CardContent>
             </Card>
-            <Card className="overview-panel xl:col-span-4">
+            <Card className="overview-panel xl:col-span-5">
               <CardHeader>
                 <CardTitle>Session 健康</CardTitle>
                 <CardDescription>问题会话与正常会话</CardDescription>
@@ -291,19 +289,28 @@ export function OverviewRoute() {
               </CardContent>
             </Card>
 
-            <Card className="overview-panel xl:col-span-6">
+            <Card className="overview-panel xl:col-span-7">
+              <CardHeader>
+                <CardTitle>HTTP 耗时分布</CardTitle>
+                <CardDescription>悬停查看数量，点击进入请求排查</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RankBars query={overview} items={data?.http.durationDistribution ?? []} valueLabel="请求数" color="var(--chart-1)" onSelect={(key) => openCatalog('/http', key.startsWith('>=') ? { slowOnly: true, slowThresholdMs: 3000 } : { sortBy: 'durationMs', sortDir: 'desc' })} />
+              </CardContent>
+            </Card>
+            <Card className="overview-panel xl:col-span-5">
               <CardHeader>
                 <CardTitle>埋点动作排行</CardTitle>
                 <CardDescription>总量与失败动作并列展示</CardDescription>
               </CardHeader>
               <CardContent>
-                <RankBars query={overview} items={data?.business.actions ?? []} config={rankConfig} onSelect={(key) => openCatalog('/business', { action: key })} />
+                <RankBars query={overview} items={data?.business.actions ?? []} valueLabel="埋点次数" failedLabel="失败次数" color="var(--chart-3)" onSelect={(key) => openCatalog('/business', { action: key })} />
               </CardContent>
             </Card>
             <Card className="overview-panel xl:col-span-6">
               <CardHeader>
-                <CardTitle>页面路由排行</CardTitle>
-                <CardDescription>访问量和平均加载耗时</CardDescription>
+                <CardTitle>页面进入次数排行</CardTitle>
+                <CardDescription>按页面进入次数排序，悬停查看平均加载耗时</CardDescription>
               </CardHeader>
               <CardContent>
                 <RouteBars query={overview} items={data?.pages.routeSummaries ?? []} onSelect={(route) => openCatalog('/sessions', { route })} />
@@ -316,7 +323,7 @@ export function OverviewRoute() {
                 <CardDescription>稳定性错误与业务失败</CardDescription>
               </CardHeader>
               <CardContent>
-                <RankBars query={overview} items={data?.errorsSummary.types ?? []} config={{ count: { label: '次数', color: 'var(--chart-4)' } }} onSelect={(key) => openCatalog('/errors', { errorType: key })} />
+                <RankBars query={overview} items={data?.errorsSummary.types ?? []} valueLabel="异常次数" color="var(--chart-4)" onSelect={(key) => openCatalog('/errors', { errorType: key })} />
               </CardContent>
             </Card>
             <Card className="overview-panel xl:col-span-4">
@@ -325,7 +332,13 @@ export function OverviewRoute() {
                 <CardDescription>当前维度下的风险轮廓</CardDescription>
               </CardHeader>
               <CardContent>
-                <QualityRadar query={overview} data={data} />
+                <QualityRadar query={overview} data={data} onSelect={(subject) => {
+                  if (subject === 'HTTP 失败') openCatalog('/http', { result: 'failed' });
+                  else if (subject === '慢请求') openCatalog('/http', { slowOnly: true, slowThresholdMs: 1000 });
+                  else if (subject === '埋点失败') openCatalog('/business', { result: 'failed' });
+                  else if (subject === '首帧风险') openCatalog('/sessions');
+                  else openCatalog('/errors', subject === '致命异常' ? { fatal: true } : {});
+                }} />
               </CardContent>
             </Card>
             <Card className="overview-panel xl:col-span-4">
@@ -359,7 +372,7 @@ export function OverviewRoute() {
             </Card>
           </section>
 
-          <p className="px-1 text-xs text-muted-foreground">图表是当前维度的查询快照。点击后的时间桶只作为 Catalog 的一次性排查条件，不改变概览状态。</p>
+          <p className="px-1 text-xs text-muted-foreground">图表是当前总筛选范围的查询快照。点击时间桶会把对应范围带入 Catalog 继续排查。</p>
         </div>
       </div>
     </div>
@@ -374,56 +387,101 @@ function DashboardKpiCard({
   detail,
   trend,
   spark,
+  sparkLabel,
+  sparkKind,
   onClick,
-  issue,
 }: {
-  tone: 'blue' | 'violet' | 'amber' | 'coral';
+  tone: 'slate' | 'amber' | 'rose' | 'indigo';
   icon: typeof Rocket;
   label: string;
   value: string;
   detail: string;
   trend: string;
   spark: Array<{ value: number }>;
+  sparkLabel: string;
+  sparkKind: 'duration' | 'count';
   onClick: () => void;
-  issue?: boolean;
 }) {
   return (
     <button type="button" className="overview-kpi-card text-left" data-tone={tone} onClick={onClick}>
       <div className="overview-kpi-icon"><Icon /></div>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">{label}</span>
-          <strong className="text-3xl font-semibold tabular-nums">{value}</strong>
-        </div>
-        <Badge variant={issue ? 'destructive' : 'secondary'}>{issue ? '关注' : '稳定'}</Badge>
+      <div className="flex flex-col gap-2 pr-10">
+        <span className="text-sm font-medium">{label}</span>
+        <strong className="text-3xl font-semibold tabular-nums">{value}</strong>
       </div>
-      <div className="mt-4 flex items-end justify-between gap-4">
-        <span className="text-xs opacity-75">{detail}</span>
-        <Sparkline values={spark} />
+      <div className="mt-4 flex items-end justify-between gap-2">
+        <span className="min-w-0 flex-1 text-xs leading-5 opacity-75">{detail}</span>
+        <Sparkline values={spark} label={sparkLabel} kind={sparkKind} />
       </div>
       <span className="mt-2 flex items-center gap-1 text-xs font-medium"><ArrowUpRight />{trend}</span>
     </button>
   );
 }
 
-function Sparkline({ values }: { values: Array<{ value: number }> }) {
+function Sparkline({ values, label, kind }: { values: Array<{ value: number }>; label: string; kind: 'duration' | 'count' }) {
+  const [tip, setTip] = useState<{ left: number; top: number; text: string } | null>(null);
+
   if (!values.length) return <span className="h-10 w-20 text-xs opacity-60">暂无</span>;
+
   return (
-    <ChartContainer config={{ value: { label: '值', color: 'currentColor' } }} className="h-10 w-20 shrink-0 text-current">
-      <AreaChart data={values} margin={{ top: 3, right: 0, bottom: 0, left: 0 }}>
-        <Area dataKey="value" type="natural" fill="currentColor" fillOpacity={0.16} stroke="currentColor" strokeWidth={2} />
-        <ChartTooltip content={<ChartTooltipContent hideLabel hideIndicator />} />
-      </AreaChart>
-    </ChartContainer>
+    <>
+      <div
+        className="relative shrink-0"
+        onClick={(event) => event.stopPropagation()}
+        onMouseLeave={() => setTip(null)}
+      >
+        <ChartContainer
+          config={{ value: { label, color: 'currentColor' } }}
+          className="overview-sparkline aspect-auto h-10 w-20 text-current"
+        >
+          <AreaChart
+            data={values}
+            margin={{ top: 3, right: 0, bottom: 0, left: 0 }}
+            onMouseMove={(state, event) => {
+              const raw = state?.activePayload?.[0]?.value;
+              const clientX = 'clientX' in event ? Number(event.clientX) : undefined;
+              const clientY = 'clientY' in event ? Number(event.clientY) : undefined;
+              if (raw == null || typeof raw !== 'number' || clientX == null || clientY == null) {
+                setTip(null);
+                return;
+              }
+              setTip({
+                left: clientX + 12,
+                top: clientY - 36,
+                text: kind === 'duration' ? formatDuration(raw) : compactNumber(raw),
+              });
+            }}
+            onMouseLeave={() => setTip(null)}
+          >
+            <Area dataKey="value" type="natural" fill="currentColor" fillOpacity={0.16} stroke="currentColor" strokeWidth={2} isAnimationActive={false} />
+          </AreaChart>
+        </ChartContainer>
+      </div>
+      {tip && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            role="tooltip"
+            className="pointer-events-none fixed z-50 rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md"
+            style={{ left: tip.left, top: tip.top }}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-mono font-medium tabular-nums">{tip.text}</span>
+            </div>
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
   );
 }
 
-function ExperienceChart({ query, data, onBucket, onSession }: { query: QueryLike; data?: OverviewAnalytics; onBucket: (point: AnalyticsPoint) => void; onSession: (event?: PerformanceMetricEvent) => void }) {
-  const points = experiencePoints(data);
-  if (!points.some((point) => point.coldStarts + point.pageLoads > 0)) return <ChartState query={query} emptyDescription="当前维度暂无启动或页面事件" />;
+function StartupDurationChart({ query, data, onBucket, onSession }: { query: QueryLike; data?: OverviewAnalytics; onBucket: (point: AnalyticsPoint) => void; onSession: (event?: PerformanceMetricEvent) => void }) {
+  const points = performancePoints(data);
+  if (!points.some((point) => point.coldSamples + point.hotSamples > 0)) return <ChartState query={query} emptyDescription="当前范围暂无启动耗时数据" />;
   return (
-    <ChartContainer config={experienceConfig} className="h-72 w-full">
-      <ComposedChart accessibilityLayer data={points} onClick={(state) => {
+    <ChartContainer config={startupConfig} className="h-72 w-full">
+      <LineChart accessibilityLayer data={points} margin={{ left: 4, right: 12 }} onClick={(state) => {
         const point = points.find((item) => item.bucket === state?.activeLabel);
         if (!point) return;
         if (point.startupEvent) onSession(point.startupEvent);
@@ -431,28 +489,70 @@ function ExperienceChart({ query, data, onBucket, onSession }: { query: QueryLik
       }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} />
-        <YAxis yAxisId="count" tickLine={false} axisLine={false} width={30} />
-        <YAxis yAxisId="duration" orientation="right" tickLine={false} axisLine={false} width={38} tickFormatter={(value) => `${value}ms`} />
-        <ChartTooltip content={<ChartTooltipContent />} />
+        <YAxis tickLine={false} axisLine={false} width={58} tickFormatter={durationAxisLabel} />
+        <ChartTooltip content={<ChartTooltipContent formatter={(value, name, item) => {
+          const cold = name === 'coldAverageMs';
+          const samples = cold ? item.payload.coldSamples : item.payload.hotSamples;
+          return durationTooltipRow(cold ? '冷启动平均耗时' : '热启动平均耗时', Number(value), Number(samples));
+        }} />} />
         <ChartLegend content={<ChartLegendContent />} />
-        <Bar yAxisId="count" dataKey="coldStarts" fill="var(--color-coldStarts)" radius={4} />
-        <Bar yAxisId="count" dataKey="pageLoads" fill="var(--color-pageLoads)" radius={4} />
-        <Line yAxisId="duration" dataKey="coldAverageMs" type="natural" stroke="var(--color-coldAverageMs)" strokeWidth={2} dot={false} />
-        <Line yAxisId="duration" dataKey="pageAverageMs" type="natural" stroke="var(--color-pageAverageMs)" strokeWidth={2} dot={false} />
-      </ComposedChart>
+        <Line dataKey="coldAverageMs" type="monotone" stroke="var(--color-coldAverageMs)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6 }} connectNulls />
+        <Line dataKey="hotAverageMs" type="monotone" stroke="var(--color-hotAverageMs)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6 }} connectNulls />
+      </LineChart>
+    </ChartContainer>
+  );
+}
+
+function PageDurationChart({ query, data, onBucket }: { query: QueryLike; data?: OverviewAnalytics; onBucket: (point: AnalyticsPoint) => void }) {
+  const points = performancePoints(data);
+  if (!points.some((point) => point.pageSamples > 0)) return <ChartState query={query} emptyDescription="当前范围暂无页面加载耗时数据" />;
+  return (
+    <ChartContainer config={pageConfig} className="h-72 w-full">
+      <LineChart accessibilityLayer data={points} margin={{ left: 4, right: 12 }} onClick={(state) => {
+        const point = points.find((item) => item.bucket === state?.activeLabel);
+        const bucket = data?.points.find((item) => item.from === point?.from);
+        if (bucket) onBucket(bucket);
+      }}>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} />
+        <YAxis tickLine={false} axisLine={false} width={58} tickFormatter={durationAxisLabel} />
+        <ChartTooltip content={<ChartTooltipContent formatter={(value, name, item) => durationTooltipRow(
+          name === 'loadAverageMs' ? '页面加载平均耗时' : '首帧平均耗时',
+          Number(value),
+          Number(item.payload.pageSamples),
+        )} />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        <Line dataKey="loadAverageMs" type="monotone" stroke="var(--color-loadAverageMs)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6 }} connectNulls />
+        <Line dataKey="firstFrameAverageMs" type="monotone" stroke="var(--color-firstFrameAverageMs)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6 }} connectNulls />
+      </LineChart>
     </ChartContainer>
   );
 }
 
 function StatusDonut({ query, items, onSelect }: { query: QueryLike; items: AnalyticsGroupItem[]; onSelect: (value: string) => void }) {
+  const chartData = items.slice(0, 6).map((item) => ({ name: item.key, value: item.count, color: httpStatusColor(item.key) }));
+  const total = chartData.reduce((sum, item) => sum + item.value, 0);
+  const [active, setActive] = useState<(typeof chartData)[number]>();
   if (!items.length) return <ChartState query={query} emptyDescription="当前维度暂无 HTTP 状态数据" />;
-  const chartData = items.slice(0, 6).map((item) => ({ name: item.key, value: item.count }));
   return (
-    <ChartContainer config={healthConfig} className="h-72 w-full">
+    <ChartContainer config={{ value: { label: '请求数', color: 'var(--chart-1)' } }} className="h-72 w-full">
       <PieChart>
-        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-        <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={96} paddingAngle={2} onClick={(entry) => onSelect(String(entry?.name ?? ''))}>
-          {chartData.map((item, index) => <Cell key={item.name} fill={statusColors[index % statusColors.length]} />)}
+        <ChartTooltip content={<ChartTooltipContent hideLabel hideIndicator formatter={(value, _name, item) => donutTooltipRow(`状态码 ${item.payload.name}`, Number(value), total, '个请求')} />} />
+        <Pie
+          className="cursor-pointer"
+          data={chartData}
+          dataKey="value"
+          nameKey="name"
+          innerRadius={62}
+          outerRadius={96}
+          paddingAngle={2}
+          onMouseEnter={(_, index) => setActive(chartData[index])}
+          onMouseLeave={() => setActive(undefined)}
+          onClick={(entry) => onSelect(String(entry?.name ?? ''))}
+        >
+          {chartData.map((item) => <Cell key={item.name} fill={item.color} strokeWidth={active?.name === item.name ? 4 : 1} />)}
+          <RechartsLabel value={active ? `状态码 ${active.name}` : '请求总数'} position="center" dy={-8} className="fill-muted-foreground text-[11px]" />
+          <RechartsLabel value={compactNumber(active?.value ?? total)} position="center" dy={14} className="fill-foreground text-lg font-semibold tabular-nums" />
         </Pie>
       </PieChart>
     </ChartContainer>
@@ -460,14 +560,29 @@ function StatusDonut({ query, items, onSelect }: { query: QueryLike; items: Anal
 }
 
 function HealthDonut({ query, items, onSelect }: { query: QueryLike; items: AnalyticsGroupItem[]; onSelect: (value: string) => void }) {
+  const chartData = items.map((item) => ({ key: item.key, name: item.key === '有问题' ? '问题 Session' : '正常 Session', value: item.count, color: item.key === '有问题' ? 'var(--chart-3)' : 'var(--chart-1)' }));
+  const total = chartData.reduce((sum, item) => sum + item.value, 0);
+  const [active, setActive] = useState<(typeof chartData)[number]>();
   if (!items.length) return <ChartState query={query} emptyDescription="当前维度暂无 Session 数据" />;
-  const chartData = items.map((item) => ({ name: item.key, value: item.count }));
   return (
-    <ChartContainer config={healthConfig} className="h-72 w-full">
+    <ChartContainer config={{ value: { label: 'Session 数', color: 'var(--chart-1)' } }} className="h-72 w-full">
       <PieChart>
-        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-        <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={56} outerRadius={94} onClick={(entry) => onSelect(String(entry?.name ?? ''))}>
-          {chartData.map((item, index) => <Cell key={item.name} fill={statusColors[index % statusColors.length]} />)}
+        <ChartTooltip content={<ChartTooltipContent hideLabel hideIndicator formatter={(value, _name, item) => donutTooltipRow(String(item.payload.name), Number(value), total, '个')} />} />
+        <Pie
+          className="cursor-pointer"
+          data={chartData}
+          dataKey="value"
+          nameKey="name"
+          innerRadius={56}
+          outerRadius={94}
+          paddingAngle={2}
+          onMouseEnter={(_, index) => setActive(chartData[index])}
+          onMouseLeave={() => setActive(undefined)}
+          onClick={(entry) => onSelect(String(entry?.key ?? ''))}
+        >
+          {chartData.map((item) => <Cell key={item.key} fill={item.color} strokeWidth={active?.key === item.key ? 4 : 1} />)}
+          <RechartsLabel value={active?.name ?? '活跃 Session'} position="center" dy={-8} className="fill-muted-foreground text-[11px]" />
+          <RechartsLabel value={compactNumber(active?.value ?? total)} position="center" dy={14} className="fill-foreground text-lg font-semibold tabular-nums" />
         </Pie>
       </PieChart>
     </ChartContainer>
@@ -480,34 +595,58 @@ function BusinessDonut({ query, data, onSelect }: { query: QueryLike; data?: Ove
     { name: '失败', value: data.business.failed, key: 'failed' },
     { name: '取消', value: data.business.cancelled, key: 'cancelled' },
   ].filter((item) => item.value > 0) : [];
+  const colors: Record<string, string> = { success: 'var(--chart-1)', failed: 'var(--destructive)', cancelled: 'var(--chart-5)' };
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  const [active, setActive] = useState<(typeof items)[number]>();
   if (!items.length) return <ChartState query={query} emptyDescription="当前维度暂无埋点结果" />;
   return (
-    <ChartContainer config={healthConfig} className="h-72 w-full">
+    <ChartContainer config={{ value: { label: '埋点次数', color: 'var(--chart-1)' } }} className="h-72 w-full">
       <PieChart>
-        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-        <Pie data={items} dataKey="value" nameKey="name" innerRadius={56} outerRadius={94} onClick={(entry) => onSelect(String(entry?.key ?? ''))}>
-          {items.map((item, index) => <Cell key={item.key} fill={statusColors[index % statusColors.length]} />)}
+        <ChartTooltip content={<ChartTooltipContent hideLabel hideIndicator formatter={(value, _name, item) => donutTooltipRow(`${item.payload.name}埋点`, Number(value), total, '次')} />} />
+        <Pie
+          className="cursor-pointer"
+          data={items}
+          dataKey="value"
+          nameKey="name"
+          innerRadius={56}
+          outerRadius={94}
+          paddingAngle={2}
+          onMouseEnter={(_, index) => setActive(items[index])}
+          onMouseLeave={() => setActive(undefined)}
+          onClick={(entry) => onSelect(String(entry?.key ?? ''))}
+        >
+          {items.map((item) => <Cell key={item.key} fill={colors[item.key]} strokeWidth={active?.key === item.key ? 4 : 1} />)}
+          <RechartsLabel value={active ? `${active.name}埋点` : '埋点总数'} position="center" dy={-8} className="fill-muted-foreground text-[11px]" />
+          <RechartsLabel value={compactNumber(active?.value ?? total)} position="center" dy={14} className="fill-foreground text-lg font-semibold tabular-nums" />
         </Pie>
-        <ChartLegend content={<ChartLegendContent />} />
       </PieChart>
     </ChartContainer>
   );
 }
 
-function RankBars({ query, items, config, onSelect }: { query: QueryLike; items: AnalyticsGroupItem[]; config: ChartConfig; onSelect: (value: string) => void }) {
+function RankBars({ query, items, valueLabel, failedLabel, color, onSelect }: { query: QueryLike; items: AnalyticsGroupItem[]; valueLabel: string; failedLabel?: string; color: string; onSelect: (value: string) => void }) {
   if (!items.length) return <ChartState query={query} emptyDescription="当前维度暂无排行数据" />;
+  const config = {
+    count: { label: valueLabel, color },
+    ...(failedLabel ? { failed: { label: failedLabel, color: 'var(--destructive)' } } : {}),
+  } satisfies ChartConfig;
   return (
     <ChartContainer config={config} className="h-72 w-full">
-      <BarChart accessibilityLayer data={items.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 12 }} onClick={(state) => {
+      <BarChart className="cursor-pointer" accessibilityLayer data={items.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 18 }} onClick={(state) => {
         if (typeof state?.activeLabel === 'string') onSelect(state.activeLabel);
       }}>
         <CartesianGrid horizontal={false} />
         <YAxis dataKey="key" type="category" tickLine={false} axisLine={false} width={112} tickFormatter={(value) => String(value).slice(0, 16)} />
-        <XAxis type="number" hide />
-        <ChartTooltip content={<ChartTooltipContent />} />
+        <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={(value) => compactNumber(Number(value))} />
+        <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => (
+          <div className="flex w-full items-center justify-between gap-4">
+            <span className="text-muted-foreground">{name === 'failed' ? failedLabel : valueLabel}</span>
+            <span className="font-mono font-medium tabular-nums">{compactNumber(Number(value))}</span>
+          </div>
+        )} />} />
         <ChartLegend content={<ChartLegendContent />} />
-        <Bar dataKey="count" fill="var(--color-count)" radius={4} />
-        <Bar dataKey="failed" fill="var(--color-failed)" radius={4} />
+        <Bar dataKey="count" fill="var(--color-count)" radius={4} activeBar={{ fillOpacity: 0.72 }} />
+        {failedLabel ? <Bar dataKey="failed" fill="var(--color-failed)" radius={4} activeBar={{ fillOpacity: 0.72 }} /> : null}
       </BarChart>
     </ChartContainer>
   );
@@ -517,21 +656,28 @@ function RouteBars({ query, items, onSelect }: { query: QueryLike; items: Metric
   if (!items.length) return <ChartState query={query} emptyDescription="当前维度暂无页面路由数据" />;
   const data = items.slice(0, 8).map((item) => ({ key: item.key, count: item.count, averageMs: item.averageMs ?? 0 }));
   return (
-    <ChartContainer config={{ count: { label: '进入次数', color: 'var(--chart-3)' }, averageMs: { label: '平均加载', color: 'var(--chart-4)' } }} className="h-72 w-full">
-      <BarChart accessibilityLayer data={data} layout="vertical" margin={{ left: 8, right: 12 }} onClick={(state) => {
+    <ChartContainer config={{ count: { label: '页面进入次数', color: 'var(--chart-2)' } }} className="h-72 w-full">
+      <BarChart className="cursor-pointer" accessibilityLayer data={data} layout="vertical" margin={{ left: 8, right: 18 }} onClick={(state) => {
         if (typeof state?.activeLabel === 'string') onSelect(state.activeLabel);
       }}>
         <CartesianGrid horizontal={false} />
         <YAxis dataKey="key" type="category" tickLine={false} axisLine={false} width={120} tickFormatter={(value) => String(value).slice(0, 16)} />
-        <XAxis type="number" hide />
-        <ChartTooltip content={<ChartTooltipContent />} />
-        <Bar dataKey="count" fill="var(--color-count)" radius={4} />
+        <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={(value) => compactNumber(Number(value))} />
+        <ChartTooltip content={<ChartTooltipContent formatter={(value, _name, item) => (
+          <div className="grid w-full min-w-44 grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+            <span className="text-muted-foreground">进入次数</span>
+            <span className="font-mono font-medium tabular-nums">{compactNumber(Number(value))}</span>
+            <span className="text-muted-foreground">平均加载耗时</span>
+            <span className="font-mono font-medium tabular-nums">{formatDuration(Number(item.payload.averageMs))}</span>
+          </div>
+        )} />} />
+        <Bar dataKey="count" fill="var(--color-count)" radius={4} activeBar={{ fillOpacity: 0.72 }} />
       </BarChart>
     </ChartContainer>
   );
 }
 
-function QualityRadar({ query, data }: { query: QueryLike; data?: OverviewAnalytics }) {
+function QualityRadar({ query, data, onSelect }: { query: QueryLike; data?: OverviewAnalytics; onSelect: (subject: string) => void }) {
   if (!data) return <ChartState query={query} emptyDescription="质量指标正在准备" />;
   const httpFailure = ratio(data.http.failed, data.http.total);
   const httpSlow = ratio(data.http.slow, data.http.total);
@@ -549,8 +695,15 @@ function QualityRadar({ query, data }: { query: QueryLike; data?: OverviewAnalyt
   ];
   return (
     <ChartContainer config={radarConfig} className="h-72 w-full">
-      <RadarChart data={chartData} outerRadius="68%">
-        <ChartTooltip content={<ChartTooltipContent />} />
+      <RadarChart className="cursor-pointer" data={chartData} outerRadius="68%" onClick={(state) => {
+        if (typeof state?.activeLabel === 'string') onSelect(state.activeLabel);
+      }}>
+        <ChartTooltip content={<ChartTooltipContent formatter={(value) => (
+          <div className="flex w-full items-center justify-between gap-4">
+            <span className="text-muted-foreground">风险指数</span>
+            <span className="font-mono font-medium tabular-nums">{Number(value).toFixed(1)}%</span>
+          </div>
+        )} />} />
         <PolarGrid />
         <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
         <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
@@ -578,20 +731,24 @@ function SessionTimeline({ events, onSession }: { events: PerformanceMetricEvent
   );
 }
 
-function experiencePoints(data?: OverviewAnalytics) {
+function performancePoints(data?: OverviewAnalytics) {
   if (!data?.points.length) return [];
   return data.points.map((point) => {
     const startup = data.startup.events.filter((event) => inBucket(event, point));
     const pages = data.pages.events.filter((event) => inBucket(event, point));
     const cold = startup.filter((event) => event.name === 'app.cold_start');
+    const hot = startup.filter((event) => event.name === 'app.hot_start' && event.durationMs !== undefined);
     const pageLoads = pages.filter((event) => event.name === 'page.load');
     return {
       bucket: bucketLabel(point.from),
       from: point.from,
-      coldStarts: cold.length,
-      pageLoads: pageLoads.length,
+      coldSamples: cold.length,
+      hotSamples: hot.length,
+      pageSamples: pageLoads.length,
       coldAverageMs: average(cold.map((event) => event.durationMs)),
-      pageAverageMs: average(pageLoads.map((event) => numberAttribute(event, 'page.load_ms') ?? event.durationMs)),
+      hotAverageMs: average(hot.map((event) => event.durationMs)),
+      loadAverageMs: average(pageLoads.map((event) => numberAttribute(event, 'page.load_ms') ?? event.durationMs)),
+      firstFrameAverageMs: average(pageLoads.map((event) => numberAttribute(event, 'page.first_frame_ms') ?? event.durationMs)),
       startupEvent: cold[0],
     };
   });
@@ -642,9 +799,45 @@ function numberAttribute(event: PerformanceMetricEvent, key: string) {
 
 function average(values: Array<number | undefined>) {
   const present = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  return present.length ? present.reduce((sum, value) => sum + value, 0) / present.length : 0;
+  return present.length ? present.reduce((sum, value) => sum + value, 0) / present.length : undefined;
 }
 
 function ratio(value: number, total: number) {
   return total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0;
+}
+
+function durationAxisLabel(value: number) {
+  if (value >= 1000) return `${Number((value / 1000).toFixed(value >= 10000 ? 0 : 1))}s`;
+  return `${Math.round(value)}ms`;
+}
+
+function durationTooltipRow(label: string, value: number, samples: number) {
+  return (
+    <div className="grid w-full min-w-48 grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono font-medium tabular-nums">{formatDuration(value)}</span>
+      <span className="text-muted-foreground">样本数</span>
+      <span className="font-mono font-medium tabular-nums">{compactNumber(samples)}</span>
+    </div>
+  );
+}
+
+function donutTooltipRow(label: string, value: number, total: number, suffix: string) {
+  return (
+    <div className="grid w-full min-w-40 grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+      <span className="font-medium">{label}</span>
+      <span className="font-mono font-medium tabular-nums">{compactNumber(value)} {suffix}</span>
+      <span className="text-muted-foreground">占比</span>
+      <span className="font-mono font-medium tabular-nums">{ratio(value, total).toFixed(1)}%</span>
+    </div>
+  );
+}
+
+function httpStatusColor(status: string) {
+  const code = Number.parseInt(status, 10);
+  if (code >= 500) return 'var(--destructive)';
+  if (code >= 400) return 'var(--chart-3)';
+  if (code >= 300) return 'var(--chart-4)';
+  if (code >= 200) return 'var(--chart-1)';
+  return 'var(--chart-5)';
 }

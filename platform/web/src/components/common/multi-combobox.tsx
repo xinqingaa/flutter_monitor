@@ -13,7 +13,7 @@ function sameValues(a: string[], b: string[]) {
 
 /**
  * Multi-value Combobox for remote dimension suggestions (userId / sessionId).
- * Draft edits while open; commits once when the popover closes.
+ * Remote multi-value suggestions with immediate controlled commits.
  */
 export function MultiCombobox({
   values,
@@ -51,30 +51,28 @@ export function MultiCombobox({
   const selected = open ? draft : committed;
   const selectedSet = new Set(selected);
   const triggerLabel = selected.length === 0
-    ? `全部${label}`
+    ? label
     : selected.length === 1
       ? selected[0]
       : `${label} ${selected.length}`;
 
   function toggle(value: string) {
-    setDraft((current) => {
-      const set = new Set(current);
-      const next = set.has(value)
-        ? current.filter((item) => item !== value)
-        : [...current, value].sort((a, b) => a.localeCompare(b));
-      return next;
-    });
+    const set = new Set(draft);
+    const next = set.has(value)
+      ? draft.filter((item) => item !== value)
+      : [...draft, value].sort((a, b) => a.localeCompare(b));
+    setDraft(next);
+    deferCommit(() => onChange(next.length > 0 ? next : undefined));
   }
 
   function clearDraft() {
     setDraft([]);
     onQueryChange('');
+    deferCommit(() => onChange(undefined));
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      if (!sameValues(draft, committed)) onChange(draft.length > 0 ? draft : undefined);
-    } else {
+    if (nextOpen) {
       setDraft(committed);
     }
     setOpen(nextOpen);
@@ -89,7 +87,7 @@ export function MultiCombobox({
           aria-expanded={open}
           aria-label={label}
           className={cn(
-            'min-w-36 justify-between font-normal focus-visible:ring-0',
+            'min-w-28 justify-between font-normal focus-visible:ring-0',
             selected.length === 0 && 'text-muted-foreground',
             className,
           )}
@@ -153,4 +151,8 @@ export function MultiCombobox({
       </PopoverContent>
     </Popover>
   );
+}
+
+function deferCommit(commit: () => void) {
+  window.setTimeout(commit, 0);
 }
