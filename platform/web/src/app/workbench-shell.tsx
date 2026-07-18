@@ -5,6 +5,7 @@ import { useState } from 'react';
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -30,11 +31,11 @@ import {
 import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { useLiveInvalidation } from '../shared/datasource/queries';
-import { pickScopeSearch } from '../features/scope/scope-filters';
+import { pickDimensionScopeSearch, pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
 const nav = [
-  { to: '/', label: '大屏', match: (pathname: string) => pathname === '/' },
+  { to: '/', label: '概览', match: (pathname: string) => pathname === '/' },
   { to: '/sessions', label: 'Session', match: (pathname: string) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
   { to: '/http', label: 'HTTP', match: (pathname: string) => pathname === '/http' || pathname.startsWith('/http/') },
   { to: '/business', label: '埋点', match: (pathname: string) => pathname === '/business' || pathname.startsWith('/business/') },
@@ -47,6 +48,8 @@ export function WorkbenchShell() {
   const [live, setLive] = useState(true);
   useLiveInvalidation(live);
   const page = pageMeta(location.pathname);
+  const scopeSearch = pickScopeSearch(location.search);
+  const overviewSearch = pickDimensionScopeSearch(location.search);
 
   return (
     <SidebarProvider
@@ -64,7 +67,7 @@ export function WorkbenchShell() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild tooltip="Flutter Monitor">
-                <Link to="/">
+                <Link to="/" search={overviewSearch}>
                   <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                     <img src="/logo.png" alt="Flutter Monitor" className="size-6" />
                   </span>
@@ -89,7 +92,7 @@ export function WorkbenchShell() {
                       isActive={match(location.pathname)}
                       tooltip={label}
                     >
-                      <Link to={to} search={(current) => pickScopeSearch(current)}>
+                      <Link to={to} search={(current) => to === '/' ? pickDimensionScopeSearch(current) : pickScopeSearch(current)}>
                         <span>{label}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -109,9 +112,21 @@ export function WorkbenchShell() {
           <Breadcrumb className="min-w-0 flex-1">
             <BreadcrumbList className="flex-nowrap">
               <BreadcrumbItem className="hidden md:block">
-                <span>Workbench</span>
+                <BreadcrumbLink asChild>
+                  <Link to="/" search={overviewSearch}>Workbench</Link>
+                </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
+              {page.parent ? (
+                <>
+                  <BreadcrumbItem className="min-w-0">
+                    <BreadcrumbLink asChild>
+                      <Link to={page.parent.to} search={scopeSearch}>{page.parent.label}</Link>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                </>
+              ) : null}
               <BreadcrumbItem className="min-w-0">
                 <BreadcrumbPage className="truncate">{page.title}</BreadcrumbPage>
               </BreadcrumbItem>
@@ -155,22 +170,25 @@ export function WorkbenchShell() {
   );
 }
 
-function pageMeta(pathname: string): { title: string; detail?: string } {
-  if (pathname === '/') return { title: '大屏' };
+type BreadcrumbPath = '/' | '/sessions' | '/http' | '/business' | '/errors';
+type PageMeta = { title: string; detail?: string; parent?: { label: string; to: BreadcrumbPath } };
+
+function pageMeta(pathname: string): PageMeta {
+  if (pathname === '/') return { title: '概览' };
   if (pathname === '/sessions') return { title: 'Session' };
   if (pathname.startsWith('/sessions/')) {
-    return { title: 'Session 链路', detail: decodeURIComponent(pathname.slice('/sessions/'.length)) };
+    return { title: 'Session 链路', detail: decodeURIComponent(pathname.slice('/sessions/'.length)), parent: { label: 'Session', to: '/sessions' } };
   }
   if (pathname.startsWith('/http/')) {
-    return { title: 'HTTP 详情', detail: decodeURIComponent(pathname.slice('/http/'.length)) };
+    return { title: 'HTTP 详情', detail: decodeURIComponent(pathname.slice('/http/'.length)), parent: { label: 'HTTP', to: '/http' } };
   }
   if (pathname.startsWith('/http')) return { title: 'HTTP' };
   if (pathname.startsWith('/business/')) {
-    return { title: '埋点详情', detail: decodeURIComponent(pathname.slice('/business/'.length)) };
+    return { title: '埋点详情', detail: decodeURIComponent(pathname.slice('/business/'.length)), parent: { label: '埋点', to: '/business' } };
   }
   if (pathname.startsWith('/business')) return { title: '埋点' };
   if (pathname.startsWith('/errors/')) {
-    return { title: '异常详情', detail: decodeURIComponent(pathname.slice('/errors/'.length)) };
+    return { title: '异常详情', detail: decodeURIComponent(pathname.slice('/errors/'.length)), parent: { label: '异常', to: '/errors' } };
   }
   if (pathname.startsWith('/errors')) return { title: '异常' };
   if (pathname.startsWith('/traces/')) {

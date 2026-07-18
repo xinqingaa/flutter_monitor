@@ -1,17 +1,22 @@
 import type {
   DimensionSummary,
+  BusinessAnalytics,
   BusinessCatalogQuery,
   BusinessCatalogResult,
+  ErrorAnalytics,
   ErrorCatalogQuery,
   ErrorCatalogResult,
   EventListResult,
+  HttpAnalytics,
   HttpCatalogQuery,
   HttpCatalogResult,
   MonitorEvent,
+  OverviewAnalytics,
   PerformanceOverview,
   FailureTimeseries,
   BusinessActionSummary,
   TimeseriesBucket,
+  SessionAnalytics,
   SessionConsoleResult,
   SessionFilters,
   SessionListResult,
@@ -125,6 +130,26 @@ export class LocalWorkbenchDatasource implements WorkbenchDatasource {
 
   async businessActionSummary(filters: SessionFilters, limit = 8): Promise<BusinessActionSummary> {
     return this.getJson(`/api/monitor/v1/dashboard/business-actions?${toParams({ ...filters, limit })}`) as Promise<BusinessActionSummary>;
+  }
+
+  async analyticsOverview(filters: SessionFilters): Promise<OverviewAnalytics> {
+    return this.getJson(`/api/monitor/v1/analytics/overview?${toParams(filters)}`) as Promise<OverviewAnalytics>;
+  }
+
+  async analyticsSessions(filters: SessionFilters): Promise<SessionAnalytics> {
+    return this.getJson(`/api/monitor/v1/analytics/sessions?${toParams(filters)}`) as Promise<SessionAnalytics>;
+  }
+
+  async analyticsHttp(query: HttpCatalogQuery): Promise<HttpAnalytics> {
+    return this.getJson(`/api/monitor/v1/analytics/http?${toParams(query)}`) as Promise<HttpAnalytics>;
+  }
+
+  async analyticsBusiness(query: BusinessCatalogQuery): Promise<BusinessAnalytics> {
+    return this.getJson(`/api/monitor/v1/analytics/business?${toParams(query)}`) as Promise<BusinessAnalytics>;
+  }
+
+  async analyticsErrors(query: ErrorCatalogQuery): Promise<ErrorAnalytics> {
+    return this.getJson(`/api/monitor/v1/analytics/errors?${toParams(query)}`) as Promise<ErrorAnalytics>;
   }
 
   async searchEvents(query: string, filters: SessionFilters): Promise<MonitorEvent[]> {

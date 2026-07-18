@@ -6,7 +6,7 @@
 
 | 文档 | 内容 |
 |---|---|
-| [产品](product.md) | 信息架构、共享交互、HTTP 样板、大屏 / 埋点 / 异常 / Session、明确不做与当前局限 |
+| [产品](product.md) | 信息架构、共享交互、HTTP 样板、概览 / 埋点 / 异常 / Session、明确不做与当前局限 |
 | [架构](architecture.md) | workspace 布局、Service / Web 职责、数据边界、排查食谱、Example 边界 |
 | [Example Demo](EXAMPLE_DEMO.md) | 体育健康 example + `/api/example/v1` mock 契约 |
 

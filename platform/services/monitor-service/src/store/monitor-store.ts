@@ -4,13 +4,18 @@ import type {
   BusinessCatalogQuery,
   BusinessCatalogResult,
   BusinessActionSummary,
+  BusinessAnalytics,
+  ErrorAnalytics,
   ErrorCatalogQuery,
   ErrorCatalogResult,
   EventFilters,
   HttpCatalogQuery,
   HttpCatalogResult,
+  HttpAnalytics,
   MonitorEvent,
   PerformanceOverview,
+  OverviewAnalytics,
+  SessionAnalytics,
   SessionSummary,
 } from './event-types';
 
@@ -47,6 +52,11 @@ export interface MonitorStore {
   dimensions(filters: EventFilters, options?: { q?: string; limit?: number }): DimensionSummary;
   failureTimeseries(filters: EventFilters, bucket: 'hour' | 'day'): FailureTimeseries;
   businessActionSummary(filters: EventFilters, limit: number): BusinessActionSummary;
+  analyticsOverview(filters: EventFilters): OverviewAnalytics;
+  analyticsSessions(filters: EventFilters): SessionAnalytics;
+  analyticsHttp(query: HttpCatalogQuery): HttpAnalytics;
+  analyticsBusiness(query: BusinessCatalogQuery): BusinessAnalytics;
+  analyticsErrors(query: ErrorCatalogQuery): ErrorAnalytics;
   health(): MonitorStoreHealth;
   close?(): void;
 }

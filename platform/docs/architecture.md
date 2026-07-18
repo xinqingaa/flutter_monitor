@@ -78,12 +78,18 @@ SDK 输出模式：`consoleOnly`（仅 compact log）、`localLive`（短 batch�
 | `GET .../sessions`、`.../sessions/:id` | Session 列表与全量事件 |
 | `GET .../events/:eventId` | 单条 raw envelope |
 | `GET .../dimensions?q=` | `userId` / `sessionId` / `requestId` 真实候选 |
-| `GET .../performance/timeseries`、`.../dashboard/business-actions` | 大屏分桶与 Action TopN |
+| `GET .../performance/timeseries`、`.../dashboard/business-actions` | 概览分桶与 Action TopN |
+| `GET .../analytics/overview` | 概览驾驶舱摘要：启动、页面、Session、HTTP、埋点、异常、排行与关注项 |
+| `GET .../analytics/sessions`、`http`、`business`、`errors` | 兼容查询摘要；Workbench 不再提供对应二级分析路由 |
 | SSE live | 推送新事件以失效前端查询 |
 
 Session 摘要字段（`errorCount`、`failedHttpCount`、`businessFailureCount` 等）是 query view model，不是 envelope 字段。
 
 通用过滤参数（可单值或逗号多值）贯穿 recent / sessions / search / performance / dimensions：`sessionId`、`userId`、`from`/`to`、`appKey`、`appVersion`、`environment`、`route`、`status`、`name`、`signalType` 等。
+
+概览 Analytics 只消费维度 Scope，不消费 `from` / `to`；服务端在当前保留数据内解析 `resolvedRange`，并限制时间点与 Top N 数量。Catalog 继续消费 `from` / `to` 作为排查边界。Analytics 响应是可回查 `eventId` / `sessionId` / `traceId` 的 query view model，不进入 raw envelope。
+
+Analytics 面向大量本地事件，时间分桶、去重、Top N、矩阵和分位数必须优先由 SQLite 聚合完成，不能把全部 `envelope_json` 载入 Web 或 Node 后再统计。服务端限制约 120 个时间点和矩阵规模，并按跨度选择小时、天、周或月粒度。HTTP 耗时补充 p50 / p95 / max（SQLite 无原生 percentile 时用受控排序计算）。
 
 ---
 
@@ -92,6 +98,8 @@ Session 摘要字段（`errorCount`、`failedHttpCount`、`businessFailureCount`
 - 栈：Vite + React + TypeScript、TanStack Router / Query、shadcn、Tailwind v4
 - 目录习惯：`components/ui` 官方 primitive；`features/`、`routes/`、`app/` 业务接线；`shared/datasource` 调 Monitor Service
 - Datasource：HTTP API + SSE；页面状态以 URL search 为主（筛选、分页、`eventId`、`detail`）
+- 应用、版本、环境、平台、路由等维度 Scope 跨一级导航持久化；Catalog 单独保留 `from` / `to`
+- 概览不显示时间控件，不读取持久化时间；图表第一阶段使用查询快照与手动刷新，SSE 不驱动图表动画
 
 产品交互见 [`product.md`](product.md)。
 

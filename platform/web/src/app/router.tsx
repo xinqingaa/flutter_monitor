@@ -68,15 +68,16 @@ const rootRoute = createRootRoute({
   component: WorkbenchShell,
 });
 
-const dashboardRoute = createRoute({
+const overviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: lazyRouteComponent(() => import('../routes/dashboard/dashboard-route'), 'DashboardRoute'),
+  component: lazyRouteComponent(() => import('../routes/overview/overview-route'), 'OverviewRoute'),
 });
 
 export type SessionsSearch = RootSearch & {
   selected?: string;
   detail?: string;
+  problemType?: string;
   page?: number;
   pageSize?: 25 | 50 | 100;
 };
@@ -97,10 +98,17 @@ const sessionsRoute = createRoute({
     route: stringListSearchParam(search.route),
     selected: stringSearch(search.selected),
     detail: stringSearch(search.detail),
+    problemType: stringSearch(search.problemType),
     page: integerSearch(search.page, 1),
     pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined,
   }),
   component: lazyRouteComponent(() => import('../routes/sessions/sessions-route'), 'SessionsRoute'),
+});
+
+const sessionsAnalyticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/sessions/analytics',
+  beforeLoad: ({ search }) => { throw redirect({ to: '/sessions', search: rootSearchFields(search) }); },
 });
 
 const sessionRoute = createRoute({
@@ -152,6 +160,12 @@ const httpRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/http/http-foundation-route'), 'HttpFoundationRoute'),
 });
 
+const httpAnalyticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/http/analytics',
+  beforeLoad: ({ search }) => { throw redirect({ to: '/http', search: rootSearchFields(search) }); },
+});
+
 const httpDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/http/$eventId',
@@ -165,6 +179,12 @@ const businessRoute = createRoute({
   component: lazyRouteComponent(() => import('../routes/domain/domain-catalog-route'), 'BusinessCatalogRoute'),
 });
 
+const businessAnalyticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/business/analytics',
+  beforeLoad: ({ search }) => { throw redirect({ to: '/business', search: rootSearchFields(search) }); },
+});
+
 const businessDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/business/$eventId',
@@ -176,6 +196,12 @@ const errorCatalogRoute = createRoute({
   path: '/errors',
   validateSearch: domainSearch,
   component: lazyRouteComponent(() => import('../routes/domain/domain-catalog-route'), 'ErrorCatalogRoute'),
+});
+
+const errorsAnalyticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/errors/analytics',
+  beforeLoad: ({ search }) => { throw redirect({ to: '/errors', search: rootSearchFields(search) }); },
 });
 
 const errorDetailRoute = createRoute({
@@ -227,15 +253,19 @@ const traceRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  dashboardRoute,
+  overviewRoute,
   sessionsRoute,
+  sessionsAnalyticsRoute,
   sessionRoute,
   eventsRoute,
   httpRoute,
+  httpAnalyticsRoute,
   httpDetailRoute,
   businessRoute,
+  businessAnalyticsRoute,
   businessDetailRoute,
   errorCatalogRoute,
+  errorsAnalyticsRoute,
   errorDetailRoute,
   eventRoute,
   startupRoute,
@@ -320,6 +350,21 @@ function domainSearch(search: Record<string, unknown>): DomainSearch {
     appKey: stringListSearchParam(search.appKey), packageName: stringListSearchParam(search.packageName), environment: stringListSearchParam(search.environment), appVersion: stringListSearchParam(search.appVersion), devicePlatform: stringListSearchParam(search.devicePlatform), from: stringSearch(search.from), to: stringSearch(search.to), userId: stringListSearchParam(search.userId), sessionId: stringListSearchParam(search.sessionId), route: stringListSearchParam(search.route),
     action: stringSearch(search.action), result: stringListSearchParam(search.result), errorType: stringSearch(search.errorType), mechanism: stringListSearchParam(search.mechanism), fatal: booleanSearch(search.fatal), handled: booleanSearch(search.handled), businessOnly: booleanSearch(search.businessOnly), sortBy: enumSearch(search.sortBy, ['timestamp']), sortDir: enumSearch(search.sortDir, ['asc', 'desc']), page: integerSearch(search.page, 1), pageSize: enumNumberSearch(search.pageSize, [25, 50, 100]) as 25 | 50 | 100 | undefined, eventId: stringSearch(search.eventId), detail: stringSearch(search.detail),
   });
+}
+
+function rootSearchFields(search: Record<string, unknown>): RootSearch {
+  return {
+    appKey: stringListSearchParam(search.appKey),
+    packageName: stringListSearchParam(search.packageName),
+    environment: stringListSearchParam(search.environment),
+    appVersion: stringListSearchParam(search.appVersion),
+    devicePlatform: stringListSearchParam(search.devicePlatform),
+    from: stringSearch(search.from),
+    to: stringSearch(search.to),
+    userId: stringListSearchParam(search.userId),
+    sessionId: stringListSearchParam(search.sessionId),
+    route: stringListSearchParam(search.route),
+  };
 }
 
 declare module '@tanstack/react-router' {

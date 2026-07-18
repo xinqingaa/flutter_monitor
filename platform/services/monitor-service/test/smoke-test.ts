@@ -103,7 +103,7 @@ async function runSmokeTests(): Promise<void> {
     assert.equal(data.count, 1);
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
   });
-  await assertJson('/api/monitor/v1/sessions?sessionId=ses_smo', (data) => {
+  await assertJson('/api/monitor/v1/sessions?sessionId=ses_smoke', (data) => {
     assert.equal(data.count, 1);
     assert.equal(data.sessions[0].sessionId, 'ses_smoke');
   });
@@ -148,6 +148,52 @@ async function runSmokeTests(): Promise<void> {
     assert.equal(data.items[0].failed, 1);
     assert.equal(data.items[0].eventId, 'evt_smoke_business_failed');
   });
+  await assertJson('/api/monitor/v1/analytics/overview', (data) => {
+    assert.equal(data.kpis.activeSessions, 1);
+    assert.equal(data.kpis.problemSessions, 1);
+    assert.equal(data.kpis.httpTotal, 1);
+    assert.equal(data.kpis.httpFailed, 1);
+    assert.equal(data.kpis.businessTotal, 1);
+    assert.equal(data.kpis.businessFailed, 1);
+    assert.equal(data.points.length > 0, true);
+    assert.equal(typeof data.resolvedRange?.generatedAt, 'string');
+    assert.equal(data.attention.some((item: any) => item.eventId === 'evt_smoke_http'), true);
+    assert.equal(data.attention.some((item: any) => item.eventId === 'evt_smoke_business_failed'), true);
+    assert.equal(data.attention.every((item: any) => item.count >= 1), true);
+    assert.equal(data.startup.coldStart.sampleCount, 1);
+    assert.equal(data.pages.count >= 1, true);
+    assert.equal(data.sessions.activeSessions, 1);
+    assert.equal(data.http.total, 1);
+    assert.equal(data.http.statuses[0].key, '422');
+    assert.equal(data.business.failed, 1);
+    assert.equal(data.errorsSummary.total, 1);
+  });
+  await assertJson('/api/monitor/v1/analytics/sessions', (data) => {
+    assert.equal(data.activeSessions, 1);
+    assert.equal(data.problemSessions, 1);
+    assert.equal(data.health.some((item: any) => item.key === '有问题' && item.count === 1), true);
+    assert.equal(typeof data.resolvedRange?.bucket, 'string');
+  });
+  await assertJson('/api/monitor/v1/analytics/http?statusCode=422', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.failed, 1);
+    assert.equal(data.statuses[0].key, '422');
+    assert.equal(typeof data.p50Ms === 'number' || data.p50Ms === undefined, true);
+    assert.equal(Array.isArray(data.routeEndpointMatrix), true);
+    assert.equal(Array.isArray(data.durationDistribution), true);
+  });
+  await assertJson('/api/monitor/v1/analytics/business?action=coupon', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.failed, 1);
+    assert.equal(data.actions[0].key, 'detail.coupon.apply');
+    assert.equal(Array.isArray(data.actionRouteMatrix), true);
+  });
+  await assertJson('/api/monitor/v1/analytics/errors?businessOnly=true', (data) => {
+    assert.equal(data.total, 1);
+    assert.equal(data.affectedSessions, 1);
+    assert.equal(data.types[0].key, 'detail.coupon.apply');
+    assert.equal(Array.isArray(data.groups), true);
+  });
 
   await restartService();
   await assertJson('/api/monitor/v1/sessions/ses_smoke', (data) => {
@@ -179,6 +225,7 @@ async function runSmokeTests(): Promise<void> {
     assert.equal(data.count, 5);
   });
   await assertStatus('/api/monitor/v1/events/evt_smoke_start', 404);
+  console.log('smoke ok');
   } finally {
     child.kill('SIGTERM');
   }

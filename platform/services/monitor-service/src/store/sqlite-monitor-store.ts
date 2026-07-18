@@ -37,6 +37,12 @@ import {
   userIdOf,
 } from './event-accessors';
 import type {
+  AnalyticsAttentionItem,
+  AnalyticsGroupItem,
+  AnalyticsMatrixCell,
+  AnalyticsPoint,
+  AnalyticsRange,
+  BusinessAnalytics,
   DimensionAppOption,
   DimensionOption,
   DimensionSummary,
@@ -51,18 +57,22 @@ import type {
   ErrorCatalogItem,
   ErrorCatalogQuery,
   ErrorCatalogResult,
+  ErrorAnalytics,
   HttpPerformanceSummary,
   HttpCatalogItem,
   HttpCatalogQuery,
   HttpCatalogResult,
+  HttpAnalytics,
   JankPerformanceSummary,
   MetricGroupSummary,
   MonitorEvent,
   PagePerformanceSummary,
   PerformanceMetricSummary,
   PerformanceOverview,
+  OverviewAnalytics,
   SdkReliabilitySummary,
   SessionSummary,
+  SessionAnalytics,
   StartupPerformanceSummary,
 } from './event-types';
 import type { MonitorStore, MonitorStoreHealth } from './monitor-store';
@@ -80,6 +90,56 @@ type SessionRow = {
 type CountRow = {
   count: number;
 };
+
+type AnalyticsRangeRow = { min_ms?: number; max_ms?: number };
+type AnalyticsPointRow = {
+  bucket_start: number;
+  active_sessions: number;
+  http_total: number;
+  http_failed: number;
+  business_total: number;
+  business_failed: number;
+  business_cancelled: number;
+  errors: number;
+};
+type AnalyticsGroupRow = {
+  key: string;
+  count: number;
+  failed?: number;
+  average_ms?: number;
+  max_ms?: number;
+  event_id?: string;
+  session_id?: string;
+  trace_id?: string;
+  route?: string;
+};
+type AnalyticsMatrixRow = {
+  row_key: string;
+  column_key: string;
+  count: number;
+  failed?: number;
+  event_id?: string;
+  session_id?: string;
+  trace_id?: string;
+};
+type AnalyticsAttentionRow = {
+  event_id: string;
+  session_id?: string;
+  trace_id?: string;
+  timestamp_ms?: number;
+  route?: string;
+  http_method?: string;
+  http_url?: string;
+  http_status_code?: number;
+  business_action?: string;
+  business_result?: string;
+  error_type?: string;
+  error_message?: string;
+  catalog_problem_kind?: string;
+  count?: number;
+  affected_sessions?: number;
+};
+type ResolvedAnalyticsRange = AnalyticsRange & { fromMs?: number; toMs?: number; bucketMs: number };
 
 type GroupRow = {
   key: string;
@@ -416,6 +476,482 @@ export class SqliteMonitorStore implements MonitorStore {
         .sort((a, b) => b.total - a.total || b.failed - a.failed || a.action.localeCompare(b.action))
         .slice(0, Math.min(Math.max(limit, 1), 50)),
     };
+  }
+
+  analyticsOverview(filters: EventFilters): OverviewAnalytics {
+    const scoped = withoutPaging(filters);
+    const { whereSql, params } = whereFromFilters(scoped);
+    const range = this.resolveAnalyticsRange(scoped, whereSql, params);
+    const performance = this.performanceOverview({ ...scoped, limit: 80 });
+    const sessions = this.analyticsSessions(scoped);
+    const http = this.analyticsHttp(scoped);
+    const business = this.analyticsBusiness(scoped);
+    const errorsSummary = this.analyticsErrors(scoped);
+    const kpi = this.selectRows<{
+      active_sessions: number;
+      problem_sessions: number;
+      http_total: number;
+      http_failed: number;
+      http_slow: number;
+      business_total: number;
+      business_failed: number;
+      business_cancelled: number;
+      errors: number;
+      affected_sessions: number;
+    }>(`
+      select
+        count(distinct session_id) as active_sessions,
+        count(distinct case when ((http_completed = 1 and (http_success = 0 or status = 'error')) or catalog_problem_kind in ('error', 'business_failure')) then session_id end) as problem_sessions,
+        sum(case when http_completed = 1 then 1 else 0 end) as http_total,
+        sum(case when http_completed = 1 and (http_success = 0 or status = 'error') then 1 else 0 end) as http_failed,
+        sum(case when http_completed = 1 and http_duration_ms >= 1000 then 1 else 0 end) as http_slow,
+        sum(case when business_action is not null then 1 else 0 end) as business_total,
+        sum(case when business_action is not null and business_result = 'failed' then 1 else 0 end) as business_failed,
+        sum(case when business_action is not null and business_result = 'cancelled' then 1 else 0 end) as business_cancelled,
+        sum(case when catalog_problem_kind in ('error', 'business_failure') then 1 else 0 end) as errors,
+        count(distinct case when catalog_problem_kind in ('error', 'business_failure') then session_id end) as affected_sessions
+      from events ${whereSql}
+    `, params)[0];
+    return {
+      resolvedRange: publicAnalyticsRange(range),
+      kpis: {
+        activeSessions: numeric(kpi?.active_sessions),
+        problemSessions: numeric(kpi?.problem_sessions),
+        httpTotal: numeric(kpi?.http_total),
+        httpFailed: numeric(kpi?.http_failed),
+        httpSlow: numeric(kpi?.http_slow),
+        businessTotal: numeric(kpi?.business_total),
+        businessFailed: numeric(kpi?.business_failed),
+        businessCancelled: numeric(kpi?.business_cancelled),
+        errors: numeric(kpi?.errors),
+        affectedSessions: numeric(kpi?.affected_sessions),
+      },
+      points: this.analyticsPoints(whereSql, params, range),
+      sessionHealth: this.sessionHealthGroups(whereSql, params),
+      httpStatuses: this.analyticsGroups(whereSql, params, "case when http_status_code is null then '无状态码' else cast(http_status_code as text) end", 'http_completed = 1', 8),
+      businessActions: this.analyticsGroups(whereSql, params, 'business_action', 'business_action is not null', 8, "business_result = 'failed'"),
+      errorTypes: this.analyticsGroups(whereSql, params, "coalesce(error_type, business_action, '未知异常')", "catalog_problem_kind in ('error', 'business_failure')", 8),
+      attention: this.analyticsAttention(whereSql, params, 12),
+      startup: performance.startup,
+      pages: performance.pages,
+      sessions: {
+        activeSessions: sessions.activeSessions,
+        problemSessions: sessions.problemSessions,
+        averageDurationMs: sessions.averageDurationMs,
+        averageEventCount: sessions.averageEventCount,
+        health: sessions.health,
+        durationDistribution: sessions.durationDistribution,
+        eventCountDistribution: sessions.eventCountDistribution,
+        routes: sessions.routes,
+      },
+      http: {
+        total: http.total,
+        failed: http.failed,
+        slow: http.slow,
+        affectedSessions: http.affectedSessions,
+        averageMs: http.averageMs,
+        p50Ms: http.p50Ms,
+        p95Ms: http.p95Ms,
+        maxMs: http.maxMs,
+        statuses: http.statuses,
+        endpoints: http.endpoints,
+        routes: http.routes,
+        durationDistribution: http.durationDistribution,
+      },
+      business: {
+        total: business.total,
+        failed: business.failed,
+        cancelled: business.cancelled,
+        affectedSessions: business.affectedSessions,
+        actions: business.actions,
+        routes: business.routes,
+      },
+      errorsSummary: {
+        total: errorsSummary.total,
+        affectedSessions: errorsSummary.affectedSessions,
+        fatal: errorsSummary.fatal,
+        handled: errorsSummary.handled,
+        types: errorsSummary.types,
+        mechanisms: errorsSummary.mechanisms,
+        routes: errorsSummary.routes,
+        groups: errorsSummary.groups,
+      },
+    };
+  }
+
+  analyticsSessions(filters: EventFilters): SessionAnalytics {
+    const scoped = withoutPaging(filters);
+    const { whereSql, params } = whereFromFilters(scoped);
+    const range = this.resolveAnalyticsRange(scoped, whereSql, params);
+    const sessionWhere = appendWhere(whereSql, 'session_id is not null');
+    const issueExpression = "sum(case when ((http_completed = 1 and (http_success = 0 or status = 'error')) or catalog_problem_kind in ('error', 'business_failure')) then 1 else 0 end)";
+    const baseCte = `with session_rows as (
+      select session_id, min(timestamp_ms) as first_ms, max(timestamp_ms) as last_ms, count(*) as event_count,
+        ${issueExpression} as issue_count
+      from events ${sessionWhere} group by session_id
+    )`;
+    const summary = this.selectRows<{ active_sessions: number; problem_sessions: number; average_duration_ms?: number; average_event_count?: number }>(`
+      ${baseCte}
+      select count(*) as active_sessions,
+        sum(case when issue_count > 0 then 1 else 0 end) as problem_sessions,
+        avg(last_ms - first_ms) as average_duration_ms,
+        avg(event_count) as average_event_count
+      from session_rows
+    `, params)[0];
+    const health = this.selectRows<AnalyticsGroupRow>(`
+      ${baseCte}
+      select case when issue_count > 0 then '有问题' else '正常' end as key, count(*) as count
+      from session_rows group by key order by count desc
+    `, params).map(analyticsGroupFromRow);
+    const durationDistribution = this.selectRows<AnalyticsGroupRow>(`
+      ${baseCte}
+      select case
+        when last_ms - first_ms < 60000 then '< 1 分钟'
+        when last_ms - first_ms < 300000 then '1-5 分钟'
+        when last_ms - first_ms < 900000 then '5-15 分钟'
+        when last_ms - first_ms < 1800000 then '15-30 分钟'
+        else '>= 30 分钟' end as key, count(*) as count
+      from session_rows group by key order by min(last_ms - first_ms)
+    `, params).map(analyticsGroupFromRow);
+    const eventCountDistribution = this.selectRows<AnalyticsGroupRow>(`
+      ${baseCte}
+      select case
+        when event_count < 10 then '< 10'
+        when event_count < 50 then '10-49'
+        when event_count < 100 then '50-99'
+        when event_count < 250 then '100-249'
+        else '>= 250' end as key, count(*) as count
+      from session_rows group by key order by min(event_count)
+    `, params).map(analyticsGroupFromRow);
+    return {
+      resolvedRange: publicAnalyticsRange(range),
+      activeSessions: numeric(summary?.active_sessions),
+      problemSessions: numeric(summary?.problem_sessions),
+      averageDurationMs: optionalNumeric(summary?.average_duration_ms),
+      averageEventCount: optionalNumeric(summary?.average_event_count),
+      points: this.analyticsPoints(whereSql, params, range),
+      health,
+      durationDistribution,
+      eventCountDistribution,
+      routes: this.analyticsGroups(whereSql, params, "coalesce(route, '未知路由')", 'session_id is not null', 10),
+      problems: this.analyticsAttention(whereSql, params, 12),
+    };
+  }
+
+  analyticsHttp(query: HttpCatalogQuery): HttpAnalytics {
+    const scoped = { ...query, limit: undefined, offset: undefined };
+    const { whereSql, params } = whereFromHttpCatalogQuery(scoped, query.slowThresholdMs ?? 1000);
+    const range = this.resolveAnalyticsRange(scoped, whereSql, params);
+    const summary = this.selectRows<{ total: number; failed: number; slow: number; affected_sessions: number; average_ms?: number; max_ms?: number }>(`
+      select count(*) as total,
+        sum(case when http_success = 0 or status = 'error' then 1 else 0 end) as failed,
+        sum(case when http_duration_ms >= 1000 then 1 else 0 end) as slow,
+        count(distinct session_id) as affected_sessions,
+        avg(http_duration_ms) as average_ms,
+        max(http_duration_ms) as max_ms
+      from events ${whereSql}
+    `, params)[0];
+    const percentiles = this.httpDurationPercentiles(whereSql, params);
+    const durationDistribution = this.selectRows<AnalyticsGroupRow>(`
+      select case
+        when http_duration_ms is null then '未知'
+        when http_duration_ms < 200 then '< 200ms'
+        when http_duration_ms < 500 then '200-499ms'
+        when http_duration_ms < 1000 then '500-999ms'
+        when http_duration_ms < 3000 then '1-3s'
+        else '>= 3s' end as key, count(*) as count
+      from events ${whereSql}
+      group by key order by min(coalesce(http_duration_ms, -1))
+    `, params).map(analyticsGroupFromRow);
+    return {
+      resolvedRange: publicAnalyticsRange(range),
+      total: numeric(summary?.total),
+      failed: numeric(summary?.failed),
+      slow: numeric(summary?.slow),
+      affectedSessions: numeric(summary?.affected_sessions),
+      averageMs: optionalNumeric(summary?.average_ms),
+      p50Ms: percentiles.p50Ms,
+      p95Ms: percentiles.p95Ms,
+      maxMs: optionalNumeric(summary?.max_ms),
+      points: this.analyticsPoints(whereSql, params, range),
+      statuses: this.analyticsGroups(whereSql, params, "case when http_status_code is null then '无状态码' else cast(http_status_code as text) end", undefined, 12),
+      endpoints: this.analyticsGroups(whereSql, params, "coalesce(http_url, '未知端点')", undefined, 12, "http_success = 0 or status = 'error'", 'http_duration_ms'),
+      routes: this.analyticsGroups(whereSql, params, "coalesce(route, '未知路由')", undefined, 10, "http_success = 0 or status = 'error'", 'http_duration_ms'),
+      durationDistribution,
+      routeEndpointMatrix: this.analyticsMatrix(
+        whereSql,
+        params,
+        "coalesce(route, '未知路由')",
+        "coalesce(http_url, '未知端点')",
+        8,
+        8,
+        "http_success = 0 or status = 'error'",
+      ),
+    };
+  }
+
+  analyticsBusiness(query: BusinessCatalogQuery): BusinessAnalytics {
+    const scoped = { ...query, limit: undefined, offset: undefined };
+    const { whereSql, params } = whereFromBusinessCatalogQuery(scoped);
+    const range = this.resolveAnalyticsRange(scoped, whereSql, params);
+    const summary = this.selectRows<{ total: number; failed: number; cancelled: number; affected_sessions: number }>(`
+      select count(*) as total,
+        sum(case when business_result = 'failed' then 1 else 0 end) as failed,
+        sum(case when business_result = 'cancelled' then 1 else 0 end) as cancelled,
+        count(distinct session_id) as affected_sessions
+      from events ${whereSql}
+    `, params)[0];
+    return {
+      resolvedRange: publicAnalyticsRange(range),
+      total: numeric(summary?.total),
+      failed: numeric(summary?.failed),
+      cancelled: numeric(summary?.cancelled),
+      affectedSessions: numeric(summary?.affected_sessions),
+      points: this.analyticsPoints(whereSql, params, range),
+      actions: this.analyticsGroups(whereSql, params, 'business_action', undefined, 12, "business_result = 'failed'"),
+      routes: this.analyticsGroups(whereSql, params, "coalesce(route, '未知路由')", undefined, 10, "business_result = 'failed'"),
+      actionRouteMatrix: this.analyticsMatrix(
+        whereSql,
+        params,
+        'business_action',
+        "coalesce(route, '未知路由')",
+        8,
+        8,
+        "business_result = 'failed'",
+      ),
+      failures: this.analyticsAttention(whereSql, params, 12, "business_result = 'failed'"),
+    };
+  }
+
+  analyticsErrors(query: ErrorCatalogQuery): ErrorAnalytics {
+    const scoped = { ...query, limit: undefined, offset: undefined };
+    const { whereSql, params } = whereFromErrorCatalogQuery(scoped);
+    const range = this.resolveAnalyticsRange(scoped, whereSql, params);
+    const summary = this.selectRows<{ total: number; affected_sessions: number; fatal: number; handled: number }>(`
+      select count(*) as total,
+        count(distinct session_id) as affected_sessions,
+        sum(case when error_fatal = 1 then 1 else 0 end) as fatal,
+        sum(case when error_handled = 1 then 1 else 0 end) as handled
+      from events ${whereSql}
+    `, params)[0];
+    return {
+      resolvedRange: publicAnalyticsRange(range),
+      total: numeric(summary?.total),
+      affectedSessions: numeric(summary?.affected_sessions),
+      fatal: numeric(summary?.fatal),
+      handled: numeric(summary?.handled),
+      points: this.analyticsPoints(whereSql, params, range),
+      types: this.analyticsGroups(whereSql, params, "coalesce(error_type, business_action, '未知异常')", undefined, 12),
+      mechanisms: this.analyticsGroups(whereSql, params, "coalesce(error_mechanism, case when catalog_problem_kind = 'business_failure' then 'business' end, '未知机制')", undefined, 10),
+      routes: this.analyticsGroups(whereSql, params, "coalesce(route, '未知路由')", undefined, 10),
+      groups: this.analyticsGroups(
+        whereSql,
+        params,
+        "coalesce(error_type, business_action, '未知异常') || ' · ' || coalesce(route, '未知路由')",
+        undefined,
+        12,
+      ),
+      recent: this.analyticsAttention(whereSql, params, 12),
+    };
+  }
+
+  private resolveAnalyticsRange(filters: EventFilters, whereSql: string, params: SqlParam[]): ResolvedAnalyticsRange {
+    const row = this.selectRows<AnalyticsRangeRow>(`select min(timestamp_ms) as min_ms, max(timestamp_ms) as max_ms from events ${whereSql}`, params)[0];
+    const requestedFrom = parsedTimestamp(filters.from);
+    const requestedTo = parsedTimestamp(filters.to);
+    const fromMs = requestedFrom ?? optionalNumeric(row?.min_ms);
+    const toMs = requestedTo ?? optionalNumeric(row?.max_ms);
+    const bucket = analyticsBucketFor(fromMs, toMs);
+    return {
+      from: fromMs === undefined ? undefined : new Date(fromMs).toISOString(),
+      to: toMs === undefined ? undefined : new Date(toMs).toISOString(),
+      bucket,
+      bucketMs: analyticsBucketMs(bucket),
+      generatedAt: new Date().toISOString(),
+      fromMs,
+      toMs,
+    };
+  }
+
+  private analyticsPoints(whereSql: string, params: SqlParam[], range: ResolvedAnalyticsRange): AnalyticsPoint[] {
+    if (range.fromMs === undefined || range.toMs === undefined) return [];
+    const bucketExpression = `cast(timestamp_ms / ${range.bucketMs} as integer) * ${range.bucketMs}`;
+    const rows = this.selectRows<AnalyticsPointRow>(`
+      select ${bucketExpression} as bucket_start,
+        count(distinct session_id) as active_sessions,
+        sum(case when http_completed = 1 then 1 else 0 end) as http_total,
+        sum(case when http_completed = 1 and (http_success = 0 or status = 'error') then 1 else 0 end) as http_failed,
+        sum(case when business_action is not null then 1 else 0 end) as business_total,
+        sum(case when business_action is not null and business_result = 'failed' then 1 else 0 end) as business_failed,
+        sum(case when business_action is not null and business_result = 'cancelled' then 1 else 0 end) as business_cancelled,
+        sum(case when catalog_problem_kind in ('error', 'business_failure') then 1 else 0 end) as errors
+      from events ${whereSql}
+      group by bucket_start order by bucket_start asc
+    `, params);
+    return rows.slice(-120).map((row) => ({
+      from: new Date(row.bucket_start).toISOString(),
+      to: new Date(Math.min(row.bucket_start + range.bucketMs, range.toMs!)).toISOString(),
+      activeSessions: numeric(row.active_sessions),
+      httpTotal: numeric(row.http_total),
+      httpFailed: numeric(row.http_failed),
+      businessTotal: numeric(row.business_total),
+      businessFailed: numeric(row.business_failed),
+      businessCancelled: numeric(row.business_cancelled),
+      errors: numeric(row.errors),
+    }));
+  }
+
+  private analyticsGroups(
+    whereSql: string,
+    params: SqlParam[],
+    keyExpression: string,
+    predicate: string | undefined,
+    limit: number,
+    failedPredicate?: string,
+    durationColumn?: string,
+  ): AnalyticsGroupItem[] {
+    const scopedWhere = predicate ? appendWhere(whereSql, predicate) : whereSql;
+    return this.selectRows<AnalyticsGroupRow>(`
+      with ranked as (
+        select ${keyExpression} as key,
+          event_id, session_id, trace_id, route,
+          ${failedPredicate ? `case when ${failedPredicate} then 1 else 0 end` : '0'} as is_failed,
+          ${durationColumn ? durationColumn : 'null'} as duration_ms,
+          row_number() over (partition by ${keyExpression} order by timestamp_ms desc, sequence desc) as rn
+        from events ${scopedWhere}
+      )
+      select key,
+        count(*) as count,
+        sum(is_failed) as failed,
+        avg(duration_ms) as average_ms,
+        max(duration_ms) as max_ms,
+        max(case when rn = 1 then event_id end) as event_id,
+        max(case when rn = 1 then session_id end) as session_id,
+        max(case when rn = 1 then trace_id end) as trace_id,
+        max(case when rn = 1 then route end) as route
+      from ranked
+      group by key
+      order by count desc, key asc
+      limit ${Math.min(Math.max(limit, 1), 50)}
+    `, params).map(analyticsGroupFromRow);
+  }
+
+  private sessionHealthGroups(whereSql: string, params: SqlParam[]): AnalyticsGroupItem[] {
+    const scopedWhere = appendWhere(whereSql, 'session_id is not null');
+    return this.selectRows<AnalyticsGroupRow>(`
+      with session_health as (
+        select session_id,
+          sum(case when ((http_completed = 1 and (http_success = 0 or status = 'error')) or catalog_problem_kind in ('error', 'business_failure')) then 1 else 0 end) as issues
+        from events ${scopedWhere} group by session_id
+      )
+      select case when issues > 0 then '有问题' else '正常' end as key, count(*) as count
+      from session_health group by key order by count desc
+    `, params).map(analyticsGroupFromRow);
+  }
+
+  private analyticsMatrix(
+    whereSql: string,
+    params: SqlParam[],
+    rowExpression: string,
+    columnExpression: string,
+    rowLimit: number,
+    columnLimit: number,
+    failedPredicate?: string,
+  ): AnalyticsMatrixCell[] {
+    const topRows = this.selectRows<{ key: string }>(`
+      select ${rowExpression} as key, count(*) as count
+      from events ${whereSql}
+      group by key order by count desc, key asc limit ${Math.min(Math.max(rowLimit, 1), 20)}
+    `, params).map((row) => String(row.key));
+    const topColumns = this.selectRows<{ key: string }>(`
+      select ${columnExpression} as key, count(*) as count
+      from events ${whereSql}
+      group by key order by count desc, key asc limit ${Math.min(Math.max(columnLimit, 1), 20)}
+    `, params).map((row) => String(row.key));
+    if (topRows.length === 0 || topColumns.length === 0) return [];
+
+    const rowCase = caseBucketExpression(rowExpression, topRows, '其他行');
+    const columnCase = caseBucketExpression(columnExpression, topColumns, '其他列');
+    return this.selectRows<AnalyticsMatrixRow>(`
+      with ranked as (
+        select ${rowCase} as row_key, ${columnCase} as column_key,
+          event_id, session_id, trace_id,
+          ${failedPredicate ? `case when ${failedPredicate} then 1 else 0 end` : '0'} as is_failed,
+          row_number() over (partition by ${rowCase}, ${columnCase} order by timestamp_ms desc, sequence desc) as rn
+        from events ${whereSql}
+      )
+      select row_key, column_key,
+        count(*) as count,
+        sum(is_failed) as failed,
+        max(case when rn = 1 then event_id end) as event_id,
+        max(case when rn = 1 then session_id end) as session_id,
+        max(case when rn = 1 then trace_id end) as trace_id
+      from ranked
+      group by row_key, column_key
+      order by count desc, row_key asc, column_key asc
+      limit 120
+    `, params).map(analyticsMatrixFromRow);
+  }
+
+  private httpDurationPercentiles(whereSql: string, params: SqlParam[]): { p50Ms?: number; p95Ms?: number } {
+    const durations = this.selectRows<{ http_duration_ms?: number }>(`
+      select http_duration_ms from events ${appendWhere(whereSql, 'http_duration_ms is not null')}
+      order by http_duration_ms asc
+      limit 5000
+    `, params)
+      .map((row) => optionalNumeric(row.http_duration_ms))
+      .filter((value): value is number => value !== undefined);
+    if (durations.length === 0) return {};
+    return {
+      p50Ms: percentile(durations, 0.5),
+      p95Ms: percentile(durations, 0.95),
+    };
+  }
+
+  private analyticsAttention(whereSql: string, params: SqlParam[], limit: number, predicate?: string): AnalyticsAttentionItem[] {
+    const issuePredicate = predicate ?? "((http_completed = 1 and (http_success = 0 or status = 'error')) or catalog_problem_kind in ('error', 'business_failure'))";
+    const scopedWhere = appendWhere(whereSql, issuePredicate);
+    const groupKey = `
+      case
+        when http_completed = 1 then 'http:' || coalesce(http_method, '') || ' ' || coalesce(http_url, '未知端点')
+        when catalog_problem_kind = 'business_failure' or business_result = 'failed' then 'business:' || coalesce(business_action, '业务失败')
+        else 'error:' || coalesce(error_type, business_action, error_message, '未知异常')
+      end
+    `;
+    return this.selectRows<AnalyticsAttentionRow>(`
+      with ranked as (
+        select ${groupKey} as group_key,
+          event_id, session_id, trace_id, timestamp_ms, route, http_method, http_url, http_status_code,
+          business_action, business_result, error_type, error_message, catalog_problem_kind,
+          row_number() over (partition by ${groupKey} order by timestamp_ms desc, sequence desc) as rn
+        from events ${scopedWhere}
+      ),
+      aggregated as (
+        select group_key,
+          count(*) as count,
+          count(distinct session_id) as affected_sessions,
+          max(timestamp_ms) as timestamp_ms,
+          max(case when rn = 1 then event_id end) as event_id,
+          max(case when rn = 1 then session_id end) as session_id,
+          max(case when rn = 1 then trace_id end) as trace_id,
+          max(case when rn = 1 then route end) as route,
+          max(case when rn = 1 then http_method end) as http_method,
+          max(case when rn = 1 then http_url end) as http_url,
+          max(case when rn = 1 then http_status_code end) as http_status_code,
+          max(case when rn = 1 then business_action end) as business_action,
+          max(case when rn = 1 then business_result end) as business_result,
+          max(case when rn = 1 then error_type end) as error_type,
+          max(case when rn = 1 then error_message end) as error_message,
+          max(case when rn = 1 then catalog_problem_kind end) as catalog_problem_kind
+        from ranked
+        group by group_key
+      )
+      select event_id, session_id, trace_id, timestamp_ms, route, http_method, http_url, http_status_code,
+        business_action, business_result, error_type, error_message, catalog_problem_kind, count, affected_sessions
+      from aggregated
+      order by count desc, affected_sessions desc, timestamp_ms desc
+      limit ${Math.min(Math.max(limit, 1), 50)}
+    `, params).map(analyticsAttentionFromRow);
   }
 
   dimensions(filters: EventFilters, options: { q?: string; limit?: number } = {}): DimensionSummary {
@@ -1266,6 +1802,121 @@ function booleanSqlValue(value: boolean | undefined): number | null {
 function withoutPaging(filters: EventFilters): EventFilters {
   const { limit: _limit, offset: _offset, ...rest } = filters;
   return rest;
+}
+
+function appendWhere(whereSql: string, predicate: string): string {
+  return `${whereSql} ${whereSql ? 'and' : 'where'} ${predicate}`.trim();
+}
+
+function numeric(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function optionalNumeric(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function parsedTimestamp(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function analyticsBucketFor(fromMs: number | undefined, toMs: number | undefined): AnalyticsRange['bucket'] {
+  if (fromMs === undefined || toMs === undefined) return 'day';
+  const span = Math.max(toMs - fromMs, 0);
+  if (span <= 48 * 60 * 60 * 1000) return 'hour';
+  if (span <= 120 * 24 * 60 * 60 * 1000) return 'day';
+  if (span <= 2 * 365 * 24 * 60 * 60 * 1000) return 'week';
+  return 'month';
+}
+
+function analyticsBucketMs(bucket: AnalyticsRange['bucket']): number {
+  if (bucket === 'hour') return 60 * 60 * 1000;
+  if (bucket === 'day') return 24 * 60 * 60 * 1000;
+  if (bucket === 'week') return 7 * 24 * 60 * 60 * 1000;
+  return 30 * 24 * 60 * 60 * 1000;
+}
+
+function publicAnalyticsRange(range: ResolvedAnalyticsRange): AnalyticsRange {
+  return {
+    from: range.from,
+    to: range.to,
+    bucket: range.bucket,
+    generatedAt: range.generatedAt,
+  };
+}
+
+function analyticsGroupFromRow(row: AnalyticsGroupRow): AnalyticsGroupItem {
+  return {
+    key: String(row.key ?? '未知'),
+    count: numeric(row.count),
+    failed: optionalNumeric(row.failed),
+    averageMs: optionalNumeric(row.average_ms),
+    maxMs: optionalNumeric(row.max_ms),
+    eventId: row.event_id || undefined,
+    sessionId: row.session_id || undefined,
+    traceId: row.trace_id || undefined,
+    route: row.route || undefined,
+  };
+}
+
+function analyticsMatrixFromRow(row: AnalyticsMatrixRow): AnalyticsMatrixCell {
+  return {
+    row: String(row.row_key ?? '未知'),
+    column: String(row.column_key ?? '未知'),
+    count: numeric(row.count),
+    failed: optionalNumeric(row.failed),
+    eventId: row.event_id || undefined,
+    sessionId: row.session_id || undefined,
+    traceId: row.trace_id || undefined,
+  };
+}
+
+function analyticsAttentionFromRow(row: AnalyticsAttentionRow): AnalyticsAttentionItem {
+  const domain: AnalyticsAttentionItem['domain'] = row.http_url || row.http_method
+    ? 'http'
+    : row.catalog_problem_kind === 'business_failure'
+      ? 'business'
+      : 'error';
+  const title = domain === 'http'
+    ? `${row.http_method ?? 'HTTP'} ${row.http_url ?? '未知端点'}`
+    : domain === 'business'
+      ? row.business_action ?? '业务失败'
+      : row.error_type ?? row.error_message ?? '未知异常';
+  const detail = domain === 'http'
+    ? (row.http_status_code === undefined ? '请求失败' : `HTTP ${row.http_status_code}`)
+    : domain === 'business'
+      ? row.business_result ?? 'failed'
+      : row.error_message;
+  return {
+    domain,
+    eventId: row.event_id,
+    sessionId: row.session_id,
+    traceId: row.trace_id,
+    timestamp: row.timestamp_ms === undefined ? undefined : new Date(row.timestamp_ms).toISOString(),
+    title,
+    detail,
+    route: row.route,
+    count: numeric(row.count ?? 1),
+    affectedSessions: numeric(row.affected_sessions ?? (row.session_id ? 1 : 0)),
+  };
+}
+
+function caseBucketExpression(expression: string, allowed: string[], otherLabel: string): string {
+  if (allowed.length === 0) return `'${escapeSqlLiteral(otherLabel)}'`;
+  const whens = allowed.map((value) => `when ${expression} = '${escapeSqlLiteral(value)}' then '${escapeSqlLiteral(value)}'`).join(' ');
+  return `case ${whens} else '${escapeSqlLiteral(otherLabel)}' end`;
+}
+
+function escapeSqlLiteral(value: string): string {
+  return value.replaceAll("'", "''");
+}
+
+function percentile(sorted: number[], ratio: number): number | undefined {
+  if (sorted.length === 0) return undefined;
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return sorted[index];
 }
 
 function groupColumn(by: string): string {

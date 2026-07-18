@@ -10,7 +10,7 @@ Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用�
 
 ```text
 一级导航（仅文字，无 Icon）
-  大屏        /
+  概览        /
   Session     /sessions
   HTTP        /http
   埋点        /business
@@ -34,13 +34,17 @@ Session 为一级入口：列表在 `/sessions`，链路工作区在 `/sessions/
 
 ### 范围筛选（Scope）
 
-大屏、Session 列表、HTTP、埋点、异常顶部共用 Scope：
+Session、HTTP、埋点、异常顶部共用排查 Scope：
 
 - 时间 `from` / `to`
 - `userId`、`sessionId`（真实候选 Combobox）
 - `appVersion`、`environment`、`route` 等资源 / 上下文维度
 
 筛选同步到 URL，并在本地持久化；一级导航跳转时携带 Scope（`pickScopeSearch`）。文本类筛大约 300ms debounce，清空立即重置。
+
+Catalog 的时间是排查条件，默认全部时间，即 URL 不写 `from` / `to`。近 24 小时、某天、近 7 天、近 30 天和自定义范围最终解析为固定 `from` / `to`，保证列表、详情和手动刷新时口径可复现。
+
+概览不展示时间控件，也不消费 URL 或持久化 Scope 中的 `from` / `to`。概览始终覆盖当前保留数据，只保留应用、版本、环境、平台、路由等维度；响应使用 `resolvedRange` 说明实际数据跨度和快照时间。图表时间桶点击可以把桶的 `from` / `to` 作为一次性下钻条件带入 Catalog，但不会写回概览状态。
 
 ### Catalog 模式
 
@@ -118,15 +122,24 @@ HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时
 
 ---
 
-## 大屏
+## 概览
 
-路径：`/`。在当前 Scope 内看启动 / HTTP / 埋点 / 异常是否异常，并钻进列表或 Session。
+路径：`/`。概览是完整的监控驾驶舱，在当前维度 Scope 内统一观察启动、页面、Session、HTTP、埋点和异常，并直接进入 Catalog、事件详情或 Session 工作区。
 
-能力包括：四类 KPI 卡、质量趋势、HTTP 健康、埋点结果趋势、业务动作排行、启动趋势、最近问题列表。图表点位可带时间桶或类型预筛进入对应 Catalog；启动相关可落到带 `eventId` 的 Session。
+内容使用长页 Dashboard 编排：
+
+1. 启动质量、HTTP 请求、页面体验、稳定性四类彩色 KPI。
+2. 启动与页面体验趋势、HTTP 健康与耗时分布、Session 健康。
+3. 埋点动作排行、页面路由排行、异常类型与版本 / 环境质量对比。
+4. 最近问题列表与可回查的 Session 链路时间线。
+
+每个图表必须有 hover tooltip、图例反馈和点击反馈。点击分类、扇区、柱或时间桶后直接进入对应 Catalog；代表事件直接进入独立详情或带 `eventId` / `traceId` 的 Session 工作区，不经过领域分析页。
+
+Session KPI 表示范围内至少有一条事件的去重 Session 数，界面文案使用「活跃 Session」。异常保持现有 Catalog 口径，即稳定性错误与业务失败的无重复并集，并排除 completed HTTP；业务失败同时出现在埋点失败统计与异常集合中，界面必须明确标注，不能把四个领域数量相加为总事件量。
 
 默认不展示内存、帧数、jank、native。主标签避免直接使用 p50 / p95 等术语。
 
-**当前局限：** 视觉与布局仍偏糙；部分跳转未统一走路由 Link；不是 Session 中枢，与会话列表的关联弱。
+概览图表使用查询快照与手动刷新，不要求 SSE 驱动实时动画。响应展示 `generatedAt`；Catalog 与 Session 继续使用现有 Live 失效机制。旧 `/sessions/analytics`、`/http/analytics`、`/business/analytics`、`/errors/analytics` 只保留兼容重定向，分别回到对应 Catalog。
 
 ---
 
@@ -154,7 +167,7 @@ HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时
 
 不做告警规则引擎或订阅推送。
 
-**当前局限：** 详情页精修程度低于 HTTP；与大屏「最近问题」的联动仍浅。
+**当前局限：** 详情页精修程度低于 HTTP；与概览「最近问题」的联动仍浅。
 
 ---
 
@@ -174,7 +187,7 @@ HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时
 
 - 一级导航 Session → 列表 → 工作区
 - 各 Catalog 的 Preview / 行菜单「查看 Session」
-- 大屏启动类下钻（携带可回查 `eventId`）
+- 概览启动类下钻（携带可回查 `eventId`）
 
 ### 当前界面
 

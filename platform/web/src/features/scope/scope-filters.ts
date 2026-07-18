@@ -103,6 +103,13 @@ export function pickScopeSearch(search: unknown): Record<string, unknown> {
   return scopeToSearch(filters);
 }
 
+export function pickDimensionScopeSearch(search: unknown): Record<string, unknown> {
+  const next = pickScopeSearch(search);
+  delete next.from;
+  delete next.to;
+  return next;
+}
+
 export function scopeToSearch(filters: ScopeFilters): Record<string, unknown> {
   const entries = Object.entries(filters).map(([key, value]) => [
     key,

@@ -21,6 +21,7 @@ export type ScopeSearch = {
   sessionId?: string;
   appVersion?: string;
   environment?: string;
+  devicePlatform?: string;
   route?: string;
 };
 
@@ -28,10 +29,12 @@ export function ScopeFilterBar({
   search,
   dimensions,
   onPatch,
+  showTime = true,
 }: {
   search: ScopeSearch;
   dimensions?: DimensionSummary;
   onPatch: (patch: Partial<ScopeSearch>, resetPage?: boolean) => void;
+  showTime?: boolean;
 }) {
   const mobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -47,32 +50,38 @@ export function ScopeFilterBar({
   const sessionId = list(search.sessionId);
   const appVersion = list(search.appVersion);
   const environment = list(search.environment);
+  const devicePlatform = list(search.devicePlatform);
   const route = list(search.route);
 
   const scope = {
-    from: search.from,
-    to: search.to,
+    from: showTime ? search.from : undefined,
+    to: showTime ? search.to : undefined,
     appKey,
     packageName,
     appVersion,
     environment,
+    devicePlatform,
     route,
   };
   const userSuggestions = useDimensionsQuery(scope, debouncedUser);
   const sessionSuggestions = useDimensionsQuery(scope, debouncedSession);
 
   useEffect(() => {
-    persistScopeFilters(search);
-  }, [search]);
+    persistScopeFilters(showTime ? search : { ...search, from: undefined, to: undefined });
+  }, [search, showTime]);
 
   useEffect(() => {
     if (hydrated.current) return;
     hydrated.current = true;
     if (hasActiveScope(readScopeFilters(search))) return;
     const stored = loadPersistedScopeSearch();
+    if (!showTime) {
+      delete stored.from;
+      delete stored.to;
+    }
     if (Object.keys(stored).length === 0) return;
     onPatch(stored as Partial<ScopeSearch>, true);
-  }, [onPatch, search]);
+  }, [onPatch, search, showTime]);
 
   useEffect(() => {
     if (userId?.length === 1) setUserQuery(userId[0]);
@@ -87,7 +96,7 @@ export function ScopeFilterBar({
     onPatch({ [key]: values?.length ? values.join(',') : undefined } as Partial<ScopeSearch>, true);
   }
 
-  const controls = (
+  const primaryControls = (
     <>
       <MultiSelect
         ariaLabel="应用"
@@ -96,36 +105,6 @@ export function ScopeFilterBar({
         options={(dimensions?.apps ?? []).map(appOption)}
         onChange={(values) => patchList('appKey', values)}
         className="w-full sm:w-40"
-      />
-      <MultiSelect
-        ariaLabel="包名"
-        placeholder="全部包名"
-        values={packageName}
-        options={dimensionOptions(dimensions?.packageNames)}
-        onChange={(values) => patchList('packageName', values)}
-        className="w-full sm:w-44"
-      />
-      <MultiCombobox
-        label="用户 ID"
-        values={userId}
-        query={userQuery}
-        options={userSuggestions.data?.userIds ?? []}
-        loading={userSuggestions.isFetching}
-        error={userSuggestions.isError}
-        onQueryChange={setUserQuery}
-        onChange={(values) => patchList('userId', values)}
-        className="w-full sm:w-40"
-      />
-      <MultiCombobox
-        label="Session ID"
-        values={sessionId}
-        query={sessionQuery}
-        options={sessionSuggestions.data?.sessionIds ?? []}
-        loading={sessionSuggestions.isFetching}
-        error={sessionSuggestions.isError}
-        onQueryChange={setSessionQuery}
-        onChange={(values) => patchList('sessionId', values)}
-        className="w-full sm:w-44"
       />
       <MultiSelect
         ariaLabel="版本"
@@ -143,66 +122,119 @@ export function ScopeFilterBar({
         onChange={(values) => patchList('environment', values)}
         className="w-full sm:w-32"
       />
+    </>
+  );
+
+  const secondaryControls = (
+    <>
+      <MultiSelect
+        ariaLabel="包名"
+        placeholder="全部包名"
+        values={packageName}
+        options={dimensionOptions(dimensions?.packageNames)}
+        onChange={(values) => patchList('packageName', values)}
+        className="w-full"
+      />
+      <MultiCombobox
+        label="用户 ID"
+        values={userId}
+        query={userQuery}
+        options={userSuggestions.data?.userIds ?? []}
+        loading={userSuggestions.isFetching}
+        error={userSuggestions.isError}
+        onQueryChange={setUserQuery}
+        onChange={(values) => patchList('userId', values)}
+        className="w-full"
+      />
+      <MultiCombobox
+        label="Session ID"
+        values={sessionId}
+        query={sessionQuery}
+        options={sessionSuggestions.data?.sessionIds ?? []}
+        loading={sessionSuggestions.isFetching}
+        error={sessionSuggestions.isError}
+        onQueryChange={setSessionQuery}
+        onChange={(values) => patchList('sessionId', values)}
+        className="w-full"
+      />
+      <MultiSelect
+        ariaLabel="平台"
+        placeholder="全部平台"
+        values={devicePlatform}
+        options={dimensionOptions(dimensions?.devicePlatforms)}
+        onChange={(values) => patchList('devicePlatform', values)}
+        className="w-full"
+      />
       <MultiSelect
         ariaLabel="路由"
         placeholder="全部路由"
         values={route}
         options={dimensionOptions(dimensions?.routes)}
         onChange={(values) => patchList('route', values)}
-        className="w-full sm:w-40"
+        className="w-full"
       />
     </>
   );
+  const secondaryCount = [packageName, userId, sessionId, devicePlatform, route]
+    .filter((values) => values?.length).length;
 
   return (
     <section aria-label="范围筛选" className="flex min-w-0 items-center gap-2 border-b bg-background px-3 py-2">
-      <DateRangePicker
-        from={search.from}
-        to={search.to}
-        onChange={(value) => onPatch(value, true)}
-        className="shrink-0"
-      />
+      {showTime ? (
+        <DateRangePicker
+          from={search.from}
+          to={search.to}
+          onChange={(value) => onPatch(value, true)}
+          className="shrink-0"
+        />
+      ) : null}
       {mobile ? (
-        <>
-          <Button variant="outline" className="ml-auto" onClick={() => setSheetOpen(true)}>
-            <SlidersHorizontal data-icon="inline-start" />
-            筛选
-          </Button>
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>范围筛选</SheetTitle>
-                <SheetDescription>应用、包名、用户、Session、版本、环境与路由</SheetDescription>
-              </SheetHeader>
-              <div className="flex flex-col gap-3">
-                {controls}
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    onPatch({
-                      appKey: undefined,
-                      packageName: undefined,
-                      userId: undefined,
-                      sessionId: undefined,
-                      appVersion: undefined,
-                      environment: undefined,
-                      route: undefined,
-                    }, true);
-                    setSheetOpen(false);
-                  }}
-                >
-                  <X data-icon="inline-start" />
-                  清除范围筛选
-                </Button>
-              </div>
-            </SheetContent>
-          </Sheet>
-        </>
+        <Button variant="outline" className="ml-auto" onClick={() => setSheetOpen(true)}>
+          <SlidersHorizontal data-icon="inline-start" />
+          筛选{secondaryCount ? ` (${secondaryCount})` : ''}
+        </Button>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-          {controls}
-        </div>
+        <>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {primaryControls}
+          </div>
+          <Button variant="outline" className="shrink-0" onClick={() => setSheetOpen(true)}>
+            <SlidersHorizontal data-icon="inline-start" />
+            更多筛选{secondaryCount ? ` (${secondaryCount})` : ''}
+          </Button>
+        </>
       )}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent>
+          <SheetHeader>
+          <SheetTitle>{showTime ? '总范围筛选' : '维度筛选'}</SheetTitle>
+          <SheetDescription>{showTime ? '总筛选会持续作用于列表与详情。' : '概览按应用、版本、环境与链路维度观察。'}</SheetDescription>
+          </SheetHeader>
+          <div className="flex flex-col gap-3">
+            {mobile ? primaryControls : null}
+            {secondaryControls}
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onPatch({
+                  appKey: undefined,
+                  packageName: undefined,
+                  userId: undefined,
+                  sessionId: undefined,
+                  appVersion: undefined,
+                  environment: undefined,
+                  devicePlatform: undefined,
+                  route: undefined,
+                }, true);
+                setSheetOpen(false);
+              }}
+            >
+              <X data-icon="inline-start" />
+              清除维度筛选
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </section>
   );
 }

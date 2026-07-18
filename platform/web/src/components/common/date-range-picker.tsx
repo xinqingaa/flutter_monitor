@@ -28,6 +28,7 @@ export function DateRangePicker({
   label?: string;
 }) {
   const mobile = useIsMobile();
+  const fieldId = React.useId();
   const [date, setDate] = React.useState<DateRange | undefined>(() => rangeFromProps(from, to));
 
   React.useEffect(() => {
@@ -36,13 +37,13 @@ export function DateRangePicker({
 
   return (
     <Field className={cn('w-auto gap-0', className)}>
-      <FieldLabel htmlFor="date-picker-range" className="sr-only">
+      <FieldLabel htmlFor={fieldId} className="sr-only">
         {label}
       </FieldLabel>
       <Popover>
         <PopoverTrigger asChild>
           <Button
-            id="date-picker-range"
+            id={fieldId}
             variant="outline"
             className="min-w-60 justify-start px-2.5 font-normal"
           >
@@ -61,6 +62,23 @@ export function DateRangePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
+          <div className="flex flex-wrap gap-1 border-b p-2">
+            <Button type="button" size="sm" variant="ghost" onClick={() => {
+              setDate(undefined);
+              onChange({ from: undefined, to: undefined });
+            }}>
+              全部时间
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => commitRecentRange(24, setDate, onChange)}>
+              近 24 小时
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => commitRecentRange(24 * 7, setDate, onChange)}>
+              近 7 天
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => commitRecentRange(24 * 30, setDate, onChange)}>
+              近 30 天
+            </Button>
+          </div>
           <Calendar
             mode="range"
             defaultMonth={date?.from}
@@ -104,4 +122,15 @@ function startOfDay(value: Date) {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
   return date;
+}
+
+function commitRecentRange(
+  hours: number,
+  setDate: React.Dispatch<React.SetStateAction<DateRange | undefined>>,
+  onChange: (value: { from?: string; to?: string }) => void,
+) {
+  const to = new Date();
+  const from = new Date(to.getTime() - hours * 60 * 60 * 1000);
+  setDate({ from, to });
+  onChange({ from: from.toISOString(), to: to.toISOString() });
 }
