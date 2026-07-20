@@ -1,13 +1,5 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import {
-  AlertTriangle,
-  GitBranch,
-  LayoutDashboard,
-  MousePointerClick,
-  Network,
-  RefreshCw,
-  type LucideIcon,
-} from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type * as React from 'react';
 import { useState } from 'react';
 import {
@@ -26,6 +18,7 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -41,18 +34,13 @@ import { useLiveInvalidation } from '../shared/datasource/queries';
 import { pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
-const nav: Array<{
-  to: '/' | '/sessions' | '/http' | '/business' | '/errors';
-  label: string;
-  icon: LucideIcon;
-  match: (pathname: string) => boolean;
-}> = [
-  { to: '/', label: '大屏', icon: LayoutDashboard, match: (pathname) => pathname === '/' },
-  { to: '/sessions', label: 'Session', icon: GitBranch, match: (pathname) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
-  { to: '/http', label: 'HTTP', icon: Network, match: (pathname) => pathname === '/http' || pathname.startsWith('/http/') },
-  { to: '/business', label: '埋点', icon: MousePointerClick, match: (pathname) => pathname === '/business' || pathname.startsWith('/business/') },
-  { to: '/errors', label: '异常', icon: AlertTriangle, match: (pathname) => pathname === '/errors' || pathname.startsWith('/errors/') },
-];
+const nav = [
+  { to: '/', label: '概览', match: (pathname: string) => pathname === '/' },
+  { to: '/sessions', label: 'Session', match: (pathname: string) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
+  { to: '/http', label: 'HTTP', match: (pathname: string) => pathname === '/http' || pathname.startsWith('/http/') },
+  { to: '/business', label: '埋点', match: (pathname: string) => pathname === '/business' || pathname.startsWith('/business/') },
+  { to: '/errors', label: '异常', match: (pathname: string) => pathname === '/errors' || pathname.startsWith('/errors/') },
+] as const;
 
 export function WorkbenchShell() {
   const router = useRouter();
@@ -60,6 +48,7 @@ export function WorkbenchShell() {
   const [live, setLive] = useState(true);
   useLiveInvalidation(live);
   const page = pageMeta(location.pathname);
+  const scopeSearch = pickScopeSearch(location.search);
 
   return (
     <SidebarProvider
@@ -72,12 +61,12 @@ export function WorkbenchShell() {
         } as React.CSSProperties
       }
     >
-      <Sidebar collapsible="icon" variant="inset">
+      <Sidebar collapsible="offcanvas" variant="inset">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild tooltip="Flutter Monitor">
-                <Link to="/">
+                <Link to="/" search={scopeSearch}>
                   <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                     <img src="/logo.png" alt="Flutter Monitor" className="size-6" />
                   </span>
@@ -95,7 +84,7 @@ export function WorkbenchShell() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {nav.map(({ to, label, icon: Icon, match }) => (
+                {nav.map(({ to, label, match }) => (
                   <SidebarMenuItem key={to}>
                     <SidebarMenuButton
                       asChild
@@ -103,7 +92,6 @@ export function WorkbenchShell() {
                       tooltip={label}
                     >
                       <Link to={to} search={(current) => pickScopeSearch(current)}>
-                        <Icon />
                         <span>{label}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -117,29 +105,29 @@ export function WorkbenchShell() {
       </Sidebar>
 
       <SidebarInset className="h-full min-h-0 min-w-0 overflow-hidden">
-        <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 border-b px-4">
+        <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear">
           <SidebarTrigger aria-label="切换导航" />
           <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb className="min-w-0 flex-1">
             <BreadcrumbList className="flex-nowrap">
               <BreadcrumbItem className="hidden md:block">
                 <BreadcrumbLink asChild>
-                  <Link to="/" search={(current) => pickScopeSearch(current)}>
-                    Workbench
-                  </Link>
+                  <Link to="/" search={scopeSearch}>Workbench</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
+              {page.parent ? (
+                <>
+                  <BreadcrumbItem className="min-w-0">
+                    <BreadcrumbLink asChild>
+                      <Link to={page.parent.to} search={scopeSearch}>{page.parent.label}</Link>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                </>
+              ) : null}
               <BreadcrumbItem className="min-w-0">
-                {page.listTo && page.detail ? (
-                  <BreadcrumbLink asChild className="truncate">
-                    <Link to={page.listTo} search={(current) => pickScopeSearch(current)}>
-                      {page.title}
-                    </Link>
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage className="truncate">{page.title}</BreadcrumbPage>
-                )}
+                <BreadcrumbPage className="truncate">{page.title}</BreadcrumbPage>
               </BreadcrumbItem>
               {page.detail ? (
                 <>
@@ -181,38 +169,25 @@ export function WorkbenchShell() {
   );
 }
 
-function pageMeta(pathname: string): { title: string; detail?: string; listTo?: '/' | '/sessions' | '/http' | '/business' | '/errors' } {
-  if (pathname === '/') return { title: '大屏' };
+type BreadcrumbPath = '/' | '/sessions' | '/http' | '/business' | '/errors';
+type PageMeta = { title: string; detail?: string; parent?: { label: string; to: BreadcrumbPath } };
+
+function pageMeta(pathname: string): PageMeta {
+  if (pathname === '/') return { title: '概览' };
   if (pathname === '/sessions') return { title: 'Session' };
   if (pathname.startsWith('/sessions/')) {
-    return {
-      title: 'Session',
-      detail: decodeURIComponent(pathname.slice('/sessions/'.length)),
-      listTo: '/sessions',
-    };
+    return { title: 'Session 链路', detail: decodeURIComponent(pathname.slice('/sessions/'.length)), parent: { label: 'Session', to: '/sessions' } };
   }
   if (pathname.startsWith('/http/')) {
-    return {
-      title: 'HTTP',
-      detail: decodeURIComponent(pathname.slice('/http/'.length)),
-      listTo: '/http',
-    };
+    return { title: 'HTTP 详情', detail: decodeURIComponent(pathname.slice('/http/'.length)), parent: { label: 'HTTP', to: '/http' } };
   }
   if (pathname.startsWith('/http')) return { title: 'HTTP' };
   if (pathname.startsWith('/business/')) {
-    return {
-      title: '埋点',
-      detail: decodeURIComponent(pathname.slice('/business/'.length)),
-      listTo: '/business',
-    };
+    return { title: '埋点详情', detail: decodeURIComponent(pathname.slice('/business/'.length)), parent: { label: '埋点', to: '/business' } };
   }
   if (pathname.startsWith('/business')) return { title: '埋点' };
   if (pathname.startsWith('/errors/')) {
-    return {
-      title: '异常',
-      detail: decodeURIComponent(pathname.slice('/errors/'.length)),
-      listTo: '/errors',
-    };
+    return { title: '异常详情', detail: decodeURIComponent(pathname.slice('/errors/'.length)), parent: { label: '异常', to: '/errors' } };
   }
   if (pathname.startsWith('/errors')) return { title: '异常' };
   if (pathname.startsWith('/traces/')) {

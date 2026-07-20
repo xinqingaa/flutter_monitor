@@ -12,18 +12,20 @@ const PROBLEM_TYPES: DimensionOption[] = [
   { value: 'memory_leak_suspect', count: 0 },
 ];
 
-export function appOption(app: DimensionAppOption): { value: string; label: string } {
+export function appOption(app: DimensionAppOption): { value: string; label: string; triggerLabel: string } {
   const name = app.appName ? `${app.appName} ` : '';
   return {
     value: app.appKey,
     label: `${name}${app.appKey} (${app.eventCount})`,
+    triggerLabel: app.appName || app.appKey,
   };
 }
 
-export function dimensionOptions(options?: DimensionOption[]): Array<{ value: string; label: string }> {
+export function dimensionOptions(options?: DimensionOption[]): Array<{ value: string; label: string; triggerLabel: string }> {
   return (options ?? []).map((option) => ({
     value: option.value,
     label: `${option.value} (${option.count})`,
+    triggerLabel: option.value,
   }));
 }
 

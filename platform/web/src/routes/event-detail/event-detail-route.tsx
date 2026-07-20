@@ -24,17 +24,15 @@ export function EventDetailRoute() {
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 p-2">
       <div className="flex items-center justify-between">
         {event?.sessionId ? (
-          <Button asChild variant="secondary">
+          <Button asChild variant="outline" size="icon" aria-label="返回会话">
             <Link to="/sessions/$sessionId" params={{ sessionId: event.sessionId }} search={(current) => pickScopeSearch(current)}>
-              <ArrowLeft className="size-4" />
-              返回会话
+              <ArrowLeft />
             </Link>
           </Button>
         ) : (
-          <Button asChild variant="secondary">
+          <Button asChild variant="outline" size="icon" aria-label="返回首页">
             <Link to="/">
-              <ArrowLeft className="size-4" />
-              返回首页
+              <ArrowLeft />
             </Link>
           </Button>
         )}

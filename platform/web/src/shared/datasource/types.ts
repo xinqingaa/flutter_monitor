@@ -461,6 +461,149 @@ export interface FailureTimeseries { from: string; to: string; bucket: Timeserie
 export interface BusinessActionSummaryItem { action: string; total: number; failed: number; eventId?: string; sessionId?: string; }
 export interface BusinessActionSummary { items: BusinessActionSummaryItem[]; }
 
+export type AnalyticsBucket = 'hour' | 'day' | 'week' | 'month';
+
+export interface AnalyticsRange {
+  from?: string;
+  to?: string;
+  bucket: AnalyticsBucket;
+  generatedAt: string;
+}
+
+export interface AnalyticsPoint {
+  from: string;
+  to: string;
+  activeSessions: number;
+  httpTotal: number;
+  httpFailed: number;
+  businessTotal: number;
+  businessFailed: number;
+  businessCancelled: number;
+  errors: number;
+}
+
+export interface AnalyticsGroupItem {
+  key: string;
+  count: number;
+  failed?: number;
+  averageMs?: number;
+  maxMs?: number;
+  eventId?: string;
+  sessionId?: string;
+  traceId?: string;
+  route?: string;
+}
+
+export interface AnalyticsMatrixCell {
+  row: string;
+  column: string;
+  count: number;
+  failed?: number;
+  eventId?: string;
+  sessionId?: string;
+  traceId?: string;
+}
+
+export interface AnalyticsAttentionItem {
+  domain: 'http' | 'business' | 'error' | 'session';
+  eventId: string;
+  sessionId?: string;
+  traceId?: string;
+  timestamp?: string;
+  title: string;
+  detail?: string;
+  route?: string;
+  count: number;
+  affectedSessions: number;
+}
+
+export interface OverviewAnalytics {
+  resolvedRange: AnalyticsRange;
+  kpis: {
+    activeSessions: number;
+    problemSessions: number;
+    httpTotal: number;
+    httpFailed: number;
+    httpSlow: number;
+    businessTotal: number;
+    businessFailed: number;
+    businessCancelled: number;
+    errors: number;
+    affectedSessions: number;
+  };
+  points: AnalyticsPoint[];
+  sessionHealth: AnalyticsGroupItem[];
+  httpStatuses: AnalyticsGroupItem[];
+  businessActions: AnalyticsGroupItem[];
+  errorTypes: AnalyticsGroupItem[];
+  attention: AnalyticsAttentionItem[];
+  startup: StartupPerformanceSummary;
+  pages: PagePerformanceSummary;
+  sessions: Pick<SessionAnalytics, 'activeSessions' | 'problemSessions' | 'averageDurationMs' | 'averageEventCount' | 'health' | 'durationDistribution' | 'eventCountDistribution' | 'routes'>;
+  http: Pick<HttpAnalytics, 'total' | 'failed' | 'slow' | 'affectedSessions' | 'averageMs' | 'p50Ms' | 'p95Ms' | 'maxMs' | 'statuses' | 'endpoints' | 'routes' | 'durationDistribution'>;
+  business: Pick<BusinessAnalytics, 'total' | 'failed' | 'cancelled' | 'affectedSessions' | 'actions' | 'routes'>;
+  errorsSummary: Pick<ErrorAnalytics, 'total' | 'affectedSessions' | 'fatal' | 'handled' | 'types' | 'mechanisms' | 'routes' | 'groups'>;
+}
+
+export interface SessionAnalytics {
+  resolvedRange: AnalyticsRange;
+  activeSessions: number;
+  problemSessions: number;
+  averageDurationMs?: number;
+  averageEventCount?: number;
+  points: AnalyticsPoint[];
+  health: AnalyticsGroupItem[];
+  durationDistribution: AnalyticsGroupItem[];
+  eventCountDistribution: AnalyticsGroupItem[];
+  routes: AnalyticsGroupItem[];
+  problems: AnalyticsAttentionItem[];
+}
+
+export interface HttpAnalytics {
+  resolvedRange: AnalyticsRange;
+  total: number;
+  failed: number;
+  slow: number;
+  affectedSessions: number;
+  averageMs?: number;
+  p50Ms?: number;
+  p95Ms?: number;
+  maxMs?: number;
+  points: AnalyticsPoint[];
+  statuses: AnalyticsGroupItem[];
+  endpoints: AnalyticsGroupItem[];
+  routes: AnalyticsGroupItem[];
+  durationDistribution: AnalyticsGroupItem[];
+  routeEndpointMatrix: AnalyticsMatrixCell[];
+}
+
+export interface BusinessAnalytics {
+  resolvedRange: AnalyticsRange;
+  total: number;
+  failed: number;
+  cancelled: number;
+  affectedSessions: number;
+  points: AnalyticsPoint[];
+  actions: AnalyticsGroupItem[];
+  routes: AnalyticsGroupItem[];
+  actionRouteMatrix: AnalyticsMatrixCell[];
+  failures: AnalyticsAttentionItem[];
+}
+
+export interface ErrorAnalytics {
+  resolvedRange: AnalyticsRange;
+  total: number;
+  affectedSessions: number;
+  fatal: number;
+  handled: number;
+  points: AnalyticsPoint[];
+  types: AnalyticsGroupItem[];
+  mechanisms: AnalyticsGroupItem[];
+  routes: AnalyticsGroupItem[];
+  groups: AnalyticsGroupItem[];
+  recent: AnalyticsAttentionItem[];
+}
+
 export interface SessionListResult {
   sessions: SessionSummary[];
   userIdAvailable: boolean;
@@ -492,6 +635,11 @@ export interface WorkbenchDatasource {
   performanceOverview(filters: SessionFilters): Promise<PerformanceOverview>;
   failureTimeseries(filters: SessionFilters, bucket?: TimeseriesBucket): Promise<FailureTimeseries>;
   businessActionSummary(filters: SessionFilters, limit?: number): Promise<BusinessActionSummary>;
+  analyticsOverview(filters: SessionFilters): Promise<OverviewAnalytics>;
+  analyticsSessions(filters: SessionFilters): Promise<SessionAnalytics>;
+  analyticsHttp(query: HttpCatalogQuery): Promise<HttpAnalytics>;
+  analyticsBusiness(query: BusinessCatalogQuery): Promise<BusinessAnalytics>;
+  analyticsErrors(query: ErrorCatalogQuery): Promise<ErrorAnalytics>;
   searchEvents(query: string, filters: SessionFilters): Promise<MonitorEvent[]>;
   subscribeEvents(onEvent: (event: MonitorEvent) => void): () => void;
 }

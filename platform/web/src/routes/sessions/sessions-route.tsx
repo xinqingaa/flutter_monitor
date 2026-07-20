@@ -99,6 +99,31 @@ export function SessionsRoute() {
         }}
       />
       <CatalogSplitLayout
+        main={(
+          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+            <SessionCatalogTable
+              items={items}
+              state={state}
+              selectedId={search.selected}
+              onSelect={select}
+              onOpen={open}
+              onPeek={peek}
+              onRetry={() => void sessionsQuery.refetch()}
+            />
+            <CatalogPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
+              onPageSizeChange={(nextPageSize) => patch({
+                pageSize: nextPageSize,
+                page: undefined,
+                selected: undefined,
+                detail: undefined,
+              })}
+            />
+          </div>
+        )}
         preview={(
           <SessionPreviewPane
             item={selected}
@@ -108,29 +133,7 @@ export function SessionsRoute() {
             onPeek={() => selected && peek(selected)}
           />
         )}
-      >
-        <SessionCatalogTable
-          items={items}
-          state={state}
-          selectedId={search.selected}
-          onSelect={select}
-          onOpen={open}
-          onPeek={peek}
-          onRetry={() => void sessionsQuery.refetch()}
-        />
-        <CatalogPagination
-          page={page}
-          pageSize={pageSize}
-          total={total}
-          onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
-          onPageSizeChange={(nextPageSize) => patch({
-            pageSize: nextPageSize,
-            page: undefined,
-            selected: undefined,
-            detail: undefined,
-          })}
-        />
-      </CatalogSplitLayout>
+      />
       <SessionRecord
         open={Boolean(search.detail)}
         item={detailItem}

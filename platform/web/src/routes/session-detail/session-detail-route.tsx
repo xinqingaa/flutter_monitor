@@ -1,5 +1,5 @@
 import { Link, useParams, useSearch } from '@tanstack/react-router';
-import { GitBranch, ListTree, Search, X } from 'lucide-react';
+import { ArrowLeft, GitBranch, ListTree, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { EmptyState } from '../../components/common/empty-state';
 import { CollapsiblePanel, CollapsiblePanelAction, FloatingPanelToggle, useCollapsiblePanel } from '../../components/layout/collapsible-panel';
@@ -201,8 +201,10 @@ export function SessionDetailRoute() {
                 description="顶部范围已经排除了这个 session，链路和诊断内容不会展示。"
               />
               <div className="flex flex-wrap justify-center gap-2">
-                <Button asChild variant="secondary">
-                  <Link to="/sessions" search={(current) => pickScopeSearch(current)}>返回 Session 列表</Link>
+                <Button asChild variant="outline" size="icon" aria-label="返回 Session 列表">
+                  <Link to="/sessions" search={(current) => pickScopeSearch(current)}>
+                    <ArrowLeft />
+                  </Link>
                 </Button>
                 <Button asChild variant="default">
                   <Link to="/sessions/$sessionId" params={{ sessionId }}>清空顶部筛选</Link>

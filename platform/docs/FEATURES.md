@@ -15,7 +15,7 @@
 
 ```text
 一级
-  1. 大屏
+  1. 概览
   2. Session（列表 /sessions）
   3. HTTP
   4. 埋点
@@ -53,7 +53,7 @@
 
 ---
 
-## 1. 大屏
+## 1. 概览
 
 用户要完成的事：在当前筛选范围内，一眼看到启动 / HTTP / 埋点 / 异常是否异常，并钻进对应列表或 Session。
 
@@ -203,7 +203,7 @@
 
 ## 整站明确不做
 
-- 一级导航不沿用旧的独立 Pages / Problems / Startup 拆分（相关能力并入大屏或列表；Session 列表为一级入口）
+- 一级导航不沿用旧的独立 Pages / Problems / Startup 拆分（相关能力并入概览或列表；Session 列表为一级入口）
 - 默认主路径不展示内存 / 帧数 / jank / native
 - 列表行不内联 headers / body
 - raw JSON 不作为第一视觉入口
@@ -219,8 +219,8 @@
 - HTTP / 埋点 / 异常专用列表（或等价强过滤 + 分页）
 - 筛选：`http.request_id`、`http.method`、`http.status_code`、URL 模糊、Host、成败/慢、`business.action`、`business.result`、`error.type` / `error.mechanism`、fatal/handled
 - 业务码：ingest 时从响应 body 解析与 `data` 同级的 `code` 并索引
-- 大屏：埋点聚合；异常口径收口为 error + 业务失败
-- 大屏：质量、HTTP、埋点与启动时间分桶；Action TopN；代表事件均可通过 `eventId` 回查
+- 概览：埋点聚合；异常口径收口为 error + 业务失败
+- 概览：质量、HTTP、埋点与启动时间分桶；Action TopN；代表事件均可通过 `eventId` 回查
 - dimensions/suggest：按范围提供 `userId`、`sessionId`、`requestId` substring 候选
 
 ### 前端
@@ -243,5 +243,5 @@
 1. 共享筛选 + HTTP 列表 + HTTP 详情（含业务码服务端派生）
 2. 异常列表 + 详情
 3. 埋点列表 + 详情
-4. 大屏（核心四卡 + 钻列表）
+4. 概览（核心四卡 + 钻列表）
 5. Session 链路组装收口（从详情「查看会话」进入）

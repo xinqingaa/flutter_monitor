@@ -1,7 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { LocalWorkbenchDatasource } from './local-workbench-datasource';
-import type { BusinessCatalogQuery, ErrorCatalogQuery, EventListResult, HttpCatalogQuery, MonitorEvent, SessionFilters, SessionListResult, TimeseriesBucket } from './types';
+import type {
+  BusinessCatalogQuery,
+  ErrorCatalogQuery,
+  EventListResult,
+  HttpCatalogQuery,
+  MonitorEvent,
+  SessionFilters,
+  SessionListResult,
+  TimeseriesBucket,
+} from './types';
 
 export const datasource = new LocalWorkbenchDatasource();
 
@@ -20,6 +29,11 @@ export const queryKeys = {
   performance: (filters: SessionFilters) => ['performance', filters] as const,
   timeseries: (filters: SessionFilters, bucket?: TimeseriesBucket) => ['timeseries', filters, bucket] as const,
   businessActions: (filters: SessionFilters, limit: number) => ['businessActions', filters, limit] as const,
+  analyticsOverview: (filters: SessionFilters) => ['analyticsOverview', filters] as const,
+  analyticsSessions: (filters: SessionFilters) => ['analyticsSessions', filters] as const,
+  analyticsHttp: (query: HttpCatalogQuery) => ['analyticsHttp', query] as const,
+  analyticsBusiness: (query: BusinessCatalogQuery) => ['analyticsBusiness', query] as const,
+  analyticsErrors: (query: ErrorCatalogQuery) => ['analyticsErrors', query] as const,
   search: (query: string, filters: SessionFilters) => ['search', query, filters] as const,
 };
 
@@ -108,6 +122,41 @@ export function useBusinessActionSummaryQuery(filters: SessionFilters, limit = 8
   return useQuery({ queryKey: queryKeys.businessActions(filters, limit), queryFn: () => datasource.businessActionSummary(filters, limit) });
 }
 
+export function useAnalyticsOverviewQuery(filters: SessionFilters) {
+  return useQuery({
+    queryKey: queryKeys.analyticsOverview(filters),
+    queryFn: () => datasource.analyticsOverview(filters),
+  });
+}
+
+export function useAnalyticsSessionsQuery(filters: SessionFilters) {
+  return useQuery({
+    queryKey: queryKeys.analyticsSessions(filters),
+    queryFn: () => datasource.analyticsSessions(filters),
+  });
+}
+
+export function useAnalyticsHttpQuery(query: HttpCatalogQuery) {
+  return useQuery({
+    queryKey: queryKeys.analyticsHttp(query),
+    queryFn: () => datasource.analyticsHttp(query),
+  });
+}
+
+export function useAnalyticsBusinessQuery(query: BusinessCatalogQuery) {
+  return useQuery({
+    queryKey: queryKeys.analyticsBusiness(query),
+    queryFn: () => datasource.analyticsBusiness(query),
+  });
+}
+
+export function useAnalyticsErrorsQuery(query: ErrorCatalogQuery) {
+  return useQuery({
+    queryKey: queryKeys.analyticsErrors(query),
+    queryFn: () => datasource.analyticsErrors(query),
+  });
+}
+
 export function useSearchMutation() {
   return useMutation({
     mutationFn: ({ query, filters }: { query: string; filters: SessionFilters }) =>
@@ -131,6 +180,11 @@ export function useLiveInvalidation(enabled: boolean) {
       void queryClient.invalidateQueries({ queryKey: ['performance'] });
       void queryClient.invalidateQueries({ queryKey: ['timeseries'] });
       void queryClient.invalidateQueries({ queryKey: ['businessActions'] });
+      void queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
+      void queryClient.invalidateQueries({ queryKey: ['analyticsSessions'] });
+      void queryClient.invalidateQueries({ queryKey: ['analyticsHttp'] });
+      void queryClient.invalidateQueries({ queryKey: ['analyticsBusiness'] });
+      void queryClient.invalidateQueries({ queryKey: ['analyticsErrors'] });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.session(event.sessionId) });
       if (event.sessionId) void queryClient.invalidateQueries({ queryKey: queryKeys.sessionConsole(event.sessionId) });
       if (event.traceId) void queryClient.invalidateQueries({ queryKey: queryKeys.trace(event.traceId) });

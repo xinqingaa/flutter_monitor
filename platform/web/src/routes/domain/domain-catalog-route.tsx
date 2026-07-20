@@ -71,8 +71,16 @@ function DomainCatalog({ mode }: { mode: Mode }) {
     ?? (search.detail === selected?.eventId ? selected : undefined);
   const total = catalog.data?.total ?? 0;
   const hasDomainFilters = mode === 'business'
-    ? Boolean(search.action || search.result)
-    : Boolean(search.errorType || search.mechanism || search.fatal !== undefined || search.handled !== undefined || search.businessOnly);
+    ? Boolean(search.action || search.result || search.sessionId || search.route)
+    : Boolean(
+      search.errorType
+      || search.mechanism
+      || search.fatal !== undefined
+      || search.handled !== undefined
+      || search.businessOnly
+      || search.sessionId
+      || search.route,
+    );
 
   function patch(value: Partial<DomainSearch>, reset = false) {
     void navigate({
@@ -125,15 +133,48 @@ function DomainCatalog({ mode }: { mode: Mode }) {
       <DomainFilterBar
         mode={mode}
         search={search}
+        dimensions={dimensions.data}
         onPatch={patch}
         onReset={() => patch(
           mode === 'business'
-            ? { action: undefined, result: undefined }
-            : { errorType: undefined, mechanism: undefined, fatal: undefined, handled: undefined, businessOnly: undefined },
+            ? { action: undefined, result: undefined, sessionId: undefined, route: undefined }
+            : {
+              errorType: undefined,
+              mechanism: undefined,
+              fatal: undefined,
+              handled: undefined,
+              businessOnly: undefined,
+              sessionId: undefined,
+              route: undefined,
+            },
           true,
         )}
       />
       <CatalogSplitLayout
+        main={(
+          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+            <DomainTable
+              mode={mode}
+              items={items}
+              state={state}
+              selectedId={search.eventId}
+              sortBy={sortBy}
+              sortDir={sortDir}
+              onSort={toggleSort}
+              onSelect={select}
+              onOpen={open}
+              onPeek={peek}
+              onRetry={() => void catalog.refetch()}
+            />
+            <CatalogPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+              onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
+            />
+          </div>
+        )}
         preview={(
           <DomainPreview
             mode={mode}
@@ -142,28 +183,7 @@ function DomainCatalog({ mode }: { mode: Mode }) {
             onPeek={() => selected && peek(selected)}
           />
         )}
-      >
-        <DomainTable
-          mode={mode}
-          items={items}
-          state={state}
-          selectedId={search.eventId}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSort={toggleSort}
-          onSelect={select}
-          onOpen={open}
-          onPeek={peek}
-          onRetry={() => void catalog.refetch()}
-        />
-        <CatalogPagination
-          page={page}
-          pageSize={pageSize}
-          total={total}
-          onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
-          onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
-        />
-      </CatalogSplitLayout>
+      />
       <DomainRecord
         mode={mode}
         open={Boolean(search.detail)}
@@ -288,8 +308,8 @@ function businessColumns(
         </span>
       ),
     },
-    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     { accessorKey: 'route', header: CatalogLabels.route, cell: ({ row }) => <Truncated value={row.original.route} /> },
+    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     { accessorKey: 'userId', header: CatalogLabels.user, cell: ({ row }) => <Truncated value={row.original.userId} /> },
     { accessorKey: 'appVersion', header: CatalogLabels.version, cell: ({ row }) => row.original.appVersion ?? '-' },
     { accessorKey: 'sessionId', header: CatalogLabels.session, cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
@@ -346,7 +366,6 @@ function errorColumns(
         </div>
       ),
     },
-    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     {
       id: 'occurrenceCount',
       header: CatalogLabels.occurrenceCount,
@@ -358,6 +377,7 @@ function errorColumns(
     },
     { id: 'handledState', header: CatalogLabels.handledState, cell: ({ row }) => errorStateLabel(row.original) },
     { accessorKey: 'route', header: CatalogLabels.route, cell: ({ row }) => <Truncated value={row.original.route} /> },
+    { accessorKey: 'environment', header: CatalogLabels.environment, cell: ({ row }) => row.original.environment ?? '-' },
     { accessorKey: 'userId', header: CatalogLabels.user, cell: ({ row }) => <Truncated value={row.original.userId} /> },
     { accessorKey: 'appVersion', header: CatalogLabels.version, cell: ({ row }) => row.original.appVersion ?? '-' },
     { accessorKey: 'sessionId', header: CatalogLabels.session, cell: ({ row }) => <ShortId value={row.original.sessionId} /> },
@@ -403,9 +423,9 @@ function DomainPreview({ mode, item, onOpen, onPeek }: {
         ...(error?.occurrenceCount != null ? [{ label: CatalogLabels.occurrenceCount, value: error.occurrenceCount }] : []),
         ...(error?.summary ? [{ label: '形态', value: '聚合摘要' }] : []),
         { label: CatalogLabels.route, value: item.route ?? '-' },
+        { label: CatalogLabels.environment, value: item.environment ?? '-' },
         { label: CatalogLabels.user, value: item.userId ?? '-' },
         { label: CatalogLabels.version, value: item.appVersion ?? '-' },
-        { label: CatalogLabels.environment, value: item.environment ?? '-' },
         { label: CatalogLabels.time, value: formatDateTime(item.timestamp) },
       ] : undefined}
       ids={item ? [

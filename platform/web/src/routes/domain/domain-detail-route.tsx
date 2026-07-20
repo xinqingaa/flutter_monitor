@@ -36,10 +36,11 @@ function DomainDetailRoute({ mode }: { mode: 'business' | 'errors' }) {
         <div className="flex min-w-0 items-start gap-3">
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
+            aria-label="返回列表"
             onClick={() => void navigate({ to: listPath, search: (current) => pickScopeSearch(current) })}
           >
-            <ArrowLeft data-icon="inline-start" />
+            <ArrowLeft />
           </Button>
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold">{title}</h2>

@@ -76,6 +76,36 @@ export class QueryController {
     return this.queryService.search(query);
   }
 
+  @Get('analytics/overview')
+  @ApiOperation({ summary: 'Workbench 概览聚合' })
+  analyticsOverview(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.analyticsOverview(query);
+  }
+
+  @Get('analytics/sessions')
+  @ApiOperation({ summary: 'Session 分析聚合' })
+  analyticsSessions(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.analyticsSessions(query);
+  }
+
+  @Get('analytics/http')
+  @ApiOperation({ summary: 'HTTP 分析聚合' })
+  analyticsHttp(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.analyticsHttp(query);
+  }
+
+  @Get('analytics/business')
+  @ApiOperation({ summary: '埋点分析聚合' })
+  analyticsBusiness(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.analyticsBusiness(query);
+  }
+
+  @Get('analytics/errors')
+  @ApiOperation({ summary: '异常分析聚合' })
+  analyticsErrors(@Query() query: Record<string, string | string[] | undefined>) {
+    return this.queryService.analyticsErrors(query);
+  }
+
   @Get('performance/overview')
   @ApiOperation({ summary: '性能概览' })
   performanceOverview(@Query() query: Record<string, string | string[] | undefined>) {

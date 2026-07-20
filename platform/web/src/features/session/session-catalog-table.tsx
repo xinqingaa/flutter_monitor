@@ -88,6 +88,11 @@ export function SessionCatalogTable({
         ),
       },
       {
+        accessorKey: 'environment',
+        header: CatalogLabels.environment,
+        cell: ({ row }) => row.original.environment ?? '-',
+      },
+      {
         accessorKey: 'userId',
         header: CatalogLabels.user,
         cell: ({ row }) => (
@@ -100,11 +105,6 @@ export function SessionCatalogTable({
         accessorKey: 'appVersion',
         header: CatalogLabels.version,
         cell: ({ row }) => row.original.appVersion ?? '-',
-      },
-      {
-        accessorKey: 'environment',
-        header: CatalogLabels.environment,
-        cell: ({ row }) => row.original.environment ?? '-',
       },
       {
         id: 'actions',
@@ -179,9 +179,9 @@ export function SessionPreviewPane({
         { label: CatalogLabels.problems, value: problemCount(item) },
         { label: CatalogLabels.events, value: item.count },
         { label: CatalogLabels.route, value: item.route ?? '-' },
+        { label: CatalogLabels.environment, value: item.environment ?? '-' },
         { label: CatalogLabels.user, value: item.userId ?? '-' },
         { label: CatalogLabels.version, value: item.appVersion ?? '-' },
-        { label: CatalogLabels.environment, value: item.environment ?? '-' },
         { label: CatalogLabels.platform, value: item.devicePlatform ?? '-' },
         { label: '起止', value: `${formatDateTime(item.firstTimestamp)} - ${formatDateTime(item.lastTimestamp)}` },
       ] : undefined}

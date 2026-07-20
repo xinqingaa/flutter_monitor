@@ -4,6 +4,7 @@ import type { DomainSearch } from '../../app/router';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
+import { MultiCombobox } from '../../components/common/multi-combobox';
 import { MultiSelect } from '../../components/common/multi-select';
 import {
   booleanFilterLabel,
@@ -12,10 +13,21 @@ import {
   mechanismFilterLabel,
   resultFilterLabel,
 } from '../../shared/formatting/filter-labels';
+import type { DimensionSummary } from '../../shared/datasource/types';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
+import { useDimensionsQuery } from '../../shared/datasource/queries';
+import { dimensionOptions } from '../scope/filter-options';
 
-const BUSINESS_KEYS: Array<keyof DomainSearch> = ['action', 'result'];
-const ERROR_KEYS: Array<keyof DomainSearch> = ['errorType', 'mechanism', 'fatal', 'handled', 'businessOnly'];
+const BUSINESS_KEYS: Array<keyof DomainSearch> = ['action', 'result', 'sessionId', 'route'];
+const ERROR_KEYS: Array<keyof DomainSearch> = [
+  'errorType',
+  'mechanism',
+  'fatal',
+  'handled',
+  'businessOnly',
+  'sessionId',
+  'route',
+];
 
 const BOOL_OPTIONS = [
   { value: 'true', label: '是' },
@@ -25,22 +37,46 @@ const BOOL_OPTIONS = [
 export function DomainFilterBar({
   mode,
   search,
+  dimensions,
   onPatch,
   onReset,
 }: {
   mode: 'business' | 'errors';
   search: DomainSearch;
+  dimensions?: DimensionSummary;
   onPatch: (value: Partial<DomainSearch>, reset?: boolean) => void;
   onReset: () => void;
 }) {
   const keys = mode === 'business' ? BUSINESS_KEYS : ERROR_KEYS;
   const [text, setText] = useState(mode === 'business' ? (search.action ?? '') : (search.errorType ?? ''));
+  const [sessionQuery, setSessionQuery] = useState('');
   const debouncedText = useDebouncedValue(text, 300);
+  const debouncedSession = useDebouncedValue(sessionQuery, 250);
+  const sessionId = list(search.sessionId);
+  const route = list(search.route);
   const active = keys.some((key) => search[key] !== undefined);
+
+  const scope = {
+    appKey: list(search.appKey),
+    packageName: list(search.packageName),
+    environment: list(search.environment),
+    appVersion: list(search.appVersion),
+    from: search.from,
+    to: search.to,
+    userId: list(search.userId),
+    sessionId,
+    route,
+  };
+  const sessionSuggestions = useDimensionsQuery(scope, debouncedSession);
 
   useEffect(() => {
     setText(mode === 'business' ? (search.action ?? '') : (search.errorType ?? ''));
   }, [mode, search.action, search.errorType]);
+
+  useEffect(() => {
+    if (sessionId?.length === 1) setSessionQuery(sessionId[0]);
+    else if (!sessionId?.length) setSessionQuery('');
+  }, [search.sessionId]);
 
   useEffect(() => {
     const next = debouncedText.trim() || undefined;
@@ -51,7 +87,7 @@ export function DomainFilterBar({
     }
   }, [debouncedText]);
 
-  function patchList(key: 'result' | 'mechanism', values?: string[]) {
+  function patchList(key: 'result' | 'mechanism' | 'sessionId' | 'route', values?: string[]) {
     onPatch({ [key]: values?.length ? values.join(',') : undefined } as Partial<DomainSearch>, true);
   }
 
@@ -60,7 +96,6 @@ export function DomainFilterBar({
       onPatch({ [key]: undefined } as Partial<DomainSearch>, true);
       return;
     }
-    // MultiSelect may pick both; last selected wins for tri-state simplicity — prefer single
     const last = values[values.length - 1];
     onPatch({ [key]: last === 'true' } as Partial<DomainSearch>, true);
   }
@@ -79,7 +114,7 @@ export function DomainFilterBar({
               }}
               onKeyDown={(event) => event.key === 'Enter' && onPatch({ action: text.trim() || undefined }, true)}
               placeholder="筛选 Action"
-              className="w-56 max-w-full shrink-0"
+              className="w-48 max-w-full shrink-0"
             />
             <MultiSelect
               ariaLabel="结果"
@@ -87,7 +122,7 @@ export function DomainFilterBar({
               values={list(search.result)}
               options={businessResultFilterOptions}
               onChange={(values) => patchList('result', values)}
-              className="w-36"
+              className="w-28"
             />
           </>
         ) : (
@@ -101,7 +136,7 @@ export function DomainFilterBar({
               }}
               onKeyDown={(event) => event.key === 'Enter' && onPatch({ errorType: text.trim() || undefined }, true)}
               placeholder="筛选错误类型"
-              className="w-56 max-w-full shrink-0"
+              className="w-48 max-w-full shrink-0"
             />
             <MultiSelect
               ariaLabel="机制"
@@ -109,7 +144,7 @@ export function DomainFilterBar({
               values={list(search.mechanism)}
               options={errorMechanismFilterOptions}
               onChange={(values) => patchList('mechanism', values)}
-              className="w-36"
+              className="w-28"
             />
             <MultiSelect
               ariaLabel="致命"
@@ -133,10 +168,29 @@ export function DomainFilterBar({
               values={search.businessOnly === true ? ['true'] : undefined}
               options={[{ value: 'true', label: '仅业务失败' }]}
               onChange={(values) => onPatch({ businessOnly: values?.includes('true') || undefined }, true)}
-              className="w-36"
+              className="w-32"
             />
           </>
         )}
+        <MultiCombobox
+          label="Session ID"
+          values={sessionId}
+          query={sessionQuery}
+          options={sessionSuggestions.data?.sessionIds ?? []}
+          loading={sessionSuggestions.isFetching}
+          error={sessionSuggestions.isError}
+          onQueryChange={setSessionQuery}
+          onChange={(values) => patchList('sessionId', values)}
+          className="w-36"
+        />
+        <MultiSelect
+          ariaLabel="路由"
+          placeholder="路由"
+          values={route}
+          options={dimensionOptions(dimensions?.routes)}
+          onChange={(values) => patchList('route', values)}
+          className="w-36"
+        />
         <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onReset} disabled={!active}>
             <RotateCcw data-icon="inline-start" />
@@ -174,5 +228,7 @@ function domainFilterLabel(key: keyof DomainSearch, value: unknown): string {
   if (key === 'fatal') return `致命: ${booleanFilterLabel(Boolean(value))}`;
   if (key === 'handled') return `已处理: ${booleanFilterLabel(Boolean(value))}`;
   if (key === 'businessOnly') return '仅业务失败';
+  if (key === 'sessionId') return `Session: ${String(value)}`;
+  if (key === 'route') return `路由: ${String(value)}`;
   return `${String(key)}: ${String(value)}`;
 }

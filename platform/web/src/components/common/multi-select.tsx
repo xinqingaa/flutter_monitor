@@ -24,6 +24,7 @@ export function MultiSelect({
   options,
   onChange,
   className,
+  contentClassName,
   ariaLabel,
   open: openProp,
   onOpenChange,
@@ -33,6 +34,7 @@ export function MultiSelect({
   options: FilterSelectOption[];
   onChange: (values?: string[]) => void;
   className?: string;
+  contentClassName?: string;
   ariaLabel?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -87,7 +89,7 @@ export function MultiSelect({
           variant="outline"
           aria-label={ariaLabel ?? placeholder}
           className={cn(
-            'h-9 min-w-0 max-w-full justify-between overflow-hidden font-normal focus-visible:ring-0',
+            'h-9 min-w-[104px] max-w-full justify-between font-normal focus-visible:ring-0',
             selected.length === 0 && 'text-muted-foreground',
             className,
           )}
@@ -98,7 +100,10 @@ export function MultiSelect({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-80 min-w-[var(--radix-dropdown-menu-trigger-width)] w-56 overflow-y-auto"
+        className={cn(
+          'max-h-80 min-w-[var(--radix-dropdown-menu-trigger-width)] w-max max-w-[min(28rem,calc(100vw-2rem))] overflow-y-auto',
+          contentClassName,
+        )}
       >
         <DropdownMenuGroup>
           <DropdownMenuLabel>{placeholder}</DropdownMenuLabel>
@@ -114,8 +119,9 @@ export function MultiSelect({
                   checked={selectedSet.has(option.value)}
                   onCheckedChange={(checked) => toggle(option.value, checked === true)}
                   onSelect={(event) => event.preventDefault()}
+                  className="items-start"
                 >
-                  {option.label}
+                  <span className="break-all whitespace-normal leading-5">{option.label}</span>
                 </DropdownMenuCheckboxItem>
               ))
           )}
@@ -124,3 +130,4 @@ export function MultiSelect({
     </DropdownMenu>
   );
 }
+

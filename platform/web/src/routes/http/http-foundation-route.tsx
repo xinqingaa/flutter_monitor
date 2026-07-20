@@ -22,6 +22,8 @@ const HTTP_KEYS: Array<keyof HttpSearch> = [
   'host',
   'slowOnly',
   'slowThresholdMs',
+  'sessionId',
+  'route',
 ];
 const ALL_FILTER_KEYS: Array<keyof HttpSearch> = [
   'appKey',
@@ -32,8 +34,6 @@ const ALL_FILTER_KEYS: Array<keyof HttpSearch> = [
   'from',
   'to',
   'userId',
-  'sessionId',
-  'route',
   ...HTTP_KEYS,
 ];
 
@@ -118,6 +118,36 @@ export function HttpFoundationRoute() {
         onResetHttp={() => clearKeys(HTTP_KEYS)}
       />
       <CatalogSplitLayout
+        main={(
+          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+            <HttpCatalogTable
+              items={items}
+              state={state}
+              selectedId={search.eventId}
+              fullUrl={fullUrl}
+              slowThresholdMs={catalog.data?.slowThresholdMs ?? search.slowThresholdMs ?? 1000}
+              sortBy={sortBy}
+              sortDir={sortDir}
+              onSort={toggleSort}
+              onSelect={select}
+              onOpen={open}
+              onPeek={peek}
+              onRetry={() => void catalog.refetch()}
+            />
+            <CatalogPagination
+              page={page}
+              pageSize={pageSize}
+              total={catalog.data?.total ?? 0}
+              onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+              onPageSizeChange={(nextPageSize) => patch({
+                pageSize: nextPageSize,
+                page: undefined,
+                eventId: undefined,
+                detail: undefined,
+              })}
+            />
+          </div>
+        )}
         preview={(
           <CatalogPreviewPane
             item={selected}
@@ -127,34 +157,7 @@ export function HttpFoundationRoute() {
             onPeek={() => selected && peek(selected)}
           />
         )}
-      >
-        <HttpCatalogTable
-          items={items}
-          state={state}
-          selectedId={search.eventId}
-          fullUrl={fullUrl}
-          slowThresholdMs={catalog.data?.slowThresholdMs ?? search.slowThresholdMs ?? 1000}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSort={toggleSort}
-          onSelect={select}
-          onOpen={open}
-          onPeek={peek}
-          onRetry={() => void catalog.refetch()}
-        />
-        <CatalogPagination
-          page={page}
-          pageSize={pageSize}
-          total={catalog.data?.total ?? 0}
-          onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
-          onPageSizeChange={(nextPageSize) => patch({
-            pageSize: nextPageSize,
-            page: undefined,
-            eventId: undefined,
-            detail: undefined,
-          })}
-        />
-      </CatalogSplitLayout>
+      />
       <HttpRecord
         open={Boolean(search.detail)}
         item={detailItem}

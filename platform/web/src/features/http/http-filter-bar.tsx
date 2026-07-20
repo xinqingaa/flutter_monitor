@@ -25,6 +25,8 @@ const HTTP_KEYS: Array<keyof HttpSearch> = [
   'host',
   'slowOnly',
   'slowThresholdMs',
+  'sessionId',
+  'route',
 ];
 
 const SLOW_THRESHOLD_OPTIONS = [500, 1000, 2000, 3000, 5000];
@@ -49,10 +51,14 @@ export function HttpFilterBar({
 }) {
   const [url, setUrl] = useState(search.url ?? '');
   const [requestQuery, setRequestQuery] = useState('');
+  const [sessionQuery, setSessionQuery] = useState('');
   const debouncedUrl = useDebouncedValue(url, 300);
   const debouncedRequest = useDebouncedValue(requestQuery, 250);
+  const debouncedSession = useDebouncedValue(sessionQuery, 250);
   const effectiveThreshold = search.slowThresholdMs ?? slowThresholdMs ?? 1000;
   const requestIds = list(search.requestId);
+  const sessionId = list(search.sessionId);
+  const route = list(search.route);
 
   const scope = {
     appKey: list(search.appKey),
@@ -62,16 +68,21 @@ export function HttpFilterBar({
     from: search.from,
     to: search.to,
     userId: list(search.userId),
-    sessionId: list(search.sessionId),
-    route: list(search.route),
+    sessionId,
+    route,
   };
   const suggestions = useDimensionsQuery(scope, debouncedRequest);
+  const sessionSuggestions = useDimensionsQuery(scope, debouncedSession);
 
   useEffect(() => setUrl(search.url ?? ''), [search.url]);
   useEffect(() => {
     if (requestIds?.length === 1) setRequestQuery(requestIds[0]);
     else if (!requestIds?.length) setRequestQuery('');
   }, [search.requestId]);
+  useEffect(() => {
+    if (sessionId?.length === 1) setSessionQuery(sessionId[0]);
+    else if (!sessionId?.length) setSessionQuery('');
+  }, [search.sessionId]);
   useEffect(() => {
     const next = debouncedUrl.trim() || undefined;
     if (next !== search.url) onPatch({ url: next }, true);
@@ -89,6 +100,8 @@ export function HttpFilterBar({
     ? String(effectiveThreshold)
     : undefined;
 
+  const domainActive = HTTP_KEYS.some((key) => search[key] !== undefined);
+
   return (
     <section aria-label="HTTP 筛选" className="border-b px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -101,7 +114,7 @@ export function HttpFilterBar({
           }}
           onKeyDown={(event) => event.key === 'Enter' && onPatch({ url: url.trim() || undefined }, true)}
           placeholder="筛选 URL"
-          className="w-56 max-w-full shrink-0"
+          className="w-48 max-w-full shrink-0"
         />
         <MultiSelect
           ariaLabel="方法"
@@ -109,7 +122,7 @@ export function HttpFilterBar({
           values={list(search.method)}
           options={methodOptions}
           onChange={(values) => patchList('method', values)}
-          className="w-24 shrink-0"
+          className="w-28"
         />
         <MultiSelect
           ariaLabel="结果"
@@ -117,7 +130,7 @@ export function HttpFilterBar({
           values={list(search.result)}
           options={resultFilterOptions}
           onChange={(values) => patchList('result', values)}
-          className="w-24 shrink-0"
+          className="w-28"
         />
         <MultiSelect
           ariaLabel="状态码"
@@ -125,7 +138,7 @@ export function HttpFilterBar({
           values={list(search.statusCode)}
           options={dimensionOptions(dimensions?.httpStatusCodes)}
           onChange={(values) => patchList('statusCode', values)}
-          className="w-28 shrink-0"
+          className="w-28"
         />
         <MultiSelect
           ariaLabel="业务码"
@@ -133,7 +146,7 @@ export function HttpFilterBar({
           values={list(search.businessCode)}
           options={dimensionOptions(dimensions?.httpBusinessCodes)}
           onChange={(values) => patchList('businessCode', values)}
-          className="w-28 shrink-0"
+          className="w-36"
         />
         <MultiSelect
           ariaLabel="Host"
@@ -141,7 +154,7 @@ export function HttpFilterBar({
           values={list(search.host)}
           options={dimensionOptions(dimensions?.httpHosts)}
           onChange={(values) => patchList('host', values)}
-          className="w-32 shrink-0"
+          className="w-36"
         />
         <FilterSelect
           ariaLabel="慢请求阈值"
@@ -162,10 +175,10 @@ export function HttpFilterBar({
               slowThresholdMs: parsed === 1000 ? undefined : parsed,
             }, true);
           }}
-          className="w-28 shrink-0"
+          className="w-28"
         />
         <MultiCombobox
-          label="请求 ID"
+          label="Request ID"
           values={requestIds}
           query={requestQuery}
           options={suggestions.data?.requestIds ?? []}
@@ -173,7 +186,26 @@ export function HttpFilterBar({
           error={suggestions.isError}
           onQueryChange={setRequestQuery}
           onChange={(values) => patchList('requestId', values)}
-          className="w-36 shrink-0"
+          className="w-36"
+        />
+        <MultiCombobox
+          label="Session ID"
+          values={sessionId}
+          query={sessionQuery}
+          options={sessionSuggestions.data?.sessionIds ?? []}
+          loading={sessionSuggestions.isFetching}
+          error={sessionSuggestions.isError}
+          onQueryChange={setSessionQuery}
+          onChange={(values) => patchList('sessionId', values)}
+          className="w-36"
+        />
+        <MultiSelect
+          ariaLabel="路由"
+          placeholder="路由"
+          values={route}
+          options={dimensionOptions(dimensions?.routes)}
+          onChange={(values) => patchList('route', values)}
+          className="w-36"
         />
         <div className="ml-auto flex items-center gap-2">
           <Label htmlFor="http-full-url" className="whitespace-nowrap text-sm text-muted-foreground">
@@ -185,13 +217,13 @@ export function HttpFilterBar({
             onCheckedChange={onFullUrlChange}
             aria-label="显示完整 URL"
           />
-          <Button variant="ghost" size="sm" onClick={onResetHttp}>
+          <Button variant="ghost" size="sm" onClick={onResetHttp} disabled={!domainActive}>
             <RotateCcw data-icon="inline-start" />
             重置筛选
           </Button>
         </div>
       </div>
-      {HTTP_KEYS.some((key) => search[key] !== undefined) ? (
+      {domainActive ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {HTTP_KEYS.flatMap((key) => (
             search[key] !== undefined
@@ -213,12 +245,14 @@ function httpFilterLabel(key: keyof HttpSearch, value: unknown, threshold: numbe
     url: 'URL',
     method: '方法',
     result: '结果',
-    requestId: '请求 ID',
+    requestId: 'Request ID',
     statusCode: '状态码',
     businessCode: '业务码',
     host: 'Host',
     slowOnly: '慢请求',
     slowThresholdMs: '慢阈值',
+    sessionId: 'Session',
+    route: '路由',
   };
   if (key === 'result') {
     return `${labels[key]}: ${String(value).split(',').map(resultFilterLabel).join('、')}`;

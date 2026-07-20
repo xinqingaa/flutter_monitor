@@ -28,10 +28,9 @@ export function TraceDetailRoute() {
       <Card>
         <CardContent className="flex items-center justify-between gap-3 p-3">
           <div className="flex min-w-0 items-center gap-3">
-            <Button asChild variant="secondary">
+            <Button asChild variant="outline" size="icon" aria-label="返回首页">
               <Link to="/">
-                <ArrowLeft className="size-4" />
-                首页
+                <ArrowLeft />
               </Link>
             </Button>
             <GitBranch className="size-5 text-zinc-500" />

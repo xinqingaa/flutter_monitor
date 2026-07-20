@@ -66,6 +66,26 @@ export class QueryService {
     return this.store.performanceOverview(filtersFromQuery(query));
   }
 
+  analyticsOverview(query: QueryRecord) {
+    return this.store.analyticsOverview(filtersFromQuery(query));
+  }
+
+  analyticsSessions(query: QueryRecord) {
+    return this.store.analyticsSessions(filtersFromQuery(query));
+  }
+
+  analyticsHttp(query: QueryRecord) {
+    return this.store.analyticsHttp(httpCatalogQueryFromQuery(query));
+  }
+
+  analyticsBusiness(query: QueryRecord) {
+    return this.store.analyticsBusiness(businessCatalogQueryFromQuery(query));
+  }
+
+  analyticsErrors(query: QueryRecord) {
+    return this.store.analyticsErrors(errorCatalogQueryFromQuery(query));
+  }
+
   failureTimeseries(query: QueryRecord) {
     const filters = filtersFromQuery(query);
     const now = Date.now();

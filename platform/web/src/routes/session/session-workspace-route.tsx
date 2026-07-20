@@ -17,7 +17,7 @@ import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
 import { useDimensionsQuery, useEventQuery, useSessionQuery } from '../../shared/datasource/queries';
 import type { MonitorEvent } from '../../shared/datasource/types';
-import { eventKind, issueLabels, readPath, sortEvents, appVersionOf } from '../../shared/event-model/accessors';
+import { eventKind, issueLabels, readPath, sortEvents } from '../../shared/event-model/accessors';
 import { statusLabel } from '../../shared/event-model/status';
 import { cn } from '../../shared/formatting/cn';
 import { formatDateTime, formatDuration } from '../../shared/formatting/format';
@@ -41,8 +41,8 @@ export function SessionWorkspaceRoute() {
   const narrow = useMedia('(max-width: 899px)');
   const first = events[0];
   const last = events.at(-1);
-  // Session-stable facts only: userId can change mid-session via setContext, so it stays on events.
-  const appVersion = events.map(appVersionOf).find((id) => id !== '-') ?? '-';
+  const userId = stringValue(readPath(first, ['context', 'user', 'userId']));
+  const appVersion = stringValue(readPath(first, ['resource', 'app', 'appVersion']));
   const problemCount = events.filter((event) => groupOf(event) === 'problem').length;
 
   useEffect(() => {
@@ -67,9 +67,9 @@ export function SessionWorkspaceRoute() {
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-background">
       <section className="flex min-w-0 flex-wrap items-center gap-3 border-b bg-background px-4 py-3">
-        <Button variant="outline" size="sm" asChild>
+        <Button variant="outline" size="icon" aria-label="返回 Session 列表" asChild>
           <Link to="/sessions" search={(current) => pickScopeSearch(current)}>
-            <ArrowLeft data-icon="inline-start" />
+            <ArrowLeft />
           </Link>
         </Button>
         <IdCombobox
@@ -84,7 +84,8 @@ export function SessionWorkspaceRoute() {
           className="w-64"
         />
         <Summary label="时间" value={`${formatDateTime(first?.timestamp ?? first?.startTime)} - ${formatDateTime(last?.timestamp ?? last?.endTime)}`} />
-        <Summary label="版本" value={appVersion} />
+        <Summary label="用户" value={userId ?? '-'} mono />
+        <Summary label="版本" value={appVersion ?? '-'} />
         <Badge variant={problemCount ? 'destructive' : 'secondary'}>{problemCount} 个问题</Badge>
       </section>
 
@@ -108,11 +109,11 @@ export function SessionWorkspaceRoute() {
         />
       ) : (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0">
-          <ResizablePanel defaultSize={58} minSize={40}>
+          <ResizablePanel id="session-events" defaultSize="58%" minSize="40%">
             <EventBrowser group={group} setGroup={setGroup} events={events} visible={visible} selectedId={search.eventId} selectedRef={selectedRef} onSelect={select} />
           </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={42} minSize={30}>
+          <ResizableHandle withHandle className="w-1.5 bg-border hover:bg-ring/40" />
+          <ResizablePanel id="session-record" defaultSize="42%" minSize="30%">
             <div className="h-full min-h-0 border-l bg-background">{record}</div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -276,9 +277,9 @@ function SessionEmpty({ title, description, danger }: { title: string; descripti
 
 function Summary({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex min-w-0 max-w-102 items-center gap-1.5 text-xs">
-      <span className="shrink-0 text-muted-foreground">{label}:</span>
-      <span className={cn('truncate text-foreground', mono && 'font-mono')}>{value}</span>
+    <div className="min-w-0 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <div className={cn('max-w-72 truncate text-foreground', mono && 'font-mono')}>{value}</div>
     </div>
   );
 }
@@ -331,6 +332,10 @@ function eventTitle(event: MonitorEvent) {
     return `${String(readPath(event, ['attributes', 'http.method']) ?? 'HTTP')} ${String(readPath(event, ['attributes', 'http.url.normalized']) ?? event.name)}`;
   }
   return String(readPath(event, ['attributes', 'business.action']) ?? readPath(event, ['attributes', 'error.type']) ?? event.name ?? '事件');
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value : undefined;
 }
 
 function useMedia(query: string) {

@@ -49,7 +49,7 @@ export function SessionFilterBar({
           }}
           onKeyDown={(event) => event.key === 'Enter' && onChange({ sessionId: sessionId.trim() || undefined }, true)}
           placeholder="筛选 Session ID"
-          className="w-56 max-w-full shrink-0"
+          className="w-48 max-w-full shrink-0"
         />
         <MultiSelect
           ariaLabel="页面"
@@ -57,7 +57,7 @@ export function SessionFilterBar({
           values={list(filters.route)}
           options={dimensionOptions(dimensions?.routes)}
           onChange={(values) => patchList('route', values)}
-          className="w-44"
+          className="w-36"
         />
         <MultiSelect
           ariaLabel="状态"
@@ -65,7 +65,7 @@ export function SessionFilterBar({
           values={list(filters.status)}
           options={dimensionOptions(dimensions?.statuses)}
           onChange={(values) => patchList('status', values)}
-          className="w-36"
+          className="w-28"
         />
         <MultiSelect
           ariaLabel="问题类型"
@@ -73,7 +73,7 @@ export function SessionFilterBar({
           values={list(filters.problemType)}
           options={problemOptions()}
           onChange={(values) => patchList('problemType', values)}
-          className="w-40"
+          className="w-32"
         />
         <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onReset} disabled={!active}>
