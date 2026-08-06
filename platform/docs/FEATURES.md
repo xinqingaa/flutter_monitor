@@ -42,13 +42,12 @@ Session、HTTP、埋点、异常使用一致的 Catalog 工作流：
 
 - 服务端分页与 URL 查询状态；
 - loading、empty、no results、error 状态；
-- 单击选中 Preview；
-- 行内或 Preview 展开 Sheet；
-- 双击或“打开详情”进入独立页面；
-- 宽屏列表/Preview 可调整宽度，窄屏保持数据可访问；
+- 单击行直接进入独立详情页；
+- 仅行内右侧按钮（或行菜单）展开 Sheet，便于不离开列表快速检视；
+- 操作列右侧 sticky，表头与数据列可横向滚动；
 - 复制 event/session/trace 等 ID；
 - 事件域可直接进入对应 Session；
-- Live 模式通过 SSE 失效查询缓存，不抢走当前选中项。
+- Live 模式通过 SSE 失效查询缓存，不抢走当前 Sheet 打开项。
 
 通用上下文展示使用结构化环境画像。Raw JSON 放在详情深读区，不作为列表或首页第一视觉。
 
@@ -75,7 +74,7 @@ Session 列表支持：
 - user、session、route、时间和资源维度筛选；
 - 状态与问题类型筛选；
 - 事件数、错误数、失败 HTTP、业务失败等摘要；
-- Preview、Sheet 和工作区入口。
+- Sheet 和工作区入口。
 
 Session 工作区支持：
 
@@ -111,7 +110,7 @@ SDK 当前只产生 completed single-span `http.client`，Workbench 不展示 in
 - 带 `business.action` 的单次 `track`；
 - production 限流产生的 `business.action.summary`。
 
-支持 action、result、session、route 和共享 Scope 筛选，以及 Preview、Sheet、独立详情和 Session 回查。默认关闭的 interaction measure 不进入埋点主集合。
+支持 action、result、session、route 和共享 Scope 筛选，以及 Sheet、独立详情和 Session 回查。默认关闭的 interaction measure 不进入埋点主集合。
 
 ## 异常
 

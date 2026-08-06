@@ -44,7 +44,6 @@ export function CatalogTable<T>({
   minWidthClass,
   message,
   notice,
-  onSelect,
   onOpen,
   onRetry,
   columnClassName,
@@ -58,7 +57,6 @@ export function CatalogTable<T>({
   minWidthClass: string;
   message: CatalogMessageContent;
   notice?: ReactNode;
-  onSelect: (item: T) => void;
   onOpen: (item: T) => void;
   onRetry: () => void;
   columnClassName?: (columnId: string, header: boolean) => string | undefined;
@@ -76,12 +74,18 @@ export function CatalogTable<T>({
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 p-4">
       {notice}
       <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-        <Table className={cn('table-fixed', minWidthClass)}>
+        <Table className={cn('table-fixed', minWidthClass)} containerClassName="overflow-visible">
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className={columnClassName?.(header.column.id, true)}>
+                  <TableHead
+                    key={header.id}
+                    className={cn(
+                      columnClassName?.(header.column.id, true),
+                      stickyActionsClass(header.column.id, true),
+                    )}
+                  >
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -109,21 +113,23 @@ export function CatalogTable<T>({
                   key={row.id}
                   tabIndex={0}
                   data-state={getRowId(row.original) === selectedId ? 'selected' : undefined}
-                  className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  onClick={() => onSelect(row.original)}
-                  onDoubleClick={() => onOpen(row.original)}
+                  className="group cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={() => onOpen(row.original)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') onOpen(row.original);
-                    if (event.key === ' ') {
+                    if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      onSelect(row.original);
+                      onOpen(row.original);
                     }
                   }}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
-                      className={cn('overflow-hidden', columnClassName?.(cell.column.id, false))}
+                      className={cn(
+                        'overflow-hidden',
+                        columnClassName?.(cell.column.id, false),
+                        stickyActionsClass(cell.column.id, false),
+                      )}
                       onClick={cell.column.id === 'actions' ? (event) => event.stopPropagation() : undefined}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -139,6 +145,16 @@ export function CatalogTable<T>({
   );
 }
 
+function stickyActionsClass(columnId: string, header: boolean) {
+  if (columnId !== 'actions') return undefined;
+  return cn(
+    'sticky right-0 border-l border-border shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]',
+    header
+      ? 'z-20 bg-background'
+      : 'z-10 bg-background group-hover:bg-muted/50 group-data-[state=selected]:bg-muted',
+  );
+}
+
 function LoadingRows({
   columnIds,
   columnClassName,
@@ -151,7 +167,10 @@ function LoadingRows({
   return Array.from({ length: 8 }, (_, row) => (
     <TableRow key={row}>
       {columnIds.map((columnId) => (
-        <TableCell key={columnId} className={columnClassName?.(columnId, false)}>
+        <TableCell
+          key={columnId}
+          className={cn(columnClassName?.(columnId, false), stickyActionsClass(columnId, false))}
+        >
           <Skeleton className={skeletonClassName?.(columnId) ?? 'h-4 w-16'} />
         </TableCell>
       ))}

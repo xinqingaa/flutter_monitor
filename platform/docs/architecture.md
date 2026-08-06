@@ -120,7 +120,7 @@ curl 'http://localhost:3700/api/monitor/v1/recent?name=http.client&limit=200'
 curl 'http://localhost:3700/api/monitor/v1/events/<eventId>'
 ```
 
-Workbench：打开 **HTTP**，用 Scope + 领域筛定位行 → Preview / Record → **查看 Session**。
+Workbench：打开 **HTTP**，用 Scope + 领域筛定位行 → 单击进详情或行内 Sheet → **查看 Session**。
 
 ### 按用户还原会话
 

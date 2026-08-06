@@ -5,8 +5,6 @@ import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { HttpFilterBar } from '../../features/http/http-filter-bar';
 import { HttpCatalogTable, type CatalogState } from '../../features/http/http-catalog-table';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
-import { CatalogPreviewPane } from '../../features/catalog/catalog-preview-pane';
-import { CatalogSplitLayout } from '../../features/catalog/catalog-split-layout';
 import { HttpRecord } from '../../features/inspector/http-record';
 import { pickScopeSearch } from '../../features/scope/scope-filters';
 import { useDimensionsQuery, useEventQuery, useHttpCatalogQuery } from '../../shared/datasource/queries';
@@ -50,9 +48,7 @@ export function HttpFoundationRoute() {
   const detail = useEventQuery(search.detail);
   const [fullUrl, setFullUrl] = useState(() => localStorage.getItem('flutter-monitor.http.full-url') === 'true');
   const items = catalog.data?.items ?? [];
-  const selected = items.find((item) => item.eventId === search.eventId);
-  const detailItem = items.find((item) => item.eventId === search.detail)
-    ?? (search.detail === selected?.eventId ? selected : undefined);
+  const detailItem = items.find((item) => item.eventId === search.detail);
   const hasFilters = ALL_FILTER_KEYS.some((key) => search[key] !== undefined);
 
   function patch(patchValue: Partial<HttpSearch>, resetPage = false) {
@@ -68,11 +64,8 @@ export function HttpFoundationRoute() {
   function clearKeys(keys: Array<keyof HttpSearch>) {
     patch(Object.fromEntries(keys.map((key) => [key, undefined])) as Partial<HttpSearch>, true);
   }
-  function select(item: HttpCatalogItem) {
-    patch({ eventId: item.eventId, detail: undefined });
-  }
   function peek(item: HttpCatalogItem) {
-    patch({ eventId: item.eventId, detail: item.eventId });
+    patch({ detail: item.eventId });
   }
   function open(item: HttpCatalogItem) {
     void navigate({
@@ -90,9 +83,9 @@ export function HttpFoundationRoute() {
   }
 
   useEffect(() => {
-    if (!catalog.data || !search.eventId) return;
-    if (!items.some((item) => item.eventId === search.eventId)) patch({ eventId: undefined, detail: undefined });
-  }, [catalog.data, items, search.eventId]);
+    if (!catalog.data || !search.detail) return;
+    if (!items.some((item) => item.eventId === search.detail)) patch({ detail: undefined });
+  }, [catalog.data, items, search.detail]);
 
   const state: CatalogState = catalog.isLoading && !catalog.data
     ? 'loading'
@@ -117,47 +110,33 @@ export function HttpFoundationRoute() {
         onPatch={patch}
         onResetHttp={() => clearKeys(HTTP_KEYS)}
       />
-      <CatalogSplitLayout
-        main={(
-          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-            <HttpCatalogTable
-              items={items}
-              state={state}
-              selectedId={search.eventId}
-              fullUrl={fullUrl}
-              slowThresholdMs={catalog.data?.slowThresholdMs ?? search.slowThresholdMs ?? 1000}
-              sortBy={sortBy}
-              sortDir={sortDir}
-              onSort={toggleSort}
-              onSelect={select}
-              onOpen={open}
-              onPeek={peek}
-              onRetry={() => void catalog.refetch()}
-            />
-            <CatalogPagination
-              page={page}
-              pageSize={pageSize}
-              total={catalog.data?.total ?? 0}
-              onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
-              onPageSizeChange={(nextPageSize) => patch({
-                pageSize: nextPageSize,
-                page: undefined,
-                eventId: undefined,
-                detail: undefined,
-              })}
-            />
-          </div>
-        )}
-        preview={(
-          <CatalogPreviewPane
-            item={selected}
-            loading={Boolean(search.eventId && catalog.isLoading)}
-            error={Boolean(search.eventId && catalog.isError)}
-            onOpen={() => selected && open(selected)}
-            onPeek={() => selected && peek(selected)}
-          />
-        )}
-      />
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+        <HttpCatalogTable
+          items={items}
+          state={state}
+          selectedId={search.detail}
+          fullUrl={fullUrl}
+          slowThresholdMs={catalog.data?.slowThresholdMs ?? search.slowThresholdMs ?? 1000}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={toggleSort}
+          onOpen={open}
+          onPeek={peek}
+          onRetry={() => void catalog.refetch()}
+        />
+        <CatalogPagination
+          page={page}
+          pageSize={pageSize}
+          total={catalog.data?.total ?? 0}
+          onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+          onPageSizeChange={(nextPageSize) => patch({
+            pageSize: nextPageSize,
+            page: undefined,
+            eventId: undefined,
+            detail: undefined,
+          })}
+        />
+      </div>
       <HttpRecord
         open={Boolean(search.detail)}
         item={detailItem}
@@ -168,7 +147,7 @@ export function HttpFoundationRoute() {
         onOpenChange={(openValue) => {
           if (!openValue) patch({ detail: undefined });
         }}
-        onNavigate={(next) => patch({ eventId: next.eventId, detail: next.eventId })}
+        onNavigate={(next) => patch({ detail: next.eventId })}
         onExpand={(id) => {
           patch({ detail: undefined });
           void navigate({

@@ -2,14 +2,13 @@ import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { GitBranch } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
-import { CatalogPreviewShell } from '../catalog/catalog-preview-shell';
 import { CatalogRowActions } from '../catalog/catalog-row-actions';
 import { CatalogTable, type CatalogState } from '../catalog/catalog-table';
 import type { SessionSummary } from '../../shared/datasource/types';
 import { CatalogLabels } from '../../shared/event-model/catalog-labels';
 import { statusLabel } from '../../shared/event-model/status';
 import { cn } from '../../shared/formatting/cn';
-import { formatDateTime, formatTime } from '../../shared/formatting/format';
+import { formatTime } from '../../shared/formatting/format';
 
 export type { CatalogState };
 
@@ -17,7 +16,6 @@ export function SessionCatalogTable({
   items,
   state,
   selectedId,
-  onSelect,
   onOpen,
   onPeek,
   onRetry,
@@ -25,7 +23,6 @@ export function SessionCatalogTable({
   items: SessionSummary[];
   state: CatalogState;
   selectedId?: string;
-  onSelect: (item: SessionSummary) => void;
   onOpen: (item: SessionSummary) => void;
   onPeek: (item: SessionSummary) => void;
   onRetry: () => void;
@@ -138,59 +135,10 @@ export function SessionCatalogTable({
         errorTitle: 'Session 加载失败',
         errorDescription: '请检查 Monitor Service 后重试。',
       }}
-      onSelect={onSelect}
       onOpen={onOpen}
       onRetry={onRetry}
       columnClassName={columnClass}
       skeletonClassName={(id) => id === 'sessionId' ? 'h-4 w-full' : 'h-4 w-16'}
-    />
-  );
-}
-
-export function SessionPreviewPane({
-  item,
-  loading,
-  error,
-  onOpen,
-  onPeek,
-}: {
-  item?: SessionSummary;
-  loading?: boolean;
-  error?: boolean;
-  onOpen: () => void;
-  onPeek: () => void;
-}) {
-  return (
-    <CatalogPreviewShell
-      selected={Boolean(item)}
-      loading={loading}
-      error={error}
-      emptyDescription="从 Session 表格中选择一条记录。"
-      showSessionLink={false}
-      header={item ? (
-        <div className="flex min-w-0 flex-col gap-2">
-          <Badge className="w-fit" variant={item.status === 'error' ? 'destructive' : 'secondary'}>
-            {statusLabel(item.status)}
-          </Badge>
-          <p className="break-all font-mono text-sm font-medium leading-6">{item.sessionId}</p>
-        </div>
-      ) : undefined}
-      facts={item ? [
-        { label: CatalogLabels.problems, value: problemCount(item) },
-        { label: CatalogLabels.events, value: item.count },
-        { label: CatalogLabels.route, value: item.route ?? '-' },
-        { label: CatalogLabels.environment, value: item.environment ?? '-' },
-        { label: CatalogLabels.user, value: item.userId ?? '-' },
-        { label: CatalogLabels.version, value: item.appVersion ?? '-' },
-        { label: CatalogLabels.platform, value: item.devicePlatform ?? '-' },
-        { label: '起止', value: `${formatDateTime(item.firstTimestamp)} - ${formatDateTime(item.lastTimestamp)}` },
-      ] : undefined}
-      ids={item ? [
-        { label: CatalogLabels.session, value: item.sessionId },
-        { label: '最近事件', value: item.lastEventId },
-      ] : undefined}
-      onOpen={onOpen}
-      onPeek={onPeek}
     />
   );
 }

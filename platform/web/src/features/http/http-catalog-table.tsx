@@ -24,7 +24,6 @@ export function HttpCatalogTable({
   sortBy,
   sortDir,
   onSort,
-  onSelect,
   onOpen,
   onPeek,
   onRetry,
@@ -37,7 +36,6 @@ export function HttpCatalogTable({
   sortBy: 'timestamp' | 'durationMs';
   sortDir: 'asc' | 'desc';
   onSort: (sortBy: 'timestamp' | 'durationMs') => void;
-  onSelect: (item: HttpCatalogItem) => void;
   onOpen: (item: HttpCatalogItem) => void;
   onPeek: (item: HttpCatalogItem) => void;
   onRetry: () => void;
@@ -191,7 +189,7 @@ export function HttpCatalogTable({
       state={state}
       selectedId={selectedId}
       getRowId={(item) => item.eventId}
-      minWidthClass="min-w-[1480px]"
+      minWidthClass="min-w-[1560px]"
       message={{
         emptyTitle: '暂无 HTTP 请求',
         emptyDescription: '等待应用产生网络请求。',
@@ -206,7 +204,6 @@ export function HttpCatalogTable({
           <AlertDescription>SDK 已剥离部分 HTTP 详情，列表事实字段仍可查询。</AlertDescription>
         </Alert>
       ) : undefined}
-      onSelect={onSelect}
       onOpen={onOpen}
       onRetry={onRetry}
       columnClassName={columnClass}
@@ -219,6 +216,7 @@ function columnClass(id: string, header: boolean) {
   return cn(
     id === 'timestamp' && 'w-[176px]',
     id === 'method' && 'w-[76px]',
+    id === 'url' && 'w-[360px]',
     id === 'statusCode' && 'w-[88px] text-right',
     id === 'businessCode' && 'w-[96px] text-right',
     id === 'durationMs' && 'w-[108px] text-right',

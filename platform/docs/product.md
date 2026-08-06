@@ -23,7 +23,7 @@ Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用�
   HTTP 独立详情页    /http/$eventId
   埋点独立详情页     /business/$eventId
   异常独立详情页     /errors/$eventId
-  Catalog Sheet      展开预览（行内按钮 / Preview 次按钮）
+  Catalog Sheet      展开预览（仅行内右侧按钮）
 ```
 
 Session 为一级入口：列表在 `/sessions`，链路工作区在 `/sessions/$sessionId`。旧 Overview / Startup / Pages / Network / Jank 等路径只做兼容重定向。侧栏不再展示「最近 Session」。
@@ -54,12 +54,12 @@ Session 为一级入口：列表在 `/sessions`，链路工作区在 `/sessions/
 
 HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 
-1. **列表**：分页、排序、loading / empty / error / noResults（通用表格）
-2. **Preview**（宽屏 ≥1400px）：选中行摘要与操作；Session / HTTP / 埋点 / 异常 Catalog 列表与 Preview 用竖向分隔条按像素拖拽调宽（本地持久化），窄屏仍只显示列表
-3. **单击行**：只选中 Preview，不自动开 Sheet
-4. **展开预览**：行内 `PanelRight` 按钮，或 Preview「展开预览」→ Sheet
-5. **打开详情 / 双击行**：进入独立详情页（HTTP `/http/$id`、埋点 `/business/$id`、异常 `/errors/$id`、Session `/sessions/$id`）；二级页顶栏返回操作为仅图标按钮（`aria-label` 保留「返回列表」等语义）
-6. **查看 Session**：仅事件域（HTTP / 埋点 / 异常）保留
+1. **列表**：分页、排序、loading / empty / error / noResults（通用表格）；表体可横向滚动，**操作列右侧 sticky 固定**
+2. **单击行 / Enter / Space**：直接进入独立详情页（HTTP `/http/$id`、埋点 `/business/$id`、异常 `/errors/$id`、Session `/sessions/$id`）；二级页顶栏返回操作为仅图标按钮（`aria-label` 保留「返回列表」等语义）
+3. **展开预览（Sheet）**：仅行内右侧 `PanelRight` 按钮（或行菜单「展开预览」）；不进入详情页即可快速检视；Sheet 打开时列表高亮对应行
+4. **查看 Session**：仅事件域（HTTP / 埋点 / 异常）行菜单保留
+
+不再提供宽屏右侧 Preview 摘要栏；表头已承载扫描所需事实，避免与列表重复并挤占主列宽度。
 
 领域筛选条（HTTP / Session / 埋点 / 异常）统一：同高度控件、`MultiSelect` / `MultiCombobox` 多选与选中态、右侧「重置筛选」（与总 Scope 同款）、不展示条数；文本筛约 300ms debounce。
 
@@ -73,9 +73,11 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 一级 Catalog（Session / HTTP / 埋点 / 异常）共用「通用列块 + 域特有列」：
 
 - **文案**：面向用户的 label 一律中文；禁止表头出现 `UserID` / `UserId` / `Action` / `Message` 等混用。
+- **列优先级**：P0 时间 + 域主列（Session ID / HTTP URL / 埋点动作 / 异常消息）优先加宽；P1 结果态（状态、状态码、业务码、耗时、结果、次数）；P2 通用尾列可截断并随横向滚动移出视口；P3 操作列 sticky 右侧固定。
 - **通用尾列顺序（固定）**：路由 → 环境 → 用户 → 版本。取值对应 `context.route.name`、`resource.app.environment`、`context.user.userId`、`resource.app.appVersion`。
 - **版本列**：只展示 `appVersion`；`buildNumber` 不进一级表格，仅在详情环境画像中展示。
 - **HTTP 请求 ID**：属于 HTTP 域特有列与筛选项，必须保留在列表中，不并入通用列块。
+- **HTTP URL**：主列加宽（约 360px），默认展示 path，可开关完整 URL。
 - **Session 列**：HTTP / 埋点 / 异常主表在通用尾列之后、操作列之前展示 `sessionId`；Session 列表本身以 Session 为主列，不再重复尾列 Session。
 
 推荐列序：
@@ -86,8 +88,6 @@ HTTP / 埋点 / 异常 / Session 共用同一套 Catalog 工作流：
 | HTTP | 时间 · 方法 · URL · 状态码 · 业务码 · 耗时 · 请求 ID · 路由 · 环境 · 用户 · 版本 · Session · 操作 |
 | 埋点 | 时间 · 动作 · 结果 · 路由 · 环境 · 用户 · 版本 · Session · 操作 |
 | 异常 | 时间 · 类型 · 消息 · 次数 · 处理状态 · 路由 · 环境 · 用户 · 版本 · Session · 操作 |
-
-Preview 尾部 facts 统一：路由 · 环境 · 用户 · 版本 · 平台 · 时间；域摘要接在前面。ids 区用：事件 ID · Session · Trace ·（HTTP）请求 ID。
 
 HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时 / 路由）；第二行上下文摘要（用户 · 版本 · 环境 · 平台 · Session）。
 
@@ -111,14 +111,12 @@ HTTP 详情顶栏：第一行域结果（状态码 / 业务码 / method / 耗时
 
 - 列序：时间 · 方法 · URL · 状态码 · 业务码 · 耗时 · 请求 ID · 路由 · 环境 · 用户 · 版本 · Session · 操作
 - 按时间或耗时排序；分页 25 / 50 / 100
-- 单击行：只选中 Preview
-- 行内展开 / Preview「展开预览」：打开 Sheet
-- 打开详情 / 双击：进 `/http/$eventId`
+- 单击行：进入 `/http/$eventId`
+- 行内展开：打开 Sheet（不离开列表）
 - 行菜单：打开详情、展开预览、查看 Session、复制 ID
 
-### Preview、Sheet 与独立详情页
+### Sheet 与独立详情页
 
-- Preview：状态、关键事实、「打开详情」进独立页、「展开预览」开 Sheet、查看 Session
 - Sheet：请求 / 响应 / 上下文 / Raw；上一条 / 下一条；全屏进独立页；可复制 cURL
 - 独立详情页：同 Sheet 深读内容，可回列表、查看 Session
 - 详情被剥离或截断时如实展示（如 `detailDropped`），不伪造 body
@@ -157,7 +155,7 @@ Session KPI 表示范围内至少有一条事件的去重 Session 数，界面�
 
 - 筛：action、result（success / failed / cancelled）、多选 `sessionId` / `route`
 - 列：时间 · 动作 · 结果 · 路由 · 环境 · 用户 · 版本 · Session · 操作
-- 交互与 HTTP 一致：展开 Sheet / 打开详情进 `/business/$eventId`
+- 交互与 HTTP 一致：单击进独立详情；行内按钮展开 Sheet
 - Record：属性 / 关联 / 上下文（环境画像） / Raw；关联区展示同 session 近期 HTTP / 埋点 / error 摘要卡
 
 **当前局限：** 关联区偏展示；详情页深度仍弱于 HTTP（无 cURL 级检视）。
@@ -170,7 +168,7 @@ Session KPI 表示范围内至少有一条事件的去重 Session 数，界面�
 
 - 筛：errorType、mechanism、fatal / handled、仅业务失败、多选 `sessionId` / `route`
 - 列：时间 · 类型 · 消息 · 次数 · 处理状态 · 路由 · 环境 · 用户 · 版本 · Session · 操作
-- 交互与 HTTP 一致：展开 Sheet / 打开详情进 `/errors/$eventId`
+- 交互与 HTTP 一致：单击进独立详情；行内按钮展开 Sheet
 - Record：错误信息 / stack / breadcrumbs，以及环境画像与 Raw
 
 不做告警规则引擎或订阅推送。
@@ -183,18 +181,18 @@ Session KPI 表示范围内至少有一条事件的去重 Session 数，界面�
 
 ### 列表（一级）
 
-路径：`/sessions`。与 HTTP / 埋点 / 异常同一套 Catalog：表格、Preview、展开 Sheet、打开详情进工作区。
+路径：`/sessions`。与 HTTP / 埋点 / 异常同一套 Catalog：表格、行内展开 Sheet、单击进入工作区。
 
 列：时间 · Session · 状态 · 问题 · 事件 · 路由 · 环境 · 用户 · 版本 · 操作。
 
 ### 工作区（二级）
 
-路径：`/sessions/$sessionId`，常用 query：`eventId`（可选 `traceId`）。由列表「打开详情 / 双击 / Sheet 全屏」进入。
+路径：`/sessions/$sessionId`，常用 query：`eventId`（可选 `traceId`）。由列表单击或 Sheet 全屏进入。
 
 ### 如何进入
 
 - 一级导航 Session → 列表 → 工作区
-- 各 Catalog 的 Preview / 行菜单「查看 Session」
+- 各 Catalog 的行菜单「查看 Session」
 - 概览启动类下钻（携带可回查 `eventId`）
 
 ### 当前界面

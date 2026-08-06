@@ -2,10 +2,9 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { SessionsSearch } from '../../app/router';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
-import { CatalogSplitLayout } from '../../features/catalog/catalog-split-layout';
 import { ScopeFilterBar } from '../../features/scope/scope-filter-bar';
 import { readScopeFilters, scopeToSessionFilters } from '../../features/scope/scope-filters';
-import { SessionCatalogTable, SessionPreviewPane } from '../../features/session/session-catalog-table';
+import { SessionCatalogTable } from '../../features/session/session-catalog-table';
 import { SessionFilterBar } from '../../features/session/session-filter-bar';
 import { sessionListToSessionFilters, useSessionListFilters } from '../../features/session/session-list-filters';
 import { SessionRecord } from '../../features/session/session-record';
@@ -28,9 +27,7 @@ export function SessionsRoute() {
   const dimensions = useDimensionsQuery(scopeQueryFilters);
   const sessionsQuery = useSessionsQuery(queryFilters);
   const items = sessionsQuery.data?.sessions ?? [];
-  const selected = items.find((item) => item.sessionId === search.selected);
-  const detailItem = items.find((item) => item.sessionId === search.detail)
-    ?? (search.detail === selected?.sessionId ? selected : undefined);
+  const detailItem = items.find((item) => item.sessionId === search.detail);
   const hasFilters = Boolean(
     search.appKey || search.packageName || search.environment || search.appVersion || search.devicePlatform
     || search.from || search.to || search.userId || search.sessionId || search.route
@@ -48,12 +45,8 @@ export function SessionsRoute() {
     });
   }
 
-  function select(item: SessionSummary) {
-    patch({ selected: item.sessionId, detail: undefined });
-  }
-
   function peek(item: SessionSummary) {
-    patch({ selected: item.sessionId, detail: item.sessionId });
+    patch({ detail: item.sessionId });
   }
 
   function open(item: SessionSummary) {
@@ -65,11 +58,11 @@ export function SessionsRoute() {
   }
 
   useEffect(() => {
-    if (!sessionsQuery.data || !search.selected) return;
-    if (!items.some((item) => item.sessionId === search.selected)) {
-      patch({ selected: undefined, detail: undefined });
+    if (!sessionsQuery.data || !search.detail) return;
+    if (!items.some((item) => item.sessionId === search.detail)) {
+      patch({ detail: undefined });
     }
-  }, [sessionsQuery.data, items, search.selected]);
+  }, [sessionsQuery.data, items, search.detail]);
 
   const state: CatalogState = sessionsQuery.isLoading && !sessionsQuery.data
     ? 'loading'
@@ -98,42 +91,28 @@ export function SessionsRoute() {
           patch({ page: undefined, selected: undefined, detail: undefined }, true);
         }}
       />
-      <CatalogSplitLayout
-        main={(
-          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-            <SessionCatalogTable
-              items={items}
-              state={state}
-              selectedId={search.selected}
-              onSelect={select}
-              onOpen={open}
-              onPeek={peek}
-              onRetry={() => void sessionsQuery.refetch()}
-            />
-            <CatalogPagination
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
-              onPageSizeChange={(nextPageSize) => patch({
-                pageSize: nextPageSize,
-                page: undefined,
-                selected: undefined,
-                detail: undefined,
-              })}
-            />
-          </div>
-        )}
-        preview={(
-          <SessionPreviewPane
-            item={selected}
-            loading={Boolean(search.selected && sessionsQuery.isLoading)}
-            error={Boolean(search.selected && sessionsQuery.isError)}
-            onOpen={() => selected && open(selected)}
-            onPeek={() => selected && peek(selected)}
-          />
-        )}
-      />
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+        <SessionCatalogTable
+          items={items}
+          state={state}
+          selectedId={search.detail}
+          onOpen={open}
+          onPeek={peek}
+          onRetry={() => void sessionsQuery.refetch()}
+        />
+        <CatalogPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(nextPage) => patch({ page: nextPage, selected: undefined, detail: undefined })}
+          onPageSizeChange={(nextPageSize) => patch({
+            pageSize: nextPageSize,
+            page: undefined,
+            selected: undefined,
+            detail: undefined,
+          })}
+        />
+      </div>
       <SessionRecord
         open={Boolean(search.detail)}
         item={detailItem}

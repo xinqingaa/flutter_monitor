@@ -1,4 +1,4 @@
-/** Catalog / Preview 统一文案。面向用户的 label 一律中文。 */
+/** Catalog 统一文案。面向用户的 label 一律中文。 */
 export const CatalogLabels = {
   time: '时间',
   route: '路由',

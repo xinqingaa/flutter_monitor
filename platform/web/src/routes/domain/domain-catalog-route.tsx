@@ -10,9 +10,7 @@ import { Button } from '../../components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
 import { Skeleton } from '../../components/ui/skeleton';
 import { CatalogPagination } from '../../features/catalog/catalog-pagination';
-import { CatalogPreviewShell } from '../../features/catalog/catalog-preview-shell';
 import { CatalogRowActions } from '../../features/catalog/catalog-row-actions';
-import { CatalogSplitLayout } from '../../features/catalog/catalog-split-layout';
 import { CatalogTable, type CatalogState } from '../../features/catalog/catalog-table';
 import { DomainFilterBar } from '../../features/catalog/domain-filter-bar';
 import { SortableHeader } from '../../features/catalog/sortable-header';
@@ -66,9 +64,7 @@ function DomainCatalog({ mode }: { mode: Mode }) {
   const dimensions = useDimensionsQuery(scopeQuery(search));
   const detail = useEventQuery(search.detail);
   const items = catalog.data?.items ?? [];
-  const selected = items.find((item) => item.eventId === search.eventId);
-  const detailItem = items.find((item) => item.eventId === search.detail)
-    ?? (search.detail === selected?.eventId ? selected : undefined);
+  const detailItem = items.find((item) => item.eventId === search.detail);
   const total = catalog.data?.total ?? 0;
   const hasDomainFilters = mode === 'business'
     ? Boolean(search.action || search.result || search.sessionId || search.route)
@@ -89,12 +85,8 @@ function DomainCatalog({ mode }: { mode: Mode }) {
     });
   }
 
-  function select(item: Item) {
-    patch({ eventId: item.eventId, detail: undefined });
-  }
-
   function peek(item: Item) {
-    patch({ eventId: item.eventId, detail: item.eventId });
+    patch({ detail: item.eventId });
   }
 
   function open(item: Item) {
@@ -114,10 +106,10 @@ function DomainCatalog({ mode }: { mode: Mode }) {
   }
 
   useEffect(() => {
-    if (catalog.data && search.eventId && !items.some((item) => item.eventId === search.eventId)) {
-      patch({ eventId: undefined, detail: undefined });
+    if (catalog.data && search.detail && !items.some((item) => item.eventId === search.detail)) {
+      patch({ detail: undefined });
     }
-  }, [catalog.data, items, search.eventId]);
+  }, [catalog.data, items, search.detail]);
 
   const state: CatalogState = catalog.isLoading && !catalog.data
     ? 'loading'
@@ -150,40 +142,27 @@ function DomainCatalog({ mode }: { mode: Mode }) {
           true,
         )}
       />
-      <CatalogSplitLayout
-        main={(
-          <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-            <DomainTable
-              mode={mode}
-              items={items}
-              state={state}
-              selectedId={search.eventId}
-              sortBy={sortBy}
-              sortDir={sortDir}
-              onSort={toggleSort}
-              onSelect={select}
-              onOpen={open}
-              onPeek={peek}
-              onRetry={() => void catalog.refetch()}
-            />
-            <CatalogPagination
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
-              onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
-            />
-          </div>
-        )}
-        preview={(
-          <DomainPreview
-            mode={mode}
-            item={selected}
-            onOpen={() => selected && open(selected)}
-            onPeek={() => selected && peek(selected)}
-          />
-        )}
-      />
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+        <DomainTable
+          mode={mode}
+          items={items}
+          state={state}
+          selectedId={search.detail}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={toggleSort}
+          onOpen={open}
+          onPeek={peek}
+          onRetry={() => void catalog.refetch()}
+        />
+        <CatalogPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(nextPage) => patch({ page: nextPage, eventId: undefined, detail: undefined })}
+          onPageSizeChange={(nextPageSize) => patch({ pageSize: nextPageSize, page: undefined, eventId: undefined, detail: undefined })}
+        />
+      </div>
       <DomainRecord
         mode={mode}
         open={Boolean(search.detail)}
@@ -193,7 +172,7 @@ function DomainCatalog({ mode }: { mode: Mode }) {
         error={detail.isError}
         items={items}
         onClose={() => patch({ detail: undefined })}
-        onNavigate={(next) => patch({ eventId: next.eventId, detail: next.eventId })}
+        onNavigate={(next) => patch({ detail: next.eventId })}
         onExpand={(id) => {
           patch({ detail: undefined });
           void navigate({
@@ -215,7 +194,6 @@ function DomainTable({
   sortBy,
   sortDir,
   onSort,
-  onSelect,
   onOpen,
   onPeek,
   onRetry,
@@ -227,7 +205,6 @@ function DomainTable({
   sortBy: 'timestamp';
   sortDir: 'asc' | 'desc';
   onSort: () => void;
-  onSelect: (item: Item) => void;
   onOpen: (item: Item) => void;
   onPeek: (item: Item) => void;
   onRetry: () => void;
@@ -260,7 +237,6 @@ function DomainTable({
         errorTitle: '异常数据加载失败',
         errorDescription: '请检查 Monitor Service 后重试。',
       }}
-      onSelect={onSelect}
       onOpen={onOpen}
       onRetry={onRetry}
       columnClassName={(id, header) => domainColumnClass(mode, id, header)}
@@ -387,58 +363,6 @@ function errorColumns(
       cell: ({ row }) => <CatalogRowActions item={row.original} label="异常" onOpen={onOpen} onPeek={onPeek} />,
     },
   ];
-}
-
-function DomainPreview({ mode, item, onOpen, onPeek }: {
-  mode: Mode;
-  item?: Item;
-  onOpen: () => void;
-  onPeek: () => void;
-}) {
-  const business = mode === 'business' ? item as BusinessCatalogItem : undefined;
-  const error = mode === 'errors' ? item as ErrorCatalogItem : undefined;
-
-  return (
-    <CatalogPreviewShell
-      selected={Boolean(item)}
-      emptyDescription={`从${mode === 'business' ? '埋点' : '异常'}表格中选择一条记录。`}
-      header={item ? (
-        <div className="flex min-w-0 flex-col gap-2">
-          {business ? (
-            <>
-              <Badge className="w-fit" variant={business.result === 'failed' ? 'destructive' : 'secondary'}>{resultFilterLabel(business.result)}</Badge>
-              <p className="break-all font-mono text-sm font-medium leading-6">{business.action}</p>
-            </>
-          ) : (
-            <>
-              <Badge className="w-fit" variant={error?.kind === 'business_failure' ? 'secondary' : 'destructive'}>{error?.kind === 'business_failure' ? '业务失败' : '异常'}</Badge>
-              <p className="break-all text-sm font-medium leading-6">{error?.type}</p>
-              {error?.message ? <p className="break-words text-sm text-muted-foreground">{error.message}</p> : null}
-            </>
-          )}
-        </div>
-      ) : undefined}
-      facts={item ? [
-        ...(error?.fingerprint ? [{ label: 'Fingerprint', value: error.fingerprint }] : []),
-        ...(error?.occurrenceCount != null ? [{ label: CatalogLabels.occurrenceCount, value: error.occurrenceCount }] : []),
-        ...(error?.summary ? [{ label: '形态', value: '聚合摘要' }] : []),
-        { label: CatalogLabels.route, value: item.route ?? '-' },
-        { label: CatalogLabels.environment, value: item.environment ?? '-' },
-        { label: CatalogLabels.user, value: item.userId ?? '-' },
-        { label: CatalogLabels.version, value: item.appVersion ?? '-' },
-        { label: CatalogLabels.time, value: formatDateTime(item.timestamp) },
-      ] : undefined}
-      ids={item ? [
-        { label: CatalogLabels.eventId, value: item.eventId },
-        { label: CatalogLabels.session, value: item.sessionId },
-        { label: CatalogLabels.trace, value: item.traceId },
-      ] : undefined}
-      eventId={item?.eventId}
-      sessionId={item?.sessionId}
-      onOpen={onOpen}
-      onPeek={onPeek}
-    />
-  );
 }
 
 function DomainRecord({ mode, open, item, event, loading, error, items = [], onClose, onNavigate, onExpand }: {
