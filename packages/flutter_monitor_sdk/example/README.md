@@ -2,7 +2,7 @@
 
 体育健康演示 App：**像真实产品一样只调业务 Mock**，不调用 Monitor 查询 API。
 
-契约见 [`platform/docs/EXAMPLE_DEMO.md`](../../../../platform/docs/EXAMPLE_DEMO.md)。
+契约见 [`platform/docs/EXAMPLE_DEMO.md`](../../../platform/docs/EXAMPLE_DEMO.md)。
 
 ## 依赖
 

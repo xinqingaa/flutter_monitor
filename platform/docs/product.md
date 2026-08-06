@@ -2,6 +2,8 @@
 
 Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用统一 `EventEnvelope` 还原 HTTP、埋点、异常与会话链路。它不是 SDK，不定义第二套事件模型。
 
+当前功能清单见 [`FEATURES.md`](FEATURES.md)，视觉与组件原则见 [`DESIGN.md`](DESIGN.md)。
+
 视觉与交互以 shadcn（new-york）+ Tailwind v4 为基线：专业、克制，优先扫描、筛选、定位和 raw 回查。Raw JSON 放在详情深读区，不抢第一视觉。主验收视口为桌面 1440 / 1280。
 
 ---

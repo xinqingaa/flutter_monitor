@@ -1,15 +1,8 @@
 # Workbench Design
 
-## Meta
+本文定义 Workbench 当前的产品气质、信息架构和实现原则。功能事实以 [`FEATURES.md`](FEATURES.md) 为准，具体用户任务与页面交互以 [`product.md`](product.md) 为准。
 
-- status: active
-- last_updated: 2026-07-13
-- 功能事实源：[`FEATURES.md`](FEATURES.md)
-- 旧实现取舍：[`KEEP_KILL_STEAL.md`](KEEP_KILL_STEAL.md)
-- 实施计划：[`PHASE5_UX_PLAN.md`](PHASE5_UX_PLAN.md)
-- 当前状态：阶段 0–6 已完成；阶段 7 进行中，已开始删除无引用旧视觉组合
-
-本文只定义 Workbench 的产品气质、信息架构和实现原则。它不定义一套独立于 shadcn 的视觉系统，也不规定组件的像素尺寸、颜色、圆角、阴影、z-index 或具体页面排版。
+本文不定义一套独立于 shadcn 的视觉系统，也不规定组件的像素尺寸、颜色、圆角、阴影、z-index 或具体页面排版。
 
 ## 决策顺序
 
@@ -96,7 +89,7 @@ pnpm dlx shadcn@latest add <component> --dry-run
 
 ## 主题与颜色
 
-主题以 shadcn 官方 CSS variables 和当前配置为基准。第一轮不建立 `--fm-*` 设计系统，不要求业务页面消费自定义颜色 token。旧页面所需 alias 只能作为迁移兼容层，并在阶段 7 删除。
+主题以 shadcn 官方 CSS variables 和当前配置为基准。不建立 `--fm-*` 平行设计系统，不要求业务页面消费自定义颜色 token。遗留 alias 只作为兼容层，不得继续扩展。
 
 业务代码优先使用官方语义类名和组件 variants，例如 `bg-background`、`text-muted-foreground`、`border-border`、`variant="outline"` 和 `variant="secondary"`。状态色只用于表达真实状态，不能把普通数据行装饰成彩色列表。
 
@@ -104,7 +97,7 @@ pnpm dlx shadcn@latest add <component> --dry-run
 
 ## PC-first
 
-本轮优先完成桌面 Workbench，不以移动端适配阻塞 PC 交付。首轮主要验收视口为 1440px 和 1280px，1024px 用于检查明显溢出。
+Workbench 采用 desktop-first。主要验收视口为 1440px 和 1280px，1024px 用于检查明显溢出。
 
 移动端只要求不破坏数据访问；Sidebar、Sheet、Drawer 和列表压缩策略可以在 PC 基线通过后单独实施。不得为了提前适配移动端而改变桌面官方示例的结构。
 
@@ -131,7 +124,6 @@ pnpm dlx shadcn@latest add <component> --dry-run
 
 ## 文档演进
 
-- 功能增删先改 `FEATURES.md`。
-- 现有资产取舍先改 `KEEP_KILL_STEAL.md`。
+- 功能增删先改 `FEATURES.md`，用户流程变化同步更新 `product.md`。
 - 官方组件来源、页面基线或信息架构发生变化时再改本文。
 - 纯粹跟随 shadcn 官方版本的视觉变化，不应被记录为新的项目设计规则。

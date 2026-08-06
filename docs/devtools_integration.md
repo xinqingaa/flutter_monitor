@@ -1,229 +1,33 @@
-# DevTools 集成
+# DevTools 与 Session Export 边界
 
-## 目标
+## 当前状态
 
-DevTools 集成服务于本地复现、性能优化和 QA 交接。它回答“这一次发生了什么”，不承担长期历史分析、告警和跨用户聚合职责。
+本文件描述 DevTools 和 QA session 交接的设计边界，并明确区分当前已实现能力与后续扩展。
 
-当前阶段的 DevTools 集成优先指接入官方 Flutter DevTools / Flutter Timeline：SDK 写入 Timeline 标记、维护本地 session timeline、提供导出数据。未来可选的 `flutter_monitor_devtools` 是自定义 DevTools extension/UI 包，用于更完整地展示 session、trace、memory、jank 和 native signals；它消费 SDK bridge/export 数据，不承担 runtime 采集。
+当前代码状态：
 
-DevTools 必须消费 `flutter_monitor_core` 定义的统一 event envelope，不得定义第二套事件结构。Flutter runtime 信号和 native 信号都应通过同一 session timeline 展示。
+| 能力 | 状态 |
+|---|---|
+| 统一 `EventEnvelope` | 已实现 |
+| core `SessionExport` 数据结构与 JSON round-trip | 已实现 |
+| Workbench Session 工作区和 Raw JSON 回查 | 已实现 |
+| SDK session exporter/importer | 未实现 |
+| Flutter Timeline writer | 未实现 |
+| SDK DevTools bridge/output | 未实现 |
+| 自定义 Flutter DevTools extension | 未实现 |
 
-## 本地架构
+因此，当前本地诊断入口是 `localLive` + Monitor Service + Workbench，而不是 Flutter DevTools extension。文档和 README 不应把 Timeline、导出/导入 UI 或自定义 DevTools 面板列为现有功能。
 
-目标模块：
+## 已有数据契约
 
-- `DevToolsOutput`
-- `DevToolsBridge`
-- `TimelineWriter`
-- `SessionTimelineStore`
-- `SessionExporter`
-- `SessionImporter`
-- `SdkHealthStore`
-
-数据流：
-
-```text
-EventPipeline
-  -> DevToolsOutput
-    -> TimelineWriter
-    -> SessionTimelineStore
-    -> DevToolsBridge
-      -> DevTools Extension / local inspector
-```
-
-```mermaid
-flowchart TD
-  Pipeline["统一事件管线<br/>EventPipeline"]
-  Output["DevTools 输出<br/>DevToolsOutput"]
-  Timeline["Timeline 写入<br/>TimelineWriter"]
-  FlutterPerf["官方性能视图<br/>Flutter DevTools Performance"]
-  Store["本地会话时间线<br/>SessionTimelineStore"]
-  Bridge["本地诊断桥<br/>DevToolsBridge"]
-  Panel["自定义面板或本地查看器<br/>DevTools Extension / local inspector"]
-  Exporter["会话导出<br/>SessionExporter"]
-  Importer["会话导入<br/>SessionImporter"]
-  QA["QA 复现交接<br/>导出 JSON"]
-  Dev["开发排查<br/>导入查看"]
-
-  Pipeline -->|"脱敏 envelope"| Output
-  Output -->|"关键 trace/span 标记"| Timeline
-  Timeline --> FlutterPerf
-  Output -->|"保存事件顺序"| Store
-  Store --> Bridge
-  Bridge --> Panel
-  Store --> Exporter
-  Exporter --> QA
-  QA --> Importer
-  Importer --> Dev
-```
-
-DevTools 只消费 pipeline 输出的脱敏 envelope。本地 Timeline 负责快速定位性能片段，session timeline 和导出文件负责还原一次复现过程。
-
-要求：
-
-- DevTools 只读取 pipeline 输出的脱敏 event envelope。
-- DevTools 不重新读取 collector 原始数据。
-- native 信号必须先进入 pipeline，再进入 DevTools。
-- DevTools 面板展示的事件语义应与 HTTP 上报和 session export 一致。
-
-## Flutter Timeline 标记
-
-SDK 应将关键 trace/span 写入 Flutter Timeline。
-
-建议标记：
-
-- `app.cold_start`
-- `app.hot_start`
-- `app.interactive`（预留；基础 SDK 当前不自动生成）
-- `route.push` / `route.pop`
-- `page.visit`
-- `page.load`
-- `http.client`
-- `custom.trace` / `custom.step`
-- `ui.jank.sequence`
-- `memory.pressure`
-- `native.crash`
-- `native.oom`
-- `native.anr`
-
-标记规则：
-
-- trace/span 写入 Timeline 区间。
-- jank sequence 写入 Timeline 区间，并携带 frame budget、max frame、jank count。
-- error/native crash/OOM/ANR 写入关键瞬时标记。
-- breadcrumb 默认进入 SDK session timeline；只有调试模式或显式配置时才写 Flutter Timeline，避免 Timeline 噪声过大。
-- memory sample 默认不逐条写 Timeline；memory pressure、异常增长或 suspect leak 可写关键标记。
-
-Timeline arguments 应只包含脱敏后的必要字段，例如 `sessionId`、`traceId`、`spanId`、`context.route.name`、`context.module.name`、`status`、关键 attributes。
-
-DevTools 中展示的 `priority` 必须来自统一 event envelope，不应根据 UI 分组重新计算另一套优先级。
-
-## DevTools 面板
-
-### Session Timeline
-
-展示当前 session 的事件顺序：
-
-```text
-12:00:00 app.cold_start
-12:00:01 page.view /home
-12:00:03 ui.click home_banner
-12:00:03 http.client GET /campaign
-12:00:04 page.visit /product/detail
-12:00:04 page.load /product/detail
-12:00:05 ui.jank.sequence
-12:00:05 memory.sample
-12:00:06 error.dart
-```
-
-每条事件展示：
-
-- timestamp；
-- signal type；
-- name；
-- level/status；
-- duration；
-- `context.route.*` / `context.module.*`；
-- trace/span；
-- priority；
-- key attributes。
-
-### Trace Detail
-
-展示 trace 内部 span：
-
-- root trace 信息；
-- span 树；
-- duration 和状态；
-- 页面 first frame / interactive；
-- HTTP 请求；
-- jank、memory、error 关联事件；
-- native 信号关联事件；
-- recent breadcrumbs。
-
-### Event Detail
-
-展示单个 event envelope：
-
-- public fields；
-- resource；
-- context；
-- attributes；
-- payload；
-- breadcrumbs；
-- related trace/span；
-- privacy filtering 状态；
-- schema validation 状态。
-
-### Context Snapshot
-
-展示事件捕获时的上下文：
-
-- `resource.app.*` / `context.release.*`；
-- `context.user.*`；
-- `context.route.stack`；
-- `context.module.*`；
-- `context.network.*`；
-- `resource.device.*`；
-- `context.lifecycle.*`；
-- `context.native.*`。
-
-### Memory / Jank View
-
-展示本地性能线索：
-
-- frame budget；
-- jank sequences；
-- FPS/stability；
-- memory sample；
-- memory growth；
-- memory pressure；
-- suspect leak 线索；
-- 相关 route/action/http/native 信号。
-
-内存泄漏只能展示为 suspect，不应在 DevTools 中宣称确定泄漏。
-
-### Native Signals View
-
-展示来自 `flutter_monitor_native` 的可选信号：
-
-- native memory sample；
-- native memory pressure；
-- native crash；
-- ANR；
-- OOM；
-- native lifecycle warning。
-
-DevTools 不直接采集 native 数据，只展示已经进入 event envelope 的 native events。
-
-### SDK Health
-
-展示 SDK 自身状态：
-
-- event queue size；
-- dropped event count；
-- flush success/failure；
-- sampling state；
-- rate limit state；
-- privacy filtering state；
-- offline cache size；
-- active session id；
-- active trace count；
-- native bridge state；
-- schema validation failure count。
-
-## QA 导出与开发导入
-
-DevTools 应支持导出当前 session，供 QA 转交开发。
-
-导出格式：
+`flutter_monitor_core` 已定义 `SessionExport`：
 
 ```json
 {
   "schemaVersion": "1.0",
   "exportedAt": "2026-05-24T12:10:00.000+08:00",
   "source": {
-    "type": "devtools",
+    "type": "workbench",
     "sdkVersion": "1.0.0",
     "coreVersion": "1.0.0"
   },
@@ -241,46 +45,120 @@ DevTools 应支持导出当前 session，供 QA 转交开发。
 }
 ```
 
-导出要求：
+这个结构只定义可共享的数据形态，不代表 SDK 已提供导出 API。`events` 必须继续使用 `docs/event_model.md` 定义的 envelope；source、session、privacy 和 SDK health 只是导出元数据。
 
-- `events` 必须使用 `docs/event_model.md` 定义的 event envelope。
-- 导出文件不应包含未经脱敏的敏感字段。
-- 导出文件可以包含 session metadata，但不得定义另一套事件字段。
-- native 信号和 Flutter 信号在同一 `events` 数组中表达。
-- SDK self-monitoring events 应可选包含，便于判断是否丢失数据。
+## 当前替代工作流
 
-导入策略：
+本地或 QA 排查使用：
 
-- schema major 不兼容时，应明确提示并拒绝完整解析。
-- schema minor 新增字段不认识时，应保留原始 JSON 并弱展示。
-- 缺失 resource/context 时，应展示缺失原因和可用字段。
-- 不应在导入时重新执行隐私还原。
+```text
+Flutter App
+  -> MonitorMode.localLive
+  -> Monitor Service
+  -> Workbench Session / Event Detail / Raw JSON
+```
+
+Workbench 可通过 `sessionId`、`eventId`、`traceId`、用户、时间和资源维度定位数据。它已经覆盖原 DevTools 设计中的主要“本次复现发生了什么”场景，但当前不提供标准 `SessionExport` 文件下载或导入。
+
+## 设计中的诊断视图
+
+以下是未来 DevTools 或本地诊断查看器应消费的视图契约，不代表当前 SDK 已经提供对应 UI：
+
+### Session Timeline
+
+按时间顺序展示当前 session 的启动、页面、action、HTTP、错误、jank、memory 和 native 事件。每条记录至少应能查看 timestamp、signal type、name、level/status、duration、route/module、trace/span、priority 和可用的 event ID。
+
+### Trace Detail
+
+展示 root trace、span 关系、duration、status、页面首帧/可交互观测点、HTTP、jank、memory、error 和 native 关联事件，以及最近 breadcrumbs。Trace Detail 不应重新计算一套与 envelope 不同的 priority 或 status。
+
+### Event Detail 与 Context Snapshot
+
+事件详情应展示公共字段、resource、context、attributes、payload、breadcrumbs、相关 trace/span、privacy filtering 状态和 schema validation 状态。Context Snapshot 必须体现事件发生时的 route stack、module、user、network、release、device、lifecycle 和 native 状态，而不是当前页面的实时值。
+
+### Memory / Jank / Native View
+
+显式开启诊断信号后，可以展示 frame budget、jank sequence、FPS/stability、memory sample、memory growth、memory pressure 和相关 route/action/http/native 信号。内存增长只能标记为 suspect，不能在 DevTools 中宣称确定泄漏。Native crash、OOM、ANR 只有在真正进入 envelope 后才能展示，不能依据 schema 预留生成假事件。
+
+### SDK Health
+
+诊断工具应能查看 event queue size、dropped event count、flush success/failure、sampling、rate limit、privacy filtering、offline cache、active session、active trace、native bridge 和 schema validation failure。Health 视图消费 `sdk.*` 事件或统一 health summary，不根据 HTTP 状态或 UI 状态另造协议。
+
+## 后续集成约束
+
+未来实现 Timeline 或 DevTools extension 时，应复用下面的数据流：
+
+```text
+EventPipeline
+  -> 已完成 privacy filtering 的 EventEnvelope
+  -> Timeline adapter / Session store / Exporter
+  -> Flutter DevTools 或独立查看器
+```
+
+必须遵守：
+
+- 只消费 pipeline 输出的脱敏 envelope；
+- 不重新读取 collector 原始数据；
+- 不定义独立 signal type、字段路径或导出事件结构；
+- native 信号必须先经过 SDK mapper 和 pipeline；
+- Timeline 参数只携带必要的低敏字段；
+- breadcrumb 和 memory sample 默认不逐条写入 Timeline，避免噪声；
+- schema major 不兼容时拒绝结构化导入，但保留明确错误信息；
+- 未识别的 minor 字段应保留在 Raw JSON 中。
+
+## 可选 Timeline 映射
+
+如果后续增加 Flutter Timeline adapter，建议只映射关键事件：
+
+- `app.cold_start`、`app.hot_start`；
+- `page.visit`、`page.load`；
+- `http.client`；
+- error；
+- 显式开启后的 `ui.jank.sequence`、memory pressure 和 interaction measure；
+- 已经可靠采集并进入 envelope 的 native 事件。
+
+Timeline 是 envelope 的派生展示，不能成为新的事实源。
 
 ## 本地诊断场景
 
-DevTools 应支持以下场景：
-
-- 页面加载慢：查看 page trace 下的 `context.route.name`、first frame、HTTP；如显式开启诊断信号，再参考 jank、memory；如业务或 native 提供 interactive，再展示可交互点。
+- 页面加载慢：查看 page trace、route、first frame、HTTP；显式开启后再参考 jank 和 memory。
 - 点击后卡顿：查看 action breadcrumb、后续 span、jank sequence 和 memory sample。
-- 请求慢：查看 http span 是否影响页面 trace 或 action trace。
-- 冷启动慢：查看 app cold start trace、SDK init、first frame；如业务或 native 提供 interactive，再展示可交互点。
-- 热启动慢：查看 lifecycle resume、hot start trace、页面恢复和首个可交互点。
-- 内存上涨：查看 memory growth、`context.route.*` / `context.module.*` / `context.network.*`、HTTP、native 信号和 suspect leak 线索。
-- native 异常：查看 native crash/OOM/ANR 的 `sessionId`、`context.route.*`、`payload.breadcrumbs` 和设备上下文。
-- QA 复现：导出 session 给开发。
-- 自定义业务流程优化：比较 custom trace 的 span 耗时。
+- 请求慢：查看 HTTP span 是否归属于页面 trace 或 action trace，以及跨页 completion context。
+- 冷/热启动慢：查看启动 trace、SDK init、首帧和 lifecycle resume；可交互点只有在真实采集后才能展示。
+- 内存上涨：查看 memory growth、route/module/network、HTTP、native pressure 和 suspect 线索。
+- QA 复现：在保留 privacy filtering 状态的前提下导出同一 session，交给开发侧导入或回查。
 
-## 边界
+## QA 导出与开发导入
 
-DevTools 不负责：
+未来 exporter/importer 应满足：
+
+- `events` 只包含同一 session 的原始 envelope，保持原始 `eventId` 和事件顺序；
+- 导出前完成 privacy filtering，不包含未经脱敏的敏感字段；
+- Flutter 与 native 信号放在同一个 `events` 数组；
+- SDK self-monitoring 可选包含，用于判断 drop/retry 是否影响证据完整性；
+- schema major 不兼容时明确拒绝结构化导入；minor 新字段不认识时保留 Raw JSON；
+- 导入不得尝试恢复已脱敏字段，也不得把 UI summary 写回 raw envelope。
+
+## 导出与导入要求
+
+未来实现 exporter/importer 时：
+
+- 导出事件必须来自同一 session，并保持原始 `eventId` 和事件顺序；
+- 导出前必须完成 privacy filtering；
+- SDK self-monitoring 可一并导出，用于判断证据是否因 drop/retry 受损；
+- native 与 Flutter 信号放在同一个 `events` 数组；
+- 导入不能尝试恢复已脱敏字段；
+- UI 派生摘要不得写进 raw envelope；
+- 文件中的每条事件都应能通过 core `EventEnvelope.fromJson` 解析或以 Raw JSON 降级展示。
+
+## 职责边界
+
+DevTools 或 session export 适合回答一次复现中的事件顺序、上下文和链路关系，不负责：
 
 - 跨用户历史查询；
-- 长期趋势；
-- 告警；
-- 影响用户数统计；
-- 多版本聚合对比；
-- 服务端鉴权；
-- native 原始 crash dump 解析；
-- 未脱敏敏感字段展示。
+- 长期趋势和影响面；
+- 告警、权限和多租户；
+- native crash dump 符号化；
+- 未脱敏敏感数据展示。
 
-这些能力由服务端、native 工具链或其他专门工具承担。
+这些能力分别属于 Monitor Service、生产治理平台或原生工具链。

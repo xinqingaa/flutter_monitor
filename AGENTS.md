@@ -18,15 +18,15 @@ SDK 应采集错误、启动、页面、网络、行为、生命周期和自定�
 
 ## Workspace 与包边界
 
-本仓库目标架构使用官方 Dart pub workspaces。
+本仓库当前架构使用官方 Dart pub workspaces。
 
 根目录作为 workspace root，承载文档、CI、脚本和 workspace 配置，不作为发布包。
 
-第一阶段目标包：
+当前 workspace 包与消费层：
 
 - `packages/flutter_monitor_core`：唯一事件模型、schema、字段注册、隐私规则、session export/import 和共享配置来源。
-- `packages/flutter_monitor_sdk`：Flutter runtime 主 SDK，包含采集器、context、tracing、pipeline、outputs、DevTools bridge 和业务接入 API。
-- `packages/flutter_monitor_native`：可选 Flutter plugin，提供 native memory、memory pressure、native lifecycle、OOM、ANR、native crash 等增强信号。
+- `packages/flutter_monitor_sdk`：Flutter runtime 主 SDK，包含采集器、context、tracing、pipeline、outputs 和业务接入 API；当前未实现 DevTools bridge。
+- `packages/flutter_monitor_native`：可选 Flutter plugin，提供 native resource、memory、memory pressure 和 native lifecycle 等增强信号；OOM、ANR、native crash 当前只有模型与映射边界。
 - `platform`：JS/TS workspace，承载 Monitor Service、Workbench Web 与共享 TypeScript 层；消费统一 `EventEnvelope` 做本地调试、QA 复现、session timeline、性能分析和 raw JSON 回查，不定义第二套模型。
 
 未来工具入口：
@@ -135,16 +135,17 @@ DevTools 侧目标：
 
 - `AGENTS.md`：项目目标、workspace 约束、代码演进门禁和方向边界。
 - `SKILL.md`：具体变更工作流，包括 docs -> core -> sdk/native -> platform 的执行顺序、端口复用和验证规则。
-- `docs/background.md`：项目背景、迁移原因和现有能力归位。
+- `docs/background.md`：V1/V2 演进背景和当前能力边界。
 - `docs/event_model.md`：统一 event schema、字段状态、signal mapping、resource、context、attributes、payload、privacy 和完整示例。
 - `docs/signal_collection.md`：各类信号的采集来源、触发时机、链路关联、字段映射、限制和降级策略，以及接入方视角的输出模式行为规则与自定义配置。
-- `docs/server_protocol.md`：服务端上报协议、schema version、鉴权、错误处理、重试、批量、remote config 和兼容策略。
-- `docs/devtools_integration.md`：Flutter Timeline、DevTools bridge、本地 session 导出/导入和本地/服务端边界。
-- `docs/architecture.md`：workspace 目标架构、包职责、代码目录、模块边界和运行时数据流。
-- `docs/plan.md`：当前状态总览、分阶段实施计划、验收标准和待办验证清单。
+- `docs/server_protocol.md`：当前 Monitor Service 写入合同、SDK ack/retry 行为和生产服务扩展边界。
+- `docs/devtools_integration.md`：DevTools 与 SessionExport 的当前状态、未实现能力和后续兼容边界。
+- `docs/architecture.md`：workspace 当前架构、包职责、代码目录、模块边界和运行时数据流。
 - `platform/docs/README.md`：Platform 文档索引和消费侧边界。
 - `platform/docs/product.md`：Workbench 信息架构、共享交互与各模块现状。
 - `platform/docs/architecture.md`：Platform 架构、Monitor Service / Web 边界与排查食谱。
+- `platform/docs/FEATURES.md`：Workbench 当前功能边界。
+- `platform/docs/DESIGN.md`：Workbench 设计与交互原则。
 
 README 只作为项目入口，不作为架构、协议或 schema 的唯一事实源。
 
@@ -185,6 +186,6 @@ README 只作为项目入口，不作为架构、协议或 schema 的唯一事�
 
 示例：
 
-- `feat(sdk): 收口 Phase 3 业务埋点 API 与 raw JSON 质量`
+- `feat(sdk): 收口业务埋点 API 与 raw JSON 质量`
 - `fix(sdk): 限制 failed HTTP breadcrumb 数量`
 - `docs(core): 补充事件模型字段注册约束`

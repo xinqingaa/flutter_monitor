@@ -17,6 +17,8 @@
 
 Monitor Service 只接收和存储 SDK 发来的 `EventEnvelope`。
 
+当前本地 ingest 只检查事件是否带非空 `eventId`，不执行完整 core schema validation。SDK 会在发送前校验和过滤；生产服务仍应增加服务端 schema 与鉴权校验。重复 `eventId` 通过 SQLite upsert 保持幂等。
+
 允许：
 
 - 用 SQLite `sequence`、索引列和时间戳支持查询排序

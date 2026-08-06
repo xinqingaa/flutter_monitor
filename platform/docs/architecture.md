@@ -42,7 +42,7 @@ SDK collectors
 |---|---|
 | `flutter_monitor_core` | 唯一 schema、字段注册、摘要与隐私规则 |
 | `flutter_monitor_sdk` | 采集、链路、pipeline、输出；`localLive` 连本地 service |
-| Monitor Service | 接收、校验、索引、查询摘要、SSE；不补写 SDK 字段进 envelope |
+| Monitor Service | 接收、检查 `eventId`、索引、查询摘要、SSE；当前不做完整 core schema 校验，不补写 SDK 字段进 envelope |
 | Workbench Web | 展示、筛选、联动、raw 回查；view model 不是协议；Catalog 共用展示协议与 `EnvironmentProfile` 结构化上下文 |
 
 SDK 输出模式：`consoleOnly`（仅 compact log）、`localLive`（短 batch、关键 flush，供本地 / QA）、`production`（限流、离线、重试等）。Workbench 实时性来自 service→web 的 SSE，不要求 SDK 逐条 HTTP。
@@ -99,7 +99,7 @@ Analytics 面向大量本地事件，时间分桶、去重、Top N、矩阵和�
 - 目录习惯：`components/ui` 官方 primitive；`features/`、`routes/`、`app/` 业务接线；`shared/datasource` 调 Monitor Service
 - Datasource：HTTP API + SSE；页面状态以 URL search 为主（筛选、分页、`eventId`、`detail`）
 - 时间、应用、版本、环境、包名、用户、平台等总 Scope 跨一级导航持久化并始终平铺展示；`sessionId` / `route` 使用同一 URL 参数，由 Catalog 领域筛选条编辑，导航时经 `pickScopeSearch` 携带
-- 概览和 Catalog 使用相同时间范围；图表第一阶段使用查询快照与手动刷新，SSE 不驱动图表动画
+- 概览和 Catalog 使用相同时间范围；当前图表使用查询快照与手动刷新，SSE 不驱动图表动画
 
 产品交互见 [`product.md`](product.md)。
 

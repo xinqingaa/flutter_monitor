@@ -30,7 +30,7 @@
    - 如果 raw envelope 错误，进入 Flutter runtime / core 流程。
 
 3. 字段、状态、事件名或链路语义不对
-   - 先审查根目录 `docs/event_model.md`、`docs/signal_collection.md`、`docs/server_protocol.md`、`docs/plan.md`。
+   - 先审查根目录 `docs/event_model.md`、`docs/signal_collection.md`、`docs/server_protocol.md` 和 `docs/architecture.md`。
    - 再审查 `packages/flutter_monitor_core` 的 `FieldPaths`、协议常量、field registry、summary 和测试。
    - 再审查 `packages/flutter_monitor_sdk` 或 `packages/flutter_monitor_native` 的实际发出逻辑。
    - 最后回到 Workbench 更新展示和查询口径。
@@ -123,8 +123,8 @@ bash scripts/check.sh
 文档迁移或链接调整后至少运行：
 
 ```sh
-rg "docs/(workbench_plan|product_plan|service_api|FEATURES|FRONTEND_REFACTOR|PHASE5_UX|KEEP_KILL|UI_AUDIT)\\.md" README.md AGENTS.md SKILL.md docs platform
-test -f platform/docs/product.md && test -f platform/docs/architecture.md
+rg "docs/(plan|workbench_plan|product_plan|service_api|FRONTEND_REFACTOR|PHASE5_UX|KEEP_KILL|UI_AUDIT)\\.md" README.md AGENTS.md SKILL.md docs platform
+test -f platform/docs/README.md && test -f platform/docs/product.md && test -f platform/docs/architecture.md
 rg "热恢复" docs platform/docs platform/README.md README.md AGENTS.md
 ```
 

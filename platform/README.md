@@ -58,6 +58,8 @@ pnpm run smoke
 
 - [文档索引](docs/README.md)
 - [产品](docs/product.md)
+- [功能清单](docs/FEATURES.md)
+- [设计原则](docs/DESIGN.md)
 - [架构](docs/architecture.md)
 - [Example Demo](docs/EXAMPLE_DEMO.md)
 - [Monitor Service 数据边界](services/monitor-service/docs/boundaries.md)

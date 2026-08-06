@@ -1,101 +1,214 @@
 # Flutter Monitor
 
-Flutter Monitor 是一个以链路为组织方式的 Flutter 端侧监控 workspace。它把错误、启动、页面、网络、行为、生命周期，以及显式开启后的卡顿、内存、native 和自定义诊断信号归一到统一 `EventEnvelope`，再通过 `session`、`trace`、`span`、`breadcrumb`、`context` 和 `resource` 还原一次真实用户或 QA 会话。
+Flutter Monitor 是一个以 Session 链路为组织方式的 Flutter 端侧监控 workspace。它将错误、启动、页面、HTTP、业务行为和生命周期，以及显式开启的卡顿、帧、内存和 native 诊断信号，统一写入 `EventEnvelope`，帮助开发者与 QA 还原一次真实会话中发生了什么。
 
-项目的核心原则是：文档先行，`flutter_monitor_core` 统一约定字段和状态，`flutter_monitor_sdk` 执行 Flutter runtime 采集，`flutter_monitor_native` 提供 native 增强，Workbench 只消费统一 envelope 做诊断展示。不要为 SDK、native、Workbench、DevTools、CLI、MCP 或服务端创建第二套模型。
+![Flutter Monitor 从 V1 指标采集演进到 V2 链路化监控](docs/image/02-v1-vs-v2-evolution.png)
 
-## Workspace
+V1 关注独立指标；V2 保留原有采集能力，并通过 `sessionId`、`traceId`、`spanId`、breadcrumb、resource 和 context 把事件组织成可检索、可回查的证据链。完整背景见 [V1 到 V2](docs/background.md)。
+
+## 当前能力
+
+| 范围 | 能力 |
+|---|---|
+| 主链路采集 | Flutter/Dart error、冷/热启动、页面与路由、Dio/http、业务 `track`、lifecycle |
+| 诊断信号 | frame、jank、RSS memory、interaction measure、native；默认关闭，显式开启 |
+| 统一模型 | EventEnvelope、字段注册、schema validation、privacy、retention、summary |
+| 可靠投递 | SQLite offline queue、batch、retry、TTL、优先级降级、SDK self-monitoring |
+| 本地排查 | Monitor Service、SQLite、SSE、Workbench 概览/Catalog/Session/详情/Raw JSON |
+| Native 增强 | Android/iOS resource、memory、memory pressure、lifecycle；默认关闭 |
+
+Native crash、OOM、ANR 目前只有 schema 和 mapper 边界，没有可靠平台捕获实现。Flutter DevTools extension、session 文件导入/导出、remote config、多租户和生产告警也不属于当前能力。
+
+## 端到端架构
+
+![Flutter Monitor V2 端到端流程](docs/image/01-v2-end-to-end-flow.png)
+
+所有信号遵循同一条处理链路：
 
 ```text
-flutter_monitor/
-  docs/                         项目级模型、架构、采集、协议和计划
-  packages/
-    flutter_monitor_core/       字段、schema、状态、summary、隐私规则
-    flutter_monitor_sdk/        Flutter runtime SDK、采集器、pipeline、outputs
-      example/                  SDK 接入示例 App
-    flutter_monitor_native/     可选 native 生命周期和内存增强
-  platform/                     JS/TS workspace：Monitor Service、Workbench Web、shared
-    docs/                       Platform 架构、Workbench 产品与 API 文档
-    services/monitor-service/ NestJS：ingest、SQLite、查询、SSE、Swagger
-    web/                        Workbench UI（React/Vite）
-    shared/                     TypeScript wire mirror 和共享 helper
-  scripts/                      检查、platform 和 example 启动脚本
-  SKILL.md                      本仓库变更工作流
-  AGENTS.md                     项目方向和硬约束
+Collector / Native Bridge
+  -> RawSignal
+  -> ContextSnapshot + TraceSnapshot
+  -> EventEnvelope
+  -> Schema Validation + Privacy Filter
+  -> Sampling / Rate Limit / Retention
+  -> Console / Monitor Service
+  -> Workbench
 ```
 
-## Package Roles
+![Flutter Monitor V2 数据采集与上报链路](docs/image/03-v2-data-collection-reporting.png)
 
-- `packages/flutter_monitor_core` 是唯一模型来源，定义 `FieldPaths`、协议常量、字段注册、事件摘要、隐私等级和共享配置。它不依赖 Flutter，也不做采集、网络或 UI effect。
-- `packages/flutter_monitor_sdk` 是 Flutter 应用接入的主 SDK，负责错误、启动、页面、网络、行为、生命周期、显式开启的低可信诊断信号、pipeline 和 output。
-- `packages/flutter_monitor_native` 是可选 Flutter plugin，提供 native lifecycle、native memory、memory pressure 等增强信号，并通过统一模型回到 SDK pipeline。
-- `platform` 是 JS/TS workspace，承载 Monitor Service、Workbench Web 和 TypeScript 共享层。Workbench 是 UI 产品名；诊断规则与 Evidence API 也归属 platform，但不定义事件模型，不改写 SDK envelope。
+核心约束：
 
-## Change Workflow
+- `flutter_monitor_core` 是唯一事件模型、字段和状态来源；
+- `flutter_monitor_sdk` 负责 Flutter runtime 采集、链路、pipeline 和 output；
+- `flutter_monitor_native` 只提供可选 native 原始事实，不独立上报；
+- Monitor Service 与 Workbench 只消费 envelope，不改写 SDK 事件；
+- Catalog、Analytics、Session summary 和 UI view model 都必须能回查 raw envelope。
 
-任何字段、事件语义、状态流转、链路关系、服务端协议或 Flutter runtime 行为变更，都按以下顺序推进：
+详细设计见 [当前架构](docs/architecture.md)。
 
-1. 审查并更新 `docs/` 或 `platform/docs/`。
-2. 如涉及字段、状态或 summary，更新 `packages/flutter_monitor_core`。
-3. 如涉及 Flutter runtime 采集或 output，更新 `packages/flutter_monitor_sdk`。
-4. 如涉及 native 生命周期、内存或平台信号，更新 `packages/flutter_monitor_native`。
-5. 最后更新 Monitor Service / Workbench web 展示、查询和说明。
+## Workbench
 
-纯 Workbench UI 问题可以只改 `platform/web`，但如果发现数据语义不对，必须先回到文档和 core/sdk/native 判断根因，不能在 UI 层补出第二套事实。
+Workbench 是 Flutter Monitor 当前的本地与 QA 排查入口：
 
-详细执行规则见 [SKILL.md](SKILL.md)。
+![Flutter Monitor V2 Workbench 排查流程](docs/image/04-v2-workbench-troubleshooting.png)
+
+```text
+概览       当前范围的启动、页面、HTTP、埋点、异常与 Session 情况
+Session    会话检索和事件链路工作区
+HTTP       请求筛选、请求/响应详情、cURL 与 Session 回查
+埋点       业务动作、结果、上下文与关联事件
+异常       稳定性错误、聚合错误和业务失败
+```
+
+**工作台文档入口：[Platform / Workbench 文档](platform/docs/README.md)**
+
+相关入口：
+
+- [Workbench 产品](platform/docs/product.md)
+- [Workbench 当前功能](platform/docs/FEATURES.md)
+- [Workbench 设计原则](platform/docs/DESIGN.md)
+- [Platform 架构](platform/docs/architecture.md)
+- [Monitor Service 数据边界](platform/services/monitor-service/docs/boundaries.md)
+- Swagger：`http://localhost:3700/docs`
 
 ## Quick Start
 
-安装 Dart/Flutter workspace 依赖：
+安装 Dart/Flutter workspace 依赖并运行检查：
 
 ```sh
 fvm flutter pub get
-```
-
-运行核心检查：
-
-```sh
 bash scripts/check.sh
 ```
 
-启动 Workbench：
+启动 Monitor Service 与 Workbench：
 
 ```sh
 bash scripts/platform.sh dev
 ```
 
-默认端口：
+默认地址：
 
-- Workbench Web: `http://localhost:4700`
-- Monitor Service/API: `http://localhost:3700`
-- Swagger API 文档: `http://localhost:3700/docs`
-- API 前缀：`http://localhost:3700/api/monitor/v1/*`
+| 服务 | 地址 |
+|---|---|
+| Workbench | `http://localhost:4700` |
+| Monitor Service | `http://localhost:3700` |
+| Swagger | `http://localhost:3700/docs` |
+| Ingest | `http://localhost:3700/api/monitor/v1/events` |
 
-如果 `4700` 或 `3700` 已经有本项目 Workbench 进程活跃，默认复用它，不主动关闭或另起临时端口。若端口被非 Workbench 进程占用，先确认归属再决定是否换端口。
-
-启动 example 并接入本地 Workbench：
+启动 PulseFit example 并接入本地 Workbench：
 
 ```sh
 bash scripts/run_example.sh
 ```
 
-只运行 Flutter example 或接入外部服务：
+只运行 example 或指定 ingest：
 
 ```sh
 bash scripts/run_example.sh --no-workbench
 bash scripts/run_example.sh --server-url http://host:3700/api/monitor/v1/events
 ```
 
-## SDK 接入概要
+如果 `3700` 或 `4700` 已经运行本项目进程，脚本会复用；端口被其他进程占用时会报错。
 
-SDK 对业务暴露三种输出模式：`consoleOnly`（本地日志）、`localLive`（本地 Workbench 调试）、`production`（生产可靠上报）。三种模式的采集开关一致：默认开启错误、启动/生命周期、页面/路由、HTTP wrapper/interceptor 和业务 `track`；FrameTiming、jank、memory、native 和 `measure` 由 `MonitorSignalConfig` 显式开启。采样和限流只在 production 生效，且错误、HTTP、业务埋点等 hard 证据永不被采样，压力下只压缩不静默丢弃。
+## SDK 接入
 
-- 证据保留三级（hard / compressible / sampleable）完整映射表：见 [事件模型](docs/event_model.md) 的"证据保留等级"章节。
-- 模式行为规则与全部配置项（`MonitorProductionPolicy`、`MonitorHttpConfig` 等）：见 [信号采集设计](docs/signal_collection.md) 的"输出模式行为与接入配置"章节。
-- 接口聚合查询与 userId/sessionId 链路排查：见 [Platform 文档索引](platform/docs/README.md) 的"常用查询路径"章节。
+初始化 SDK：
 
-## Common Commands
+```dart
+final appStartTime = DateTime.now();
+WidgetsFlutterBinding.ensureInitialized();
+
+final appInfo = await AppInfo.fromPackageInfo(
+  appKey: 'my_app',
+  environment: 'development',
+);
+
+await FlutterMonitorSDK.init(
+  config: MonitorConfig(
+    appInfo: appInfo,
+    mode: MonitorMode.localLive(),
+  ),
+  appStartTime: appStartTime,
+);
+```
+
+接入页面与 HTTP：
+
+```dart
+final dio = Dio();
+dio.interceptors.add(FlutterMonitorSDK.createDioInterceptor());
+
+MaterialApp(
+  navigatorObservers: [FlutterMonitorSDK.routeObserver],
+);
+```
+
+写入用户上下文和关键业务结果：
+
+```dart
+FlutterMonitorSDK.setContext(
+  userId: 'user_123',
+  moduleName: 'checkout',
+  releaseId: '2026.07',
+);
+
+FlutterMonitorSDK.track(
+  action: 'checkout.submit',
+  result: MonitorTrackResult.success,
+);
+```
+
+HTTP query、headers 和双向 body 当前默认采集到 sensitive payload，并按模式截断。真实 App 应根据数据安全要求配置 `MonitorHttpConfig.redactor` 或关闭对应采集项。完整配置见 [信号采集设计](docs/signal_collection.md)。
+
+## 输出模式
+
+| 模式 | 用途 | 行为 |
+|---|---|---|
+| `MonitorMode.consoleOnly()` | 本地开发 | 输出 compact/quiet/json/silent log |
+| `MonitorMode.localLive()` | 本地或 QA | 小 batch 写入本机 Monitor Service |
+| `MonitorMode.production(...)` | 灰度或生产 | 离线队列、batch、retry 和 self-monitoring |
+
+输出模式不改变采集开关。默认只启用高确定性主链路；frame、jank、memory、measure 和 native 由 `MonitorSignalConfig` 显式开启。production 的采样、限流和队列策略见 [事件模型](docs/event_model.md) 与 [信号采集设计](docs/signal_collection.md)。
+
+## Workspace
+
+```text
+docs/                         项目背景、架构、模型、采集和协议
+packages/
+  flutter_monitor_core/       Dart-only 事件模型核心
+  flutter_monitor_sdk/        Flutter runtime SDK 与 example
+  flutter_monitor_native/     可选 Android/iOS native bridge
+platform/
+  docs/                       Platform / Workbench 文档
+  services/monitor-service/   NestJS + SQLite + Swagger + SSE
+  web/                        React/Vite Workbench
+  shared/                     TypeScript wire mirror
+scripts/                      检查、Platform 和 example 脚本
+```
+
+## 文档
+
+项目级事实文档：
+
+- [V1 到 V2 背景](docs/background.md)
+- [当前架构](docs/architecture.md)
+- [事件模型](docs/event_model.md)
+- [信号采集设计](docs/signal_collection.md)
+- [服务端协议](docs/server_protocol.md)
+- [DevTools 与 Session Export 边界](docs/devtools_integration.md)
+
+工程规范：
+
+- [项目方向与硬约束](AGENTS.md)
+- [仓库变更工作流](SKILL.md)
+- [Platform README](platform/README.md)
+- [PulseFit Example](packages/flutter_monitor_sdk/example/README.md)
+
+README 只作为入口。字段以 `docs/event_model.md` 和 core 为准，采集以 `docs/signal_collection.md` 和 SDK 为准，Workbench 边界以 `platform/docs/` 为准。
+
+## 验证命令
 
 ```sh
 fvm dart test packages/flutter_monitor_core/test
@@ -106,29 +219,6 @@ pnpm --dir platform typecheck
 pnpm --dir platform build
 pnpm --dir platform run smoke
 ```
-
-## Documentation
-
-项目级文档：
-
-- [背景与方向](docs/background.md)
-- [目标架构](docs/architecture.md)
-- [事件模型](docs/event_model.md)
-- [信号采集设计](docs/signal_collection.md)
-- [服务端协议](docs/server_protocol.md)
-- [DevTools 集成](docs/devtools_integration.md)
-- [实施计划](docs/plan.md)
-
-Platform / Workbench 文档：
-
-- [Platform README](platform/README.md)
-- [Platform 文档索引](platform/docs/README.md)
-- [Workbench 产品](platform/docs/product.md)
-- [Platform 架构](platform/docs/architecture.md)
-- [Monitor Service 数据边界](platform/services/monitor-service/docs/boundaries.md)
-- API：`http://localhost:3700/docs`（Swagger）
-
-`README.md` 只作为项目入口。事件模型以 `docs/event_model.md` 为准；采集口径以 `docs/signal_collection.md` 为准；Platform 边界以 `platform/docs/` 为准。
 
 ## License
 

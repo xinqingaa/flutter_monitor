@@ -1,66 +1,26 @@
 # 服务端协议
 
-## 目标
+## 文档范围
 
-服务端协议负责接收 SDK 统一 event envelope，并支持批量上报、鉴权、兼容、重试、聚合、告警和企业质量治理。
+本文定义 SDK 与 Monitor Service 之间当前真实可用的写入合同，并记录生产服务扩展时必须保持的兼容边界。
 
-协议基于 `flutter_monitor_core` 定义的事件模型。`flutter_monitor_sdk`、`flutter_monitor_native`、DevTools 导出、CLI/MCP 工具入口都不得定义另一套服务端协议。
+- 当前 API 清单以 `http://localhost:3700/docs` 和 `/docs-json` 为准。
+- 查询、SQLite 索引和 Workbench summary 边界见 `platform/services/monitor-service/docs/boundaries.md`。
+- 单个事件结构以 `docs/event_model.md` 为准。
 
-服务端不应要求不同模块发送不同结构。所有 Flutter 信号、native 信号、SDK self-monitoring 信号都应通过统一 envelope 表达。
+当前仓库中的 Monitor Service 定位为本地开发、QA 和小规模验证服务，不等同于完整生产 APM 后端。
 
-本文档描述 Phase 6 Monitor Service 的服务端协议与稳定性要求。本地 Monitor Service 实现位于 `platform/services/monitor-service`。
-
-- **API 文档（主）**：启动 service 后访问 `http://localhost:3700/docs`（Swagger UI），或 `http://localhost:3700/docs-json`（OpenAPI JSON）。
-- **数据边界（辅）**：`platform/services/monitor-service/docs/boundaries.md`（raw envelope 边界、query summary 口径等 Swagger 不便表达的内容）。
-
-Workbench Web 通过 Vite proxy 访问 `:3700/api/*`；SDK example 直连同一 API。
-
-服务端能力应拆成两条链路：
-
-- 写入链路：SDK 批量上报完整 `EventEnvelope`，服务端负责鉴权、schema 校验、大小限制、幂等、重试语义和接收结果。
-- 查询链路：Workbench 或工具入口按 userId、time range、sessionId、traceId、route、版本、错误和性能问题回查 session、trace、event 和聚合结果。
-
-真实 App 默认不应无策略实时逐条上报。近实时写入本地 Workbench 或测试环境可以通过 SDK 初始化配置显式开启，但仍应使用 batch、优先级、关键时机 flush 和请求大小控制。
-
-## Endpoint
-
-建议默认接口：
+## 当前写入 Endpoint
 
 ```text
 POST /api/monitor/v1/events
+Content-Type: application/json
 ```
 
-版本号位于 URL 中，event schema version 位于 header 和 body 中。URL version 表示服务端 API 版本，`schemaVersion` 表示事件模型版本。
-
-## Headers
-
-| Header | 必填 | 说明 |
-|---|---:|---|
-| `Content-Type: application/json` | 是 | 请求格式 |
-| `X-App-Key` | 是 | 应用标识 |
-| `X-SDK-Name` | 是 | SDK 名称 |
-| `X-SDK-Version` | 是 | Flutter SDK 版本 |
-| `X-Core-Version` | 是 | `flutter_monitor_core` 版本 |
-| `X-Native-Version` | 否 | native plugin 版本 |
-| `X-Schema-Version` | 是 | event schema 版本 |
-| `X-Request-Id` | 是 | 上报请求 ID |
-| `Authorization` | 否 | 服务端鉴权 |
-| `Content-Encoding` | 否 | gzip 等压缩方式 |
-
-## Request Body
+SDK 的 `localLive` 和 `production` 都通过 `ReliableHttpOutput` 发送 batch：
 
 ```json
 {
-  "schemaVersion": "1.0",
-  "requestId": "req_001",
-  "sentAt": "2026-05-24T12:00:10.000+08:00",
-  "appKey": "app_xxx",
-  "sdk": {
-    "name": "flutter_monitor_sdk",
-    "version": "1.0.0",
-    "coreVersion": "1.0.0",
-    "nativeVersion": "1.0.0"
-  },
   "events": [
     {
       "schemaVersion": "1.0",
@@ -68,369 +28,207 @@ POST /api/monitor/v1/events
       "timestamp": "2026-05-24T12:00:00.000+08:00",
       "signalType": "span",
       "name": "http.client",
-      "level": "info",
       "status": "ok",
       "priority": "normal",
       "sessionId": "ses_001",
       "traceId": "trace_001",
-      "spanId": "span_001",
-      "parentSpanId": null,
       "resource": {},
       "context": {},
-      "attributes": {
-        "http.method": "GET",
-        "http.url.normalized": "/api/product/{id}",
-        "http.status_code": 200
-      },
+      "attributes": {},
       "payload": {}
     }
   ]
 }
 ```
 
-`events` 中的每一项必须符合 `docs/event_model.md` 定义的 event envelope。
+本地 Service 为调试方便也接受：
 
-请求级 `appKey`、`sdk` 和 headers 只用于鉴权、路由、兼容校验和排查，不替代单个 event envelope 内的 `resource.app.*` 与 `resource.sdk.*`。每个事件仍应能脱离 batch 独立解析。
+- 单个带 `eventId` 的 envelope object；
+- envelope array；
+- `{ "events": [...] }` batch。
 
-如果请求级元信息与事件级 `resource` 冲突，服务端应以事件级 envelope 作为事件事实源，并将冲突作为协议校验问题记录；是否拒绝整个 batch、拒绝冲突事件或仅记录 warning，由服务端兼容策略决定，但不得用请求级字段静默覆盖事件级字段。
+正式 SDK 输出只使用 `{ "events": [...] }`。
 
-```mermaid
-flowchart TD
-  Events["脱敏统一事件<br/>EventEnvelope"]
-  Batch["批量请求<br/>Batch / RequestBody"]
-  HTTP["HTTP 上报<br/>POST /api/monitor/v1/events"]
-  Validate["服务端校验<br/>鉴权 / schema / 大小限制"]
-  Accepted["接收成功<br/>accepted"]
-  Partial["部分失败<br/>partial accepted"]
-  Retryable["可重试失败<br/>429 / 5xx / retryable"]
-  NonRetry["不可重试失败<br/>schema / auth / event too large"]
-  Retry["重试与离线缓存<br/>RetryScheduler / OfflineStore"]
-  Drop["丢弃并记录<br/>SDK self-monitoring"]
-  Store["服务端存储与聚合<br/>session / trace / metrics"]
+## 当前 Headers
 
-  Events -->|"按数量和大小组包"| Batch
-  Batch -->|"带 headers 发送"| HTTP
-  HTTP --> Validate
-  Validate --> Accepted
-  Validate --> Partial
-  Accepted --> Store
-  Partial --> Retryable
-  Partial --> NonRetry
-  Retryable --> Retry
-  Retry --> Batch
-  NonRetry --> Drop
-```
-
-服务端协议只接收统一 event envelope。可重试失败回到重试/离线缓存，不可重试失败必须记录 SDK 自监控，避免静默丢失。
-
-## 批量边界
-
-SDK 应支持按事件数量和请求体大小拆包。建议配置项：
-
-| 配置 | 建议默认 | 说明 |
-|---|---:|---|
-| `maxEventsPerBatch` | 50 | 单批最大事件数 |
-| `maxBytesPerBatch` | 512 KB | 单批最大请求体 |
-| `maxEventBytes` | 64 KB | 单事件最大大小 |
-| `compressionThresholdBytes` | 16 KB | 超过后启用 gzip |
-
-单个事件超过 `maxEventBytes` 时，应优先裁剪 `payload` 中可裁剪字段，并记录 SDK self-monitoring。仍然超限时丢弃该事件，不应无限重试。
-
-请求体超过服务端限制并收到 `413` 时，SDK 应拆分 batch 后重试。若拆分到单事件仍失败，应按不可重试失败处理。
-
-## 幂等语义
-
-`eventId` 是事件幂等键。服务端应允许同一 `eventId` 重复上报，并按幂等语义去重。
-
-SDK 重试时不得为同一事件重新生成 `eventId`。`requestId` 只表示一次 HTTP 上报请求，不参与事件去重。同一个 batch 拆包或重试时可以使用新的 `requestId`，但事件自身的 `eventId` 必须保持不变。
-
-## Response Body
-
-### 成功
-
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "accepted": 10,
-  "rejected": 0,
-  "retryAfterMs": null,
-  "errors": []
-}
-```
-
-### 部分成功
-
-```json
-{
-  "code": 207,
-  "message": "partial accepted",
-  "accepted": 8,
-  "rejected": 2,
-  "retryAfterMs": null,
-  "errors": [
-    {
-      "eventId": "evt_invalid",
-      "code": "SCHEMA_INVALID",
-      "message": "missing sessionId",
-      "retryable": false
-    },
-    {
-      "eventId": "evt_retry",
-      "code": "SERVER_BUSY",
-      "message": "temporary shard unavailable",
-      "retryable": true
-    }
-  ]
-}
-```
-
-### 限流
-
-```json
-{
-  "code": 429,
-  "message": "rate limited",
-  "accepted": 0,
-  "rejected": 10,
-  "retryAfterMs": 30000,
-  "errors": []
-}
-```
-
-### Schema 不兼容
-
-```json
-{
-  "code": 400,
-  "message": "unsupported schema major version",
-  "accepted": 0,
-  "rejected": 10,
-  "errors": [
-    {
-      "code": "SCHEMA_UNSUPPORTED_MAJOR",
-      "message": "schemaVersion 2.0 is not supported",
-      "retryable": false
-    }
-  ]
-}
-```
-
-### 鉴权失败
-
-```json
-{
-  "code": 401,
-  "message": "auth failed",
-  "accepted": 0,
-  "rejected": 10,
-  "errors": [
-    {
-      "code": "AUTH_FAILED",
-      "message": "invalid token",
-      "retryable": false
-    }
-  ]
-}
-```
-
-## 错误码
-
-| 错误码 | 是否重试 | 说明 |
-|---|---:|---|
-| `SCHEMA_INVALID` | 否 | 事件结构或字段不符合 schema |
-| `SCHEMA_UNSUPPORTED_MAJOR` | 否 | 服务端不支持该 major schema |
-| `AUTH_FAILED` | 否 | 鉴权失败 |
-| `RATE_LIMITED` | 是 | 服务端限流，按 `retryAfterMs` |
-| `PAYLOAD_TOO_LARGE` | 条件 | batch 过大，拆包后重试 |
-| `EVENT_TOO_LARGE` | 否 | 单事件过大，裁剪失败后丢弃 |
-| `SERVER_BUSY` | 是 | 服务端临时不可用 |
-| `SERVER_ERROR` | 是 | 服务端错误 |
-
-## HTTP 状态码
-
-| HTTP 状态码 | 处理方式 |
+| Header | 当前行为 |
 |---|---|
-| 2xx | 成功或部分成功，按 body 判断事件级结果 |
-| 400 | 请求或 schema 错误，不重试 |
-| 401/403 | 鉴权失败，不重试，记录 SDK self-monitoring |
-| 413 | 请求过大，拆包后重试 |
-| 429 | 限流，按 `retryAfterMs` 重试 |
-| 5xx | 服务端异常，可重试 |
+| `Content-Type: application/json` | SDK 固定发送 |
+| `Authorization: Bearer <token>` | 配置 `authTokenProvider` 时发送；本地 Service 当前不校验 |
 
-若服务端使用 HTTP `207` 表示部分成功，response body 仍应使用本文档的部分成功结构。若服务端统一使用 HTTP `200` 表示接收成功但部分事件被拒绝，也必须通过 `accepted`、`rejected` 和 `errors` 表达事件级结果。
+App、SDK、core、native 和 schema 信息已经存在于每个 envelope 的 `resource` 与 `schemaVersion` 中。当前协议没有额外要求 `X-App-Key`、`X-SDK-Version` 等 header。
 
-## 重试策略与事件优先级
+## 当前接收与存储语义
 
-SDK 应支持：
+Monitor Service 当前执行以下检查：
 
-- 指数退避；
-- 最大重试次数；
-- 最大队列长度；
-- 最大离线缓存大小；
-- 事件优先级，即 event envelope 的 `priority` 字段；
-- App 退出前尽力 flush；
-- 网络恢复后重试；
-- partial failure 只重试 `retryable = true` 的事件。
+1. body 中能否解析出至少一个 object event；
+2. 每个事件是否包含非空字符串 `eventId`；
+3. SQLite 是否能成功保存事件。
 
-重试边界：
+当前本地 Service 不执行完整 core schema validation、鉴权、租户隔离或 schema major 协商。SDK 在发送前已经通过本地 `SchemaValidator` 和 `PrivacyFilter`；生产服务仍应在服务端再次校验，不能依赖客户端绝对可信。
 
-- 网络错误、超时、429、5xx 和事件级 `retryable = true` 可以重试。
-- 400、401、403、schema invalid、鉴权失败和单事件超限默认不重试。
-- 重试必须保持原始 `eventId`。
-- 重试队列达到上限时，应优先保留高优先级事件，并记录丢弃计数。
-- App 退出前 flush 是尽力语义，不保证所有低优先级事件都成功上报。
+SQLite 的 `event_id` 是 unique key。重复 `eventId` 使用 upsert 更新对应 raw envelope 和索引，因此 SDK 重试必须保持原始 `eventId`。
 
-客户端侧的具体默认参数（队列上限、批量大小、flush 间隔、退避区间、采样率等）由 `MonitorProductionPolicy` 定义，三种预设（default / localLive / conservative）的完整取值表见 `docs/signal_collection.md` 的"输出模式行为与接入配置"章节，本文不重复维护。
+生产服务在此基础上应增加完整 schema validation、鉴权、租户隔离、请求大小限制和 schema major 协商，但不能改变 event-level `EventEnvelope` 作为事实源的约束。
 
-`priority` 来自统一 event envelope，服务端和 SDK 队列都不应使用另一套优先级协议。采集器可以提供 priority suggestion，但最终值应由 pipeline 写入 envelope。
+## 当前 Response
 
-优先级建议：
+全部或部分接收时返回 HTTP `202`：
 
-| 优先级 | 事件 |
+```json
+{
+  "accepted": 2,
+  "rejected": 1,
+  "total": 120,
+  "eventIds": ["evt_001", "evt_002"],
+  "errors": [
+    {
+      "code": "MISSING_EVENT_ID",
+      "message": "eventId is required",
+      "retryable": false
+    }
+  ]
+}
+```
+
+当前错误响应：
+
+| HTTP | `error` / code | 含义 |
+|---|---|---|
+| `400` | `no_events` | body 中没有可解析事件 |
+| `400` | `missing_event_id` / `MISSING_EVENT_ID` | 所有事件都缺少 `eventId` |
+| `500` | `store_failed` / `STORE_FAILED` | SQLite 写入失败，可重试 |
+
+SDK 当前把任意 `2xx` 视为整个已发送 batch 已确认。它不会解析 `202` body 做事件级重试。因此本地 Service 的“部分接收”只适合发现无效调试数据；生产服务若需要严格 partial acceptance，必须与客户端一起升级事件级 ack 协议，不能只修改 response body。
+
+## Batch 与大小边界
+
+客户端实际默认值由 `MonitorProductionPolicy` 定义：
+
+| 配置 | default production | localLive |
+|---|---:|---:|
+| `maxBatchEvents` | 50 | 20 |
+| `maxBatchBytes` | 1 MB | 1 MB |
+| `maxEventBytes` | 256 KB | 512 KB |
+| `requestTimeout` | 8 秒 | 5 秒 |
+| `maxEventAge` | 3 天 | 12 小时 |
+
+Monitor Service 的 JSON body limit 默认是 `10mb`，可通过 `FM_WORKBENCH_BODY_LIMIT` 覆盖。客户端仍必须先遵守自己的 batch/event 上限，不能把 Service body limit 当成正常组包大小。
+
+单事件超过上限时，SDK 会先尝试剥离可裁剪的 HTTP detail；仍超限则按 drop policy 处理并记录 SDK self-monitoring。
+
+## 客户端响应与重试行为
+
+`ReliableHttpOutput` 当前按 HTTP status 执行动作：
+
+| 响应 | SDK 行为 |
 |---|---|
-| critical | fatal error、native crash、OOM、ANR、SDK self-monitoring critical |
-| high | error、关键卡顿、关键慢启动、关键慢页面、memory pressure、native memory pressure、失败的 SDK lifecycle flush |
-| normal | page trace、http span、custom trace、成功的 SDK lifecycle flush |
-| low | 普通 breadcrumb、普通 log、普通 memory sample |
+| `2xx` | ack 整个 batch |
+| `400/401/403` | 不重试，ack 后记录 `non_retryable_rejected` |
+| `413` 且 batch 多事件 | 缩小 batch 后立即重试 |
+| `413` 且单事件 | 丢弃并记录 `payload_too_large` |
+| `429` | 读取 `Retry-After` 并计划重试 |
+| `5xx` | 指数退避加 jitter 后重试 |
+| 超时或网络错误 | 计划重试；退出 flush 只记录失败并保留队列 |
 
-采样和限流不应破坏 critical/high 事件的问题定位链路。
+重试按事件各自的 `attemptCount` 判断。超过 `maxRetryAttempts` 的事件按 `retry_exhausted` 丢弃，未超限事件继续留在队列。超过 `maxEventAge` 的事件按 `expired` 清理。
+
+事件优先级来自 envelope 的 `priority`，建议语义如下：
+
+| 优先级 | 事件示例 |
+|---|---|
+| `critical` | fatal error、未来可靠的 native crash/OOM/ANR、critical SDK health |
+| `high` | error、关键 jank、慢启动、慢页面、memory pressure、flush failure |
+| `normal` | page trace、completed HTTP、custom trace、成功的 SDK health |
+| `low` | 普通 breadcrumb、普通 log、普通 memory sample |
+
+队列达到上限时应优先保留高优先级事件，并记录被驱逐数量。partial acceptance 只有在客户端解析事件级 ack 后才成立；当前 SDK 将任意 `2xx` 视为整个 batch ack，因此生产服务不能单方面引入不可被客户端理解的部分确认语义。
+
+## 隐私与 HTTP 详情
+
+所有事件在进入 output 前必须经过 `PrivacyFilter`。但这不代表 HTTP payload 默认没有敏感信息：当前 `MonitorHttpConfig` 默认采集 query、headers、request body 和 response body，并将详情字段标记为 sensitive；接入方应根据业务数据配置 redactor 或关闭相应采集项。
+
+服务端必须：
+
+- 只从注册字段和受控索引列构建查询维度；
+- 不把派生 Host、业务码或 query summary 写回 `envelope_json`；
+- 不依赖未脱敏 body 完成核心聚合；
+- 对日志、备份、访问权限和数据保留周期单独实施服务端治理。
 
 ## Schema 兼容
 
-服务端必须识别 `schemaVersion`。
+每个 envelope 自带 `schemaVersion`。兼容原则：
 
-兼容策略：
+- patch 不改变既有字段语义；
+- minor 可以新增向后兼容字段；
+- major 可以改变结构，需要客户端与服务端协商升级；
+- 服务端不得静默改写不认识的字段；
+- query summary 和 TypeScript view model 不构成新的 SDK schema。
 
-- patch version 不破坏字段语义；
-- minor version 可新增字段；
-- major version 可改变结构；
-- 服务端应能拒绝不支持的 major version；
-- SDK 应能记录协议拒绝原因。
+当前本地 Service 保存 raw JSON，不拒绝不支持的 schema major。生产服务应补充 major version 校验，并把不兼容响应定义为明确的不可重试错误。
 
-服务端拒绝不支持的 schema major version 时，应返回 `SCHEMA_UNSUPPORTED_MAJOR`。SDK 收到后不应重试同一批事件，但应记录 SDK self-monitoring，便于开发者发现版本不兼容。
+生产协议可使用 `SCHEMA_INVALID`、`SCHEMA_UNSUPPORTED_MAJOR`、`AUTH_FAILED`、`RATE_LIMITED`、`PAYLOAD_TOO_LARGE`、`EVENT_TOO_LARGE`、`SERVER_BUSY` 和 `SERVER_ERROR` 等稳定错误码。错误响应必须说明是否可重试，SDK 不应对 schema、鉴权和单事件超限错误无限重试。
 
-## 隐私与安全
+## Native 事件
 
-协议层应支持：
+Native signal 必须先通过 `flutter_monitor_native` bridge 和 SDK mapper 进入统一 envelope，再使用同一 endpoint。native plugin 不得独立建立 HTTP 协议、上传队列或 session id。
 
-- HTTPS；
-- 鉴权 token；
-- 敏感字段脱敏；
-- URL normalize；
-- request/response body 默认不上报；
-- payload 大小限制；
-- payload 裁剪标记应使用 `payload.truncated` 和 `payload.truncated.reason`；
-- 用户标识匿名化；
-- 环境隔离；
-- native crash payload 脱敏。
+当前插件可靠提供的是 resource、memory、memory pressure 和 lifecycle。crash、OOM、ANR 只有 schema/mapper 预留，服务端不能据此假设客户端已经可靠采集。
 
-服务端协议不应依赖未脱敏字段完成核心聚合。聚合字段应来自 `docs/event_model.md` 的字段注册表，例如 `http.url.normalized`、`context.route.name`、`context.module.name`、`resource.app.appVersion`、`resource.device.deviceTier` 和 `context.network.type`。
+异常生命周期可能无法拿到完整 context。此时应保留 `context.missing` 或 `context.missingReason`，并尽力将 native raw signal 写入离线缓存，由后续 SDK pipeline 补全；不能由服务端伪造 session、route 或用户上下文。
 
-服务端默认不应把未注册 `attributes` 当作索引字段。若未来需要扩展字段索引，必须先进入字段注册和兼容策略，而不是由 SDK、native plugin 或工具入口临时约定。
+## 查询协议
 
-## Native 信号上报
+查询 API 包括 health、recent、Catalog、dimensions、Session、Trace、Event、Performance、Analytics、search、groups 和 SSE。endpoint 与参数变化以 Swagger 为准，稳定的数据边界以 Platform 文档为准，本文不重复维护完整清单。
 
-Native 信号必须通过统一 envelope 上报。
+所有查询摘要必须满足：
 
-特殊要求：
+- 能通过 `eventId`、`sessionId` 或 `traceId` 回查 raw envelope；
+- 不覆盖 SDK 字段；
+- 不作为另一套上报协议。
 
-- native crash、OOM、ANR 可能发生在异常生命周期，SDK 应尽力写入离线缓存。
-- native plugin 不得绕过 `flutter_monitor_sdk` pipeline 使用独立 HTTP 协议。
-- 如果异常发生时无法拿到完整 context，应提供 `context.missing = true` 和 `context.missingReason`。
-- native 信号应保留 `sessionId`、`traceId` 和 breadcrumbs；无法保留时必须说明原因。
-- `payload.breadcrumbs` 中的 breadcrumb item 可以携带 `eventId`、`sessionId`、`traceId`、`spanId` 和 `route`，服务端可用这些 ID 回查完整 envelope，但不应依赖 breadcrumb payload 中的长错误文本、堆栈或嵌套 breadcrumbs。
+## 生产服务扩展边界
+
+以下能力是生产后端可增加的治理能力，不是当前 Monitor Service 合同：
+
+- token 校验、租户与环境隔离；
+- 服务端完整 schema validation；
+- 事件级 partial ack；
+- 限流配额和标准化错误码；
+- remote config / kill switch；
+- 多副本幂等、长期存储、审计、告警和聚合任务。
+
+扩展这些能力时必须保持 `EventEnvelope` 为事件事实源，并与 SDK 的 ack/retry 行为一起演进。
+
+## 隐私、安全与请求元数据
+
+所有事件在 SDK 进入 output 前经过 `PrivacyFilter`，但 HTTP query、headers、request body 和 response body 是否采集仍由 `MonitorHttpConfig` 决定。当前默认配置可能采集这些 sensitive payload，真实 App 必须配置 redactor 或关闭相应采集项。
+
+服务端必须：
+
+- 通过 HTTPS、token 和环境/租户边界保护写入接口；
+- 只从注册字段和受控索引列构建查询维度；
+- 不把派生 Host、业务码、query summary 或 UI summary 写回 `envelope_json`；
+- 不依赖未脱敏 body 完成核心聚合；
+- 对日志、备份、访问权限和数据保留周期单独实施治理。
+
+请求级 `appKey`、SDK 版本、core 版本和 request ID 只用于鉴权、路由、兼容检查和诊断，不替代事件内的 `resource.app.*` 与 `resource.sdk.*`。如果请求级元数据与事件级 resource 冲突，应记录协议错误或拒绝，不得静默覆盖事件事实。
 
 ## Remote Config 预留
 
-服务端可在成功响应中预留远程配置：
+未来服务端可以在成功响应中携带带版本号的 remote config，控制采样、限流、privacy 开关、collector 开关、queue、batch、flush 和 retry 参数。SDK 不得依赖 remote config 才能安全运行；配置失效时必须回退到本地默认值或上一份有效配置，并记录 `sdk.config.*`。
 
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "accepted": 10,
-  "rejected": 0,
-  "remoteConfig": {
-    "version": "cfg_001",
-    "sampling": {
-      "defaultRate": 0.1,
-      "errorRate": 1.0,
-      "nativeCrashRate": 1.0
-    },
-    "rateLimit": {
-      "maxEventsPerMinute": 120
-    },
-    "privacy": {
-      "allowRawUrl": false,
-      "allowRequestBody": false
-    },
-    "signals": {
-      "memory.sample": true,
-      "native.anr": true,
-      "native.crash": true
-    }
-  }
-}
-```
+Remote config 只是 production policy 的输入，不是新的事件模型。它不能改变字段语义、绕过 privacy filtering，也不能让服务端直接向 Workbench 写入 SDK 字段。
 
-Remote config 是可选能力。SDK 不应依赖 remote config 才能安全运行；默认配置必须隐私安全、流量克制。
+## 服务端聚合维度与派生指标
 
-客户端只暴露三种输出模式：`consoleOnly`、`localLive` 和 `production`。服务端 remote config 可以修改模式、collector 开关、采样、限流、queue、batch、flush 和 retry 参数，但这些参数仍是 SDK production policy 的输入，不是新的事件模型。配置必须包含版本号；如设置过期时间，SDK 应在过期后回退到本地默认或上一套仍有效配置，并记录 `sdk.config.applied`。
+生产服务可按以下注册字段和链路标识聚合：
 
-生产上报必须使用 batch。SDK 根据服务端响应执行确定动作：
+- `context.user.userId`、`context.user.cohort`；
+- `resource.app.appVersion`、`buildNumber`、`environment`、`channel`、`flavor`；
+- `context.release.featureFlags`、`context.route.name`、`context.module.name`；
+- `resource.device.deviceTier`、`osVersion`、`context.network.type`；
+- `sessionId`、`traceId`、`context.native.platform`、`memory.pressure_level`。
 
-- 2xx：ack 已接受事件；
-- 400/401/403：不可重试，按 `non_retryable_rejected` 记录 drop；
-- 413：先拆分 batch 或裁剪单事件 payload，仍失败则按 priority/drop policy 丢弃；
-- 429：按 `retryAfterMs` 或 `Retry-After` 计划重试；
-- 5xx、超时、断网：指数退避加 jitter，保留队列。
-- 超过 `maxRetryAttempts`：按事件各自的累计重试次数判定，ack 后按 `retry_exhausted` 记录 drop；同一 batch 中重试次数未超限的事件应重新入队，不得被旧事件连坐；
-- 超过 `maxEventAge`：从队列移除，并按 `expired` 记录 drop。
-
-SDK self-monitoring 使用统一 `sdk.*` envelope 上报，字段包括 `sdk.output.mode`、`sdk.queue.*`、`sdk.batch.*`、`sdk.flush.*`、`sdk.retry.*`、`sdk.drop.*`、`sdk.health.*` 和 `sdk.config.*`。drop/retry/flush 默认以 `sdk.health.report` 周期摘要 + 边沿事件表达，见 `docs/event_model.md`。服务端和 Workbench 不应根据 HTTP 响应或 UI 状态重新发明另一套 drop/retry/queue 协议。
-
-## 服务端聚合维度
-
-服务端应支持按以下维度查询和聚合：
-
-- `context.user.userId` + time range，用于 QA/用户维度 session 检索；
-- `resource.app.appVersion`；
-- `resource.app.buildNumber`；
-- `resource.app.environment`；
-- `resource.app.channel`；
-- `resource.app.flavor`；
-- `context.release.featureFlags`；
-- `context.route.name`；
-- `context.module.name`；
-- `context.module.scene`；
-- `resource.device.deviceTier`；
-- `resource.device.osVersion`；
-- `context.network.type`；
-- `context.user.cohort`；
-- `sessionId`；
-- `traceId`；
-- `context.native.platform`；
-- `memory.pressure_level`。
-
-`context.user.userId` 是推荐增强上下文。未提供 userId 的 App 仍应能按时间、版本、页面、错误、慢请求、卡顿、启动问题、sessionId、traceId 和 eventId 查询；服务端不得伪造用户维度。
-
-## 服务端派生指标
-
-服务端应基于统一事件模型派生：
-
-- 冷启动/热启动耗时分位数；
-- 页面耗时分位数；
-- API 耗时分位数；
-- 页面卡顿率；
-- 错误率；
-- native crash / ANR / OOM rate；
-- crash/session impact；
-- 内存增长趋势；
-- 影响用户数；
-- 版本退化；
-- `context.release.featureFlags` 差异；
-- 弱网失败率；
-- 低端设备性能表现。
-
-服务端不应要求 SDK 上报另一套独立聚合指标。
+可派生启动/页面/API 分位数、错误率、卡顿率、native crash/ANR/OOM rate、内存趋势、影响用户数、版本退化、feature flag 差异和弱网失败率。派生指标必须能通过 `eventId`、`sessionId` 或 `traceId` 回查 raw envelope，不得要求 SDK 另报一套聚合指标。

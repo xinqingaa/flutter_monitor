@@ -155,7 +155,7 @@ Native 增强来源：
 - 通过 lifecycle paused/resumed 或 native lifecycle 识别。
 - `resumed` 是热启动 trace 的开始点，不是结束点。
 - 恢复后首帧、可交互、业务手动标记或超时降级是热启动 trace 的结束点。
-- 基础 SDK 第一阶段应至少自动采集 `resumed -> next frame`，并用 `app.start.end_reason = first_frame` 标明闭合口径；后续如果业务或 native 能提供可交互点，再升级为 `interactive`。
+- 当前基础 SDK 自动采集 `resumed -> next frame`，并用 `app.start.end_reason = first_frame` 标明闭合口径；如果未来由业务或 native 提供可靠可交互点，再扩展为 `interactive`。
 
 ### 生成事件
 
@@ -276,7 +276,7 @@ route 实例:
 | resumed | 页面实例保留 | 当前栈顶页面以 `page.resume` + `lifecycle_resumed` 恢复 | lifecycle 恢复检查；发出恢复页 `page.view` 足迹；开启 frame/memory 后重新开始页面帧聚合；Workbench 不因此新开页面区段 |
 | detached/dispose | 尽力结束活跃页面实例 | 当前页面以 `app.dispose` 闭合 | flush 尽力执行，不阻塞退出；开启 frame/memory 后做最终采样 |
 
-第一阶段不要求完整支持所有 Navigator 复杂操作。`didPush`、`didPop`、`didReplace` 和 SDK dispose 是基础路径；`popUntil`、嵌套路由、tab router、匿名 route 和第三方 router 集成应通过后续适配补充，但不能改变上述 route / page instance / active window 三层语义。
+当前基础路径覆盖 `didPush`、`didPop`、`didReplace` 和 SDK dispose，不完整覆盖所有 Navigator 复杂操作。`popUntil`、嵌套路由、tab router、匿名 route 和第三方 router 集成仍需适配，但不能改变上述 route / page instance / active window 三层语义。
 
 ### 字段映射
 
@@ -388,7 +388,7 @@ route 实例:
 - retry/cache 信息依赖具体网络库能力。
 - 网络采集不应修改业务请求语义。
 - 对于导航前预取、跨页面共享请求等场景，SDK 默认仍以调用时页面为 owner。未来业务 API 可显式覆盖 owner route/trace，但 Workbench 不应把 completion route 当作主归属。
-- SSE/WebSocket 长链接暂不建模（见 `docs/plan.md` backlog）；Dio stream 响应的耗时语义为“到响应头”。
+- SSE/WebSocket 长链接消息级监控当前不建模；Dio stream 响应的耗时语义为“到响应头”。
 - 当前基础 SDK 不生成 HTTP start/end 双事件，不展示 in-flight 请求；Workbench 和服务端统计只消费 `name = http.client` 且 `event.phase = instant` 的 completed single-span envelope。
 
 ## 错误采集
@@ -737,25 +737,23 @@ Native 信号采集是 Flutter-only 链路的增强，不是主 SDK 的基础依
 - `flutter_monitor_native` plugin。
 - Android platform callbacks。
 - iOS platform callbacks。
-- MethodChannel / EventChannel / Pigeon 等 bridge 技术。第一阶段优先使用 MethodChannel 请求 snapshot，使用 EventChannel 接收异步 native signal。
+- 当前使用 MethodChannel 请求 snapshot，使用 EventChannel 接收异步 native signal；未来如改用 Pigeon，不得改变最终 envelope 语义。
 
 ### 触发时机
 
 - native memory sample。
 - memory pressure / low memory warning。
 - native lifecycle change。
-- OOM 线索。
-- ANR 线索。
-- native crash 线索。
+- OOM、ANR 和 native crash 线索当前只预留模型与 mapper，尚无可靠平台采集。
 
 ### 生成事件
 
 - `metric native.memory.sample`
 - `metric native.memory.pressure`
 - `breadcrumb native.warning`
-- `error native.oom`
-- `error native.anr`
-- `error native.crash`
+- `error native.oom`（预留）
+- `error native.anr`（预留）
+- `error native.crash`（预留）
 
 ### 链路关联
 
@@ -788,8 +786,8 @@ Native lifecycle 映射规则：
 - native lifecycle 是补充证据，不默认覆盖 Flutter 当前 lifecycle。
 - 能确定映射时，native event 可以写标准 `context.lifecycle.*`。
 - 不能确定映射时，只写 `native.signal = lifecycle`，完整原始信息放入 `payload.native`。
-- Android 第一阶段只把 `onActivityResumed` 明确映射为 `resumed`；其他 activity callback 先保留原始证据，避免误把 stopped/paused/hidden 等状态强行归一。
-- iOS 第一阶段只把 `UIApplication.didBecomeActiveNotification` 映射为 `resumed`，把 `UIApplication.willResignActiveNotification` 映射为 `inactive`；`didEnterBackground`、`willEnterForeground`、`willTerminate` 等先保留原始证据。
+- Android 当前只把 `onActivityResumed` 明确映射为 `resumed`；其他 activity callback 保留原始证据，避免误把 stopped/paused/hidden 等状态强行归一。
+- iOS 当前只把 `UIApplication.didBecomeActiveNotification` 映射为 `resumed`，把 `UIApplication.willResignActiveNotification` 映射为 `inactive`；`didEnterBackground`、`willEnterForeground`、`willTerminate` 等保留原始证据。
 
 Native memory pressure 映射规则：
 
@@ -800,7 +798,7 @@ Native memory pressure 映射规则：
 
 ### 限制与降级
 
-- native crash/OOM/ANR 的可靠采集复杂，第一阶段可先定义 schema 和 bridge。
+- native crash/OOM/ANR 当前只有 schema 与 mapper 边界，没有可靠平台捕获实现。
 - 原始 crash dump 默认不上报。
 - 异常生命周期中无法保证完整 envelope，可先持久化 native raw signal，再由下次启动补全和上报。
 - native plugin 是可选增强，不应增加主 SDK 基础接入成本。
@@ -1015,7 +1013,7 @@ SDK self-monitoring 通过统一 `sdk.*` envelope 表达，至少覆盖：
 
 | 模式 | 工厂 | 适用场景 | 事件去向 |
 |---|---|---|---|
-| `consoleOnly` | `MonitorMode.consoleOnly()` | 本地开发，只看日志 | console log（compact/pretty） |
+| `consoleOnly` | `MonitorMode.consoleOnly()` | 本地开发，只看日志 | console log（compact/quiet/json/silent） |
 | `localLive` | `MonitorMode.localLive()` | QA / 本地 Workbench 调试 | 本机 Monitor Service（默认 `http://localhost:3700/api/monitor/v1/events`） |
 | `production` | `MonitorMode.production(endpoint: ...)` | 灰度 / 线上 | 生产监控服务端 |
 

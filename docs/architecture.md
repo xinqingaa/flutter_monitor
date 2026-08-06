@@ -1,611 +1,304 @@
-# 目标架构
+# 当前架构
 
-## 架构目标
+## 架构原则
 
-Flutter Monitor 的目标架构是一个基于 Dart pub workspaces 的多包监控与链路观测 workspace。仓库根目录作为 workspace root，发布能力拆分到 `packages/` 下的独立包。
+Flutter Monitor 是一个 Dart pub workspace。根目录负责组织文档、脚本和检查，实际能力拆分在三个 Dart/Flutter package 与一个 JS/TS platform workspace 中。
 
-架构目标：
+架构遵守四条主线：
 
-- 用 `flutter_monitor_core` 承载唯一事件模型、schema、字段注册、隐私规则和导出格式。
-- 用 `flutter_monitor_sdk` 承载 Flutter runtime 主 SDK、采集器、pipeline、outputs 和业务接入 API。
-- 用 `flutter_monitor_native` 承载可选 native plugin 能力，例如 native memory、memory pressure、OOM、ANR 和 native crash 信号。
-- 用 `platform` 承载 JS/TS workspace：Monitor Service、Workbench Web、诊断与 Evidence 能力。
-- 让 DevTools、CLI、MCP 和其他未来入口复用 `flutter_monitor_core`，不产生第二套协议。
-- 让 Flutter 层信号、native 信号和未来工具入口都进入统一 session/trace/span/breadcrumb/context 模型。
+1. `flutter_monitor_core` 是唯一事件模型和字段事实源。
+2. 所有 Flutter 与 native 信号都先进入 SDK pipeline，再生成 `EventEnvelope`。
+3. 输出、服务端摘要和 Workbench view model 都只能消费 envelope，不能反向改写事件事实。
+4. 未实现的 DevTools、CLI、MCP、生产治理能力只能复用当前模型，不能创建第二套协议。
 
-## 包组织策略
+![Flutter Monitor V2 数据采集与上报链路](image/03-v2-data-collection-reporting.png)
 
-本仓库使用官方 Dart pub workspaces，不使用 Melos 作为基础依赖解析机制。
-
-目标 workspace：
+## Workspace 布局
 
 ```text
-flutter_monitor/
-  pubspec.yaml
-  AGENTS.md
-  README.md
-  docs/
+flutter_monitor_sdk/
+  docs/                         项目背景、架构、模型、采集与协议
   packages/
-    flutter_monitor_core/
-    flutter_monitor_sdk/
-    flutter_monitor_native/
-  scripts/
+    flutter_monitor_core/       Dart-only 模型核心
+    flutter_monitor_sdk/        Flutter runtime SDK
+      example/                  PulseFit 接入示例
+    flutter_monitor_native/     可选 Android/iOS native bridge
   platform/
+    docs/                       Workbench 与 Platform 文档
+    shared/                     TypeScript wire mirror
+    services/monitor-service/   NestJS + SQLite Monitor Service
+    web/                        React/Vite Workbench
+  scripts/                      workspace、Platform 和 example 脚本
+  AGENTS.md                     项目方向与硬约束
+  SKILL.md                      仓库变更工作流
 ```
 
-根目录职责：
-
-- workspace 配置；
-- 项目总文档；
-- CI、脚本和 schema 工具；
-- 不作为发布包。
-
-包依赖方向：
+依赖方向：
 
 ```text
 flutter_monitor_core
   <- flutter_monitor_sdk
   <- flutter_monitor_native
-  <- future flutter_monitor_cli
-  <- future flutter_monitor_devtools
-  <- future flutter_monitor_mcp
+
+EventEnvelope
+  -> Monitor Service
+  -> Workbench
 ```
 
-```mermaid
-flowchart TD
-  Root["仓库根目录<br/>workspace root"]
-  Core["统一模型核心<br/>flutter_monitor_core"]
-  SDK["主 SDK 运行时<br/>flutter_monitor_sdk"]
-  Native["可选原生增强<br/>flutter_monitor_native"]
-  CLI["未来命令行工具<br/>flutter_monitor_cli"]
-  DevUI["未来自定义 DevTools UI<br/>flutter_monitor_devtools"]
-  MCP["未来 MCP 入口<br/>flutter_monitor_mcp"]
+`flutter_monitor_native` 在 Dart 层复用 core 类型并实现 SDK 定义的 bridge 接口；它不独立上报。Platform 通过 TypeScript 类型镜像消费 wire JSON，但不反向成为 Dart schema 来源。
 
-  Root -->|"组织 packages / docs / scripts"| Core
-  Root -->|"组织 packages / docs / scripts"| SDK
-  Root -->|"组织 packages / docs / scripts"| Native
+## `flutter_monitor_core`
 
-  SDK -->|"依赖统一模型"| Core
-  Native -->|"依赖统一模型"| Core
-  CLI -->|"读取导出与 schema"| Core
-  DevUI -->|"消费导出与 bridge 数据"| Core
-  MCP -->|"消费统一 envelope"| Core
+`packages/flutter_monitor_core` 不依赖 Flutter，负责稳定的数据和协议约定：
 
-  Native -->|"通过 bridge 提供 raw signal"| SDK
-```
+- `EventEnvelope`、breadcrumb、trace context、resource、context；
+- signal type、event status、level、priority 等 wire enum；
+- `FieldPaths`、`PayloadKeys`、协议常量和事件名；
+- field registry、schema version 和 schema validation；
+- privacy rule、privacy filter；
+- retention registry；
+- event summary、compact log；
+- `SessionExport` 数据结构。
 
-这张图表达依赖方向：`flutter_monitor_core` 是协议核心，其他包只能复用它，不能反向污染 core，也不能各自生成第二套模型。
+core 不负责采集、网络、文件、platform channel 或 UI。`SessionExport` 当前只是共享数据契约，SDK 尚未提供完整的 session 导出/导入工作流。
 
-约束：
+## `flutter_monitor_sdk`
 
-- `flutter_monitor_core` 不依赖 Flutter，只依赖 Dart。
-- `flutter_monitor_sdk` 可以依赖 Flutter、Dio、http、device/app 信息等 runtime 能力。
-- `flutter_monitor_native` 是可选 Flutter plugin，不应成为 `flutter_monitor_sdk` 的强依赖。
-- future CLI、DevTools、MCP 只能复用 `flutter_monitor_core` 的模型和协议，不得定义独立事件结构。
-- 当前阶段的 DevTools 能力属于 `flutter_monitor_sdk`：写入 Flutter Timeline、提供 DevTools bridge、暴露 session timeline 和导出数据。future `flutter_monitor_devtools` 指可选的自定义 DevTools extension/UI 包，不承担 runtime 采集。
-
-## 目标目录结构
-
-### Workspace
+`packages/flutter_monitor_sdk` 是业务接入的主 package。当前源码按职责分为：
 
 ```text
-flutter_monitor/
-  pubspec.yaml
-  analysis_options.yaml
-  AGENTS.md
-  README.md
-  docs/
-    background.md
-    event_model.md
-    signal_collection.md
-    server_protocol.md
-    devtools_integration.md
-    architecture.md
-    plan.md
-  packages/
-    flutter_monitor_core/
-      pubspec.yaml
-      lib/
-        flutter_monitor_core.dart
-        src/
-          model/
-          schema/
-          privacy/
-          export/
-          validation/
-          constants/
-      test/
-    flutter_monitor_sdk/
-      pubspec.yaml
-      lib/
-        flutter_monitor_sdk.dart
-        src/
-          core/
-          context/
-          tracing/
-          collectors/
-          pipeline/
-          outputs/
-          integrations/
-          devtools/
-      example/
-      test/
-    flutter_monitor_native/
-      pubspec.yaml
-      lib/
-        flutter_monitor_native.dart
-        src/
-          native_bridge.dart
-          native_signal_mapper.dart
-      android/
-      ios/
-      test/
-  platform/
-    package.json
-    docs/
-    services/
-      monitor-service/
-    web/
-    shared/
-  scripts/
+lib/src/
+  context/       动态上下文与发生时快照
+  core/          MonitorBinding、Reporter、MonitorConfig
+  delivery/      离线队列、可靠 HTTP、降级与 SDK health
+  lifecycle/     Flutter lifecycle 与 session 恢复
+  modules/       error、page/route、frame、jank、memory、measure
+  native/        bridge 抽象、controller、signal mapper
+  outputs/       output 接口、日志输出与模式解析
+  pipeline/      RawSignal、EnvelopeBuilder、validation/control/aggregator
+  startup/       冷启动与 SDK init trace
+  tracing/       session、trace/span、breadcrumb
+  utils/         Dio/http、页面包装、HTTP 详情和辅助工具
 ```
 
-### `flutter_monitor_core`
+业务公开 API 只通过 `FlutterMonitorSDK` 暴露：
 
-`flutter_monitor_core` 是所有包共享的协议核心。
+- `init(...)`；
+- `routeObserver`、`markPageRendered(...)`；
+- `createDioInterceptor()`、`createHttpClient()`；
+- `setContext(...)`、`clearContext(...)`；
+- `track(...)`、`recordError(...)`；
+- 显式开启后的 `measure(...)`；
+- `flush(...)`、`dispose()`。
 
-职责：
+`MonitorBinding`、`Reporter`、`RawSignal`、`FieldPaths`、手动 trace/span 和任意 attributes/payload 不属于普通业务接入面。
 
-- event envelope 类型；
-- `signalType`、`level`、`status` 等枚举；
-- session、trace、span、breadcrumb、resource、context、attributes、payload 模型；
-- 字段注册表；
-- schema version 和 schema validation 基础能力；
-- privacy level、脱敏规则和字段裁剪规则；
-- session export/import 数据格式；
-- 事件优先级、采样配置、限流配置等共享配置模型；
-- 与 Flutter runtime 无关的工具函数。
-
-不得包含：
-
-- Flutter imports；
-- platform channel；
-- Dio/http client runtime instrumentation；
-- 文件、网络或 UI 侧 effect；
-- 输出器实现。
-
-### `flutter_monitor_sdk`
-
-`flutter_monitor_sdk` 是 Flutter 应用主要依赖的 runtime SDK。
-
-职责：
-
-- SDK 初始化和公开 API；
-- Flutter error、Dart error、launch、route/page、network、behavior、jank、memory、lifecycle、自定义 trace 采集；
-- context manager；
-- session/trace/span/breadcrumb 管理；
-- event pipeline；
-- log/http/custom/devtools/file outputs；
-- Dio、`http`、Navigator、Widget 包装等 Flutter 集成；
-- 与 `flutter_monitor_native` 的可选 extension/bridge 对接。
-
-不得包含：
-
-- 第二套 event model；
-- native 平台重实现；
-- 与 `flutter_monitor_core` 字段注册表冲突的私有字段；
-- 绕过 pipeline 的直接上报逻辑。
-
-### `flutter_monitor_native`
-
-`flutter_monitor_native` 是可选 native plugin。
-
-职责：
-
-- Android/iOS native memory sample；
-- native memory pressure / low memory warning；
-- native lifecycle 补充；
-- OOM、ANR、native crash 的事件模型和可实现 bridge；
-- 将 native signal 映射为 SDK 可消费的 native raw signal 或可持久化 raw payload；
-- 在异常生命周期下尽力持久化关键 native 信号。
-
-不得包含：
-
-- 独立 HTTP 上报协议；
-- 独立 session 或 trace id 体系；
-- 与主 SDK pipeline 并行的第二套上传队列；
-- 强制业务方接入 native 能力。
-
-native 能力应是可选增强。基础 Flutter 监控能力不应因为 native plugin 而增加不必要的权限、平台配置或构建复杂度。
-
-## 核心运行时数据流
-
-目标数据流：
+## 运行时数据流
 
 ```text
-Collector / NativeBridge
+Flutter callback / HTTP wrapper / Native bridge
   -> RawSignal
   -> ContextSnapshot
   -> TraceSnapshot
   -> EnvelopeBuilder
   -> SchemaValidator
   -> PrivacyFilter
-  -> Sampler / RateLimiter
-  -> PriorityQueue
-  -> Batcher / RetryScheduler / OfflineStore
-  -> Outputs
+  -> Breadcrumb / Aggregation / PipelineControl
+  -> MonitorOutput
 ```
 
-```mermaid
-flowchart TD
-  Source["信号来源<br/>页面 / 网络 / 错误 / 卡顿 / 内存 / Native / 自定义"]
-  Collector["采集器与原生桥<br/>Collector / NativeBridge"]
-  Raw["原始信号<br/>RawSignal"]
-  Context["上下文快照<br/>ContextSnapshot"]
-  Trace["链路快照<br/>TraceSnapshot"]
-  Builder["统一事件构建<br/>EnvelopeBuilder"]
-  Validator["协议校验<br/>SchemaValidator"]
-  Privacy["隐私过滤<br/>PrivacyFilter"]
-  Control["采样与限流<br/>Sampler / RateLimiter"]
-  Queue["队列与批处理<br/>PriorityQueue / Batcher / Retry / OfflineStore"]
-  Outputs["输出插件<br/>Log / HTTP / DevTools / File"]
+关键规则：
 
-  Source -->|"捕获事实"| Collector
-  Collector -->|"生成"| Raw
-  Raw -->|"补充页面、用户、设备、网络"| Context
-  Context -->|"补充 session / trace / span / breadcrumbs"| Trace
-  Trace -->|"构建统一 envelope"| Builder
-  Builder -->|"校验 schema"| Validator
-  Validator -->|"过滤敏感数据"| Privacy
-  Privacy -->|"控制流量与优先级"| Control
-  Control -->|"排序、缓存、重试"| Queue
-  Queue -->|"脱敏后分发"| Outputs
-```
+- 异步事件在开始时冻结 route、context 和 trace 归属，完成时不重新绑定当前页面。
+- collector 不直接构建最终 JSON，也不直接调用网络 output。
+- schema validation 和 privacy filter 在事件进入输出前完成。
+- production 的采样、限流和聚合由 pipeline control 统一执行。
+- raw `EventEnvelope` 是事实源；summary 和 compact log 都是派生结果。
+- SDK 自身的 enqueue、retry、drop、flush failure 进入统一 `sdk.*` 事件或 health summary。
 
-采集器只捕获事实，最终协议由 pipeline 统一构建。任何 output 都只能消费脱敏后的统一 event envelope。
+## 分层设计
 
-说明：
+### Core 模型层
 
-- Collector 只负责捕获事实，不构造最终协议。
-- NativeBridge 只负责把 native signal 转换为 SDK 可理解的 raw signal。
-- NativeBridge 不构建最终 event envelope；最终 envelope 由 SDK pipeline 或下次启动的补全流程统一构建。
-- ContextSnapshot 固化事件发生时的 `context.route.*`、`context.module.*`、`context.user.*`、`resource.device.*`、`context.network.*`、`context.release.*` 和 `context.release.featureFlags`。
-- TraceSnapshot 固化事件发生时的 session、trace、span 和裁剪后的相关 breadcrumbs。
-- EnvelopeBuilder 是唯一 event envelope 构建入口。
-- PrivacyFilter 必须早于任何 output。
-- Outputs 只能消费脱敏后的 event envelope。
+`flutter_monitor_core` 是所有包共享的协议核心，负责：
 
-## 核心模型层
+- `EventEnvelope`、session、trace、span、breadcrumb、resource、context、attributes 和 payload 模型；
+- `signalType`、level、status、priority 等 wire enum；
+- `FieldPaths`、`PayloadKeys`、字段注册表、schema version 和 schema validation；
+- privacy level、脱敏规则、字段裁剪和 retention registry；
+- event summary、compact log 和 `SessionExport` 数据结构；
+- 与 Flutter runtime 无关的序列化和协议工具。
 
-核心模型由 `flutter_monitor_core` 提供。
+core 不负责 Flutter、platform channel、Dio/http instrumentation、文件、网络或 UI。`attributes` 的稳定字段必须来自 field registry；未注册的诊断详情只能进入经过隐私过滤和大小裁剪的 `payload`，不得成为服务端索引字段。
 
-```mermaid
-flowchart TB
-  API["公开接入层<br/>FlutterMonitorSDK API"]
-  Collectors["信号采集层<br/>错误 / 启动 / 页面 / 网络 / 行为 / 卡顿 / 内存"]
-  ContextLayer["上下文层<br/>用户 / 页面 / 模块 / 网络 / 发布信息"]
-  TraceLayer["链路层<br/>Session / Trace / Span / Breadcrumb"]
-  Pipeline["事件管线层<br/>构建 / 校验 / 脱敏 / 采样 / 队列"]
-  OutputsLayer["输出层<br/>日志 / HTTP / DevTools / 文件"]
-  CoreModel["核心模型层<br/>flutter_monitor_core"]
-  NativeBridge["可选原生桥<br/>flutter_monitor_native"]
+### Context 层
 
-  API --> Collectors
-  API --> ContextLayer
-  API --> TraceLayer
-  NativeBridge -->|"native raw signal"| Collectors
-  Collectors --> Pipeline
-  ContextLayer --> Pipeline
-  TraceLayer --> Pipeline
-  Pipeline --> OutputsLayer
-  Pipeline --> CoreModel
-  OutputsLayer --> CoreModel
-  NativeBridge --> CoreModel
-```
+SDK 的 `ContextManager` 和 resource providers 负责维护可变上下文，并在事件生成时形成不可变快照。上下文来源包括：
 
-代码分层应围绕“采集事实、补充上下文、构建统一事件、脱敏后输出”展开。`flutter_monitor_core` 提供模型和规则，`flutter_monitor_sdk` 承担 runtime 编排。
+- `ResourceProvider`：App、SDK、设备、系统和运行环境；
+- `UserContextController`：用户、用户类型、标签和 cohort；
+- `RouteContextController`：route name、route stack、页面实例；
+- `ModuleContextController`：模块和业务场景；
+- `NetworkContextProvider`：网络类型、弱网状态；
+- `ReleaseContextProvider`：版本、release、feature flags 和 experiments。
 
-建议类型：
+登录、登出、路由或网络变化只影响后续事件，不得改写已经捕获的事件。异步 HTTP 或页面事件应在开始时冻结 owner route、trace 和 context，完成时只追加 completion context。
 
-```text
-EventEnvelope
-SignalType
-EventLevel
-EventStatus
-MonitorResource
-MonitorContext
-SessionInfo
-TraceInfo
-SpanInfo
-Breadcrumb
-PrivacyLevel
-FieldRegistry
-SchemaVersion
-EventPriority
-SessionExport
-```
+### Trace 层
 
-模型层要求：
+`SessionManager`、`TraceManager`、`BreadcrumbStore`、`IdGenerator` 和 `Clock` 共同维护链路关系：
 
-- 类型应可序列化为稳定 JSON。
-- 字段命名必须与 `docs/event_model.md` 一致。
-- `attributes` 默认只接受 `FieldRegistry` 已注册字段；未注册诊断详情应进入 `payload`。
-- payload-only 未知字段可以透传，但必须经过隐私过滤和大小裁剪，不得破坏已知字段语义，也不得作为服务端索引字段。
-- 模型不能依赖 Flutter runtime。
+- session 是绝大多数业务事件的最小归属单位；
+- cold start、hot start、page visit、关键 action 和自定义业务流程优先建模为 trace；
+- route、page load、first frame、HTTP request、image decode、list build 和 custom step 建模为 span；
+- breadcrumbs 使用环形缓冲，错误、失败 HTTP、慢 trace、jank 和 native warning 携带相关窗口；
+- breadcrumb 快照优先选择同一 trace 或 route 的足迹，再补充最近的全局关键足迹，并裁剪 stacktrace 和嵌套 payload。
 
-## 上下文层
+### Collector 层
 
-上下文层由 `flutter_monitor_sdk` 实现，输出 `MonitorContext` 或 `ContextSnapshot`。
+Flutter runtime collector 包括 error、launch、route/page、network、behavior、jank、memory、lifecycle 和 custom trace。Native plugin 提供 resource、memory、memory pressure 和 lifecycle raw signal；crash、OOM、ANR 当前只有 schema 与 mapper 边界。
 
-模块：
+采集器只捕获事实并输出 `RawSignal`，不构造最终 JSON，不执行采样、重试、隐私过滤或直接调用 output。所有 native signal 必须由 SDK mapper 转为 `RawSignal` 后进入同一 pipeline。
 
-- `ContextManager`
-- `ResourceProvider`
-- `UserContextController`
-- `RouteContextController`
-- `ModuleContextController`
-- `NetworkContextProvider`
-- `ReleaseContextProvider`
-- `FeatureFlagContextProvider`
-- `CustomContextProvider`
+### Pipeline 层
 
-要求：
+`EventPipeline`、`EnvelopeBuilder`、`SchemaValidator`、`PrivacyFilter`、采样/限流控制、聚合器、队列、重试调度器和 `SdkHealthMonitor` 共同组成运行时管线：
 
-- 事件捕获时必须取快照，避免异步 flush 时上下文漂移。
-- 用户登录、登出、切换账号时应更新 context，但不得改写已捕获事件。
-- route name 不稳定时，可以通过统一上下文入口补充可选业务语义；module/scene 不作为基础接入前置条件。
-- 用户维度排查依赖 `context.user.userId`。未提供 userId 时，SDK 仍必须能按时间、版本、route、错误和性能信号构建可查询链路。
+- schema validation 和 privacy filtering 发生在 output、离线存储和日志之前；
+- 高优先级错误和 SDK health 事件不能被普通低优先级批处理长期阻塞；
+- 单个 raw signal 默认只生成一条主事件，聚合摘要必须能回查原始事件；
+- 队列只保存完成隐私处理的 envelope JSON；
+- pipeline 自身的 enqueue、retry、drop、flush failure 通过 `sdk.*` 事件或 health summary 记录。
 
-## 链路层
+### Output 层
 
-链路层由 `flutter_monitor_sdk` 实现，输出 `TraceSnapshot`。
+普通业务只使用三种 public mode：
 
-模块：
+| Mode | 当前职责 |
+|---|---|
+| `consoleOnly` | `LogMonitorOutput` 输出 compact、quiet、json 或 silent 日志 |
+| `localLive` | 小 batch 写入本地 Monitor Service，供 Workbench 实时排查 |
+| `production` | SQLite offline queue、batch、retry、TTL、优先级驱逐和 SDK health |
 
-- `SessionManager`
-- `TraceManager`
-- `SpanManager`
-- `BreadcrumbStore`
-- `IdGenerator`
-- `Clock`
+Output 只能消费已经构建并脱敏的 `EventEnvelope`，不能修改事件语义、重新读取 collector 原始数据或各自监听 App lifecycle。当前没有 DevTools、文件或 OpenTelemetry output；未来实现时必须复用本文件和 `docs/devtools_integration.md` 定义的模型。
 
-要求：
+## Context 与链路
 
-- session 是绝大多数业务事件的最小归属单位。
-- cold start、hot start、page visit、关键 action、自定义业务流程应优先建模为 trace。
-- route push、page load、first frame、interactive、http request、image decode、list build、custom step 应建模为 span。
-- breadcrumbs 使用环形缓冲；错误、卡顿、失败 HTTP、慢 trace 和 native 异常应携带相关窗口内 breadcrumbs。
-- 事件附加的 breadcrumb 快照应优先选择同 `traceId` / 同 `route` 足迹，再补最近全局关键足迹，并移除嵌套 breadcrumbs、长 stacktrace 等高风险 payload。
+`ContextManager` 保存 SDK 当前已知的 resource 和动态 context。每个事件生成时捕获快照，避免后续登录、路由、网络或 lifecycle 变化污染已经发生的事件。
+
+链路层由以下组件维护：
+
+- `SessionManager`：管理一次 App 活动窗口及后台超时切分；
+- `TraceManager`：管理 trace/span 记录和 active 链路；
+- `BreadcrumbStore`：保留最近关键操作和诊断足迹；
+- `TraceSnapshot`：将事件发生时的链路关系交给 pipeline。
+
+页面 trace 是默认页面主线。HTTP 请求归属调用时页面；跨页完成只记录 completion context，不改变 owner route。
 
 ## 采集层
 
-采集层由 `flutter_monitor_sdk` 和 `flutter_monitor_native` 分别实现。
+默认启用的高确定性主链路：
 
-Flutter runtime collectors：
+- Flutter framework 和 Dart uncaught error；
+- 冷启动、热启动、SDK init 和 lifecycle；
+- 页面、路由、页面加载与停留；
+- Dio interceptor 与 `http.Client` wrapper；
+- 业务 `track`。
 
-- `ErrorCollector`
-- `LaunchCollector`
-- `RouteCollector`
-- `PagePerformanceCollector`
-- `NetworkCollector`
-- `BehaviorCollector`
-- `JankCollector`
-- `MemoryCollector`
-- `LifecycleCollector`
-- `CustomTraceCollector`
+默认关闭的诊断信号：
 
-Native collectors / bridge：
+- frame stats；
+- jank；
+- RSS memory；
+- interaction measure；
+- native bridge。
 
-- `NativeMemoryCollector`
-- `NativeLifecycleCollector`
-- `NativeCrashCollector`
-- `NativeAnrCollector`
-- `NativeOomCollector`
-- `NativeSignalMapper`
+是否启动这些诊断 collector 由 `MonitorSignalConfig` 决定。输出模式不替代采集开关。
 
-采集层要求：
+## 输出与可靠投递
 
-- 采集器输出 raw signal，不输出最终 envelope。
-- 采集器不做采样、重试、隐私过滤和上报。
-- native signal 必须映射到统一 signal type、name、attributes 和 payload。
+public 输出模式只有三种：
 
-## Pipeline 层
+| 模式 | 当前实现 |
+|---|---|
+| `consoleOnly` | `LogMonitorOutput` 输出 compact/quiet/json/silent log |
+| `localLive` | `ReliableHttpOutput` 小 batch 写入本地 Monitor Service |
+| `production` | SQLite offline queue、batch、retry、TTL、优先级驱逐和 SDK health |
 
-Pipeline 层由 `flutter_monitor_sdk` 实现，依赖 `flutter_monitor_core` 的模型和规则。
+可靠投递的核心组件位于 `delivery/`：
 
-模块：
+- `SqliteOfflineEventQueue`，不可用时可降级为 memory queue；
+- `ReliableHttpOutput`；
+- `QueueDegradation`；
+- `SdkHealthMonitor`。
 
-- `EventPipeline`
-- `EnvelopeBuilder`
-- `SchemaValidator`
-- `PrivacyFilter`
-- `Sampler`
-- `RateLimiter`
-- `PriorityQueue`
-- `Batcher`
-- `RetryScheduler`
-- `OfflineStore`
-- `SelfMonitoring`
+队列只保存经过 schema validation 和 privacy filter 的 envelope。HTTP 响应处理、重试和 drop 语义见 `docs/server_protocol.md`。
 
-Pipeline 要求：
-
-- 同一 raw signal 默认只生成一条主事件。
-- schema validation 早于输出。
-- privacy filtering 早于采样、存储和输出。
-- 高优先级事件可绕过部分低优先级批处理延迟。
-- 采样和限流不能破坏错误、native crash、OOM、关键卡顿、关键慢页面的定位链路。
-- pipeline 自身失败应生成 SDK self-monitoring 事件。
-
-## 输出层
-
-Outputs 由 `flutter_monitor_sdk` 实现。public 接入面收敛为 `MonitorMode.consoleOnly`、`MonitorMode.localLive` 和 `MonitorMode.production`；普通业务不需要手动组合多个 output。
-
-目标 outputs：
-
-- `LogOutput`：服务 `consoleOnly` 和本地调试 compact log
-- `LocalLiveOutput`：服务 `localLive`，小 batch 写入 Workbench service
-- `ProductionDelivery`：服务 `production`，内置 SQLite offline queue、batch、retry、sampling、rate limit 和 priority drop
-- `CustomOutput`：仅用于测试、企业内部桥接或非常规场景，不作为真实 App 默认路径
-- `DevToolsOutput`
-- `FileExportOutput`
-- future `OpenTelemetryOutput`
-
-输出层要求：
-
-- Output 只能消费 event envelope。
-- Output 不修改事件语义。
-- Output 不重新读取未脱敏原始数据。
-- 离线队列只保存完成 privacy filtering 后的 envelope JSON。
-- 真实 App 默认使用 batch，不采用一事件一请求发送方式。
-- HTTP output 使用 `docs/server_protocol.md`。
-- 后台和退出前 flush 由 Reporter / pipeline 统一协调，Output 只实现被动 `flush`，不得各自监听 App lifecycle。
-- DevTools/File export 使用 `docs/devtools_integration.md` 的导出格式。
-- future `OpenTelemetryOutput` 只能从统一 event envelope 派生映射，不能成为 SDK 内部主模型或第二套协议。
-
-## DevTools Bridge
-
-DevTools bridge 由 `flutter_monitor_sdk` 提供本地数据源，并优先接入官方 Flutter DevTools / Timeline 能力。未来如果需要更完整的自定义面板，可新增 `flutter_monitor_devtools` 作为独立 DevTools extension/UI 包，但它只消费 bridge/export 数据，不承担 runtime 采集，并必须复用 `flutter_monitor_core`。
-
-模块：
-
-- `DevToolsOutput`
-- `DevToolsBridge`
-- `TimelineWriter`
-- `SessionTimelineStore`
-- `SessionExporter`
-- `SessionImporter`
-
-职责：
-
-- 写入 Flutter Timeline；
-- 暴露当前 session timeline；
-- 展示 trace/span/event/context 详情；
-- 展示 jank、memory、native signals；
-- 支持本地 session export/import；
-- 展示 SDK self-monitoring 状态。
+当前没有 `DevToolsOutput`、文件输出或 OpenTelemetry output。未来如增加，只能消费同一 `EventEnvelope`。
 
 ## Native Bridge
 
-Native bridge 是 `flutter_monitor_sdk` 与 `flutter_monitor_native` 的连接边界。
+`flutter_monitor_native` 是可选插件。当前 Android/iOS 实现提供：
 
-`flutter_monitor_native` 是可选增强包，不是第二个监控 SDK。它的职责是通过 Flutter plugin 能力把 Android/iOS 原生信号送到主 SDK；最终事件模型、字段注册、隐私过滤、session/trace 关联、采样、输出和上报仍由 `flutter_monitor_core` 与 `flutter_monitor_sdk` 负责。
+- native resource snapshot；
+- native memory snapshot；
+- memory pressure / low memory warning；
+- native lifecycle callback。
 
-完整 native 能力需要 `flutter_monitor_native` 提供 Flutter 与原生平台之间的通信层。第一阶段建议使用：
-
-- `MethodChannel`：SDK 主动请求 native resource snapshot、memory snapshot 或 flush。
-- `EventChannel`：native 主动推送 low memory warning、native lifecycle、OOM/ANR/crash 线索等异步信号。
-
-后续如果 native payload 和类型契约变复杂，可迁移到 Pigeon，但不得因此改变最终 `EventEnvelope` 或服务端协议。
-
-建议形态：
-
-```dart
-abstract interface class MonitorNativeBridge {
-  Stream<NativeSignal> get signals;
-  Future<NativeResourceSnapshot> getResourceSnapshot();
-  Future<NativeMemorySnapshot?> getMemorySnapshot();
-  Future<void> dispose();
-}
-```
-
-接入要求：
-
-- `flutter_monitor_sdk` 只依赖 bridge 抽象，不强依赖 native plugin。
-- 未配置 bridge 时，SDK 使用 no-op 降级路径，`context.native.available = false`，启动、页面、HTTP、错误、基础 lifecycle 和 `track` 不受影响。卡顿、frame stats、memory 和 native 均属于显式开启的诊断信号；未开启或 bridge 不可用时不应影响默认主链路。
-- 配置 bridge 时，SDK 在 bootstrap resource resolve 阶段解析一次 native resource snapshot；该阶段有短 deadline，成功后首批 bootstrap 事件携带 native context，不可用或超时时降级为 `context.native.available = false`。
-- `flutter_monitor_native` 提供 bridge 实现。
-- `flutter_monitor_core` 承载最终 event envelope、字段注册、隐私规则和可共享的 native raw payload contract。
-- `flutter_monitor_sdk` 持有 runtime bridge 抽象、上下文补全和 pipeline 接入。
-- `flutter_monitor_native` 只实现 bridge 并提供 native raw signal，不构建最终 envelope，不定义独立上报协议。
-- native signal 进入 SDK pipeline 后再构建 envelope。
-- `native.memory.pressure` 和 `native.warning` 属于高价值诊断足迹，应进入 breadcrumb store，帮助解释后续 error、jank、OOM/ANR/crash 线索。
-- native 异常生命周期下无法完整进入 pipeline 时，应先持久化 native raw signal 或可补全 payload，并在下次启动后由 SDK pipeline 补全为统一 envelope。
-
-推荐数据流：
+SDK 通过 `MonitorNativeBridge` 抽象使用 MethodChannel 和 EventChannel：
 
 ```text
-Android / iOS native callbacks
-  -> MethodChannel / EventChannel
-  -> flutter_monitor_native Dart bridge
-  -> MonitorNativeBridge
-  -> flutter_monitor_sdk native signal mapper
+Android / iOS callback
+  -> FlutterMonitorNativeBridge
+  -> NativeBridgeController
+  -> NativeSignalMapper
   -> RawSignal
   -> EventPipeline
-  -> EventEnvelope
-  -> Outputs
 ```
 
-`flutter_monitor_native` 应主要包含：
+未配置 bridge 时使用 no-op 路径，默认 Flutter 主链路不受影响。core 和 mapper 已为 native crash、OOM、ANR 定义事件边界，但当前 Android/iOS plugin 没有可靠捕获实现，不能把这些能力列为已完成。
 
-- Dart bridge 实现，例如 `FlutterMonitorNativeBridge`。
-- Android/iOS native raw signal 采集，并通过 core 定义的 `NativeSignal` / `NativeMemorySnapshot` / `NativeResourceSnapshot` 交给 SDK。
-- Android/iOS memory collector，例如 RSS、native heap 或平台可获得的内存线索。
-- Android/iOS memory pressure / low memory warning listener。
-- Android/iOS native lifecycle 补充信号。
-- OOM、ANR、native crash 的 schema 入口、bridge 入口和异常生命周期下的 raw signal 暂存能力。
-- 用于平台不可用或测试环境的降级路径。no-op/fake bridge 只服务 SDK 内部测试，不是业务层主动写入 native 事件的 API。
+Native bridge 的稳定约束如下：
 
-Native signal 的最终字段映射发生在 SDK pipeline 入口：`flutter_monitor_native` 负责提供平台事实，`flutter_monitor_sdk` 负责把它映射为 `RawSignal`，再由 `EventPipeline` 构建统一 `EventEnvelope`。平台原始证据进入 canonical `payload.native`；raw JSON 中表现为 payload 内的 `payload.native` key。
+- SDK 只依赖 `MonitorNativeBridge` 抽象，不强依赖 native plugin；
+- MethodChannel 用于请求 resource/memory snapshot，EventChannel 用于异步 native signal；未来如改用 Pigeon，不得改变 envelope 或服务端协议；
+- 配置 bridge 时，SDK 在 bootstrap resource resolve 阶段以短 deadline 获取一次 resource snapshot，失败时降级为 `context.native.available = false`；
+- native plugin 只提供平台事实，不创建第二套 session、trace、字段注册、HTTP output 或上传队列；
+- native signal 的标准字段映射发生在 SDK mapper/pipeline，平台原始证据保存在受控的 `payload.native`；
+- 异常生命周期拿不到完整上下文时，必须保留 missing reason 或可补全的 raw signal，不得伪造完整 envelope。
 
-`flutter_monitor_native` 不得包含：
+Native bridge 允许扩展 OOM、ANR 和 crash 的 bridge 入口，但在实际捕获能力落地前，文档、Workbench 和服务端都只能将它们标记为预留信号。
 
-- HTTP output、独立上传队列或服务端鉴权逻辑。
-- 第二套 session id、trace id 或 event id 生成体系。
-- 第二套 event model、导出格式或字段注册表。
-- 会让主 SDK 基础接入变成强制 native 接入的配置。
+## Platform
 
-如果用户不接入 `flutter_monitor_native`，或接入失败，SDK 必须无损降级：
+`platform` 是 EventEnvelope 的消费层：
 
-- 默认主链路的启动、页面、HTTP、错误、基础 lifecycle 和业务 `track` 能力继续工作。
-- Flutter/Dart 层 lifecycle 仍可工作；memory 仅在 `MonitorSignalConfig.memory = true` 后采集。
-- native memory、native pressure、native lifecycle、native crash/OOM/ANR 线索缺失。
-- `context.native.available` 应为 `false`；需要解释缺失时使用 `context.missingReason = native_bridge_unavailable`。
-- 如果用户显式启用了 native bridge 但 bridge 不可用，应记录 SDK self-monitoring warning，而不是抛出影响 App 运行的异常。
+- Monitor Service 接收单条或批量 envelope，保存 raw JSON 并建立 SQLite 索引；
+- query API 返回 recent、Catalog、Session、Trace、Analytics、Performance 等派生视图；
+- SSE 通知 Workbench 失效查询缓存；
+- Workbench 用 URL scope、Catalog、详情和 Session 工作区完成排查；
+- 所有摘要都应携带可用的 `eventId`、`sessionId`、`traceId` 以回查 raw envelope。
 
-完成 native bridge 后，相比 Flutter-only 能力，SDK 增强的是对 Flutter runtime 视野之外问题的解释能力：进程级/native 内存、平台 low memory warning、native lifecycle 缺口、OOM/ANR/native crash 线索，以及这些信号与当前 session、route、jank、error、HTTP 和 breadcrumbs 的统一关联。
+Platform 的具体职责和 API 边界见 `platform/docs/architecture.md` 与 `platform/services/monitor-service/docs/boundaries.md`。
 
-## Public API
+## 未实现边界
 
-`flutter_monitor_sdk` 提供 Flutter 业务主入口：
+以下内容不属于当前代码能力：
 
-```dart
-await FlutterMonitorSDK.init(
-  config: MonitorConfig(...),
-  appStartTime: appStartTime,
-  initialContext: const MonitorInitialContext(...),
-);
-```
+- Flutter DevTools extension、Timeline writer 和 SDK DevTools bridge；
+- 完整 session export/import UI 与运行时工作流；
+- CLI、MCP；
+- 可靠 native crash、OOM、ANR 捕获；
+- remote config 下发闭环；
+- 多租户、权限、告警、长期冷热存储和生产运维平台。
 
-公开 API 应覆盖：
+这些能力未来如实现，必须复用 core schema 和现有服务端协议边界。
 
-- SDK 初始化；
-- 初始化期上下文 `initialContext`；
-- 业务主动埋点 `track(...)`；
-- 设置通用上下文 `setContext(...)` 和按 scope 清理 `clearContext(...)`；
-- 手动上报已处理 error `recordError(...)`；
-- 获取 route observer；
-- 创建 Dio interceptor；
-- 创建 `http` client；
-- 标记页面首帧完成；
-- 注册可选 native bridge；
-- flush；
-- dispose。
+## 禁止事项
 
-普通真实 App 接入不应被要求理解 trace/span/breadcrumb、`FieldPaths`、`RawSignal`、`EventEnvelope`、attributes/payload。`startTrace`、`startSpan`、`addBreadcrumb`、自定义 attributes/payload、`MonitorBinding`、`Reporter` 等能力定位为 SDK 内部或未来高级诊断入口，不从主库导出。用户、模块、发布和网络上下文统一通过 `setContext(...)` 表达。
-
-API 要求：
-
-- 默认接入保持低侵入。
-- native 能力必须显式接入。
-- 公开 API 不暴露内部 pipeline 细节。
-- 手动事件也必须进入统一 envelope。
-
-## 模块边界和禁止事项
-
-- 不得在 `flutter_monitor_sdk` 或 `flutter_monitor_native` 中定义第二套 event model。
-- 不得让 collector 直接调用 HTTP output。
-- 不得让 native plugin 绕过 SDK pipeline 直接上报。
-- 不得让 DevTools 使用独立事件结构。
-- 不得让 CLI/MCP 使用与服务端协议不兼容的导出格式。
-- 不得新增无法关联 session/context 的业务指标；SDK self-monitoring 和 pre-session 事件必须显式标记缺失原因。
-- 不得把敏感字段放入 `attributes` 参与索引，除非经过隐私策略允许。
+- 不得在 SDK、native、Service 或 Workbench 中定义第二套事件模型。
+- 不得让 collector 或 native plugin 绕过 SDK pipeline 直接上报。
+- 不得把 query summary 或 UI view model 写回 raw envelope。
+- 不得在事件完成时用当前页面覆盖事件开始时的归属。
+- 不得在缺少证据时把 memory growth 表述为确定泄漏。
+- 不得把预留 schema 写成已经落地的采集能力。
