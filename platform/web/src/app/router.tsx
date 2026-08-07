@@ -111,12 +111,23 @@ const sessionsAnalyticsRoute = createRoute({
   beforeLoad: ({ search }) => { throw redirect({ to: '/sessions', search: rootSearchFields(search) }); },
 });
 
+export type SessionSearch = {
+  tab?: 'all' | 'startup' | 'page' | 'http' | 'business' | 'error';
+  open?: string;
+  expand?: string;
+  eventId?: string;
+  traceId?: string;
+};
+
 const sessionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sessions/$sessionId',
-  validateSearch: (search: Record<string, unknown>): { eventId?: string; traceId?: string } => ({
-    eventId: typeof search.eventId === 'string' ? search.eventId : undefined,
-    traceId: typeof search.traceId === 'string' ? search.traceId : undefined,
+  validateSearch: (search: Record<string, unknown>): SessionSearch => cleanSearch({
+    tab: enumSearch(search.tab, ['all', 'startup', 'page', 'http', 'business', 'error']),
+    open: stringSearch(search.open),
+    expand: stringSearch(search.expand),
+    eventId: stringSearch(search.eventId),
+    traceId: stringSearch(search.traceId),
   }),
   component: lazyRouteComponent(() => import('../routes/session/session-workspace-route'), 'SessionWorkspaceRoute'),
 });

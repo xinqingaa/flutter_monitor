@@ -53,7 +53,7 @@ export function SessionsRoute() {
     void navigate({
       to: '/sessions/$sessionId',
       params: { sessionId: item.sessionId },
-      search: { eventId: item.lastEventId },
+      search: {},
     });
   }
 
@@ -124,7 +124,7 @@ export function SessionsRoute() {
           void navigate({
             to: '/sessions/$sessionId',
             params: { sessionId },
-            search: { eventId: detailItem?.lastEventId },
+            search: {},
           });
         }}
       />

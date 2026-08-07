@@ -1,350 +1,154 @@
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { AlertTriangle, AppWindow, ArrowLeft, GitBranch, MousePointerClick, Network, Rocket } from 'lucide-react';
-import { Badge } from '../../components/ui/badge';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
+import type { SessionSearch } from '../../app/router';
 import { Button } from '../../components/ui/button';
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../../components/ui/empty';
 import { IdCombobox } from '../../components/common/id-combobox';
-import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '../../components/ui/item';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../components/ui/resizable';
-import { ScrollArea } from '../../components/ui/scroll-area';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../../components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { CopyableId } from '../../components/common/copyable-id';
-import { EnvironmentProfile } from '../../features/inspector/environment-profile';
-import { JsonViewer } from '../../features/inspector/json-viewer';
 import { pickScopeSearch } from '../../features/scope/scope-filters';
+import {
+  SessionWorkspaceEmpty,
+  SessionWorkspaceView,
+  type SessionWorkspaceSearch,
+} from '../../features/session/session-workspace-view';
 import { useDebouncedValue } from '../../shared/hooks/use-debounced-value';
-import { useDimensionsQuery, useEventQuery, useSessionQuery } from '../../shared/datasource/queries';
+import { useDimensionsQuery, useSessionQuery } from '../../shared/datasource/queries';
+import {
+  environmentOf,
+  eventKind,
+  readPath,
+  sortEvents,
+  userIdOf,
+} from '../../shared/event-model/accessors';
+import { formatDuration } from '../../shared/formatting/format';
 import type { MonitorEvent } from '../../shared/datasource/types';
-import { eventKind, issueLabels, readPath, sortEvents } from '../../shared/event-model/accessors';
-import { statusLabel } from '../../shared/event-model/status';
-import { cn } from '../../shared/formatting/cn';
-import { formatDateTime, formatDuration } from '../../shared/formatting/format';
-
-type Group = 'all' | 'startup' | 'page' | 'http' | 'business' | 'problem';
 
 export function SessionWorkspaceRoute() {
   const { sessionId } = useParams({ from: '/sessions/$sessionId' });
   const search = useSearch({ from: '/sessions/$sessionId' });
   const navigate = useNavigate({ from: '/sessions/$sessionId' });
   const session = useSessionQuery(sessionId);
-  const [group, setGroup] = useState<Group>('all');
   const [sessionQuery, setSessionQuery] = useState(sessionId);
   const debouncedSession = useDebouncedValue(sessionQuery, 250);
   const suggestions = useDimensionsQuery({}, debouncedSession);
-  const selectedRef = useRef<HTMLButtonElement>(null);
-  const events = useMemo(() => sortEvents(session.data ?? []).filter(inPrimaryTimeline), [session.data]);
-  const visible = events.filter((event) => group === 'all' || groupOf(event) === group);
-  const selectedEvent = events.find((event) => event.eventId === search.eventId);
-  const detail = useEventQuery(search.eventId);
-  const narrow = useMedia('(max-width: 899px)');
-  const first = events[0];
-  const last = events.at(-1);
-  const userId = stringValue(readPath(first, ['context', 'user', 'userId']));
-  const appVersion = stringValue(readPath(first, ['resource', 'app', 'appVersion']));
-  const problemCount = events.filter((event) => groupOf(event) === 'problem').length;
+  const events = useMemo(
+    () => sortEvents(session.data ?? []).filter(inPrimaryTimeline),
+    [session.data],
+  );
+  const durationLabel = sessionDurationLabel(events);
+  const errorCount = events.filter(isErrorTabEvent).length;
+  const identity = useMemo(() => sessionIdentity(events[0]), [events]);
 
   useEffect(() => {
     setSessionQuery(sessionId);
   }, [sessionId]);
-
-  useEffect(() => {
-    if (search.eventId) selectedRef.current?.scrollIntoView({ block: 'center' });
-  }, [search.eventId, visible.length]);
-
-  function select(event: MonitorEvent) {
-    if (event.eventId) void navigate({ search: { eventId: event.eventId, traceId: event.traceId } });
-  }
 
   function switchSession(next?: string) {
     if (!next || next === sessionId) return;
     void navigate({ to: '/sessions/$sessionId', params: { sessionId: next }, search: {} });
   }
 
-  const record = <SessionRecord event={detail.data ?? selectedEvent} loading={detail.isLoading} />;
+  const onSearchChange = useCallback((patch: Partial<SessionWorkspaceSearch>) => {
+    void navigate({
+      search: (current: SessionSearch) => ({
+        ...current,
+        ...patch,
+        tab: patch.tab === 'all' ? undefined : (patch.tab ?? current.tab),
+      }),
+      replace: true,
+    });
+  }, [navigate]);
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-background">
-      <section className="flex min-w-0 flex-wrap items-center gap-3 border-b bg-background px-4 py-3">
-        <Button variant="outline" size="icon" aria-label="返回 Session 列表" asChild>
-          <Link to="/sessions" search={(current) => pickScopeSearch(current)}>
-            <ArrowLeft />
-          </Link>
-        </Button>
-        <IdCombobox
-          value={sessionId}
-          label="Session ID"
-          query={sessionQuery}
-          options={suggestions.data?.sessionIds ?? []}
-          loading={suggestions.isFetching}
-          error={suggestions.isError}
-          onQueryChange={setSessionQuery}
-          onChange={switchSession}
-          className="w-64"
-        />
-        <Summary label="时间" value={`${formatDateTime(first?.timestamp ?? first?.startTime)} - ${formatDateTime(last?.timestamp ?? last?.endTime)}`} />
-        <Summary label="用户" value={userId ?? '-'} mono />
-        <Summary label="版本" value={appVersion ?? '-'} />
-        <Badge variant={problemCount ? 'destructive' : 'secondary'}>{problemCount} 个问题</Badge>
+      <section className="border-b bg-background px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="outline" size="icon" aria-label="返回 Session 列表" asChild>
+            <Link to="/sessions" search={(current) => pickScopeSearch(current)}>
+              <ArrowLeft />
+            </Link>
+          </Button>
+          <IdCombobox
+            value={sessionId}
+            label="Session ID"
+            query={sessionQuery}
+            options={suggestions.data?.sessionIds ?? []}
+            loading={suggestions.isFetching}
+            error={suggestions.isError}
+            onQueryChange={setSessionQuery}
+            onChange={switchSession}
+            className="w-72"
+          />
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            <span className={errorCount > 0 ? 'font-medium text-destructive' : 'text-muted-foreground'}>
+              {errorCount} 异常
+            </span>
+            <span className="tabular-nums text-muted-foreground">{events.length} 事件</span>
+            {durationLabel ? <span className="tabular-nums text-muted-foreground">{durationLabel}</span> : null}
+          </div>
+        </div>
+        {identity ? (
+          <p className="mt-1.5 truncate pl-11 text-xs text-muted-foreground">{identity}</p>
+        ) : null}
       </section>
 
       {session.isLoading ? (
-        <SessionEmpty title="正在加载 Session" description="读取事件链路与上下文" />
+        <SessionWorkspaceEmpty title="正在加载 Session" description="读取事件链路与上下文" />
       ) : session.isError ? (
-        <SessionEmpty title="Session 加载失败" description="请检查 Monitor Service 后重试" danger />
+        <SessionWorkspaceEmpty title="Session 加载失败" description="请检查 Monitor Service 后重试" danger />
       ) : events.length === 0 ? (
-        <SessionEmpty title="没有主要事件" description="当前 Session 中没有启动、页面、HTTP、埋点或错误事件" />
-      ) : narrow ? (
-        <MobileWorkspace
-          group={group}
-          setGroup={setGroup}
-          events={events}
-          visible={visible}
-          selectedId={search.eventId}
-          selectedRef={selectedRef}
-          onSelect={select}
-          record={record}
-          onClose={() => void navigate({ search: {} })}
-        />
+        <SessionWorkspaceEmpty title="没有主要事件" description="当前 Session 中没有启动、页面、HTTP、埋点或异常事件" />
       ) : (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0">
-          <ResizablePanel id="session-events" defaultSize="58%" minSize="40%">
-            <EventBrowser group={group} setGroup={setGroup} events={events} visible={visible} selectedId={search.eventId} selectedRef={selectedRef} onSelect={select} />
-          </ResizablePanel>
-          <ResizableHandle withHandle className="w-1.5 bg-border hover:bg-ring/40" />
-          <ResizablePanel id="session-record" defaultSize="42%" minSize="30%">
-            <div className="h-full min-h-0 border-l bg-background">{record}</div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        <SessionWorkspaceView
+          sessionId={sessionId}
+          events={events}
+          search={search}
+          onSearchChange={onSearchChange}
+        />
       )}
     </div>
   );
 }
 
-function EventBrowser({ group, setGroup, events, visible, selectedId, selectedRef, onSelect }: {
-  group: Group;
-  setGroup: (group: Group) => void;
-  events: MonitorEvent[];
-  visible: MonitorEvent[];
-  selectedId?: string;
-  selectedRef: RefObject<HTMLButtonElement | null>;
-  onSelect: (event: MonitorEvent) => void;
-}) {
-  return (
-    <Tabs value={group} onValueChange={(value) => setGroup(value as Group)} className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-      <ScrollArea className="border-b">
-        <div className="w-max px-3 py-2">
-          <TabsList>
-            {groups.map((value) => (
-              <TabsTrigger key={value} value={value}>
-                {groupLabel(value)}
-                <span className="ml-1 tabular-nums opacity-60">{value === 'all' ? events.length : events.filter((event) => groupOf(event) === value).length}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-      </ScrollArea>
-      <TabsContent value={group} className="min-h-0 overflow-hidden">
-        <ScrollArea className="h-full">
-          <ItemGroup className="p-2">
-            {visible.map((event) => (
-              <EventItem
-                key={event.eventId}
-                event={event}
-                selected={event.eventId === selectedId}
-                selectedRef={event.eventId === selectedId ? selectedRef : undefined}
-                onClick={() => onSelect(event)}
-              />
-            ))}
-          </ItemGroup>
-        </ScrollArea>
-      </TabsContent>
-    </Tabs>
-  );
+function sessionIdentity(event?: MonitorEvent) {
+  if (!event) return undefined;
+  const user = userIdOf(event);
+  const packageName = stringValue(readPath(event, ['resource', 'app', 'packageName']));
+  const appKey = stringValue(readPath(event, ['resource', 'app', 'appKey']));
+  const version = stringValue(readPath(event, ['resource', 'app', 'appVersion']));
+  const env = environmentOf(event);
+  const platform = stringValue(readPath(event, ['resource', 'device', 'platform']));
+  return [
+    user !== '-' ? user : undefined,
+    packageName ?? appKey,
+    version ? `v${version}` : undefined,
+    env !== '-' ? env : undefined,
+    platform,
+  ].filter(Boolean).join(' · ') || undefined;
 }
-
-function EventItem({ event, selected, selectedRef, onClick }: {
-  event: MonitorEvent;
-  selected: boolean;
-  selectedRef?: RefObject<HTMLButtonElement | null>;
-  onClick: () => void;
-}) {
-  const group = groupOf(event);
-  const issues = issueLabels(event);
-  const Icon = groupIcon(group);
-  const timestamp = event.timestamp ?? event.startTime;
-  return (
-    <Item
-      asChild
-      size="sm"
-      variant={selected ? 'outline' : 'default'}
-      className={cn('w-full cursor-pointer text-left hover:bg-accent/50', selected && 'bg-muted')}
-    >
-      <button ref={selectedRef} type="button" onClick={onClick}>
-        <ItemMedia variant="icon" className={issues.length ? 'text-destructive' : 'text-muted-foreground'}>
-          <Icon />
-        </ItemMedia>
-        <ItemContent>
-          <ItemTitle className="max-w-full truncate">{eventTitle(event)}</ItemTitle>
-          <ItemDescription className="flex flex-wrap gap-x-2 text-xs">
-            <span title={timestamp}>{formatDateTime(timestamp)}</span>
-            <span>{statusLabel(event.status ?? event.signalType)}</span>
-            {event.durationMs !== undefined ? <span>{formatDuration(event.durationMs)}</span> : null}
-          </ItemDescription>
-        </ItemContent>
-        <ItemActions>
-          <Badge variant={issues.length ? 'destructive' : 'secondary'}>{groupLabel(group)}</Badge>
-        </ItemActions>
-      </button>
-    </Item>
-  );
-}
-
-function MobileWorkspace(props: Parameters<typeof EventBrowser>[0] & { record: ReactNode; onClose: () => void }) {
-  return (
-    <>
-      <EventBrowser {...props} />
-      <Sheet open={Boolean(props.selectedId)} onOpenChange={(open) => !open && props.onClose()}>
-        <SheetContent className="grid w-full grid-rows-[auto_minmax(0,1fr)] p-0 sm:max-w-xl">
-          <SheetHeader className="border-b p-4">
-            <SheetTitle>事件详情</SheetTitle>
-            <SheetDescription>查看摘要、上下文和原始 EventEnvelope。</SheetDescription>
-          </SheetHeader>
-          {props.record}
-        </SheetContent>
-      </Sheet>
-    </>
-  );
-}
-
-function SessionRecord({ event, loading }: { event?: MonitorEvent; loading: boolean }) {
-  if (loading) return <SessionEmpty title="正在加载事件" description="读取原始 EventEnvelope" />;
-  if (!event) return <SessionEmpty title="选择一个事件" description="从左侧事件流查看摘要、上下文和 Raw" />;
-  return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-      <div className="border-b p-4">
-        <div className="flex items-center gap-2">
-          <Badge variant={issueLabels(event).length ? 'destructive' : 'secondary'}>{groupLabel(groupOf(event))}</Badge>
-          <span className="text-xs text-muted-foreground">{formatDateTime(event.timestamp ?? event.startTime)}</span>
-        </div>
-        <h2 className="mt-2 break-all text-sm font-semibold">{eventTitle(event)}</h2>
-        <div className="mt-2 flex flex-wrap gap-3 text-xs">
-          <Id label="Event" value={event.eventId} />
-          <Id label="Trace" value={event.traceId} />
-          <Id label="Span" value={event.spanId} />
-        </div>
-      </div>
-      <Tabs defaultValue="summary" className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] p-3">
-        <TabsList className="w-fit">
-          <TabsTrigger value="summary">摘要</TabsTrigger>
-          <TabsTrigger value="context">上下文</TabsTrigger>
-          <TabsTrigger value="raw">Raw</TabsTrigger>
-        </TabsList>
-        <TabsContent value="summary" className="min-h-0 overflow-hidden">
-          <ScrollArea className="h-full">
-            <JsonViewer value={{ status: event.status, durationMs: event.durationMs, attributes: event.attributes, payload: event.payload }} collapsed={2} />
-          </ScrollArea>
-        </TabsContent>
-        <TabsContent value="context" className="min-h-0 overflow-hidden">
-          <ScrollArea className="h-full">
-            <div className="p-1">
-              <EnvironmentProfile event={event} />
-            </div>
-          </ScrollArea>
-        </TabsContent>
-        <TabsContent value="raw" className="min-h-0 overflow-hidden">
-          <ScrollArea className="h-full">
-            <JsonViewer value={event} collapsed={2} />
-          </ScrollArea>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-function SessionEmpty({ title, description, danger }: { title: string; description: string; danger?: boolean }) {
-  return (
-    <Empty className="h-full border-0">
-      <EmptyHeader>
-        <EmptyMedia variant="icon" className={danger ? 'text-destructive' : undefined}>{danger ? <AlertTriangle /> : <GitBranch />}</EmptyMedia>
-        <EmptyTitle>{title}</EmptyTitle>
-        <EmptyDescription>{description}</EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  );
-}
-
-function Summary({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="min-w-0 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <div className={cn('max-w-72 truncate text-foreground', mono && 'font-mono')}>{value}</div>
-    </div>
-  );
-}
-
-function Id({ label, value }: { label: string; value?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-muted-foreground">
-      <span>{label}</span>
-      <CopyableId value={value} />
-    </span>
-  );
-}
-
-const groups: Group[] = ['all', 'startup', 'page', 'http', 'business', 'problem'];
 
 function inPrimaryTimeline(event: MonitorEvent) {
-  return ['startup', 'page', 'http', 'business', 'error'].includes(eventKind(event)) || readPath(event, ['attributes', 'business.result']) === 'failed';
-}
-
-function groupOf(event: MonitorEvent): Group {
   const kind = eventKind(event);
-  if (kind === 'error' || (event.status === 'error' && kind !== 'http') || readPath(event, ['attributes', 'business.result']) === 'failed') return 'problem';
-  if (kind === 'startup') return 'startup';
-  if (kind === 'page') return 'page';
-  if (kind === 'http') return 'http';
-  if (kind === 'business') return 'business';
-  return 'all';
+  return ['startup', 'page', 'http', 'business', 'error'].includes(kind)
+    || readPath(event, ['attributes', 'business.result']) === 'failed';
 }
 
-function groupLabel(group: Group) {
-  return ({ all: '全部', startup: '启动', page: '页面', http: 'HTTP', business: '埋点', problem: '问题' })[group];
+function isErrorTabEvent(event: MonitorEvent) {
+  if (eventKind(event) === 'http') return false;
+  return eventKind(event) === 'error'
+    || readPath(event, ['attributes', 'business.result']) === 'failed'
+    || (event.status === 'error' && eventKind(event) !== 'http');
 }
 
-function groupIcon(group: Group) {
-  return group === 'startup'
-    ? Rocket
-    : group === 'page'
-      ? AppWindow
-      : group === 'http'
-        ? Network
-        : group === 'business'
-          ? MousePointerClick
-          : group === 'problem'
-            ? AlertTriangle
-            : GitBranch;
-}
-
-function eventTitle(event: MonitorEvent) {
-  if (eventKind(event) === 'http') {
-    return `${String(readPath(event, ['attributes', 'http.method']) ?? 'HTTP')} ${String(readPath(event, ['attributes', 'http.url.normalized']) ?? event.name)}`;
+function sessionDurationLabel(events: MonitorEvent[]) {
+  if (events.length < 2) {
+    return events[0]?.durationMs !== undefined ? formatDuration(events[0].durationMs) : undefined;
   }
-  return String(readPath(event, ['attributes', 'business.action']) ?? readPath(event, ['attributes', 'error.type']) ?? event.name ?? '事件');
+  const first = Date.parse(events[0]?.timestamp ?? events[0]?.startTime ?? '');
+  const last = Date.parse(events.at(-1)?.timestamp ?? events.at(-1)?.endTime ?? '');
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last < first) return undefined;
+  return formatDuration(last - first);
 }
 
 function stringValue(value: unknown) {
   return typeof value === 'string' ? value : undefined;
-}
-
-function useMedia(query: string) {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    const update = () => setMatches(media.matches);
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, [query]);
-  return matches;
 }

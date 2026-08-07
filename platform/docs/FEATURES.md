@@ -16,7 +16,7 @@
 
 二级入口：
 
-- `/sessions/$sessionId`：Session 工作区，可带 `eventId`、`traceId`；
+- `/sessions/$sessionId`：Session 工作区，可带 `tab`、`open`、`expand`、`eventId`（可选 `traceId`）；
 - `/http/$eventId`：HTTP 独立详情；
 - `/business/$eventId`：埋点独立详情；
 - `/errors/$eventId`：异常独立详情；
@@ -78,13 +78,17 @@ Session 列表支持：
 
 Session 工作区支持：
 
-- 按 sessionId 切换会话；
-- 全部、启动、页面、HTTP、埋点、问题分类；
-- 选中 `eventId` 并查看摘要、上下文和 Raw；
-- 保留 `traceId` 深链参数；
-- 窄屏通过 Sheet 访问详情。
+- 按 sessionId 切换会话；列表进入不预选事件，默认全部段收起；
+- 全宽时间链（启动/页面分段、短路由段头、两行上下文、Trace 色轨）；
+- 全部 / 启动 / 页面 / HTTP / 埋点 / 异常分类（失败 HTTP 不进异常）；
+- 单击行展开/收起；HTTP / 埋点 / 异常最右侧「打开」进入对应独立详情；
+- `tab` / `open` / `expand` / `eventId` 写入 URL，返回可还原；
+- 从域 Catalog 带 `eventId` 进入时自动展开所属段并定位高亮；
+- 大段 HTTP 默认摘要折叠后再展开请求列表；
+- 右侧 scrubber：全部按段、域 Tab 按过滤事件；
+- eventId / traceId 仅在行菜单复制，不占第一视觉。
 
-当前 Session 列表使用 `hasMore` 分页，没有服务端 total。工作区的 trace 高亮/过滤和返回来源 Catalog 仍属于可增强交互，不应写成完整 trace 可视化工具。
+当前 Session 列表使用 `hasMore` 分页，没有服务端 total。
 
 ## HTTP
 

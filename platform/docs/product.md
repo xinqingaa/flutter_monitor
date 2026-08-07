@@ -19,7 +19,7 @@ Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用�
   异常        /errors
 
 二级
-  Session 工作区     /sessions/$sessionId?eventId=&traceId=
+  Session 工作区     /sessions/$sessionId?tab=&open=&expand=&eventId=
   HTTP 独立详情页    /http/$eventId
   埋点独立详情页     /business/$eventId
   异常独立详情页     /errors/$eventId
@@ -187,7 +187,7 @@ Session KPI 表示范围内至少有一条事件的去重 Session 数，界面�
 
 ### 工作区（二级）
 
-路径：`/sessions/$sessionId`，常用 query：`eventId`（可选 `traceId`）。由列表单击或 Sheet 全屏进入。
+路径：`/sessions/$sessionId`，常用 query：`tab`、`open`（展开段 id）、`expand`（展开事件 id）、`eventId`（定位高亮；可选 `traceId`）。由列表单击或 Sheet 全屏进入。
 
 ### 如何进入
 
@@ -197,16 +197,21 @@ Session KPI 表示范围内至少有一条事件的去重 Session 数，界面�
 
 ### 当前界面
 
-- 顶栏：Session ID Combobox 切换会话（切换后清空 eventId）、时间跨度、用户、版本、问题计数
-- 左：事件列表，Tab 为全部 / 启动 / 页面 / HTTP / 埋点 / 问题
-- 右：选中事件的摘要 / 上下文 / Raw（JsonViewer）
-- 窄屏用 Sheet 看详情
+- 顶栏：返回 · Session 切换 · `N 异常 · M 事件 · 时长`；次行身份条为 `用户 · 包名 · 版本 · 环境 · 平台`（有则显示）
+- 从 Session 列表进入**不预选** `eventId`，默认**全部段收起**；仅从 HTTP / 埋点 / 异常「查看 Session」带 `eventId` 时自动展开所属段并滚动高亮
+- 全宽时间链（无右侧检视栏、无常驻 Sheet）：启动/页面分段；段头用**短路由**（`context.route.name`），完整 fullName 仅 tooltip
+- 事件两行（类型·标题·结果态 + 路由·用户·环境·平台·时刻）；**单击行 = 展开/收起**；HTTP / 埋点 / 异常最右侧 **「打开」** 才进对应独立详情
+- 展开区展示包名/用户/设备/网络/域字段等上下文，不展示 Raw / body；eventId / traceId 仅行菜单复制
+- 同 Trace 左侧色轨；hover 联亮；行菜单可「仅看此 Trace」
+- Tab：全部 / 启动 / 页面 / HTTP / 埋点 / **异常**（稳定性错误 + 业务失败；**失败 HTTP 不进异常 Tab**，仅在 HTTP 行标红）；Tab / 段展开 / 行展开写入 URL
+- 大段内 HTTP 过多时默认折叠为 `HTTP N · 失败 x · 慢 x`，再「展开请求」
+- 右侧 scrubber：`全部` 按段刻度；域 Tab 按过滤后事件；点击展开目标段并跳转
 
 ### 当前局限
 
 - Session 列表尚无服务端 total 计数（分页用 hasMore 近似）
-- 相对旧版 Console / 分段 Timeline / EventInspector，工作区能力已简化
-- Session 内按 `traceId` 高亮 / 过滤仍弱；从工作区回来源 Catalog 的路径弱
+- 行展开不展示完整 Raw / HTTP body；深读仍以域详情页为准
+- scrubber 为列表序分布，非精确时间比例
 
 ---
 

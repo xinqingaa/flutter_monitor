@@ -1,7 +1,7 @@
 import type { MonitorEvent } from '../../shared/datasource/types';
 import { eventKind, issueLabels } from '../../shared/event-model/accessors';
 import { isNativeLifecycleEvent, isNativeMemoryEvent } from '../../shared/event-model/native';
-import { routeDisplayName } from '../../shared/event-model/route-display';
+import { routeFullName, routeGroupName } from '../../shared/event-model/route-display';
 import { formatDuration } from '../../shared/formatting/format';
 import {
   extractFrameEvidence,
@@ -21,7 +21,10 @@ export interface TimelineSegment {
   id: string;
   kind: SegmentKind;
   title: string;
+  /** Short route for headers (`context.route.name`), never query fullName. */
   route?: string;
+  /** Optional full route for tooltip only. */
+  routeDetail?: string;
   events: MonitorEvent[];
   nodes: MonitorEvent[];
   spans: MonitorEvent[];
@@ -184,11 +187,13 @@ function finalizeSegment(segment: RawSegment, index: number, nextStart: number |
   const issueCount = events.filter((event) => issueLabels(event).length > 0 || eventKind(event) === 'error').length;
   const severity = segmentSeverity(events);
   const route = segment.route ?? events.map(segmentRoute).find(Boolean);
+  const routeDetail = events.map(segmentRouteDetail).find(Boolean);
 
   return {
     id: `${index}-${first?.eventId ?? 'segment'}`,
     kind,
     route,
+    routeDetail: routeDetail && routeDetail !== route ? routeDetail : undefined,
     title: segmentTitle(kind, events, route),
     events,
     nodes,
@@ -440,9 +445,15 @@ function segmentRoute(event: MonitorEvent): string | undefined {
   return routeForDisplay(event);
 }
 
+/** Segment headers use short route name so query strings do not collapse the title. */
 function routeForDisplay(event: MonitorEvent): string | undefined {
-  const route = routeDisplayName(event);
+  const route = routeGroupName(event);
   return route && route !== '-' && route !== '未知页面' ? route : undefined;
+}
+
+function segmentRouteDetail(event: MonitorEvent): string | undefined {
+  const detail = routeFullName(event);
+  return detail && detail !== '-' ? detail : undefined;
 }
 
 function eventPhase(event: MonitorEvent): string | undefined {
