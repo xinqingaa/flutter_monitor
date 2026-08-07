@@ -293,7 +293,7 @@ function SegmentHeader({
   const Icon = open ? ChevronDown : ChevronRight;
   const headline = segment.kind === 'startup'
     ? (segment.durationLabel ?? segment.title)
-    : segment.title;
+    : (segment.title || segment.route || '页面');
   const duration = segment.kind === 'startup' ? undefined : segment.durationLabel;
   const tooltip = [headline, segment.routeDetail, duration].filter(Boolean).join(' · ');
 
