@@ -1,5 +1,13 @@
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { RefreshCw } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  LayoutDashboard,
+  ListTree,
+  Network,
+  PanelLeft,
+  RefreshCw,
+} from 'lucide-react';
 import type * as React from 'react';
 import { useState } from 'react';
 import {
@@ -12,13 +20,12 @@ import {
 } from '../components/ui/breadcrumb';
 import { Button } from '../components/ui/button';
 import { Label } from '../components/ui/label';
-import { Separator } from '../components/ui/separator';
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -27,6 +34,7 @@ import {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
+  useSidebar,
 } from '../components/ui/sidebar';
 import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
@@ -35,11 +43,11 @@ import { pickScopeSearch } from '../features/scope/scope-filters';
 import { LiveContext } from './live-context';
 
 const nav = [
-  { to: '/', label: '概览', match: (pathname: string) => pathname === '/' },
-  { to: '/sessions', label: 'Session', match: (pathname: string) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
-  { to: '/http', label: 'HTTP', match: (pathname: string) => pathname === '/http' || pathname.startsWith('/http/') },
-  { to: '/business', label: '埋点', match: (pathname: string) => pathname === '/business' || pathname.startsWith('/business/') },
-  { to: '/errors', label: '异常', match: (pathname: string) => pathname === '/errors' || pathname.startsWith('/errors/') },
+  { to: '/', label: '概览', icon: LayoutDashboard, match: (pathname: string) => pathname === '/' },
+  { to: '/sessions', label: 'Session', icon: ListTree, match: (pathname: string) => pathname === '/sessions' || pathname.startsWith('/sessions/') },
+  { to: '/http', label: 'HTTP', icon: Network, match: (pathname: string) => pathname === '/http' || pathname.startsWith('/http/') },
+  { to: '/business', label: '埋点', icon: Activity, match: (pathname: string) => pathname === '/business' || pathname.startsWith('/business/') },
+  { to: '/errors', label: '异常', icon: AlertTriangle, match: (pathname: string) => pathname === '/errors' || pathname.startsWith('/errors/') },
 ] as const;
 
 export function WorkbenchShell() {
@@ -61,7 +69,7 @@ export function WorkbenchShell() {
         } as React.CSSProperties
       }
     >
-      <Sidebar collapsible="offcanvas" variant="inset">
+      <Sidebar collapsible="icon" variant="inset">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -70,7 +78,7 @@ export function WorkbenchShell() {
                   <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                     <img src="/logo.png" alt="Flutter Monitor" className="size-6" />
                   </span>
-                  <span className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                     <span className="truncate font-semibold">Flutter Monitor</span>
                     <span className="truncate text-xs">Workbench</span>
                   </span>
@@ -84,7 +92,7 @@ export function WorkbenchShell() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {nav.map(({ to, label, match }) => (
+                {nav.map(({ to, label, icon: Icon, match }) => (
                   <SidebarMenuItem key={to}>
                     <SidebarMenuButton
                       asChild
@@ -92,7 +100,8 @@ export function WorkbenchShell() {
                       tooltip={label}
                     >
                       <Link to={to} search={(current) => pickScopeSearch(current)}>
-                        <span>{label}</span>
+                        <Icon className="!hidden group-data-[collapsible=icon]:!block" />
+                        <span className="group-data-[collapsible=icon]:hidden">{label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -101,13 +110,20 @@ export function WorkbenchShell() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
+
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarCollapseButton />
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
 
       <SidebarInset className="h-full min-h-0 min-w-0 overflow-hidden">
         <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear">
-          <SidebarTrigger aria-label="切换导航" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
+          <SidebarTrigger className="md:hidden" aria-label="打开导航" />
           <Breadcrumb className="min-w-0 flex-1">
             <BreadcrumbList className="flex-nowrap">
               <BreadcrumbItem className="hidden md:block">
@@ -166,6 +182,24 @@ export function WorkbenchShell() {
         </main>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+function SidebarCollapseButton() {
+  const { state, toggleSidebar } = useSidebar();
+  const collapsed = state === 'collapsed';
+  const label = collapsed ? '展开导航' : '收起导航';
+
+  return (
+    <SidebarMenuButton
+      type="button"
+      tooltip={label}
+      onClick={toggleSidebar}
+      aria-label={label}
+    >
+      <PanelLeft />
+      <span className="sr-only">{label}</span>
+    </SidebarMenuButton>
   );
 }
 

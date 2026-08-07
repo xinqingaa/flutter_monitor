@@ -13,10 +13,13 @@ import {
   ClipboardCopy,
   ExternalLink,
   Filter,
+  FoldVertical,
   GitBranch,
   MoreHorizontal,
+  UnfoldVertical,
 } from 'lucide-react';
 import { useToast } from '../../components/common/toast';
+import { IconTooltipButton } from '../../components/common/icon-tooltip-button';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import {
@@ -92,9 +95,15 @@ export function SessionWorkspaceView({
 
   const primary = useMemo(() => sortEvents(events).filter(inPrimaryTimeline), [events]);
   const segments = useMemo(() => buildTimelineSegments(primary), [primary]);
-  const flat = useMemo(
-    () => flattenVisible(segments, filter, traceOnly, openSegments, httpUnfolded),
-    [segments, filter, traceOnly, openSegments, httpUnfolded],
+  const visibleSegmentIds = useMemo(
+    () => visibleSegments(segments, filter, traceOnly).map((segment) => segment.id),
+    [segments, filter, traceOnly],
+  );
+  const allSegmentsExpanded = visibleSegmentIds.length > 0
+    && visibleSegmentIds.every((id) => openSegments.has(id));
+  const segmentViews = useMemo(
+    () => buildSegmentViews(segments, filter, traceOnly, httpUnfolded),
+    [segments, filter, traceOnly, httpUnfolded],
   );
   const focusEvent = primary.find((event) => event.eventId === focusEventId);
 
@@ -119,7 +128,7 @@ export function SessionWorkspaceView({
       segments.find((segment) => segment.nodes.some((event) => event.eventId === focusEventId))?.id ?? '',
     );
     node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [focusEventId, flat.length, segments]);
+  }, [focusEventId, openSegments, segmentViews.length, segments]);
 
   function setFilter(tab: TimelineFilter) {
     onSearchChange({ tab: tab === 'all' ? undefined : tab });
@@ -138,6 +147,14 @@ export function SessionWorkspaceView({
     if (next.has(id)) next.delete(id);
     else next.add(id);
     onSearchChange({ open: serializeIdSet(next) });
+  }
+
+  function toggleAllSegments() {
+    if (allSegmentsExpanded) {
+      onSearchChange({ open: undefined });
+      return;
+    }
+    onSearchChange({ open: serializeIdSet(new Set(visibleSegmentIds)) });
   }
 
   function openSegmentAndScroll(segmentId: string, eventId?: string) {
@@ -201,78 +218,108 @@ export function SessionWorkspaceView({
           ) : null}
         </div>
 
-        <div className="relative min-h-0">
-          <ScrollArea className="h-full">
-            <div className="space-y-0.5 p-3 pr-8">
-              {flat.length === 0 ? (
-                <Empty className="border-0 py-16">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon"><GitBranch /></EmptyMedia>
-                    <EmptyTitle>没有匹配事件</EmptyTitle>
-                    <EmptyDescription>调整分类或清除 Trace 过滤。</EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                flat.map((item) => {
-                  if (item.kind === 'segment') {
-                    return (
-                      <SegmentHeader
-                        key={`seg-${item.segment.id}`}
-                        segment={item.segment}
-                        open={openSegments.has(item.segment.id)}
-                        onToggle={() => toggleSegment(item.segment.id)}
-                        setRef={(node) => {
-                          if (node) segmentRefs.current.set(item.segment.id, node);
-                          else segmentRefs.current.delete(item.segment.id);
-                        }}
-                      />
-                    );
-                  }
-                  if (item.kind === 'http-fold') {
-                    return (
-                      <HttpFoldRow
-                        key={`http-fold-${item.segmentId}`}
-                        count={item.count}
-                        failed={item.failed}
-                        slow={item.slow}
-                        open={item.open}
-                        onToggle={() => toggleHttpFold(item.segmentId)}
-                      />
-                    );
-                  }
-                  return (
-                    <EventRow
-                      key={item.event.eventId ?? `${item.event.timestamp}-${item.event.name}`}
-                      event={item.event}
-                      sessionId={sessionId}
-                      focused={item.event.eventId === focusEventId}
-                      expanded={Boolean(item.event.eventId && expanded.has(item.event.eventId))}
-                      traceActive={Boolean(
-                        item.event.traceId
-                        && (item.event.traceId === hoverTraceId
-                          || item.event.traceId === traceOnly
-                          || item.event.traceId === focusEvent?.traceId),
-                      )}
-                      onHoverTrace={setHoverTraceId}
-                      onToggleExpand={() => toggleExpand(item.event.eventId)}
-                      onTraceOnly={() => item.event.traceId && onSearchChange({ traceId: item.event.traceId })}
-                      setRowRef={(node) => {
-                        if (!item.event.eventId) return;
-                        if (node) rowRefs.current.set(item.event.eventId, node);
-                        else rowRefs.current.delete(item.event.eventId);
-                      }}
-                    />
-                  );
-                })
-              )}
-            </div>
-          </ScrollArea>
-          {scrubberMarks.length >= 2 ? (
-            <SessionScrubber
-              marks={scrubberMarks}
-              onJump={(mark) => openSegmentAndScroll(mark.segmentId, mark.eventId)}
+        <div className="relative grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+          <div className="flex items-center justify-between gap-2 px-3 py-1">
+            <IconTooltipButton
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              label={allSegmentsExpanded ? '收起全部' : '展开全部'}
+              icon={allSegmentsExpanded ? FoldVertical : UnfoldVertical}
+              disabled={visibleSegmentIds.length === 0}
+              onClick={toggleAllSegments}
             />
-          ) : null}
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {visibleSegmentIds.length} 段
+            </span>
+          </div>
+          <div className="relative grid min-h-0 grid-cols-[minmax(0,1fr)_auto]">
+            <ScrollArea className="h-full min-w-0">
+              <div className="space-y-1.5 p-3 pt-1">
+                {segmentViews.length === 0 ? (
+                  <Empty className="border-0 py-16">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><GitBranch /></EmptyMedia>
+                      <EmptyTitle>没有匹配事件</EmptyTitle>
+                      <EmptyDescription>调整分类或清除 Trace 过滤。</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  segmentViews.map(({ segment, children }) => {
+                    const open = openSegments.has(segment.id);
+                    return (
+                      <div key={segment.id}>
+                        <SegmentHeader
+                          segment={segment}
+                          open={open}
+                          onToggle={() => toggleSegment(segment.id)}
+                          setRef={(node) => {
+                            if (node) segmentRefs.current.set(segment.id, node);
+                            else segmentRefs.current.delete(segment.id);
+                          }}
+                        />
+                        <div
+                          className={cn(
+                            'grid transition-[grid-template-rows] duration-200 ease-out',
+                            open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+                          )}
+                        >
+                          <div className="min-h-0 overflow-hidden">
+                            <div className="space-y-0.5 pb-1">
+                              {children.map((item) => {
+                                if (item.kind === 'http-fold') {
+                                  return (
+                                    <HttpFoldRow
+                                      key={`http-fold-${item.segmentId}`}
+                                      count={item.count}
+                                      failed={item.failed}
+                                      slow={item.slow}
+                                      open={item.open}
+                                      onToggle={() => toggleHttpFold(item.segmentId)}
+                                    />
+                                  );
+                                }
+                                return (
+                                  <EventRow
+                                    key={item.event.eventId ?? `${item.event.timestamp}-${item.event.name}`}
+                                    event={item.event}
+                                    sessionId={sessionId}
+                                    focused={item.event.eventId === focusEventId}
+                                    expanded={Boolean(item.event.eventId && expanded.has(item.event.eventId))}
+                                    traceActive={Boolean(
+                                      item.event.traceId
+                                      && (item.event.traceId === hoverTraceId
+                                        || item.event.traceId === traceOnly
+                                        || item.event.traceId === focusEvent?.traceId),
+                                    )}
+                                    onHoverTrace={setHoverTraceId}
+                                    onToggleExpand={() => toggleExpand(item.event.eventId)}
+                                    onTraceOnly={() => item.event.traceId && onSearchChange({ traceId: item.event.traceId })}
+                                    setRowRef={(node) => {
+                                      if (!item.event.eventId) return;
+                                      if (node) rowRefs.current.set(item.event.eventId, node);
+                                      else rowRefs.current.delete(item.event.eventId);
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </ScrollArea>
+            {scrubberMarks.length >= 2 ? (
+              <SessionScrubber
+                marks={scrubberMarks}
+                onJump={(mark) => openSegmentAndScroll(mark.segmentId, mark.eventId)}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
     </TooltipProvider>
@@ -290,7 +337,6 @@ function SegmentHeader({
   onToggle: () => void;
   setRef: (node: HTMLButtonElement | null) => void;
 }) {
-  const Icon = open ? ChevronDown : ChevronRight;
   const headline = segment.kind === 'startup'
     ? (segment.durationLabel ?? segment.title)
     : (segment.title || segment.route || '页面');
@@ -304,12 +350,17 @@ function SegmentHeader({
       onClick={onToggle}
       title={tooltip}
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-accent/50',
+        'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2.5 text-left hover:bg-accent/50',
         segment.hasIssue && 'bg-destructive/5',
       )}
     >
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+      <ChevronRight
+        className={cn(
+          'size-4 shrink-0 text-muted-foreground transition-transform duration-200',
+          open && 'rotate-90',
+        )}
+      />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
         {segmentKindLabel(segment.kind)} · {headline}
       </span>
       {duration ? <span className="shrink-0 text-xs text-muted-foreground">{duration}</span> : null}
@@ -396,9 +447,16 @@ function EventRow({
           <RowMain group={group} title={title} result={result} failed={failed} />
           <RowContext parts={context} />
         </button>
-        {expanded ? (
-          <EventExpand event={event} sessionId={sessionId} onTraceOnly={onTraceOnly} />
-        ) : null}
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows] duration-200 ease-out',
+            expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <EventExpand event={event} sessionId={sessionId} />
+          </div>
+        </div>
       </div>
       <div className="flex items-start gap-0.5">
         {domain ? (
@@ -446,13 +504,12 @@ function RowContext({ parts }: { parts: string[] }) {
 function EventExpand({
   event,
   sessionId,
-  onTraceOnly,
 }: {
   event: MonitorEvent;
   sessionId: string;
-  onTraceOnly: () => void;
 }) {
   const facts = expandFacts(event);
+  const catalog = domainCatalogLink(event);
   return (
     <div className="mt-2 space-y-2 rounded-md border bg-muted/15 p-3 text-xs">
       {facts.length ? (
@@ -467,18 +524,15 @@ function EventExpand({
       ) : (
         <p className="text-muted-foreground">无更多摘要</p>
       )}
-      <div className="flex flex-wrap gap-2">
-        {event.traceId ? (
-          <Button size="sm" variant="outline" onClick={onTraceOnly}>
-            仅看此 Trace
+      {catalog ? (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" asChild>
+            <Link to={catalog.to} search={(current) => ({ ...pickScopeSearch(current), sessionId })}>
+              {catalog.label}
+            </Link>
           </Button>
-        ) : null}
-        <Button size="sm" variant="outline" asChild>
-          <Link to="/http" search={(current) => ({ ...pickScopeSearch(current), sessionId })}>
-            在 HTTP 列表看本 Session
-          </Link>
-        </Button>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -496,6 +550,7 @@ function RowMenu({
 }) {
   const { showToast } = useToast();
   const domain = domainTarget(event);
+  const catalog = domainCatalogLink(event);
 
   async function copy(label: string, value?: string) {
     if (!value) return;
@@ -524,11 +579,13 @@ function RowMenu({
           </DropdownMenuItem>
         ) : null}
         {event.traceId ? <DropdownMenuItem onSelect={onTraceOnly}><Filter />仅看此 Trace</DropdownMenuItem> : null}
-        <DropdownMenuItem asChild>
-          <Link to="/http" search={(current) => ({ ...pickScopeSearch(current), sessionId })}>
-            <ExternalLink />HTTP 列表（本 Session）
-          </Link>
-        </DropdownMenuItem>
+        {catalog ? (
+          <DropdownMenuItem asChild>
+            <Link to={catalog.to} search={(current) => ({ ...pickScopeSearch(current), sessionId })}>
+              <ExternalLink />{catalog.menuLabel}
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void copy('事件 ID', event.eventId)} disabled={!event.eventId}>
           <ClipboardCopy />复制事件 ID
@@ -558,81 +615,92 @@ function SessionScrubber({
   onJump: (mark: ScrubberMark) => void;
 }) {
   return (
-    <div className="absolute inset-y-2 right-1 z-10 flex w-3 flex-col justify-between">
-      {marks.map((mark, index) => {
-        const top = marks.length <= 1 ? 0 : (index / (marks.length - 1)) * 100;
-        return (
-          <Tooltip key={mark.key}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  'absolute right-0 h-1.5 w-2.5 -translate-y-1/2 rounded-sm transition-all hover:h-2.5 hover:w-3',
-                  mark.failed ? 'bg-destructive' : 'bg-muted-foreground/40 hover:bg-foreground/60',
-                )}
-                style={{ top: `${top}%` }}
-                onClick={() => onJump(mark)}
-                aria-label={mark.label}
-              />
-            </TooltipTrigger>
-            <TooltipContent side="left" className="max-w-64">
-              <p className="font-medium">{mark.label}</p>
-              {mark.detail ? <p className="text-muted-foreground">{mark.detail}</p> : null}
-            </TooltipContent>
-          </Tooltip>
-        );
-      })}
+    <div className="flex h-full w-[19px] shrink-0 flex-col justify-between py-4 pr-1">
+      {marks.map((mark) => (
+        <Tooltip key={mark.key}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="h-[3px] w-[15px] shrink-0 rounded-sm bg-muted-foreground/35 hover:bg-muted-foreground/80"
+              onClick={() => onJump(mark)}
+              aria-label={mark.label}
+            />
+          </TooltipTrigger>
+          <TooltipContent side="left" className="max-w-64">
+            <p className="font-medium">{mark.label}</p>
+            {mark.detail ? <p className="text-muted-foreground">{mark.detail}</p> : null}
+          </TooltipContent>
+        </Tooltip>
+      ))}
     </div>
   );
 }
 
-type FlatItem =
-  | { kind: 'segment'; segment: TimelineSegment }
+type SegmentChild =
   | { kind: 'http-fold'; segmentId: string; count: number; failed: number; slow: number; open: boolean }
   | { kind: 'event'; event: MonitorEvent; segmentId: string };
 
-function flattenVisible(
+type SegmentView = {
+  segment: TimelineSegment;
+  children: SegmentChild[];
+};
+
+function segmentNodes(
+  segment: TimelineSegment,
+  filter: TimelineFilter,
+  traceOnly: string | undefined,
+): MonitorEvent[] {
+  return segment.nodes.filter((event) => {
+    if (filter !== 'all' && timelineGroup(event) !== filter) return false;
+    if (traceOnly && event.traceId !== traceOnly) return false;
+    return true;
+  });
+}
+
+function visibleSegments(
   segments: TimelineSegment[],
   filter: TimelineFilter,
   traceOnly: string | undefined,
-  openSegments: Set<string>,
-  httpUnfolded: Set<string>,
-): FlatItem[] {
-  const items: FlatItem[] = [];
-  for (const segment of segments) {
-    const nodes = segment.nodes.filter((event) => {
-      if (filter !== 'all' && timelineGroup(event) !== filter) return false;
-      if (traceOnly && event.traceId !== traceOnly) return false;
-      return true;
-    });
-    if (nodes.length === 0) continue;
-    items.push({ kind: 'segment', segment });
-    if (!openSegments.has(segment.id)) continue;
+): TimelineSegment[] {
+  return segments.filter((segment) => segmentNodes(segment, filter, traceOnly).length > 0);
+}
 
+function buildSegmentViews(
+  segments: TimelineSegment[],
+  filter: TimelineFilter,
+  traceOnly: string | undefined,
+  httpUnfolded: Set<string>,
+): SegmentView[] {
+  const views: SegmentView[] = [];
+  for (const segment of segments) {
+    const nodes = segmentNodes(segment, filter, traceOnly);
+    if (nodes.length === 0) continue;
+
+    const children: SegmentChild[] = [];
     const foldHttp = filter === 'all'
       && nodes.filter((event) => timelineGroup(event) === 'http').length >= HTTP_FOLD_THRESHOLD;
     if (!foldHttp) {
-      for (const event of nodes) items.push({ kind: 'event', event, segmentId: segment.id });
-      continue;
+      for (const event of nodes) children.push({ kind: 'event', event, segmentId: segment.id });
+    } else {
+      const httpNodes = nodes.filter((event) => timelineGroup(event) === 'http');
+      const otherNodes = nodes.filter((event) => timelineGroup(event) !== 'http');
+      for (const event of otherNodes) children.push({ kind: 'event', event, segmentId: segment.id });
+      const open = httpUnfolded.has(segment.id);
+      children.push({
+        kind: 'http-fold',
+        segmentId: segment.id,
+        count: httpNodes.length,
+        failed: httpNodes.filter(isFailed).length,
+        slow: httpNodes.filter((event) => (event.durationMs ?? 0) >= SLOW_HTTP_MS).length,
+        open,
+      });
+      if (open) {
+        for (const event of httpNodes) children.push({ kind: 'event', event, segmentId: segment.id });
+      }
     }
-
-    const httpNodes = nodes.filter((event) => timelineGroup(event) === 'http');
-    const otherNodes = nodes.filter((event) => timelineGroup(event) !== 'http');
-    for (const event of otherNodes) items.push({ kind: 'event', event, segmentId: segment.id });
-    const open = httpUnfolded.has(segment.id);
-    items.push({
-      kind: 'http-fold',
-      segmentId: segment.id,
-      count: httpNodes.length,
-      failed: httpNodes.filter(isFailed).length,
-      slow: httpNodes.filter((event) => (event.durationMs ?? 0) >= SLOW_HTTP_MS).length,
-      open,
-    });
-    if (open) {
-      for (const event of httpNodes) items.push({ kind: 'event', event, segmentId: segment.id });
-    }
+    views.push({ segment, children });
   }
-  return items;
+  return views;
 }
 
 function buildScrubberMarks(
@@ -640,41 +708,24 @@ function buildScrubberMarks(
   filter: TimelineFilter,
   traceOnly: string | undefined,
 ): ScrubberMark[] {
-  if (filter === 'all') {
-    const marks: ScrubberMark[] = [];
-    for (const segment of segments) {
-      const nodes = segment.nodes.filter((event) => !traceOnly || event.traceId === traceOnly);
-      if (nodes.length === 0) continue;
-      const headline = segment.kind === 'startup'
-        ? (segment.durationLabel ?? segment.title)
-        : segment.title;
-      marks.push({
-        key: segment.id,
-        label: `${segmentKindLabel(segment.kind)} · ${headline}`,
-        detail: [segment.durationLabel, `${segment.nodeCount} 事件`, segment.hasIssue ? `${segment.issueCount} 异常` : undefined]
-          .filter(Boolean)
-          .join(' · ') || undefined,
-        failed: segment.hasIssue,
-        segmentId: segment.id,
-      });
-    }
-    return marks;
-  }
-
   const marks: ScrubberMark[] = [];
   for (const segment of segments) {
-    for (const event of segment.nodes) {
-      if (timelineGroup(event) !== filter) continue;
-      if (traceOnly && event.traceId !== traceOnly) continue;
-      marks.push({
-        key: event.eventId ?? `${segment.id}-${event.timestamp}-${event.name}`,
-        label: `${filterLabel(timelineGroup(event))} · ${eventTitle(event)}`,
-        detail: [resultLabel(event), formatTime(event.timestamp ?? event.startTime)].filter(Boolean).join(' · '),
-        failed: isFailed(event),
-        segmentId: segment.id,
-        eventId: event.eventId,
-      });
-    }
+    const nodes = segmentNodes(segment, filter, traceOnly);
+    if (nodes.length === 0) continue;
+    const headline = segment.kind === 'startup'
+      ? (segment.durationLabel ?? segment.title)
+      : segment.title;
+    marks.push({
+      key: segment.id,
+      label: `${segmentKindLabel(segment.kind)} · ${headline}`,
+      detail: [
+        segment.durationLabel,
+        filter === 'all' ? `${segment.nodeCount} 事件` : `${nodes.length}/${segment.nodeCount} 事件`,
+        nodes.some(isFailed) ? `${nodes.filter(isFailed).length} 异常` : undefined,
+      ].filter(Boolean).join(' · ') || undefined,
+      failed: nodes.some(isFailed),
+      segmentId: segment.id,
+    });
   }
   return marks;
 }
@@ -827,6 +878,24 @@ function domainTarget(event: MonitorEvent): {
   if (group === 'http') return { to: '/http/$eventId', eventId: event.eventId };
   if (group === 'business') return { to: '/business/$eventId', eventId: event.eventId };
   if (group === 'error') return { to: '/errors/$eventId', eventId: event.eventId };
+  return undefined;
+}
+
+function domainCatalogLink(event: MonitorEvent): {
+  to: '/http' | '/business' | '/errors';
+  label: string;
+  menuLabel: string;
+} | undefined {
+  const group = timelineGroup(event);
+  if (group === 'http') {
+    return { to: '/http', label: '在 HTTP 列表看本 Session', menuLabel: 'HTTP 列表（本 Session）' };
+  }
+  if (group === 'business') {
+    return { to: '/business', label: '在埋点列表看本 Session', menuLabel: '埋点列表（本 Session）' };
+  }
+  if (group === 'error') {
+    return { to: '/errors', label: '在异常列表看本 Session', menuLabel: '异常列表（本 Session）' };
+  }
   return undefined;
 }
 

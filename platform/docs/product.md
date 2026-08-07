@@ -11,7 +11,7 @@ Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用�
 ## 信息架构
 
 ```text
-一级导航（仅文字，无 Icon）
+一级导航（展开仅文案；收起为图标，hover 出文案）
   概览        /
   Session     /sessions
   HTTP        /http
@@ -28,7 +28,7 @@ Workbench 是 Flutter Monitor 的排查工作台：面向开发者与 QA，用�
 
 Session 为一级入口：列表在 `/sessions`，链路工作区在 `/sessions/$sessionId`。旧 Overview / Startup / Pages / Network / Jank 等路径只做兼容重定向。侧栏不再展示「最近 Session」。
 
-壳层：侧栏、面包屑、Live 开关、刷新。Live 开启时通过 SSE 失效查询缓存，不抢走当前选中行。
+壳层：侧栏（`collapsible=icon`；收起控件在侧栏底部为图标，hover 出文案；桌面面包屑区不放收起按钮）、面包屑、Live 开关、刷新。Live 开启时通过 SSE 失效查询缓存，不抢走当前选中行。
 
 ---
 
@@ -197,15 +197,16 @@ Session KPI 表示范围内至少有一条事件的去重 Session 数，界面�
 
 ### 当前界面
 
-- 顶栏：返回 · Session 切换 · `N 异常 · M 事件 · 时长`；次行身份条为 `用户 · 包名 · 版本 · 环境 · 平台`（有则显示）
+- 顶栏：返回 · Session 切换 · `N 异常 · M 事件 · 时长 · 身份摘要`（身份与统计同一行右侧）
 - 从 Session 列表进入**不预选** `eventId`，默认**全部段收起**；仅从 HTTP / 埋点 / 异常「查看 Session」带 `eventId` 时自动展开所属段并滚动高亮
-- 全宽时间链（无右侧检视栏、无常驻 Sheet）：启动/页面分段；段头用**短路由**（`context.route.name`），完整 fullName 仅 tooltip
+- 列表上方小工具条：左侧展开/收起全部图标，右侧 `N 段`；与列表无硬分割线
+- 全宽时间链（无右侧检视栏、无常驻 Sheet）：启动/页面分段；段头用**短路由**（`context.route.name`），完整 fullName 仅 tooltip；段与行展开带高度过渡
 - 事件两行（类型·标题·结果态 + 路由·用户·环境·平台·时刻）；**单击行 = 展开/收起**；HTTP / 埋点 / 异常最右侧 **「打开」** 才进对应独立详情
-- 展开区展示包名/用户/设备/网络/域字段等上下文，不展示 Raw / body；eventId / traceId 仅行菜单复制
+- 展开区展示包名/用户/设备/网络/域字段等上下文，不展示 Raw / body；域列表快捷入口仅对 HTTP / 埋点 / 异常出现；eventId / traceId 仅行菜单复制
 - 同 Trace 左侧色轨；hover 联亮；行菜单可「仅看此 Trace」
-- Tab：全部 / 启动 / 页面 / HTTP / 埋点 / **异常**（稳定性错误 + 业务失败；**失败 HTTP 不进异常 Tab**，仅在 HTTP 行标红）；Tab / 段展开 / 行展开写入 URL
+- Tab：全部 / 启动 / 页面 / HTTP / 埋点 / **异常**（稳定性错误 + 业务失败；**失败 HTTP 不进异常 Tab**，仅在 HTTP 行标红）；切回「全部」会清除 URL `tab`；Tab / 段展开 / 行展开写入 URL
 - 大段内 HTTP 过多时默认折叠为 `HTTP N · 失败 x · 慢 x`，再「展开请求」
-- 右侧 scrubber：`全部` 按段刻度；域 Tab 按过滤后事件；点击展开目标段并跳转
+- 右侧 scrubber：**始终按当前视图可见段**刻度；刻度统一 15×3px、`rounded-sm`、淡灰/hover 深灰 + tooltip；点击展开目标段并跳转
 
 ### 当前局限
 

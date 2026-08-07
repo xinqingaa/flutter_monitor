@@ -29,7 +29,7 @@ Workbench 是面向 Flutter 开发者、QA 和技术负责人的排查工作台�
 
 ## 信息架构
 
-一级入口固定为（侧栏仅文字，无 Icon）：
+一级入口固定为（侧栏展开仅文案；收起为图标，hover 出文案）：
 
 1. 概览
 2. Session
@@ -37,7 +37,7 @@ Workbench 是面向 Flutter 开发者、QA 和技术负责人的排查工作台�
 4. 埋点
 5. 异常
 
-Session 列表为一级入口；`/sessions/$sessionId` 是二级全宽时间链工作区（无右侧检视栏）。进入默认段收起；单击行展开，域事件靠右侧「打开」进详情；`tab` / `open` / `expand` / `eventId` 进 URL。四域 Catalog 交互一致：单击进详情、行内按钮开 Sheet、操作列 sticky 右侧固定。详情、筛选、分页和 Session 定位应使用现有路由与 URL 状态能力，并继续回查统一 `EventEnvelope`。
+Session 列表为一级入口；`/sessions/$sessionId` 是二级全宽时间链工作区（无右侧检视栏）。进入默认段收起，列表上方可展开/收起全部段；单击行展开，域事件靠右侧「打开」进详情；`tab` / `open` / `expand` / `eventId` 进 URL。四域 Catalog 交互一致：单击进详情、行内按钮开 Sheet、操作列 sticky 右侧固定。详情、筛选、分页和 Session 定位应使用现有路由与 URL 状态能力，并继续回查统一 `EventEnvelope`。
 
 ## 官方 shadcn 基线
 

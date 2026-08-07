@@ -52,7 +52,11 @@ export function SessionWorkspaceRoute() {
       search: (current: SessionSearch) => ({
         ...current,
         ...patch,
-        tab: patch.tab === 'all' ? undefined : (patch.tab ?? current.tab),
+        // `'tab' in patch` 才能区分「回到全部」与「未改动 tab」；
+        // 仅用 `patch.tab ?? current.tab` 会把显式清空当成保持当前域 Tab。
+        tab: 'tab' in patch
+          ? (patch.tab && patch.tab !== 'all' ? patch.tab : undefined)
+          : current.tab,
       }),
       replace: true,
     });
@@ -78,17 +82,19 @@ export function SessionWorkspaceRoute() {
             onChange={switchSession}
             className="w-72"
           />
-          <div className="ml-auto flex items-center gap-3 text-sm">
-            <span className={errorCount > 0 ? 'font-medium text-destructive' : 'text-muted-foreground'}>
+          <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
+            <span className={errorCount > 0 ? 'shrink-0 font-medium text-destructive' : 'shrink-0 text-muted-foreground'}>
               {errorCount} 异常
             </span>
-            <span className="tabular-nums text-muted-foreground">{events.length} 事件</span>
-            {durationLabel ? <span className="tabular-nums text-muted-foreground">{durationLabel}</span> : null}
+            <span className="shrink-0 tabular-nums text-muted-foreground">{events.length} 事件</span>
+            {durationLabel ? <span className="shrink-0 tabular-nums text-muted-foreground">{durationLabel}</span> : null}
+            {identity ? (
+              <span className="min-w-0 truncate text-xs text-muted-foreground" title={identity}>
+                {identity}
+              </span>
+            ) : null}
           </div>
         </div>
-        {identity ? (
-          <p className="mt-1.5 truncate pl-11 text-xs text-muted-foreground">{identity}</p>
-        ) : null}
       </section>
 
       {session.isLoading ? (
