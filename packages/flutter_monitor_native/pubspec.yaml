@@ -1,5 +1,5 @@
 name: flutter_monitor_native
-description: Optional Flutter Monitor native bridge package for future platform signals.
+description: Optional Flutter Monitor native bridge for resource, memory, memory pressure, and lifecycle signals.
 version: 0.1.0
 homepage: https://github.com/xinqingaa/flutter_monitor
 repository: https://github.com/xinqingaa/flutter_monitor

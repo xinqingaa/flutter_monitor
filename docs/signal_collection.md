@@ -30,19 +30,19 @@ flowchart TD
   Launch["启动信号<br/>冷启动 / 热启动 / 首帧"]
   Page["页面信号<br/>路由 / 页面加载 / 停留"]
   Network["网络信号<br/>Dio / http"]
-  Behavior["行为信号<br/>点击 / PV / 业务动作"]
-  Jank["卡顿信号<br/>FrameTiming / FPS"]
-  Memory["内存信号<br/>sample / growth / pressure"]
+  Behavior["行为信号<br/>页面访问 / 业务 track"]
+  Jank["卡顿信号<br/>FrameTiming / FPS<br/>默认关闭"]
+  Memory["内存信号<br/>sample / growth / pressure<br/>默认关闭"]
   Error["错误信号<br/>Flutter / Dart / 手动上报"]
   Lifecycle["生命周期信号<br/>前台 / 后台 / 恢复 / 退出"]
-  Native["原生信号<br/>native memory / OOM / ANR / crash"]
-  Custom["自定义信号<br/>业务 trace / span / metric"]
+  Native["原生信号<br/>memory / pressure / lifecycle<br/>crash/OOM/ANR 仅 schema"]
+  Custom["自定义信号<br/>track / 显式开启的 measure"]
 
   Raw["统一原始信号<br/>RawSignal"]
   Snapshot["捕获时快照<br/>ContextSnapshot + TraceSnapshot"]
   Pipeline["统一事件管线<br/>EventPipeline"]
   Envelope["统一事件<br/>EventEnvelope"]
-  Outputs["输出消费<br/>Log / HTTP / DevTools / File"]
+  Outputs["输出消费<br/>Log / HTTP（Workbench）"]
 
   Launch -->|"采集事实"| Raw
   Page -->|"采集事实"| Raw
@@ -193,7 +193,7 @@ Native 增强来源：
 
 - Flutter 层无法完整覆盖进程最早 native 阶段。
 - 如果业务没有标记 interactive，只能提供 first frame 或 SDK heuristic。
-- `app.background_duration.durationMs` 是后台停留间隔；`app.hot_start.durationMs` 是热重启耗时，不能用同一个 duration 值表达二者。
+- `app.background_duration` 的 `durationMs` 是后台停留间隔；`app.hot_start` 的 `durationMs` 是热启动耗时，不能用同一个 duration 值表达二者。
 - 如果 `appStartTime` 缺失，应生成 `context.missingReason = app_start_time_missing`。
 - Native 启动时间是增强能力，不应成为基础 SDK 必需依赖。
 
@@ -321,7 +321,7 @@ route 实例:
 - 匿名路由可能没有稳定 route name。
 - 嵌套路由、tab 页面和业务态可能无法仅靠 route name 区分。
 - module/scene 属于可选增强上下文。SDK 不应要求业务方在每个页面或代码模块手动设置 module 才能获得基础链路。
-- 如果未来提供 `setContext(module: ..., scene: ...)` 一类能力，应定位为增强检索维度，而不是普通接入必填步骤。
+- `setContext(moduleName: ..., moduleScene: ...)` 已可用于补充模块检索维度，不是普通接入必填步骤。
 - route stack 不可用时应保留当前 route 和 missing reason。
 - 进程被系统直接杀死时，Flutter/Dart 可能没有 detached 或 dispose 回调，最终 `page.stay` 只能尽力生成；native/离线缓存可作为增强补充。
 
@@ -470,27 +470,24 @@ route 实例:
 
 ## 行为采集
 
+SDK **不自动采集** 点击、滚动、曝光或弹窗。页面访问由 route observer 生成 `page.*` 事件；关键业务行为必须由业务调用 `FlutterMonitorSDK.track(...)` 产生 breadcrumb，`name` 为稳定 action（例如 `checkout.submit`）。
+
 ### 采集来源
 
-- 页面访问/PV。
-- 业务主动埋点 API：`FlutterMonitorSDK.track(...)`。
+- 页面访问/PV：route observer 自动采集。
+- 业务主动埋点：`FlutterMonitorSDK.track(...)`。
 
 ### 触发时机
 
-- tap。
-- scroll。
-- tab switch。
-- dialog show/dismiss。
-- 业务关键动作，例如 checkout、profile save、search、share。
+业务在关键动作发生时显式 `track`，例如 checkout、profile save、search、share。不要为每个 tap/scroll 自动打点。
 
 ### 生成事件
 
-- `breadcrumb ui.scroll`
-- `breadcrumb business.action`
+- `breadcrumb <track.action>`，例如 `checkout.submit`
 
 ### 链路关联
 
-- 普通行为进入 breadcrumb store。
+- `track` 事件进入 breadcrumb store。
 - 行为应关联当前 `context.route.*`，并在可用时携带可选 `context.module.*` / `context.module.scene`。
 - 后续 HTTP、jank、error 可使用 recent breadcrumbs 还原上下文。
 - 普通 breadcrumb 的 payload 不应自动继承用户属性或全局自定义上下文；用户和业务上下文应保留在 `context` 或显式业务字段中。
@@ -700,7 +697,7 @@ Native plugin 采集到的内存也使用 `memory.native_used_mb` 和 `memory.pr
 - paused/hidden/detached 应由 SDK lifecycle 主链路统一触发尽力 flush；output 不应各自注册 lifecycle listener，避免重复 flush 和退出语义不一致。detached 还应在 flush 前尽力闭合当前活跃页面。
 - lifecycle breadcrumb 应帮助解释请求中断、错误、卡顿和 native 信号。
 - 前台/后台持续时间使用 `app.foreground_duration` 和 `app.background_duration` 的 envelope `durationMs` 表达。
-- 后台停留间隔可作为 hot start 的上下文，但不得写入 `app.hot_start.durationMs`。
+- 后台停留间隔可作为 hot start 的上下文，但不得写入 `app.hot_start` 的 `durationMs`。
 - resumed 后的页面重新可见事实必须用 `page.active_trigger = lifecycle_resumed` 标明来源；它不表示 Navigator 返回，不应被 Workbench、DevTools 或服务端展示为“返回后继续”。
 
 ### 字段映射
@@ -831,7 +828,8 @@ Native memory pressure 映射规则：
 
 - `track(...)`：记录一次关键业务动作。
 - `measure(...)`：显式开启低可信性能诊断后，记录一次关键业务交互的性能窗口；默认关闭，不作为普通接入推荐。
-- 未来统一上下文入口，例如 `setContext(...)`：设置后续事件的通用排查上下文。
+- `setContext(...)` / `clearContext(...)`：设置或清理后续事件的通用排查上下文。
+- `init(..., initialContext: ...)`：写入启动时已知上下文。
 
 业务方不应为了常规排查去理解或拼装 `FieldPaths`、`RawSignal`、`EventEnvelope`、trace/span/breadcrumb store、attributes/payload。
 
@@ -914,8 +912,7 @@ Native memory pressure 映射规则：
 ### 采集来源
 
 - SDK 自动采集：app、device、runtime、route、network、lifecycle 等。
-- 业务可选提供：`userId`、`userType`、`userTags`、`cohort`。
-- module/scene 如未来支持，只作为可选增强上下文。
+- 业务通过 `FlutterMonitorSDK.setContext` / `init(initialContext:)` 提供：`userId`、`userType`、`userTags`、`cohort`、`moduleName`、`moduleScene`、release、network。
 
 ### 推荐 API
 
@@ -1049,7 +1046,7 @@ final config = MonitorConfig(
   performance: MonitorPerformanceConfig.lenient(),
   memory: MonitorMemoryConfig(...),
   http: MonitorHttpConfig(...),
-  nativeBridge: FlutterMonitorNativeBridge(), // 可选 native 增强
+  nativeBridge: FlutterMonitorNative().createBridge(), // 可选 native 增强
 );
 
 await FlutterMonitorSDK.init(config: config, appStartTime: appStartTime);
@@ -1059,7 +1056,7 @@ await FlutterMonitorSDK.init(config: config, appStartTime: appStartTime);
 
 ```dart
 // 本地开发
-MonitorMode.consoleOnly(logMode: LogMonitorOutputMode.pretty);
+MonitorMode.consoleOnly(logMode: LogMonitorOutputMode.compact);
 
 // QA / Workbench（endpoint 默认本机 3700）
 MonitorMode.localLive(endpoint: Uri.parse('http://localhost:3700/api/monitor/v1/events'));

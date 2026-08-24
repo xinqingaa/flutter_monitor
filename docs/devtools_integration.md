@@ -29,7 +29,7 @@
   "source": {
     "type": "workbench",
     "sdkVersion": "1.0.0",
-    "coreVersion": "1.0.0"
+    "coreVersion": "0.1.0"
   },
   "session": {
     "sessionId": "ses_001",

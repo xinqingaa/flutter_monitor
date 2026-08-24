@@ -122,7 +122,8 @@ WidgetsFlutterBinding.ensureInitialized();
 
 final appInfo = await AppInfo.fromPackageInfo(
   appKey: 'my_app',
-  environment: 'development',
+  // 自由字符串；推荐 `dev` / `test` / `staging` / `production`。
+  environment: 'dev',
 );
 
 await FlutterMonitorSDK.init(
@@ -205,13 +206,16 @@ scripts/                      检查、Platform 和 example 脚本
 - [仓库变更工作流](SKILL.md)
 - [Platform README](platform/README.md)
 - [PulseFit Example](packages/flutter_monitor_sdk/example/README.md)
+- [flutter_monitor_core](packages/flutter_monitor_core/README.md)
+- [flutter_monitor_sdk](packages/flutter_monitor_sdk/README.md)
+- [flutter_monitor_native](packages/flutter_monitor_native/README.md)
 
 README 只作为入口。字段以 `docs/event_model.md` 和 core 为准，采集以 `docs/signal_collection.md` 和 SDK 为准，Workbench 边界以 `platform/docs/` 为准。
 
 ## 验证命令
 
 ```sh
-fvm dart test packages/flutter_monitor_core/test
+fvm dart test packages/flutter_monitor_core
 fvm flutter test packages/flutter_monitor_sdk/test
 fvm flutter test packages/flutter_monitor_native/test
 
@@ -219,6 +223,8 @@ pnpm --dir platform typecheck
 pnpm --dir platform build
 pnpm --dir platform run smoke
 ```
+
+全量检查与 `scripts/check.sh` 一致。
 
 ## License
 

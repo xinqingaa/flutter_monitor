@@ -4,7 +4,11 @@
 
 ## Core Principle
 
-`docs` 是事实基础。任何字段、事件语义、状态流转、链路关系、采集职责、协议或 Workbench 展示口径变化，都不能只改代码或只改 UI。
+当前实现以代码为最高标准。文档必须与 `flutter_monitor_core`、`flutter_monitor_sdk`、`flutter_monitor_native` 和 platform 代码对齐。
+
+- 新增或变更能力时，仍按 docs → core → sdk/native → platform 顺序落地，避免代码先漂、文档后补。
+- 发现已有文档与代码冲突时，以代码为准修正文档；只有代码是明确 bug 时才改代码。
+- 任何字段、事件语义、状态流转、链路关系、采集职责、协议或 Workbench 展示口径变化，都不能只改代码或只改 UI。
 
 职责边界：
 
@@ -91,21 +95,21 @@ Workbench 默认端口：
 
 ## Hot Start Semantics
 
-当前热重启语义必须保持：
+当前热启动语义必须保持：
 
-- `app.background_duration.durationMs` 是后台停留间隔。
-- `app.hot_start.durationMs` 是从 resumed 后到恢复观测点的热重启耗时。
+- `app.background_duration` 的 `durationMs` 是后台停留间隔。
+- `app.hot_start` 的 `durationMs` 是从 resumed 后到恢复观测点的热启动耗时。
 - 两者不能复用同一个 duration 值。
 - `app.hot_start` 必须带 `app.start.type = hot`。
 - `app.hot_start` 必须用 `app.start.end_reason` 标明闭合口径，例如 `first_frame`、`interactive`、`timeout`、`manual`。
-- Workbench 可以单独展示后台间隔，但不能把后台间隔并入热重启耗时统计。
+- Workbench 可以单独展示后台间隔，但不能把后台间隔并入热启动耗时统计。
 
 ## Verification
 
 按改动范围选择验证：
 
 ```sh
-fvm dart test packages/flutter_monitor_core/test
+fvm dart test packages/flutter_monitor_core
 fvm flutter test packages/flutter_monitor_sdk/test
 fvm flutter test packages/flutter_monitor_native/test
 
@@ -130,4 +134,4 @@ rg "热恢复" docs platform/docs platform/README.md README.md AGENTS.md
 
 ## Stop Conditions
 
-不要为了让 UI 看起来正确而在 Workbench 层伪造 SDK 字段。不要为了快速修 SDK 而跳过文档和 core。发现文档与代码不一致时，先指出不一致，再按本文件的顺序修正。
+不要为了让 UI 看起来正确而在 Workbench 层伪造 SDK 字段。不要为了快速修 SDK 而跳过文档和 core。已有文档与代码冲突时以代码为准修正文档；只有代码是明确 bug 时才改代码。新增能力仍按本文件的 docs → core → sdk/native → platform 顺序落地。

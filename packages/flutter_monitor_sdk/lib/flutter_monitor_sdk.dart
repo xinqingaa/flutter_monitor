@@ -315,8 +315,9 @@ class FlutterMonitorSDK {
   /// 初始化 Flutter Monitor SDK。
   ///
   /// 应在 `main()` 中、`runApp` 前调用。SDK 会创建 reporter/pipeline，应用
-  /// 初始上下文，解析设备和 native bootstrap resource，然后启动错误、启动、
-  /// 页面、卡顿、memory、lifecycle 等核心采集。
+  /// 初始上下文，解析设备和 native bootstrap resource，然后启动默认主链路
+  /// 采集：错误、启动、页面/路由、HTTP 包装器和 lifecycle。
+  /// frame、jank、memory、measure 和 native 由 [MonitorSignalConfig] 显式开启。
   ///
   /// 用法：
   /// ```dart

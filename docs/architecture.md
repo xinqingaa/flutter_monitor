@@ -16,7 +16,7 @@ Flutter Monitor 是一个 Dart pub workspace。根目录负责组织文档、脚
 ## Workspace 布局
 
 ```text
-flutter_monitor_sdk/
+flutter_monitor/
   docs/                         项目背景、架构、模型、采集与协议
   packages/
     flutter_monitor_core/       Dart-only 模型核心
@@ -72,7 +72,9 @@ lib/src/
   core/          MonitorBinding、Reporter、MonitorConfig
   delivery/      离线队列、可靠 HTTP、降级与 SDK health
   lifecycle/     Flutter lifecycle 与 session 恢复
-  modules/       error、page/route、frame、jank、memory、measure
+  modules/       error_monitor、performance_monitor（page/route）、
+                 frame_window_collector、frame_timing_dispatcher、
+                 jank_monitor、memory_collector、interaction_measure_collector
   native/        bridge 抽象、controller、signal mapper
   outputs/       output 接口、日志输出与模式解析
   pipeline/      RawSignal、EnvelopeBuilder、validation/control/aggregator
@@ -83,6 +85,7 @@ lib/src/
 
 业务公开 API 只通过 `FlutterMonitorSDK` 暴露：
 
+- `isInitialized`；
 - `init(...)`；
 - `routeObserver`、`markPageRendered(...)`；
 - `createDioInterceptor()`、`createHttpClient()`；
@@ -90,6 +93,8 @@ lib/src/
 - `track(...)`、`recordError(...)`；
 - 显式开启后的 `measure(...)`；
 - `flush(...)`、`dispose()`。
+
+barrel 还导出接入辅助类型，例如 `MonitorConfig`、`MonitorMode`、`MonitorSignalConfig`、`AppInfo`、`MonitorInitialContext`、`MonitorContextScope`、`MonitorMeasureHandle`、`LogMonitorOutputMode`、`MonitorNativeBridge`、`PageRenderMonitor`、`MonitorPageScope` 和 `PerformanceUtils`。它们不是第二套事件模型。
 
 `MonitorBinding`、`Reporter`、`RawSignal`、`FieldPaths`、手动 trace/span 和任意 attributes/payload 不属于普通业务接入面。
 
@@ -133,20 +138,13 @@ core 不负责 Flutter、platform channel、Dio/http instrumentation、文件、
 
 ### Context 层
 
-SDK 的 `ContextManager` 和 resource providers 负责维护可变上下文，并在事件生成时形成不可变快照。上下文来源包括：
-
-- `ResourceProvider`：App、SDK、设备、系统和运行环境；
-- `UserContextController`：用户、用户类型、标签和 cohort；
-- `RouteContextController`：route name、route stack、页面实例；
-- `ModuleContextController`：模块和业务场景；
-- `NetworkContextProvider`：网络类型、弱网状态；
-- `ReleaseContextProvider`：版本、release、feature flags 和 experiments。
+SDK 的 `ContextManager` 负责维护可变上下文，并在事件生成时形成不可变 `ContextSnapshot`。core 中的数据模型包括 `UserContext`、`RouteContext`、`ModuleContext`、`NetworkContext`、`ReleaseContext`、`LifecycleContext` 和 `NativeRuntimeContext`。没有独立的 ResourceProvider / UserContextController 等类；App、设备、runtime 等稳定信息由 `ContextManager` 写入 `MonitorResource`。
 
 登录、登出、路由或网络变化只影响后续事件，不得改写已经捕获的事件。异步 HTTP 或页面事件应在开始时冻结 owner route、trace 和 context，完成时只追加 completion context。
 
 ### Trace 层
 
-`SessionManager`、`TraceManager`、`BreadcrumbStore`、`IdGenerator` 和 `Clock` 共同维护链路关系：
+`SessionManager`、`TraceManager`、`BreadcrumbStore` 和 `utils/IdGenerator` 共同维护链路关系：
 
 - session 是绝大多数业务事件的最小归属单位；
 - cold start、hot start、page visit、关键 action 和自定义业务流程优先建模为 trace；
@@ -156,7 +154,7 @@ SDK 的 `ContextManager` 和 resource providers 负责维护可变上下文，�
 
 ### Collector 层
 
-Flutter runtime collector 包括 error、launch、route/page、network、behavior、jank、memory、lifecycle 和 custom trace。Native plugin 提供 resource、memory、memory pressure 和 lifecycle raw signal；crash、OOM、ANR 当前只有 schema 与 mapper 边界。
+Flutter runtime collector 包括 error、launch、route/page、network、business track、jank、memory 和 lifecycle。SDK **不自动采集** 点击或滚动；也没有公开的 `startTrace` / `startSpan` API。业务动作只通过 `FlutterMonitorSDK.track` 进入 pipeline，显式开启后才有 `measure`。Native plugin 提供 resource、memory、memory pressure 和 lifecycle raw signal；crash、OOM、ANR 当前只有 schema 与 mapper 边界。
 
 采集器只捕获事实并输出 `RawSignal`，不构造最终 JSON，不执行采样、重试、隐私过滤或直接调用 output。所有 native signal 必须由 SDK mapper 转为 `RawSignal` 后进入同一 pipeline。
 
@@ -227,9 +225,9 @@ public 输出模式只有三种：
 
 可靠投递的核心组件位于 `delivery/`：
 
-- `SqliteOfflineEventQueue`，不可用时可降级为 memory queue；
+- `SqliteOfflineEventQueue`，不可用时可降级为 `MemoryOfflineEventQueue`；
 - `ReliableHttpOutput`；
-- `QueueDegradation`；
+- `queue_degradation.dart` / `QueueDegradationResult`；
 - `SdkHealthMonitor`。
 
 队列只保存经过 schema validation 和 privacy filter 的 envelope。HTTP 响应处理、重试和 drop 语义见 `docs/server_protocol.md`。

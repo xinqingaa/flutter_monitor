@@ -122,7 +122,7 @@ DevTools 侧目标：
 
 设计和实现时应持续考虑企业使用场景：
 
-- 多环境：`resource.app.environment`，取值包括 dev、test、staging、production。
+- 多环境：`resource.app.environment` 为自由字符串；推荐 `dev`、`test`、`staging`、`production`。代码不强制枚举。example 当前传入 `development`。
 - 多版本：`resource.app.appVersion`、`resource.app.buildNumber`、`context.release.releaseId`、`resource.app.flavor`、`resource.app.channel`。
 - 灰度与实验：`context.release.featureFlags`、`context.release.experiments`、`context.user.cohort`。
 - 用户与隐私：userId、userType、userTags、脱敏、匿名化、授权开关。
@@ -146,8 +146,11 @@ DevTools 侧目标：
 - `platform/docs/architecture.md`：Platform 架构、Monitor Service / Web 边界与排查食谱。
 - `platform/docs/FEATURES.md`：Workbench 当前功能边界。
 - `platform/docs/DESIGN.md`：Workbench 设计与交互原则。
+- `platform/docs/EXAMPLE_DEMO.md`：PulseFit example 与 `/api/example/v1` mock 契约。
+- `platform/services/monitor-service/docs/boundaries.md`：raw envelope、SQLite 索引、Catalog 与 Session view model 边界。
+- `docs/articles/from-metrics-to-session-draft.md`：对外文章草稿，不是 schema 或协议事实源。
 
-README 只作为项目入口，不作为架构、协议或 schema 的唯一事实源。
+README 只作为项目入口，不作为架构、协议或 schema 的唯一事实源。字段、事件名和公开 API 以代码为准。
 
 ## 实现门禁
 

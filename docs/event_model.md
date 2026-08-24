@@ -2,7 +2,7 @@
 
 ## 目标
 
-本文档定义 Flutter Monitor workspace 内所有包共享的唯一事件模型。未来该模型由 `flutter_monitor_core` 承载，`flutter_monitor_sdk`、`flutter_monitor_native`、DevTools、CLI、MCP 和服务端协议都必须复用它。
+本文档定义 Flutter Monitor workspace 内所有包共享的唯一事件模型。该模型已由 `flutter_monitor_core` 承载；`flutter_monitor_sdk`、`flutter_monitor_native`、Workbench、CLI、MCP 和服务端协议都必须复用它。字段名、事件名和公开 API 以代码为准。
 
 事件模型的目标是让所有信号具备三个能力：
 
@@ -55,13 +55,16 @@ Trace/span 可按生命周期流式上报，也可只上报完成态摘要。流
 真实 App 的普通接入不应要求业务方理解 `EventEnvelope`、`FieldPaths`、trace/span、breadcrumb store、attributes/payload 的内部细节。SDK 自动采集是主线，业务侧只保留少量明确职责的入口：
 
 - `FlutterMonitorSDK.track(...)`：业务主动埋点入口，记录关键业务动作。
-- 未来统一上下文入口，例如 `FlutterMonitorSDK.setContext(...)`：补充 `userId` 等通用排查上下文。
+- `FlutterMonitorSDK.setContext(...)` / `clearContext(...)`：补充或清理 `userId`、模块、release、网络等通用排查上下文。
+- `FlutterMonitorSDK.init(..., initialContext: ...)`：把启动时已知上下文写入首批 bootstrap 事件。
 
 `startTrace`、`startSpan`、`addBreadcrumb`、自定义 `attributes` / `payload` 等能力如保留，应定位为 SDK 内部、高级调试能力，不作为真实 App 的普通接入示例。用户、发布、模块等通用排查上下文由统一上下文入口承载，避免在 public API 中形成多套概念。
 
 ### 隐私默认安全
 
-URL query、request body、response body、token、cookie、手机号、身份证、地址、精确位置等数据默认不进入事件。确需上报时必须经过显式配置和脱敏策略。
+token、cookie、密码、身份证等 `forbidden` 数据默认不进入事件。
+
+HTTP query、headers、request body 和 response body **当前默认保真采集** 到 sensitive payload，由 `MonitorHttpConfig` 控制开关，并按模式截断。真实 App 必须按数据安全要求配置 `redactor` 或关闭对应采集项。
 
 隐私过滤必须早于任何 output，包括 log、HTTP、DevTools 和文件导出。
 
@@ -520,7 +523,7 @@ SDK 对业务侧只暴露三种稳定输出模式，普通接入方不需要分�
 
 Lifecycle 事件既影响 session 切分和 hot start，也用于解释请求中断、后台 flush、卡顿和 native 异常。状态字段属于 `context.lifecycle.*`，持续时间使用 envelope `durationMs`，不要新增平行 duration 字段。
 
-`app.background_duration` 和 `app.hot_start` 必须保持语义分离：`app.background_duration.durationMs` 只表示 App 在后台停留的间隔，可用于 session 切分和恢复上下文；`app.hot_start.durationMs` 只表示从恢复到前台后到恢复观测点的耗时，不得复用后台停留间隔。热启动 trace 由 `resumed` 打开，由恢复后首帧、可交互、业务手动标记或超时降级闭合，并通过 `app.start.end_reason` 标明闭合口径。
+`app.background_duration` 和 `app.hot_start` 必须保持语义分离：`app.background_duration` 的 envelope `durationMs` 只表示 App 在后台停留的间隔，可用于 session 切分和恢复上下文；`app.hot_start` 的 `durationMs` 只表示从恢复到前台后到恢复观测点的耗时，不得复用后台停留间隔。热启动 trace 由 `resumed` 打开，由恢复后首帧、可交互、业务手动标记或超时降级闭合，并通过 `app.start.end_reason` 标明闭合口径。
 
 | name | signalType | phase | status | priority 建议 | 必须/条件字段 | 说明 |
 |---|---|---|---|---|---|---|
@@ -718,6 +721,7 @@ measure.finish();
 | `sdk.jank` | frame/jank 采集 |
 | `sdk.lifecycle` | lifecycle/session 采集 |
 | `sdk.memory` | memory collector 采集 |
+| `sdk.native` | native bridge 采集 |
 | `sdk.page` | page/route 采集 |
 | `sdk.runtime` | SDK runtime self-monitoring |
 | `sdk.track` | `FlutterMonitorSDK.track(...)` 业务埋点 |
@@ -840,15 +844,15 @@ flowchart TD
   Session["用户会话<br/>Session"]
   StartTrace["启动链路<br/>Trace: app.cold_start"]
   PageTrace["页面链路<br/>Trace: page.visit"]
-  ActionTrace["业务操作链路<br/>Trace: action.* / custom.trace"]
+  ActionTrace["业务操作链路<br/>track breadcrumb"]
   InitSpan["启动阶段<br/>Span: sdk.init"]
   FirstFrame["首帧观测<br/>app.first_frame_ms"]
   RouteSpan["路由阶段<br/>Span: route.push"]
   HttpSpan["网络请求<br/>Span: http.client"]
-  CustomSpan["业务步骤<br/>Span: custom.step"]
+  CustomSpan["业务动作<br/>breadcrumb checkout.submit"]
   Breadcrumbs["上下文足迹<br/>Breadcrumbs"]
   PageViewBc["页面访问<br/>page.view"]
-  ClickBc["用户点击<br/>ui.click"]
+  ClickBc["业务动作<br/>track checkout.submit"]
   JankBc["卡顿线索<br/>ui.jank.sequence"]
   ErrorEvent["错误事件<br/>error.dart / error.flutter"]
 
@@ -945,7 +949,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `timestamp` | string | breadcrumb 发生时间 |
-| `name` | string | 稳定事件名，例如 `page.view`、`ui.click`、`http.client` |
+| `name` | string | 稳定事件名，例如 `page.view`、`http.client`、`error.flutter` |
 | `level` | string | `debug`、`info`、`warning`、`error`、`fatal` |
 | `eventId` | string | 原始事件 ID，可用于回查完整 envelope |
 | `sessionId` | string | 原始事件所属 session |
@@ -966,8 +970,8 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
   "sdk": {
     "name": "flutter_monitor_sdk",
     "version": "1.0.0",
-    "coreVersion": "1.0.0",
-    "nativeVersion": "1.0.0"
+    "coreVersion": "0.1.0",
+    "nativeVersion": "0.1.0"
   },
   "app": {
     "appKey": "app_xxx",
@@ -1115,35 +1119,24 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 ## 命名规则
 
-事件名使用稳定、可聚合的点分命名：
+事件名使用稳定、可聚合的点分命名。当前 wire 值以 `EventNames` 为准：
 
-- `app.cold_start`
-- `app.hot_start`
-- `app.interactive`（预留）
-- `page.visit`
-- `page.load`
-- `page.stay`
-- `page.view`
-- `route.push`
-- `http.client`
-- `ui.click`
-- `ui.scroll`
-- `ui.jank.sequence`
-- `interaction.measure`
-- `memory.sample`
-- `memory.growth`
-- `memory.pressure`
-- `native.memory.sample`
-- `native.memory.pressure`
-- `native.lifecycle`
-- `native.oom`
-- `native.anr`
-- `native.crash`
-- `error.flutter`
-- `error.dart`
-- `custom.trace`
+- `app.cold_start`、`app.hot_start`、`app.lifecycle`、`app.foreground_duration`、`app.background_duration`
+- `app.interactive`（已注册，当前无自动采集）
+- `sdk.init`、`sdk.health.report` 及其他 `sdk.*` 自监控事件
+- `page.visit`、`page.view`、`page.load`、`page.stay`
+- `route.push`、`route.pop`
+- `http.client`、`http.client.summary`
+- `ui.jank.sequence`（显式开启）
+- `ui.click`（已注册，当前 SDK 不自动采集；点击应通过 `track` 表达）
+- `interaction.measure`（显式开启）
+- `memory.sample`、`memory.growth`、`memory.pressure`、`memory.leak.suspect`（显式开启）
+- `native.memory.sample`、`native.memory.pressure`、`native.lifecycle`、`native.warning`
+- `native.oom`、`native.anr`、`native.crash`（仅 schema/mapper 边界）
+- `error.flutter`、`error.dart`、`error.manual`、`error.group.summary`
+- `business.action.summary`
 
-不要把用户 ID、订单 ID、商品 ID、URL 原始 ID 等动态值放入 `name`。动态值应进入 `attributes` 或脱敏后的 `payload`。
+`track(action: ...)` 的 `name` 使用业务传入的稳定 action，例如 `checkout.submit`。不要使用未注册的 `ui.scroll` 或 `custom.trace`。不要把用户 ID、订单 ID、商品 ID、URL 原始 ID 等动态值放入 `name`。动态值应进入 `attributes` 或脱敏后的 `payload`。
 
 ## 信号字段规范索引
 
@@ -1265,7 +1258,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
       "spanId": null,
       "parentSpanId": null,
       "resource": {
-        "sdk": {"name": "flutter_monitor_sdk", "version": "1.0.0", "coreVersion": "1.0.0"},
+        "sdk": {"name": "flutter_monitor_sdk", "version": "1.0.0", "coreVersion": "0.1.0"},
         "app": {"appKey": "app_xxx", "appVersion": "1.2.3", "buildNumber": "100", "environment": "production", "channel": "official"},
         "device": {"platform": "android", "model": "Pixel 7", "osVersion": "14", "refreshRate": 120, "deviceTier": "high"}
       },
@@ -1419,7 +1412,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
       "eventId": "evt_tap_buy",
       "timestamp": "2026-05-24T12:00:04.000+08:00",
       "signalType": "breadcrumb",
-      "name": "ui.click",
+      "name": "checkout.submit",
       "level": "info",
       "status": "ok",
       "priority": "normal",
@@ -1510,7 +1503,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
         "payload.error.library": "app.feature",
         "payload.breadcrumbs": [
           {"timestamp": "2026-05-24T12:00:02.120+08:00", "name": "http.client", "level": "info", "eventId": "evt_http_product", "sessionId": "ses_001", "traceId": "trace_page_product", "spanId": "span_http_product", "route": "/product/detail", "attributes": {"event.phase": "instant", "http.url.normalized": "/api/product/{id}", "http.status_code": 200}, "payload": {"duration_ms": 520}},
-          {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "ui.click", "level": "info", "eventId": "evt_tap_buy", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"ui.target": "buy_now_button", "ui.action": "click"}, "payload": {}},
+          {"timestamp": "2026-05-24T12:00:04.000+08:00", "name": "checkout.submit", "level": "info", "eventId": "evt_tap_buy", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"business.action": "checkout.submit", "ui.target": "buy_now_button", "business.result": "success"}, "payload": {}},
           {"timestamp": "2026-05-24T12:00:04.500+08:00", "name": "ui.jank.sequence", "level": "warning", "eventId": "evt_jank", "sessionId": "ses_001", "traceId": "trace_page_product", "route": "/product/detail", "attributes": {"jank.count": 5}, "payload": {}}
         ]
       }
