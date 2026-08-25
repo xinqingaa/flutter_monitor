@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_monitor_core/flutter_monitor_core.dart';
 import 'package:flutter_monitor_sdk/src/context/context_snapshot.dart';
 import 'package:flutter_monitor_sdk/src/core/monitor_config.dart';
+import 'package:flutter_monitor_sdk/src/core/sdk_package_constants.dart';
 
 /// 运行时 context/resource 快照管理器。
 ///
@@ -177,8 +178,9 @@ class ContextManager {
   MonitorResource _buildResource() {
     return MonitorResource(
       sdk: SdkResource(
-        name: 'flutter_monitor_sdk',
-        coreVersion: '0.1.0',
+        name: flutterMonitorSdkPackageName,
+        version: flutterMonitorSdkPackageVersion,
+        coreVersion: flutterMonitorCorePackageVersion,
         nativeVersion: _nativeSnapshot?.bridgeVersion,
       ),
       app: AppResource(

@@ -1,6 +1,6 @@
 # flutter_monitor_core
 
-Dart-only 事件模型包。版本 `0.1.0`。
+Dart-only 事件模型包。版本 `2.0.0`。
 
 本包是 Flutter Monitor 的唯一 schema / 字段 / 隐私 / summary 来源。它不采集信号，也不上报网络。
 

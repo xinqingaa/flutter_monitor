@@ -969,9 +969,9 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 {
   "sdk": {
     "name": "flutter_monitor_sdk",
-    "version": "1.0.0",
-    "coreVersion": "0.1.0",
-    "nativeVersion": "0.1.0"
+    "version": "2.0.0",
+    "coreVersion": "2.0.0",
+    "nativeVersion": "2.0.0"
   },
   "app": {
     "appKey": "app_xxx",
@@ -1044,7 +1044,7 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
     "available": true,
     "platform": "android",
     "processId": 12345,
-    "bridgeVersion": "1.0.0",
+    "bridgeVersion": "2.0.0",
     "signalSource": "android"
   }
 }
@@ -1123,7 +1123,8 @@ Breadcrumb 数量应有限制。SDK 可用环形缓冲保存最近若干足迹�
 
 - `app.cold_start`、`app.hot_start`、`app.lifecycle`、`app.foreground_duration`、`app.background_duration`
 - `app.interactive`（已注册，当前无自动采集）
-- `sdk.init`、`sdk.health.report` 及其他 `sdk.*` 自监控事件
+- `sdk.init`、`sdk.health.report`、`sdk.lifecycle.flush`、`sdk.output.flush`、`sdk.queue.drop`、`sdk.queue.state`、`sdk.retry.schedule`、`sdk.config.applied`
+- `sdk.memory.sample_unavailable`、`sdk.output.dispatch_failed`、`sdk.output.flush_failed`、`sdk.output.dispose_failed`、`sdk.pipeline.validation_failed`、`sdk.pipeline.envelope_build_failed`、`sdk.trace.end_unknown`、`sdk.span.end_unknown`、`sdk.http.span_end_failed`
 - `page.visit`、`page.view`、`page.load`、`page.stay`
 - `route.push`、`route.pop`
 - `http.client`、`http.client.summary`
@@ -1258,7 +1259,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
       "spanId": null,
       "parentSpanId": null,
       "resource": {
-        "sdk": {"name": "flutter_monitor_sdk", "version": "1.0.0", "coreVersion": "0.1.0"},
+        "sdk": {"name": "flutter_monitor_sdk", "version": "2.0.0", "coreVersion": "2.0.0"},
         "app": {"appKey": "app_xxx", "appVersion": "1.2.3", "buildNumber": "100", "environment": "production", "channel": "official"},
         "device": {"platform": "android", "model": "Pixel 7", "osVersion": "14", "refreshRate": 120, "deviceTier": "high"}
       },
@@ -1269,7 +1270,7 @@ HTTP 的页面归属以请求发起时刻为准。SDK 必须在 request start �
         "network": {"type": "wifi", "isWeakNetwork": false},
         "release": {"releaseId": "com.example.demo@1.2.3+100", "featureFlags": ["new_home"], "experiments": {}},
         "lifecycle": {"state": "resumed", "previousState": "paused", "isForeground": true},
-        "native": {"available": true, "platform": "android", "processId": 12345, "bridgeVersion": "1.0.0", "signalSource": "android"}
+        "native": {"available": true, "platform": "android", "processId": 12345, "bridgeVersion": "2.0.0", "signalSource": "android"}
       },
       "attributes": {
         "app.start.type": "cold",

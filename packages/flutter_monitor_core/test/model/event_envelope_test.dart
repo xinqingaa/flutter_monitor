@@ -19,7 +19,7 @@ void main() {
       traceId: 'trace_001',
       spanId: 'span_001',
       resource: const MonitorResource(
-        sdk: SdkResource(name: 'flutter_monitor_sdk', coreVersion: '0.1.0'),
+        sdk: SdkResource(name: 'flutter_monitor_sdk', coreVersion: '2.0.0'),
         app: AppResource(appKey: 'app_xxx', appVersion: '1.2.3'),
       ),
       context: const MonitorContext(
@@ -43,7 +43,7 @@ void main() {
           available: true,
           platform: 'android',
           processId: 12345,
-          bridgeVersion: '1.0.0',
+          bridgeVersion: '2.0.0',
           signalSource: 'android',
         ),
       ),

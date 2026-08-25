@@ -1,6 +1,6 @@
 # flutter_monitor_sdk
 
-Flutter runtime 监控 SDK。版本 `1.0.0`。
+Flutter runtime 监控 SDK。版本 `2.0.0`。
 
 采集错误、冷/热启动、页面/路由、HTTP、业务 `track` 和 lifecycle，写入统一 `EventEnvelope`。frame、jank、memory、`measure` 和 native 默认关闭，需 `MonitorSignalConfig` 显式开启。
 

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_monitor_native'
-  s.version          = '0.1.0'
+  s.version          = '2.0.0'
   s.summary          = 'Optional Flutter Monitor native bridge.'
   s.description      = 'Native bridge for Flutter Monitor memory, pressure, and lifecycle signals.'
   s.homepage         = 'https://github.com/xinqingaa/flutter_monitor'

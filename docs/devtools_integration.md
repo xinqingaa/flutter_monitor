@@ -28,8 +28,8 @@
   "exportedAt": "2026-05-24T12:10:00.000+08:00",
   "source": {
     "type": "workbench",
-    "sdkVersion": "1.0.0",
-    "coreVersion": "0.1.0"
+    "sdkVersion": "2.0.0",
+    "coreVersion": "2.0.0"
   },
   "session": {
     "sessionId": "ses_001",

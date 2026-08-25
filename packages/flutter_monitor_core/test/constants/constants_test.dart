@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 void main() {
   test('exposes core constants', () {
     expect(flutterMonitorCorePackageName, 'flutter_monitor_core');
+    expect(flutterMonitorCorePackageVersion, '2.0.0');
     expect(flutterMonitorSchemaVersion, '1.0');
     expect(defaultBreadcrumbLimit, 50);
     expect(localLiveMaxHttpBodyBytes, 64 * 1024);

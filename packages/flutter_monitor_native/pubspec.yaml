@@ -1,6 +1,6 @@
 name: flutter_monitor_native
 description: Optional Flutter Monitor native bridge for resource, memory, memory pressure, and lifecycle signals.
-version: 0.1.0
+version: 2.0.0
 homepage: https://github.com/xinqingaa/flutter_monitor
 repository: https://github.com/xinqingaa/flutter_monitor
 publish_to: none
@@ -13,8 +13,8 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  flutter_monitor_core: ^0.1.0
-  flutter_monitor_sdk: ^1.0.0
+  flutter_monitor_core: ^2.0.0
+  flutter_monitor_sdk: ^2.0.0
 
 dev_dependencies:
   flutter_test:

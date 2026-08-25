@@ -14,7 +14,7 @@ void main() {
       resource: const NativeResourceSnapshot(
         platform: 'android',
         processId: 12345,
-        bridgeVersion: '1.0.0',
+        bridgeVersion: '2.0.0',
         signalSource: 'android',
       ),
       memory: const NativeMemorySnapshot(

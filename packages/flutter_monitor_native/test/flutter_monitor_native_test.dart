@@ -20,7 +20,7 @@ void main() {
               'available': true,
               'platform': 'android',
               'processId': 123,
-              'bridgeVersion': '0.1.0',
+              'bridgeVersion': '2.0.0',
               'signalSource': 'android',
             },
             'getMemorySnapshot' => <String, Object?>{
@@ -62,7 +62,7 @@ void main() {
       expect(resource.available, isTrue);
       expect(resource.platform, 'android');
       expect(resource.processId, 123);
-      expect(resource.bridgeVersion, '0.1.0');
+      expect(resource.bridgeVersion, '2.0.0');
       expect(resource.signalSource, PlatformSignalSources.android);
       expect(memory?.nativeUsedMb, 42);
       expect(memory?.pressureLevel, MemoryPressureLevel.moderate);

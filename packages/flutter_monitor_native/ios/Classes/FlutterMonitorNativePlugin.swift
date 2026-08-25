@@ -126,7 +126,7 @@ public class FlutterMonitorNativePlugin: NSObject, FlutterPlugin, FlutterStreamH
       "available": true,
       "platform": "ios",
       "processId": ProcessInfo.processInfo.processIdentifier,
-      "bridgeVersion": "0.1.0",
+      "bridgeVersion": "2.0.0",
       "signalSource": "ios",
     ]
   }

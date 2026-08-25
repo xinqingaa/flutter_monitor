@@ -1,6 +1,6 @@
 # flutter_monitor_native
 
-可选 Flutter plugin。版本 `0.1.0`。
+可选 Flutter plugin。版本 `2.0.0`。
 
 提供 Android/iOS 的 native resource、memory、memory pressure 和 lifecycle 原始事实。SDK 通过 `FlutterMonitorNative().createBridge()` 得到 `MonitorNativeBridge`，再进入同一 pipeline。本包不独立上报。
 

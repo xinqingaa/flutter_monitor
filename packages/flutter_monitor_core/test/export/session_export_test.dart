@@ -20,8 +20,8 @@ void main() {
       exportedAt: exportedAt,
       source: const SessionExportSource(
         type: 'devtools',
-        sdkVersion: '1.0.0',
-        coreVersion: '0.1.0',
+        sdkVersion: '2.0.0',
+        coreVersion: '2.0.0',
       ),
       session: SessionExportSession(
         sessionId: 'ses_001',

@@ -706,7 +706,7 @@ void main() {
         resource: const NativeResourceSnapshot(
           platform: 'ios',
           processId: 42,
-          bridgeVersion: '1.0.0',
+          bridgeVersion: '2.0.0',
         ),
         thread: 'main',
         threadId: '1',

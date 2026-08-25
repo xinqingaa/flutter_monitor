@@ -202,7 +202,7 @@ class FlutterMonitorNativePlugin : FlutterPlugin, MethodChannel.MethodCallHandle
       "available" to true,
       "platform" to "android",
       "processId" to Process.myPid(),
-      "bridgeVersion" to "0.1.0",
+      "bridgeVersion" to "2.0.0",
       "signalSource" to "android",
     )
   }
